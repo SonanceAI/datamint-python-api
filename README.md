@@ -1,42 +1,37 @@
 # Custom PyTorch Dataset Class
 
 ## Description
-This repository contains a custom PyTorch dataset class implementation that uses the Sonance API in order to loads its datasets.
+This repository contains a custom PyTorch dataset class implementation that uses the Datamint API in order to loads its datasets.
 
 ## Installation
-Install via pip `pip install git+https://url-to-repository` (Recommended),
-
-**OR**
-
-1. clone the repository: `git clone https://url-to-repository`
-2. install locally via pip: `pip install PATH/sonance_code/.`
+Install via pip: `pip install git+https://github.com/SonanceAI/datamint-python-api`.
 
 
 ## Usage
-1. Specify API key as a enviroment variable. **(Optional)**: This is optional if later you specify the API in the dataset constructor, or you do not want to
+1. Specify API key as a enviroment variable. **(Optional)**: This is optional if you later specify the API in the dataset constructor, or you do not want to
 download/update an existing download dataset.
-    - **command line:** `export SONANCE_DATASET_API_KEY="my_api_key"; python my_script.py` 
+    - **command line:** `export DATAMINT_API_KEY="my_api_key"; python my_script.py` 
     - **python:**
     ```python
     import os
-    os.environ["SONANCE_DATASET_API_KEY"] = "my_api_key"
+    os.environ["DATAMINT_API_KEY"] = "my_api_key"
     ```
 2. Import the custom dataset class and create an instance: 
 ```python 
-from sonance.SonanceDataset import SonanceDataset
+import DatamintAPI
 
-dataset = SonanceDataset(root='../data',
-                         dataset_name='TestCTdataset',
-                         version='latest',
-                         api_key='my_api_key'
-                         )
+dataset = DatamintAPI.Dataset(root='../data',
+                              dataset_name='TestCTdataset',
+                              version='latest',
+                              api_key='my_api_key'
+                             )
 ```
 3. Use the dataset in your PyTorch code.
 
 ## Test
-Go to sonance directory and run `SonanceDataset.py`
+Go to DatamintAPI directory and run `dataset.py`
 ```bash
-cd sonance; python SonanceDataset.py
+cd DatamintAPI; python dataset.py
 ```
 
 ## Examples
@@ -44,15 +39,15 @@ Here are some examples on how to use the custom dataset class:
 
 ### Pytorch
 
-Inheriting `SonanceDataset`:
+Inheriting `DatamintAPI.Dataset`:
 ```python
-from sonance import SonanceDataset
+import DatamintAPI
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
 
 
-class XrayFractureDataset(SonanceDataset):
+class XrayFractureDataset(DatamintAPI.Dataset):
     def __getitem__(self, idx):
         image, dicom_metainfo, metainfo = super().__getitem__(idx)
 
@@ -88,7 +83,7 @@ for images, patients_sex, labels in dataloader:
 
 Alternative:
 ```python
-from sonance import SonanceDataset
+import DatamintAPI
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
@@ -98,12 +93,13 @@ from torch.utils.data import DataLoader
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# Create an instance of the SonanceDataset
-dataset = SonanceDataset(root='data',
-                         dataset_name='TestCTdataset',
-                         version='latest',
-                         api_key='abc123',
-                         transform=ToTensor())
+# Create an instance of the DatamintAPI.Dataset
+dataset = DatamintAPI.Dataset(root='data',
+                              dataset_name='TestCTdataset',
+                              version='latest',
+                              api_key='abc123',
+                              transform=ToTensor()
+                              )
 
 # This function tells the dataloader how to group the items in a batch
 

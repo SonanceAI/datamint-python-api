@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "sonance"
+name = "DatamintAPI"
 version = "0.1.0"
-description = "A library for loading Sonance datasets into Pytorch"
+description = "A library for loading Datamint datasets into Pytorch"
 authors = [" "] # TODO: Add authors
 readme = "README.md"
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/

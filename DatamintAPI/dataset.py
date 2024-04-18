@@ -15,21 +15,21 @@ from torch.utils.data import Dataset
 _LOGGER = logging.getLogger(__name__)
 
 
-class SonanceDatasetException(Exception):
+class DatamintDatasetException(Exception):
     pass
 
 
-class SonanceDataset(Dataset):
+class DatamintDataset(Dataset):
     """
-    Class to download and load datasets from the Sonance API.
+    Class to download and load datasets from the Datamint API.
 
     Args:
         root (str): Root directory of dataset where data already exists or will be downloaded.
         dataset_name (str): Name of the dataset to download.
         version (int | str): Version of the dataset to download.
             If 'latest', the latest version will be downloaded. Default: 'latest'.
-        api_key (str, optional): API key to access the Sonance API. If not provided, it will look for the
-            environment variable 'SONANCE_DATASET_API_KEY'. Not necessary if
+        api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
+            environment variable 'DATAMINT_API_KEY'. Not necessary if
             you dont want to download/update the dataset.
         transform (callable, optional): A function/transform that takes in an image (or a series of images)
             and returns a transformed version.
@@ -61,7 +61,7 @@ class SonanceDataset(Dataset):
 
         self.version = version
         self.dataset_name = dataset_name
-        self.api_key = api_key if api_key is not None else os.getenv('SONANCE_DATASET_API_KEY')
+        self.api_key = api_key if api_key is not None else os.getenv('DATAMINT_API_KEY')
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download, please provide an API key.")
         self.dataset_dir = os.path.join(root, dataset_name)
@@ -74,7 +74,7 @@ class SonanceDataset(Dataset):
             self._check_version()
         else:
             if api_key is None:
-                raise SonanceDatasetException("API key is required to download the dataset.")
+                raise DatamintDatasetException("API key is required to download the dataset.")
             _LOGGER.info(f"No data found at {self.dataset_dir}. Downloading...")
             self.download()
 
@@ -87,12 +87,12 @@ class SonanceDataset(Dataset):
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['image_file'])):
-                raise SonanceDatasetException(f"Image file {imginfo['image_file']} not found.")
+                raise DatamintDatasetException(f"Image file {imginfo['image_file']} not found.")
 
     def _get_datasetinfo_by_name(self, dataset_name: str) -> dict:
         request_params = {
             'method': 'GET',
-            'url': f'{SonanceDataset.root_url}/datasets',
+            'url': f'{DatamintDataset.root_url}/datasets',
             'headers': {'apikey': self.api_key}
         }
         with Session() as session:
@@ -103,7 +103,7 @@ class SonanceDataset(Dataset):
                 return d
 
         available_datasets = [d['name'] for d in resp['data']]
-        raise SonanceDatasetException(
+        raise DatamintDatasetException(
             f"Dataset with name '{dataset_name}' not found. Available datasets: {available_datasets}"
         )
 
@@ -115,7 +115,7 @@ class SonanceDataset(Dataset):
     def _get_jwttoken(self, dataset_id, session) -> str:
         request_params = {
             'method': 'GET',
-            'url': f'{SonanceDataset.root_url}/datasets/{dataset_id}/download/dicom',
+            'url': f'{DatamintDataset.root_url}/datasets/{dataset_id}/download/dicom',
             'headers': {'apikey': self.api_key},
             'params': {'version': self.version},
             'stream': True
@@ -130,7 +130,7 @@ class SonanceDataset(Dataset):
                 line = line.strip()
                 if 'event: error' in line:
                     error_msg = '\n'.join(response_iterator)
-                    raise SonanceDatasetException(f"Getting jwt token failed:\n{error_msg}")
+                    raise DatamintDatasetException(f"Getting jwt token failed:\n{error_msg}")
                 if not line.startswith('data:'):
                     continue
                 dataline = yaml.safe_load(line)['data']
@@ -152,7 +152,7 @@ class SonanceDataset(Dataset):
             if progress_bar is not None:
                 progress_bar.close()
 
-        raise SonanceDatasetException("Getting jwt token failed! No dataline with 'zip' entry found.")
+        raise DatamintDatasetException("Getting jwt token failed! No dataline with 'zip' entry found.")
 
     def __repr__(self) -> str:
         head = "Dataset " + self.__class__.__name__
@@ -184,7 +184,7 @@ class SonanceDataset(Dataset):
             # Initiate the download
             request_params = {
                 'method': 'GET',
-                'url': f'{SonanceDataset.root_url}/datasets/download/{jwt_token}',
+                'url': f'{DatamintDataset.root_url}/datasets/download/{jwt_token}',
                 'headers': {'apikey': self.api_key},
                 'stream': True
             }
@@ -196,7 +196,7 @@ class SonanceDataset(Dataset):
                         progress_bar.update(len(data))
                         file.write(data)
             if total_size != 0 and progress_bar.n != total_size:
-                raise SonanceDatasetException("Download failed.")
+                raise DatamintDatasetException("Download failed.")
 
             if os.path.exists(self.dataset_dir):
                 _LOGGER.info(f"Deleting existing dataset directory: {self.dataset_dir}")
@@ -283,7 +283,7 @@ class SonanceDataset(Dataset):
 if __name__ == '__main__':
     # Example usage for testing purposes.
     logging.basicConfig(level=logging.INFO)
-    dataset = SonanceDataset(root='../data',
+    dataset = DatamintDataset(root='../data',
                              dataset_name='TestCTdataset',
                              version='latest')
     print(dataset)
