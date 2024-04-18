@@ -1,0 +1,6 @@
+torch
+tqdm
+requests
+pyyaml
+pydicom
+numpy
