@@ -20,7 +20,8 @@ class APIHandler:
         self.root_url = root_url
         self.api_key = api_key if api_key is not None else os.getenv(APIHandler.DATAMINT_API_VENV_NAME)
         if self.api_key is None:
-            _LOGGER.warning("API key not provided!")
+            msg = f"API key not provided! Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
+            raise Exception(msg)
 
     async def _run_request_async(self,
                                  request_args: dict,

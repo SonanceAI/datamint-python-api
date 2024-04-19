@@ -2,7 +2,7 @@
 name = "DatamintAPI"
 version = "0.1.0"
 description = "A library for loading Datamint datasets into Pytorch"
-authors = [" "] # TODO: Add authors
+authors = [" "]                                                      # TODO: Add authors
 readme = "README.md"
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
 
@@ -20,6 +20,7 @@ aiohttp = "^3.0.0"
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
+responses = "^0.20.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
