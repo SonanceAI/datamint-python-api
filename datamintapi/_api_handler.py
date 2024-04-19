@@ -109,7 +109,7 @@ class APIHandler:
     def create_new_batch(self,
                          description: str,
                          file_path: str | list[str],
-                         label: str = None
+                         label: list[str] = None
                          ) -> tuple[str, list[str]]:
         """
         Create a new batch and upload the dicoms in the file_path to the batch.
@@ -117,18 +117,28 @@ class APIHandler:
         Args:
             description (str): The description of the batch
             file_path (str | list[str]): The path to the dicom file or a list of paths to dicom files.
-            label (str, optional): The label of the batch. NOT USED YET. Defaults to None.
+            label (list[str], optional): The label of the batch. NOT USED YET. Defaults to None.
 
         Returns:
-            tuple[str, list[str]]: The batch_id and the list of dicom_ids
+            tuple[str, list[str]]: The batch_id and the list of created dicom_ids.
         """
+
+        if label is not None:
+            label = [l.strip() for l in label]
 
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
             else:
                 file_path = [file_path]
-            batch_id = self.upload_batch(description, len(file_path))
-            loop = asyncio.get_event_loop()
-            results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id))
-            return batch_id, results
+        batch_id = self.upload_batch(description, len(file_path))
+        loop = asyncio.get_event_loop()
+        results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id))
+        return batch_id, results
+
+    def get_batch_info(self, batch_id: str) -> dict:
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/upload-batches/{batch_id}'
+        }
+        return self._run_request(request_params).json()

@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from DatamintAPI._api_handler import APIHandler
+from datamintapi._api_handler import APIHandler
 import responses
 
 
