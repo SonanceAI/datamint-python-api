@@ -1,11 +1,13 @@
-from typing import Optional
+from typing import Optional, IO, Sequence
 import os
 from requests import Session
 import logging
 import asyncio
 import aiohttp
 import nest_asyncio  # For running asyncio in jupyter notebooks
-
+from datamintapi.dicom_utils import anonymize_dicom
+import pydicom
+from io import BytesIO
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,9 +83,26 @@ class APIHandler:
         resp = self._run_request(request_params, session)
         return resp.json()['id']
 
-    async def _upload_dicom_async(self, batch_id: str, file_path: str, session=None) -> str:
-        # upload the file to POST /dicoms with a body that includes the batch_id
-        with open(file_path, 'rb') as f:
+    async def _upload_dicom_async(self, batch_id: str,
+                                  file_path: str | IO,
+                                  anonymize: bool = False,
+                                  anonymize_retain_codes: Sequence[tuple] = [],
+                                  session=None) -> str:
+        if anonymize:
+            ds = pydicom.dcmread(file_path)
+            ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
+            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
+            f = BytesIO()
+            pydicom.dcmwrite(f, ds)
+            f.name = file_path
+            f.mode = 'rb'
+            f.seek(0)
+        elif isinstance(file_path, str):
+            f = open(file_path, 'rb')
+        else:
+            f = file_path
+
+        try:
             request_params = {
                 'method': 'POST',
                 'url': f'{self.root_url}/dicoms',
@@ -92,48 +111,69 @@ class APIHandler:
             }
             resp = await self._run_request_async(request_params, session)
 
-        print(f'{file_path} uploaded')
-        return resp['id']
+            print(f'{file_path} uploaded')
+            return resp['id']
+        except Exception as e:
+            raise e
+        finally:
+            f.close()
 
-    def upload_dicom(self, batch_id: str, file_path: str, session=None) -> str:
+    def upload_dicom(self, batch_id: str, file_path: str | IO, session=None) -> str:
         loop = asyncio.get_event_loop()
         return loop.run_until_complete(self._upload_dicom_async(batch_id, file_path, session))
 
-    async def _upload_multiple_dicoms(self, files_path: list[str], batch_id: str):
+    async def _upload_multiple_dicoms(self,
+                                      files_path: list[str | IO],
+                                      batch_id: str,
+                                      anonymize: bool = False,
+                                      anonymize_retain_codes: Sequence[tuple] = []
+                                      ):
         async with aiohttp.ClientSession() as session:
             loop = asyncio.get_event_loop()
-            tasks = [self._upload_dicom_async(batch_id, f, session) for f in files_path]
+            tasks = [self._upload_dicom_async(
+                batch_id, f, anonymize, anonymize_retain_codes, session) for f in files_path]
             return await asyncio.gather(*tasks)
 
     # TODO: maybe it is better to separate "complex" workflows to a separate class.
     def create_new_batch(self,
                          description: str,
-                         file_path: str | list[str],
-                         label: list[str] = None
+                         file_path: str | IO | Sequence[str | IO],
+                         label: Sequence[str] = None,
+                         anonymize: bool = False,
+                         anonymize_retain_codes: Sequence[tuple] = []
                          ) -> tuple[str, list[str]]:
         """
         Create a new batch and upload the dicoms in the file_path to the batch.
 
         Args:
             description (str): The description of the batch
-            file_path (str | list[str]): The path to the dicom file or a list of paths to dicom files.
-            label (list[str], optional): The label of the batch. NOT USED YET. Defaults to None.
+            file_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
+            label (Sequence[str]): The label of the batch. NOT USED YET. Defaults to None.
 
         Returns:
             tuple[str, list[str]]: The batch_id and the list of created dicom_ids.
         """
-
         if label is not None:
             label = [l.strip() for l in label]
 
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
+        # Check if is an IO object
+        elif hasattr(file_path, 'read'):
+            file_path = [file_path]
+        elif not hasattr(file_path, '__len__'):
+            if hasattr(file_path, '__iter__'):
+                file_path = list(file_path)
             else:
                 file_path = [file_path]
+
         batch_id = self.upload_batch(description, len(file_path))
         loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id))
+        results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id,
+                                                                       anonymize=anonymize,
+                                                                       anonymize_retain_codes=anonymize_retain_codes)
+                                          )
         return batch_id, results
 
     def get_batch_info(self, batch_id: str) -> dict:

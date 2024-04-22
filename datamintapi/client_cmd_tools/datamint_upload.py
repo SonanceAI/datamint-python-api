@@ -2,18 +2,36 @@ import argparse
 from datamintapi._api_handler import APIHandler
 import os
 import argparse
-import pydicom
 from humanize import naturalsize
+import logging
+
+# Create two loggings: one for the user and one for the developer
+_LOGGER = logging.getLogger(__name__)
+_USER_LOGGER = logging.getLogger('user_logger')
 
 ROOT_URL = 'https://stagingapi.datamint.io'
 
 
 def _is_valid_path_argparse(x):
     if not os.path.exists(x):
-        # Argparse uses the ArgumentTypeError to give a rejection message like:
-        # error: argument input: x does not exist
         raise argparse.ArgumentTypeError("{0} does not exist".format(x))
     return x
+
+
+def _tuple_int_type(x: str):
+    """
+    argparse type that converts a string of two hexadecimal integers to a tuple of integers
+    """
+    try:
+        x_processed = tuple(int(i, 16) for i in x.strip('()').split(','))
+        if len(x_processed) != 2:
+            raise ValueError
+        return x_processed
+    except ValueError as e:
+        print(e)
+        raise argparse.ArgumentTypeError(
+            "Values must be two hexadecimal integers separated by a comma. Example (0x0008, 0x0050)"
+        )
 
 
 def _parse_args() -> tuple:
@@ -22,14 +40,21 @@ def _parse_args() -> tuple:
     # TODO: discuss how exactly recursive should work
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
-    parser.add_argument('--retain-attribute', type=str, action='append',
-                        help='Retain the value of a single attribute code')
+    parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
+                        help='Retain the value of a single attribute code specified as hexidecimal integers. \
+                            Example: (0x0008, 0x0050) or just (0008, 0050)')
     parser.add_argument('-l', '--label', type=str, action='append', help='A label name to be applied to all files')
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
                         required=True,
                         help='Path to the DICOM file(s) or a directory')
 
     args = parser.parse_args()
+
+    if args.retain_pii is not None and args.retain_attribute is not None:
+        raise ValueError("Cannot use --retain-pii and --retain-attribute together.")
+    
+    if args.retain_attribute is None:
+        args.retain_attribute = []
 
     if os.path.isdir(args.path):
         file_path = [os.path.join(args.path, f)
@@ -65,12 +90,13 @@ def main():
         print("Upload cancelled.")
         return
 
-    # TODO: create a new dicom that has attributes anonymized
-
     api_handler = APIHandler(ROOT_URL, api_key='abc123')
     batch_id, _ = api_handler.create_new_batch(args.name,
                                                file_path=files_path,
-                                               label=args.label)
+                                               label=args.label,
+                                               anonymize=args.retain_pii == False,
+                                               anonymize_retain_codes=args.retain_attribute
+                                               )
     print('Upload finished!')
     batch_info = api_handler.get_batch_info(batch_id)
     batch_images = batch_info['images']
