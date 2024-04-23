@@ -8,6 +8,9 @@ from humanize import naturalsize
 import logging
 import yaml
 import importlib
+from netrc import netrc
+from pathlib import Path
+import sys
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +38,34 @@ def _tuple_int_type(x: str):
         raise argparse.ArgumentTypeError(
             "Values must be two hexadecimal integers separated by a comma. Example (0x0008, 0x0050)"
         )
+
+
+def _handle_api_key() -> str:
+    """
+    TODO: move this function to a separate module
+    """
+    api_key = os.getenv('DATAMINT_API_KEY')
+    if api_key is None:
+        netrc_file = Path.home() / ".netrc"
+        token = netrc(netrc_file).authenticators('api.datamint.io')
+        if token is not None:
+            return token[2]
+        _USER_LOGGER.info("API key not found in enviroment variable DATAMINT_API_KEY. Please provide it:")
+        api_key = input('API key (leave empty to abort):').strip()
+        if api_key == '':
+            return None
+
+        ans = input("Save the API key so it automatically loads next time? (y/n):")
+        try:
+            if ans.lower() == 'y':
+                with open(netrc_file, 'a') as f:
+                    f.write(f"\nmachine api.datamint.io\n  login user\n  password {api_key}\n")
+                _USER_LOGGER.info(f"API key saved to {netrc_file}")
+        except Exception as e:
+            _USER_LOGGER.error(f"Error saving API key.")
+            _LOGGER.exception(e)
+
+    return api_key
 
 
 def _parse_args() -> tuple:
@@ -75,6 +106,11 @@ def _parse_args() -> tuple:
         raise ValueError(f"No dicom files found in {args.path}")
 
     _LOGGER.info(f"args parsed: {args}")
+
+    api_key = _handle_api_key()
+    if api_key is None:
+        _USER_LOGGER.warning("API key not provided. Aborting.")
+        sys.exit(1)
 
     return args, file_path
 
