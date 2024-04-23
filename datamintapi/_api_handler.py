@@ -13,6 +13,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class APIHandler:
+    """
+    Class to handle the API requests to the Datamint API
+    """
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
 
     def __init__(self,
@@ -87,6 +90,7 @@ class APIHandler:
                                   file_path: str | IO,
                                   anonymize: bool = False,
                                   anonymize_retain_codes: Sequence[tuple] = [],
+                                  labels:list[str]=None,
                                   session=None) -> str:
         if anonymize:
             ds = pydicom.dcmread(file_path)
@@ -106,9 +110,10 @@ class APIHandler:
             request_params = {
                 'method': 'POST',
                 'url': f'{self.root_url}/dicoms',
-                # 'files': {'dicom': f},
                 'data': {'batch_id': batch_id, 'dicom': f}
             }
+            if labels is not None:
+                request_params['data']['labels'] = str(labels)
             resp = await self._run_request_async(request_params, session)
 
             print(f'{file_path} uploaded')
@@ -126,7 +131,8 @@ class APIHandler:
                                       files_path: list[str | IO],
                                       batch_id: str,
                                       anonymize: bool = False,
-                                      anonymize_retain_codes: Sequence[tuple] = []
+                                      anonymize_retain_codes: Sequence[tuple] = [],
+                                      labels=None
                                       ):
         async with aiohttp.ClientSession() as session:
             semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
@@ -134,7 +140,9 @@ class APIHandler:
             async def __upload_single_dicom(file_path):
                 async with semaphore:
                     return await self._upload_dicom_async(
-                        batch_id, file_path, anonymize, anonymize_retain_codes, session
+                        batch_id, file_path, anonymize, anonymize_retain_codes,
+                        labels=labels,
+                        session=session,
                     )
             tasks = [__upload_single_dicom(f) for f in files_path]
             return await asyncio.gather(*tasks)
@@ -143,7 +151,7 @@ class APIHandler:
     def create_new_batch(self,
                          description: str,
                          file_path: str | IO | Sequence[str | IO],
-                         label: Sequence[str] = None,
+                         labels: Sequence[str] = None,
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = []
                          ) -> tuple[str, list[str]]:
@@ -158,8 +166,8 @@ class APIHandler:
         Returns:
             tuple[str, list[str]]: The batch_id and the list of created dicom_ids.
         """
-        if label is not None:
-            label = [l.strip() for l in label]
+        if labels is not None:
+            labels = [l.strip() for l in labels]
 
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
@@ -177,7 +185,8 @@ class APIHandler:
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id,
                                                                        anonymize=anonymize,
-                                                                       anonymize_retain_codes=anonymize_retain_codes)
+                                                                       anonymize_retain_codes=anonymize_retain_codes,
+                                                                       labels=labels)
                                           )
         return batch_id, results
 

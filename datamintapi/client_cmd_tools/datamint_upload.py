@@ -20,6 +20,9 @@ ROOT_URL = 'https://stagingapi.datamint.io'
 
 
 def _is_valid_path_argparse(x):
+    """
+    argparse type that checks if the path exists
+    """
     if not os.path.exists(x):
         raise argparse.ArgumentTypeError("{0} does not exist".format(x))
     return x
@@ -111,6 +114,7 @@ def _parse_args() -> tuple:
     if api_key is None:
         _USER_LOGGER.warning("API key not provided. Aborting.")
         sys.exit(1)
+    os.environ['DATAMINT_API_KEY'] = api_key
 
     return args, file_path
 
@@ -131,6 +135,7 @@ def main():
         _USER_LOGGER.error(e)
         return
 
+    ### Create a summary of the upload ###
     total_files = len(files_path)
     total_size = sum(os.path.getsize(file) for file in files_path)
 
@@ -146,11 +151,12 @@ def main():
     if confirmation.lower() != "y":
         _USER_LOGGER.info("Upload cancelled.")
         return
+    #######################################
 
     api_handler = APIHandler(ROOT_URL)
     batch_id, _ = api_handler.create_new_batch(args.name,
                                                file_path=files_path,
-                                               label=args.label,
+                                               labels=args.label,
                                                anonymize=args.retain_pii == False,
                                                anonymize_retain_codes=args.retain_attribute
                                                )
