@@ -52,15 +52,21 @@ def _parse_args() -> tuple:
 
     if args.retain_pii is not None and args.retain_attribute is not None:
         raise ValueError("Cannot use --retain-pii and --retain-attribute together.")
-    
+
     if args.retain_attribute is None:
         args.retain_attribute = []
 
-    if os.path.isdir(args.path):
+    if os.path.isfile(args.path):
+        file_path = [file_path]
+    elif args.recursive == True:
+        file_path = []
+        for root, _, files in os.walk(args.path):
+            for f in files:
+                if f.endswith('.dcm') or f.endswith('.dicom'):
+                    file_path.append(os.path.join(root, f))
+    else:
         file_path = [os.path.join(args.path, f)
                      for f in os.listdir(args.path) if f.endswith('.dcm') or f.endswith('.dicom')]
-    else:
-        file_path = [file_path]
 
     if len(file_path) == 0:
         raise ValueError(f"No dicom files found in {args.path}")
@@ -80,9 +86,10 @@ def main():
 
     print(f"Number of DICOMs to be uploaded: {total_files}")
     print(f"\t{files_path[0]}")
-    if total_files > 2:
-        print("\t(...)")
-    print(f"\t{files_path[-1]}")
+    if total_files >= 2:
+        if total_files >= 3:
+            print("\t(...)")
+        print(f"\t{files_path[-1]}")
     print(f"Total size of the upload: {naturalsize(total_size)}")
 
     confirmation = input("Do you want to proceed with the upload? (y/n): ")

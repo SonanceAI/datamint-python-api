@@ -129,9 +129,14 @@ class APIHandler:
                                       anonymize_retain_codes: Sequence[tuple] = []
                                       ):
         async with aiohttp.ClientSession() as session:
-            loop = asyncio.get_event_loop()
-            tasks = [self._upload_dicom_async(
-                batch_id, f, anonymize, anonymize_retain_codes, session) for f in files_path]
+            semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
+
+            async def __upload_single_dicom(file_path):
+                async with semaphore:
+                    return await self._upload_dicom_async(
+                        batch_id, file_path, anonymize, anonymize_retain_codes, session
+                    )
+            tasks = [__upload_single_dicom(f) for f in files_path]
             return await asyncio.gather(*tasks)
 
     # TODO: maybe it is better to separate "complex" workflows to a separate class.
