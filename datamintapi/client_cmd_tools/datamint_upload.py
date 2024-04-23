@@ -1,9 +1,13 @@
+import importlib.resources
+import logging.config
 import argparse
 from datamintapi._api_handler import APIHandler
 import os
 import argparse
 from humanize import naturalsize
 import logging
+import yaml
+import importlib
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -27,8 +31,7 @@ def _tuple_int_type(x: str):
         if len(x_processed) != 2:
             raise ValueError
         return x_processed
-    except ValueError as e:
-        print(e)
+    except ValueError:
         raise argparse.ArgumentTypeError(
             "Values must be two hexadecimal integers separated by a comma. Example (0x0008, 0x0050)"
         )
@@ -71,40 +74,51 @@ def _parse_args() -> tuple:
     if len(file_path) == 0:
         raise ValueError(f"No dicom files found in {args.path}")
 
+    _LOGGER.info(f"args parsed: {args}")
+
     return args, file_path
 
 
 def main():
+    # Load the logging configuration file
+    try:
+        with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
+            config = yaml.safe_load(f.read())
+        logging.config.dictConfig(config)
+    except Exception as e:
+        print("Warning: Error loading logging configuration file.")
+        logging.basicConfig(level=logging.INFO)
+
     try:
         args, files_path = _parse_args()
     except Exception as e:
-        print(f"Error: {e}")
+        _USER_LOGGER.error(e)
         return
 
     total_files = len(files_path)
     total_size = sum(os.path.getsize(file) for file in files_path)
 
-    print(f"Number of DICOMs to be uploaded: {total_files}")
-    print(f"\t{files_path[0]}")
+    _USER_LOGGER.info(f"Number of DICOMs to be uploaded: {total_files}")
+    _USER_LOGGER.info(f"\t{files_path[0]}")
     if total_files >= 2:
         if total_files >= 3:
-            print("\t(...)")
-        print(f"\t{files_path[-1]}")
-    print(f"Total size of the upload: {naturalsize(total_size)}")
+            _USER_LOGGER.info("\t(...)")
+        _USER_LOGGER.info(f"\t{files_path[-1]}")
+    _USER_LOGGER.info(f"Total size of the upload: {naturalsize(total_size)}")
 
     confirmation = input("Do you want to proceed with the upload? (y/n): ")
     if confirmation.lower() != "y":
-        print("Upload cancelled.")
+        _USER_LOGGER.info("Upload cancelled.")
         return
 
-    api_handler = APIHandler(ROOT_URL, api_key='abc123')
+    api_handler = APIHandler(ROOT_URL)
     batch_id, _ = api_handler.create_new_batch(args.name,
                                                file_path=files_path,
                                                label=args.label,
                                                anonymize=args.retain_pii == False,
                                                anonymize_retain_codes=args.retain_attribute
                                                )
-    print('Upload finished!')
+    _USER_LOGGER.info('Upload finished!')
     batch_info = api_handler.get_batch_info(batch_id)
     batch_images = batch_info['images']
     all_images_filenames = [img['filename'] for img in batch_images]
@@ -116,12 +130,12 @@ def main():
             failure_files.append(fsubmitted)
 
     # Refine: Use colors here?
-    print(f"\nUpload summary:")
-    print(f"\tTotal files: {len(files_path)}")
-    print(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
-    print(f"\tFailed uploads: {len(failure_files)}")
+    _USER_LOGGER.info(f"\nUpload summary:")
+    _USER_LOGGER.info(f"\tTotal files: {len(files_path)}")
+    _USER_LOGGER.info(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
+    _USER_LOGGER.info(f"\tFailed uploads: {len(failure_files)}")
     if len(failure_files) > 0:
-        print(f"\tFailed files: {failure_files}")
+        _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
 
 
 if __name__ == '__main__':
