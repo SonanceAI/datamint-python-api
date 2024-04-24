@@ -1,0 +1,41 @@
+version: 1
+disable_existing_loggers: False
+
+formatters:
+  detailed:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  simple:
+    format: "%(name)s - %(levelname)s - %(message)s"
+  for_user:
+    format: "%(message)s"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: simple
+    stream: ext://sys.stdout
+  console_user:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: for_user
+    stream: ext://sys.stdout
+  file:
+    class: logging.FileHandler
+    level: DEBUG
+    formatter: detailed
+    filename: app.log
+
+loggers:
+  datamintapi:
+    level: WARNING
+    handlers: [console] #, file]
+    propagate: no
+  user_logger:
+    level: INFO
+    handlers: [console_user]
+    propagate: no
+
+root:
+  level: WARNING
+  handlers: [console]

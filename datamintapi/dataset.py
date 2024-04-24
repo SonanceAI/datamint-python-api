@@ -73,7 +73,7 @@ class DatamintDataset(Dataset):
             _LOGGER.info("Checking for updates...")
             self._check_version()
         else:
-            if api_key is None:
+            if self.api_key is None:
                 raise DatamintDatasetException("API key is required to download the dataset.")
             _LOGGER.info(f"No data found at {self.dataset_dir}. Downloading...")
             self.download()
@@ -283,7 +283,7 @@ class DatamintDataset(Dataset):
 if __name__ == '__main__':
     # Example usage for testing purposes.
     logging.basicConfig(level=logging.INFO)
-    dataset = DatamintDataset(root='../data',
+    dataset = DatamintDataset(root='/tmp',
                              dataset_name='TestCTdataset',
                              version='latest')
     print(dataset)
