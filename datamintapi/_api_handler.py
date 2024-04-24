@@ -90,7 +90,7 @@ class APIHandler:
                                   file_path: str | IO,
                                   anonymize: bool = False,
                                   anonymize_retain_codes: Sequence[tuple] = [],
-                                  labels:list[str]=None,
+                                  labels: list[str] = None,
                                   session=None) -> str:
         if anonymize:
             ds = pydicom.dcmread(file_path)
@@ -112,8 +112,9 @@ class APIHandler:
                 'url': f'{self.root_url}/dicoms',
                 'data': {'batch_id': batch_id, 'dicom': f}
             }
+
             if labels is not None:
-                request_params['data']['labels'] = str(labels)
+                request_params['data']['labels[]'] = str(labels)
             resp = await self._run_request_async(request_params, session)
 
             print(f'{file_path} uploaded')
