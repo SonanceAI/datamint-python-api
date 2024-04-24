@@ -114,7 +114,7 @@ class APIHandler:
             }
 
             if labels is not None:
-                request_params['data']['labels[]'] = str(labels)
+                request_params['data']['labels[]'] = ','.join(labels)
             resp = await self._run_request_async(request_params, session)
 
             print(f'{file_path} uploaded')
