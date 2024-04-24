@@ -52,23 +52,29 @@ def _handle_api_key() -> str:
     """
     api_key = os.getenv('DATAMINT_API_KEY')
     if api_key is None:
-        netrc_file = Path.home() / ".netrc"
-        token = netrc(netrc_file).authenticators('api.datamint.io')
-        if token is not None:
-            return token[2]
-        _USER_LOGGER.info("API key not found in enviroment variable DATAMINT_API_KEY. Please provide it:")
-        api_key = input('API key (leave empty to abort):').strip()
-        if api_key == '':
-            return None
-
-        ans = input("Save the API key so it automatically loads next time? (y/n):")
         try:
-            if ans.lower() == 'y':
-                with open(netrc_file, 'a') as f:
-                    f.write(f"\nmachine api.datamint.io\n  login user\n  password {api_key}\n")
-                _USER_LOGGER.info(f"API key saved to {netrc_file}")
-        except Exception as e:
-            _USER_LOGGER.error(f"Error saving API key.")
+            netrc_file = Path.home() / ".netrc"
+            if netrc_file.exists():
+                token = netrc(netrc_file).authenticators('api.datamint.io')
+                if token is not None:
+                    return token[2]
+            _USER_LOGGER.info("API key not found in enviroment variable DATAMINT_API_KEY. Please provide it:")
+            api_key = input('API key (leave empty to abort): ').strip()
+            if api_key == '':
+                return None
+
+            ans = input("Save the API key so it automatically loads next time? (y/n): ")
+            try:
+                if ans.lower() == 'y':
+                    with open(netrc_file, 'a') as f:
+                        f.write(f"\nmachine api.datamint.io\n  login user\n  password {api_key}\n")
+                    _USER_LOGGER.info(f"API key saved to {netrc_file}")
+            except Exception as e:
+                _USER_LOGGER.error(f"Error saving API key.")
+                _LOGGER.exception(e)
+        except OSError as e:
+            _USER_LOGGER.error(f"Error accessing netrc file. Contact your system administrator if you want to\
+                               save the API key locally.")
             _LOGGER.exception(e)
 
     return api_key
