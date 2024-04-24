@@ -11,7 +11,7 @@ include = [
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
-python = ">=3.9, <3.12"
+python = ">=3.9"
 numpy = "*"
 torch = ">=1.2.0"
 tqdm = "^4.0.0"
