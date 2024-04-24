@@ -45,6 +45,9 @@ def _tuple_int_type(x: str):
 
 def _handle_api_key() -> str:
     """
+    Checks for API keys in the env variable `DATAMINT_API_KEY`.
+    If it does not exist, it asks the user to input it.
+    Then, it asks the user if he wants to save the API key at a proper location in the machine 
     TODO: move this function to a separate module
     """
     api_key = os.getenv('DATAMINT_API_KEY')
