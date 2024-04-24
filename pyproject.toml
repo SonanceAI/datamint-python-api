@@ -2,9 +2,12 @@
 name = "DatamintAPI"
 version = "0.1.0"
 description = "A library for loading Datamint datasets into Pytorch"
-authors = [" "] # TODO: Add authors
+authors = ["Sonance Team"]
 readme = "README.md"
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
+include = [
+    {path = "datamintapi/logging.yaml", format = ["sdist", "wheel"]}
+]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
@@ -15,11 +18,16 @@ tqdm = "^4.0.0"
 requests = "^2.0.0"
 pyyaml = ">=5.0.0"
 pydicom = "^2.0.0"
+aiohttp = "^3.0.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
+responses = "^0.20.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+datamint-upload = 'datamintapi.client_cmd_tools.datamint_upload:main'
