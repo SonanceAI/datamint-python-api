@@ -58,6 +58,12 @@ def anonymize_dicom(ds: pydicom.Dataset,
             if tag in ds:
                 if tag == (0x0008, 0x0094):  # Phone number
                     ds[tag].value = "000-000-0000"
+                # If tag is a floating point number, set it to 0.0
+                elif ds[tag].VR in ['FL', 'FD', 'DS']:
+                    ds[tag].value = 0
                 else:
-                    ds[tag].value = "CLEARED_BY_DATAMINT"
+                    try:
+                        ds[tag].value = "CLEARED_BY_DATAMINT"
+                    except ValueError as e:
+                        ds[tag].value = 0
     return ds
