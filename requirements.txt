@@ -6,3 +6,8 @@ pyyaml
 pydicom
 numpy
 aiohttp
+rich
+humanize
+pytest
+pytest-cov
+responses

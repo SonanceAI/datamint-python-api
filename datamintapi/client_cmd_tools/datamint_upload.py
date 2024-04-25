@@ -53,10 +53,12 @@ def _handle_api_key() -> str:
     api_key = os.getenv('DATAMINT_API_KEY')
     if api_key is None:
         try:
+
             netrc_file = Path.home() / ".netrc"
             if netrc_file.exists():
                 token = netrc(netrc_file).authenticators('api.datamint.io')
                 if token is not None:
+                    _LOGGER.info("API key loaded from netrc file.")
                     return token[2]
             _USER_LOGGER.info("API key not found in enviroment variable DATAMINT_API_KEY. Please provide it:")
             api_key = input('API key (leave empty to abort): ').strip()
@@ -105,6 +107,7 @@ def _parse_args() -> tuple:
     elif args.recursive == True:
         file_path = []
         for root, _, files in os.walk(args.path):
+            _LOGGER.debug(f"walking in {root}...")
             for f in files:
                 if f.endswith('.dcm') or f.endswith('.dicom'):
                     file_path.append(os.path.join(root, f))
@@ -128,12 +131,20 @@ def _parse_args() -> tuple:
 
 def main():
     # Load the logging configuration file
+    # TODO: move logging load configuration to a separate module
     try:
-        with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
-            config = yaml.safe_load(f.read())
+        try:
+            # try loading the developer's logging config
+            with open('logging_dev.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+        except:
+            with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
+                config = yaml.safe_load(f.read())
+
         logging.config.dictConfig(config)
     except Exception as e:
-        print("Warning: Error loading logging configuration file.")
+        print(f"Warning: Error loading logging configuration file: {e}")
+        _LOGGER.exception(e)
         logging.basicConfig(level=logging.INFO)
 
     try:
@@ -161,12 +172,12 @@ def main():
     #######################################
 
     api_handler = APIHandler(ROOT_URL)
-    batch_id, _ = api_handler.create_new_batch(args.name,
-                                               file_path=files_path,
-                                               labels=args.label,
-                                               anonymize=args.retain_pii == False,
-                                               anonymize_retain_codes=args.retain_attribute
-                                               )
+    batch_id, results = api_handler.create_new_batch(args.name,
+                                                     file_path=files_path,
+                                                     labels=args.label,
+                                                     anonymize=args.retain_pii == False,
+                                                     anonymize_retain_codes=args.retain_attribute
+                                                     )
     _USER_LOGGER.info('Upload finished!')
     batch_info = api_handler.get_batch_info(batch_id)
     batch_images = batch_info['images']
@@ -185,6 +196,10 @@ def main():
     _USER_LOGGER.info(f"\tFailed uploads: {len(failure_files)}")
     if len(failure_files) > 0:
         _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
+        _USER_LOGGER.warning(f"\nFailures:")
+        for r in results:
+            if isinstance(r, Exception):
+                _USER_LOGGER.warning(f"\t{r}")
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence
+from typing import Optional, IO, Sequence, Literal
 import os
 from requests import Session
 import logging
@@ -10,6 +10,14 @@ import pydicom
 from io import BytesIO
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class DatamintException(Exception):
+    pass
+
+
+class DicomAlreadyStored(DatamintException):
+    pass
 
 
 class APIHandler:
@@ -35,6 +43,8 @@ class APIHandler:
         if session is None:
             async with aiohttp.ClientSession() as s:
                 return await self._run_request_async(request_args, s)
+
+        _LOGGER.info(f"Running request to {request_args['url']}")
 
         # add apikey to the headers
         if 'headers' not in request_args:
@@ -96,7 +106,7 @@ class APIHandler:
             ds = pydicom.dcmread(file_path)
             ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
             # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-            f = BytesIO()
+            f = BytesIO()  # Maybe use pydicom.filebase.DicomBytesIO instead?
             pydicom.dcmwrite(f, ds)
             f.name = file_path
             f.mode = 'rb'
@@ -116,10 +126,18 @@ class APIHandler:
             if labels is not None:
                 request_params['data']['labels[]'] = ','.join(labels)
             resp = await self._run_request_async(request_params, session)
+            _LOGGER.info(f"Response on uploading {file_path}: {resp}")
+
+            # if resp['status'] == 'error':
+            #     if resp['message'] == 'DICOM already stored':
+            #         raise DicomAlreadyStored(f'{file_path} already stored')
+            #     else:
+            #         raise Exception(resp['message'])
 
             print(f'{file_path} uploaded')
             return resp['id']
         except Exception as e:
+            _LOGGER.error(f"Error uploading {file_path}: {e}")
             raise e
         finally:
             f.close()
@@ -133,10 +151,15 @@ class APIHandler:
                                       batch_id: str,
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
+                                      on_error: Literal['raise', 'skip'] = 'skip',
                                       labels=None
                                       ):
+        if on_error not in ['raise', 'skip']:
+            raise ValueError("on_error must be either 'raise' or 'skip'")
+
         async with aiohttp.ClientSession() as session:
             semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
+            _LOGGER.debug(f"Current semaphore value: {semaphore._value}")
 
             async def __upload_single_dicom(file_path):
                 async with semaphore:
@@ -146,7 +169,7 @@ class APIHandler:
                         session=session,
                     )
             tasks = [__upload_single_dicom(f) for f in files_path]
-            return await asyncio.gather(*tasks)
+            return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     # TODO: maybe it is better to separate "complex" workflows to a separate class.
     def create_new_batch(self,
