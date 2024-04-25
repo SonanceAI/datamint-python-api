@@ -87,6 +87,7 @@ def _parse_args() -> tuple:
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
+                        default=[],
                         help='Retain the value of a single attribute code specified as hexidecimal integers. \
                             Example: (0x0008, 0x0050) or just (0008, 0050)')
     parser.add_argument('-l', '--label', type=str, action='append', help='A label name to be applied to all files')
@@ -96,11 +97,8 @@ def _parse_args() -> tuple:
 
     args = parser.parse_args()
 
-    if args.retain_pii is not None and args.retain_attribute is not None:
+    if args.retain_pii and len(args.retain_attribute) > 0:
         raise ValueError("Cannot use --retain-pii and --retain-attribute together.")
-
-    if args.retain_attribute is None:
-        args.retain_attribute = []
 
     if os.path.isfile(args.path):
         file_path = [args.path]
