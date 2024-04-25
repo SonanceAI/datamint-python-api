@@ -125,8 +125,10 @@ class APIHandler:
 
             if labels is not None:
                 request_params['data']['labels[]'] = ','.join(labels)
-            resp = await self._run_request_async(request_params, session)
-            _LOGGER.info(f"Response on uploading {file_path}: {resp}")
+            resp_data = await self._run_request_async(request_params, session)
+            if 'error' in resp_data:
+                raise DatamintException(resp_data['error'])
+            _LOGGER.info(f"Response on uploading {file_path}: {resp_data}")
 
             # if resp['status'] == 'error':
             #     if resp['message'] == 'DICOM already stored':
@@ -135,7 +137,7 @@ class APIHandler:
             #         raise Exception(resp['message'])
 
             print(f'{file_path} uploaded')
-            return resp['id']
+            return resp_data['id']
         except Exception as e:
             _LOGGER.error(f"Error uploading {file_path}: {e}")
             raise e

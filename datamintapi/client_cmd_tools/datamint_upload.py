@@ -197,9 +197,9 @@ def main():
     if len(failure_files) > 0:
         _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
         _USER_LOGGER.warning(f"\nFailures:")
-        for r in results:
+        for f, r in zip(failure_files, results):
             if isinstance(r, Exception):
-                _USER_LOGGER.warning(f"\t{r}")
+                _USER_LOGGER.warning(f"\t{os.path.basename(f)}: {r}")
 
 
 if __name__ == '__main__':
