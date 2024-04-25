@@ -103,7 +103,7 @@ def _parse_args() -> tuple:
         args.retain_attribute = []
 
     if os.path.isfile(args.path):
-        file_path = [file_path]
+        file_path = [args.path]
     elif args.recursive == True:
         file_path = []
         for root, _, files in os.walk(args.path):
