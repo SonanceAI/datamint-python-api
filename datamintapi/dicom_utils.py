@@ -67,6 +67,8 @@ def anonymize_dicom(ds: pydicom.Dataset,
                 # If tag is a floating point number, set it to 0.0
                 elif ds[tag].VR in ['FL', 'FD', 'DS']:
                     ds[tag].value = 0
+                elif ds[tag].VR == 'SQ':
+                    del ds[tag]
                 else:
                     try:
                         ds[tag].value = _CLEARED_STR
