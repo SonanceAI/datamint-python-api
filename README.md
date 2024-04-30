@@ -1,6 +1,6 @@
 # Datamint python API
 
-## Installation and setup
+## Installation
 Install via pip: `pip install git+https://github.com/SonanceAI/datamint-python-api`.
 
 ## Setup API key
@@ -17,8 +17,7 @@ There three options to specify the API key:
 
 ## Usage
 ### Dataset
-1. 
-2. Import the custom dataset class and create an instance: 
+Import the custom dataset class and create an instance: 
 ```python 
 import DatamintAPI
 
@@ -28,7 +27,7 @@ dataset = DatamintAPI.Dataset(root='../data',
                               api_key='my_api_key'
                              )
 ```
-3. Use the dataset in your PyTorch code.
+and then use it in your PyTorch code as usual.
 
 #### Test
 Go to DatamintAPI directory and run `dataset.py`
