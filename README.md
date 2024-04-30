@@ -1,22 +1,23 @@
-# Custom PyTorch Dataset Class
-
-## Description
-This repository contains a custom PyTorch dataset class implementation that uses the Datamint API in order to loads its datasets.
+# Datamint python API
 
 ## Installation
 Install via pip: `pip install git+https://github.com/SonanceAI/datamint-python-api`.
 
+## Setup API key
+> [!NOTE]
+> Not required if you don't plan to communicate with the server.
+
+There three options to specify the API key:
+1. Specify API key as an enviroment variable:
+  - **command line:** `export DATAMINT_API_KEY="my_api_key"; python my_script.py` 
+  - **python:** `os.environ["DATAMINT_API_KEY"] = "my_api_key"`
+2. Specify API key in the API Handler constructor: TODO
+3. run `datamint config`? (TODO?) and follow the instructions?
+
 
 ## Usage
-1. Specify API key as a enviroment variable. **(Optional)**: This is optional if you later specify the API in the dataset constructor, or you do not want to
-download/update an existing download dataset.
-    - **command line:** `export DATAMINT_API_KEY="my_api_key"; python my_script.py` 
-    - **python:**
-    ```python
-    import os
-    os.environ["DATAMINT_API_KEY"] = "my_api_key"
-    ```
-2. Import the custom dataset class and create an instance: 
+### Dataset
+Import the custom dataset class and create an instance: 
 ```python 
 import DatamintAPI
 
@@ -26,18 +27,18 @@ dataset = DatamintAPI.Dataset(root='../data',
                               api_key='my_api_key'
                              )
 ```
-3. Use the dataset in your PyTorch code.
+and then use it in your PyTorch code as usual.
 
-## Test
+#### Test
 Go to DatamintAPI directory and run `dataset.py`
 ```bash
-cd DatamintAPI; python dataset.py
+cd datamintapi; python dataset.py
 ```
 
-## Examples
+#### Examples
 Here are some examples on how to use the custom dataset class:
 
-### Pytorch
+##### Pytorch
 
 Inheriting `DatamintAPI.Dataset`:
 ```python
@@ -124,3 +125,16 @@ for images, dicom_metainfo, metainfo in dataloader:
 
     # (... do something with the batch)
 ```
+
+### Command-line
+#### datamint-upload
+Upload a single dicom file:
+```bash
+datamint-upload datamint-upload --path data/dicom_file.dcm
+```
+
+Upload all dicom files inside a directory and all its subdirectories, recursively:
+```bash
+datamint-upload --path data/dicom_files/ -r
+```
+(...)

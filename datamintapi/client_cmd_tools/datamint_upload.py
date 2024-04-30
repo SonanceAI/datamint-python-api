@@ -11,12 +11,16 @@ import importlib
 from netrc import netrc
 from pathlib import Path
 import sys
+from datamintapi.utils.dicom_utils import is_dicom
+import fnmatch
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
 ROOT_URL = 'https://stagingapi.datamint.io'
+
+MAX_RECURSION_LIMIT = 1000
 
 
 def _is_valid_path_argparse(x):
@@ -47,7 +51,7 @@ def _handle_api_key() -> str:
     """
     Checks for API keys in the env variable `DATAMINT_API_KEY`.
     If it does not exist, it asks the user to input it.
-    Then, it asks the user if he wants to save the API key at a proper location in the machine 
+    Then, it asks the user if he wants to save the API key at a proper location in the machine
     TODO: move this function to a separate module
     """
     api_key = os.getenv('DATAMINT_API_KEY')
@@ -82,10 +86,40 @@ def _handle_api_key() -> str:
     return api_key
 
 
+def _mungfilename_type(arg):
+    if arg.lower() == 'all':
+        return 'all'
+    try:
+        ret = list(map(int, arg.split(',')))
+        # can only have positive values
+        if any(i <= 0 for i in ret):
+            raise ValueError
+        return ret
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "Invalid value for --mungfilename. Expected 'all' or comma-separated positive integers.")
+
+
+def _walk_to_depth(path: str, depth: int, exclude_pattern: str = None):
+    path = Path(path)
+    for child in path.iterdir():
+        if child.is_dir() and depth != 0:
+            if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
+                continue
+            yield from _walk_to_depth(child, depth-1, exclude_pattern)
+        else:
+            yield child
+
+
 def _parse_args() -> tuple:
     parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading dicom files')
-    parser.add_argument('-r', '--recursive', action='store_true', help='Recurse folders looking for dicoms')
-    # TODO: discuss how exactly recursive should work
+    parser.add_argument('-r', '--recursive', nargs='?', const=-1,  # -1 means infinite
+                        type=int,
+                        help='Recurse folders looking for dicoms. If a number is passed, recurse that number of levels.')
+    parser.add_argument('--mungfilename', type=_mungfilename_type,
+                        help='Change the filename in the upload parameters. \
+                            If set to "all", the filename becomes the folder names joined together with "_". \
+                            If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
@@ -96,6 +130,9 @@ def _parse_args() -> tuple:
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
                         required=True,
                         help='Path to the DICOM file(s) or a directory')
+    parser.add_argument('--exclude', type=str,
+                        help='Exclude folders that match the specified pattern. \
+                            Example: "*_not_to_upload" will exclude folders ending with "_not_to_upload')
 
     args = parser.parse_args()
 
@@ -104,16 +141,16 @@ def _parse_args() -> tuple:
 
     if os.path.isfile(args.path):
         file_path = [args.path]
-    elif args.recursive == True:
+        if args.recursive is not None:
+            _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
+    elif args.recursive is not None:
         file_path = []
-        for root, _, files in os.walk(args.path):
-            _LOGGER.debug(f"walking in {root}...")
-            for f in files:
-                if f.endswith('.dcm') or f.endswith('.dicom'):
-                    file_path.append(os.path.join(root, f))
+        for file in _walk_to_depth(args.path, args.recursive, args.exclude):
+            if is_dicom(file):
+                file_path.append(str(file))
     else:
         file_path = [os.path.join(args.path, f)
-                     for f in os.listdir(args.path) if f.endswith('.dcm') or f.endswith('.dicom')]
+                     for f in os.listdir(args.path) if is_dicom(os.path.join(args.path, f))]
 
     if len(file_path) == 0:
         raise ValueError(f"No dicom files found in {args.path}")
@@ -122,7 +159,7 @@ def _parse_args() -> tuple:
 
     api_key = _handle_api_key()
     if api_key is None:
-        _USER_LOGGER.warning("API key not provided. Aborting.")
+        _USER_LOGGER.error("API key not provided. Aborting.")
         sys.exit(1)
     os.environ['DATAMINT_API_KEY'] = api_key
 
@@ -176,18 +213,23 @@ def main():
                                                      file_path=files_path,
                                                      labels=args.label,
                                                      anonymize=args.retain_pii == False,
-                                                     anonymize_retain_codes=args.retain_attribute
+                                                     anonymize_retain_codes=args.retain_attribute,
+                                                     mung_filename=args.mungfilename
                                                      )
     _USER_LOGGER.info('Upload finished!')
+    _LOGGER.debug(f"Number of results: {len(results)}")
+
+    ### Check for failed uploads ###
+    _LOGGER.debug(f'batch_id: {batch_id}')
     batch_info = api_handler.get_batch_info(batch_id)
     batch_images = batch_info['images']
-    all_images_filenames = [img['filename'] for img in batch_images]
+    all_images_paths = [img['filepath'] for img in batch_images]
 
     failure_files = []
     for fsubmitted in files_path:
-        if os.path.basename(fsubmitted) not in all_images_filenames:
-            # Should we only check for the basename?
+        if fsubmitted not in all_images_paths:
             failure_files.append(fsubmitted)
+    #################################
 
     # Refine: Use colors here?
     _USER_LOGGER.info(f"\nUpload summary:")
@@ -197,7 +239,8 @@ def main():
     if len(failure_files) > 0:
         _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
         _USER_LOGGER.warning(f"\nFailures:")
-        for f, r in zip(failure_files, results):
+        for f, r in zip(files_path, results):
+            _LOGGER.debug(f"Failure: {f} - {r}")
             if isinstance(r, Exception):
                 _USER_LOGGER.warning(f"\t{os.path.basename(f)}: {r}")
 

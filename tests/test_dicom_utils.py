@@ -1,6 +1,6 @@
 import pytest
 import pydicom
-from datamintapi.dicom_utils import anonymize_dicom
+from datamintapi.utils.dicom_utils import anonymize_dicom
 
 CLEARED_MSG = "CLEARED_BY_DATAMINT"
 
