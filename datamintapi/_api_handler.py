@@ -5,7 +5,7 @@ import logging
 import asyncio
 import aiohttp
 import nest_asyncio  # For running asyncio in jupyter notebooks
-from datamintapi.dicom_utils import anonymize_dicom
+from datamintapi.utils.dicom_utils import anonymize_dicom
 import pydicom
 from io import BytesIO
 from pathlib import Path

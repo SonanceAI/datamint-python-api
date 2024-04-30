@@ -103,6 +103,7 @@ def _parse_args() -> tuple:
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
                             If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
+
     # TODO: discuss how exactly recursive should work
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
@@ -122,6 +123,8 @@ def _parse_args() -> tuple:
 
     if os.path.isfile(args.path):
         file_path = [args.path]
+        if args.recursive is not None:
+            _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
     elif args.recursive == True:
         file_path = []
         for root, _, files in os.walk(args.path):

@@ -7,9 +7,8 @@ handlers:
     level: WARNING
     show_time: False
   console_user:
-    class: rich.logging.RichHandler
+    class: datamintapi.utils.logging_utils.ConditionalRichHandler
     level: INFO
-    show_level: False
     show_path: False
     show_time: False
 
