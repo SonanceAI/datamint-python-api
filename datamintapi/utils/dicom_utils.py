@@ -4,6 +4,8 @@ from typing import Sequence
 import warnings
 from copy import deepcopy
 import logging
+from pathlib import Path
+from pydicom.misc import is_dicom as pydicom_is_dicom
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,3 +76,15 @@ def anonymize_dicom(ds: pydicom.Dataset,
                     except ValueError as e:
                         ds[tag].value = 0
     return ds
+
+
+def is_dicom(f: str | Path) -> bool:
+    if f.is_dir():
+        return False
+    if isinstance(f, Path):
+        f = str(f)
+
+    if f.endswith('.dcm') or f.endswith('.dicom'):
+        return True
+
+    return pydicom_is_dicom(f)

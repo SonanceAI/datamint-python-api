@@ -11,12 +11,15 @@ import importlib
 from netrc import netrc
 from pathlib import Path
 import sys
+from datamintapi.utils.dicom_utils import is_dicom
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
 ROOT_URL = 'https://stagingapi.datamint.io'
+
+MAX_RECURSION_LIMIT = 1000
 
 
 def _is_valid_path_argparse(x):
@@ -96,9 +99,20 @@ def _mungfilename_type(arg):
             "Invalid value for --mungfilename. Expected 'all' or comma-separated positive integers.")
 
 
+def _walk_to_depth(path: str, depth: int):
+    path = Path(path)
+    for child in path.iterdir():
+        if child.is_dir() and depth != 0:
+            yield from _walk_to_depth(child, depth-1)
+        else:
+            yield child
+
+
 def _parse_args() -> tuple:
     parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading dicom files')
-    parser.add_argument('-r', '--recursive', action='store_true', help='Recurse folders looking for dicoms')
+    parser.add_argument('-r', '--recursive', nargs='?', const=-1,  # -1 means infinite
+                        type=int,
+                        help='Recurse folders looking for dicoms. If a number is passed, recurse that number of levels.')
     parser.add_argument('--mungfilename', type=_mungfilename_type,
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
@@ -125,16 +139,14 @@ def _parse_args() -> tuple:
         file_path = [args.path]
         if args.recursive is not None:
             _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
-    elif args.recursive == True:
+    elif args.recursive is not None:
         file_path = []
-        for root, _, files in os.walk(args.path):
-            _LOGGER.debug(f"walking in {root}...")
-            for f in files:
-                if f.endswith('.dcm') or f.endswith('.dicom'):
-                    file_path.append(os.path.join(root, f))
+        for file in _walk_to_depth(args.path, args.recursive):
+            if is_dicom(file):
+                file_path.append(str(file))
     else:
         file_path = [os.path.join(args.path, f)
-                     for f in os.listdir(args.path) if f.endswith('.dcm') or f.endswith('.dicom')]
+                     for f in os.listdir(args.path) if is_dicom(os.path.join(args.path, f))]
 
     if len(file_path) == 0:
         raise ValueError(f"No dicom files found in {args.path}")
@@ -143,7 +155,7 @@ def _parse_args() -> tuple:
 
     api_key = _handle_api_key()
     if api_key is None:
-        _USER_LOGGER.warning("API key not provided. Aborting.")
+        _USER_LOGGER.error("API key not provided. Aborting.")
         sys.exit(1)
     os.environ['DATAMINT_API_KEY'] = api_key
 
