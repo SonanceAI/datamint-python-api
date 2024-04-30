@@ -12,6 +12,7 @@ from netrc import netrc
 from pathlib import Path
 import sys
 from datamintapi.utils.dicom_utils import is_dicom
+import fnmatch
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -99,11 +100,13 @@ def _mungfilename_type(arg):
             "Invalid value for --mungfilename. Expected 'all' or comma-separated positive integers.")
 
 
-def _walk_to_depth(path: str, depth: int):
+def _walk_to_depth(path: str, depth: int, exclude_pattern: str = None):
     path = Path(path)
     for child in path.iterdir():
         if child.is_dir() and depth != 0:
-            yield from _walk_to_depth(child, depth-1)
+            if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
+                continue
+            yield from _walk_to_depth(child, depth-1, exclude_pattern)
         else:
             yield child
 
@@ -117,8 +120,6 @@ def _parse_args() -> tuple:
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
                             If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
-
-    # TODO: discuss how exactly recursive should work
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
@@ -129,6 +130,9 @@ def _parse_args() -> tuple:
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
                         required=True,
                         help='Path to the DICOM file(s) or a directory')
+    parser.add_argument('--exclude', type=str,
+                        help='Exclude folders that match the specified pattern. \
+                            Example: "*_not_to_upload" will exclude folders ending with "_not_to_upload')
 
     args = parser.parse_args()
 
@@ -141,7 +145,7 @@ def _parse_args() -> tuple:
             _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
     elif args.recursive is not None:
         file_path = []
-        for file in _walk_to_depth(args.path, args.recursive):
+        for file in _walk_to_depth(args.path, args.recursive, args.exclude):
             if is_dicom(file):
                 file_path.append(str(file))
     else:
