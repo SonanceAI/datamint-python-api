@@ -61,7 +61,6 @@ def anonymize_dicom(ds: pydicom.Dataset,
         warnings.filterwarnings("ignore", category=UserWarning, module='pydicom')
         for tag in tags_to_clear:
             if tag in ds:
-                _LOGGER.debug(f"Clearing tag {tag}")
                 if tag == (0x0008, 0x0094):  # Phone number
                     ds[tag].value = "000-000-0000"
                 # If tag is a floating point number, set it to 0.0

@@ -8,8 +8,10 @@ import nest_asyncio  # For running asyncio in jupyter notebooks
 from datamintapi.dicom_utils import anonymize_dicom
 import pydicom
 from io import BytesIO
+from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
+_USER_LOGGER = logging.getLogger('user_logger')
 
 
 class DatamintException(Exception):
@@ -101,6 +103,7 @@ class APIHandler:
                                   anonymize: bool = False,
                                   anonymize_retain_codes: Sequence[tuple] = [],
                                   labels: list[str] = None,
+                                  mung_filename: Sequence[int] | Literal['all'] = None,
                                   session=None) -> str:
         if anonymize:
             ds = pydicom.dcmread(file_path)
@@ -108,7 +111,20 @@ class APIHandler:
             # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
             f = BytesIO()  # Maybe use pydicom.filebase.DicomBytesIO instead?
             pydicom.dcmwrite(f, ds)
-            f.name = file_path
+            if mung_filename is not None:
+                file_parts = Path(file_path).parts
+                if file_parts[0] == os.path.sep:
+                    file_parts = file_parts[1:]
+                if mung_filename == 'all':
+                    new_file_path = '_'.join(file_parts)
+                else:
+                    folder_parts = file_parts[:-1]
+                    new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
+                    new_file_path += '_' + file_parts[-1]
+                f.name = new_file_path
+                _LOGGER.debug(f"New file path: {new_file_path}")
+            else:
+                f.name = file_path
             f.mode = 'rb'
             f.seek(0)
         elif isinstance(file_path, str):
@@ -120,7 +136,7 @@ class APIHandler:
             request_params = {
                 'method': 'POST',
                 'url': f'{self.root_url}/dicoms',
-                'data': {'batch_id': batch_id, 'dicom': f}
+                'data': {'batch_id': batch_id, 'dicom': f, 'filepath': file_path}
             }
 
             if labels is not None:
@@ -130,13 +146,7 @@ class APIHandler:
                 raise DatamintException(resp_data['error'])
             _LOGGER.info(f"Response on uploading {file_path}: {resp_data}")
 
-            # if resp['status'] == 'error':
-            #     if resp['message'] == 'DICOM already stored':
-            #         raise DicomAlreadyStored(f'{file_path} already stored')
-            #     else:
-            #         raise Exception(resp['message'])
-
-            print(f'{file_path} uploaded')
+            _USER_LOGGER.info(f'{file_path} uploaded')
             return resp_data['id']
         except Exception as e:
             _LOGGER.error(f"Error uploading {file_path}: {e}")
@@ -154,21 +164,23 @@ class APIHandler:
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
                                       on_error: Literal['raise', 'skip'] = 'skip',
-                                      labels=None
+                                      labels=None,
+                                      mung_filename: Sequence[int] | Literal['all'] = None,
                                       ):
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
             semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
-            _LOGGER.debug(f"Current semaphore value: {semaphore._value}")
 
             async def __upload_single_dicom(file_path):
+                _LOGGER.debug(f"Current semaphore value: {semaphore._value}")
                 async with semaphore:
                     return await self._upload_dicom_async(
                         batch_id, file_path, anonymize, anonymize_retain_codes,
                         labels=labels,
                         session=session,
+                        mung_filename=mung_filename
                     )
             tasks = [__upload_single_dicom(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
@@ -179,7 +191,8 @@ class APIHandler:
                          file_path: str | IO | Sequence[str | IO],
                          labels: Sequence[str] = None,
                          anonymize: bool = False,
-                         anonymize_retain_codes: Sequence[tuple] = []
+                         anonymize_retain_codes: Sequence[tuple] = [],
+                         mung_filename: Sequence[int] | Literal['all'] = None,
                          ) -> tuple[str, list[str]]:
         """
         Create a new batch and upload the dicoms in the file_path to the batch.
@@ -212,7 +225,8 @@ class APIHandler:
         results = loop.run_until_complete(self._upload_multiple_dicoms(file_path, batch_id,
                                                                        anonymize=anonymize,
                                                                        anonymize_retain_codes=anonymize_retain_codes,
-                                                                       labels=labels)
+                                                                       labels=labels,
+                                                                       mung_filename=mung_filename)
                                           )
         return batch_id, results
 

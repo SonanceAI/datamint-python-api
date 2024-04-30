@@ -47,7 +47,7 @@ def _handle_api_key() -> str:
     """
     Checks for API keys in the env variable `DATAMINT_API_KEY`.
     If it does not exist, it asks the user to input it.
-    Then, it asks the user if he wants to save the API key at a proper location in the machine 
+    Then, it asks the user if he wants to save the API key at a proper location in the machine
     TODO: move this function to a separate module
     """
     api_key = os.getenv('DATAMINT_API_KEY')
@@ -82,9 +82,27 @@ def _handle_api_key() -> str:
     return api_key
 
 
+def _mungfilename_type(arg):
+    if arg.lower() == 'all':
+        return 'all'
+    try:
+        ret = list(map(int, arg.split(',')))
+        # can only have positive values
+        if any(i <= 0 for i in ret):
+            raise ValueError
+        return ret
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "Invalid value for --mungfilename. Expected 'all' or comma-separated positive integers.")
+
+
 def _parse_args() -> tuple:
     parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading dicom files')
     parser.add_argument('-r', '--recursive', action='store_true', help='Recurse folders looking for dicoms')
+    parser.add_argument('--mungfilename', type=_mungfilename_type,
+                        help='Change the filename in the upload parameters. \
+                            If set to "all", the filename becomes the folder names joined together with "_". \
+                            If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
     # TODO: discuss how exactly recursive should work
     parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
@@ -176,18 +194,23 @@ def main():
                                                      file_path=files_path,
                                                      labels=args.label,
                                                      anonymize=args.retain_pii == False,
-                                                     anonymize_retain_codes=args.retain_attribute
+                                                     anonymize_retain_codes=args.retain_attribute,
+                                                     mung_filename=args.mungfilename
                                                      )
     _USER_LOGGER.info('Upload finished!')
+    _LOGGER.debug(f"Number of results: {len(results)}")
+
+    ### Check for failed uploads ###
+    _LOGGER.debug(f'batch_id: {batch_id}')
     batch_info = api_handler.get_batch_info(batch_id)
     batch_images = batch_info['images']
-    all_images_filenames = [img['filename'] for img in batch_images]
+    all_images_paths = [img['filepath'] for img in batch_images]
 
     failure_files = []
     for fsubmitted in files_path:
-        if os.path.basename(fsubmitted) not in all_images_filenames:
-            # Should we only check for the basename?
+        if fsubmitted not in all_images_paths:
             failure_files.append(fsubmitted)
+    #################################
 
     # Refine: Use colors here?
     _USER_LOGGER.info(f"\nUpload summary:")
@@ -197,7 +220,8 @@ def main():
     if len(failure_files) > 0:
         _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
         _USER_LOGGER.warning(f"\nFailures:")
-        for f, r in zip(failure_files, results):
+        for f, r in zip(files_path, results):
+            _LOGGER.debug(f"Failure: {f} - {r}")
             if isinstance(r, Exception):
                 _USER_LOGGER.warning(f"\t{os.path.basename(f)}: {r}")
 
