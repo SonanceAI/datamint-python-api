@@ -9,7 +9,7 @@ include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
-python = ">=3.9"
+python = "^3.9"
 numpy = "*"
 torch = ">=1.2.0"
 torchvision = "*"
@@ -26,6 +26,10 @@ rich = ">=10.0.0"
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
 responses = "^0.20.0"
+sphinx = ">=5.0.0"
+sphinx_rtd_theme = "*"
+sphinx-tabs = ">=3.0.0"
+setuptools = ">=57.0.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

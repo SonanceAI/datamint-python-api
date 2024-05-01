@@ -83,6 +83,20 @@ class APIHandler:
                      size: int,
                      modality: Optional[str] = None,
                      session=None) -> str:
+        """
+        Create a new batch.
+
+        Args:
+            description (str): The description of the batch
+            size (int): The number of dicoms in the batch
+            modality (str, optional): The modality of the batch. Defaults to None.
+
+        Returns:
+            str: The batch_id of the created batch. 
+
+        See Also:
+            :meth:`~get_batch_info`
+        """
         post_params = {'description': description,
                        'size': size
                        }
@@ -109,7 +123,7 @@ class APIHandler:
             ds = pydicom.dcmread(file_path)
             ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
             # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-            f = BytesIO()  # Maybe use pydicom.filebase.DicomBytesIO instead?
+            f = BytesIO()  # ? Maybe use pydicom.filebase.DicomBytesIO instead?
             pydicom.dcmwrite(f, ds)
             if mung_filename is not None:
                 file_parts = Path(file_path).parts
@@ -161,6 +175,21 @@ class APIHandler:
                      labels=None,
                      mung_filename: Sequence[int] | Literal['all'] = None,
                      session=None) -> str:
+        """
+        Upload a single dicom to a specified batch.
+
+        Args:
+            batch_id (str): The batch unique id.
+            file_path (str | IO): The path to the dicom file or a file-like object.
+            anonymize (bool): Whether to anonymize the dicom or not.
+            anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicom.
+            labels (list[str]): The labels to assign to the dicom.
+            mung_filename (Sequence[int] | 'all'): The parts of the filepath to keep when renaming the dicom file.
+                ''all'' keeps all parts.
+
+        Returns:
+            str: The dicom id of the uploaded dicom.
+        """
         loop = asyncio.get_event_loop()
         task = self._upload_dicom_async(batch_id,
                                         file_path,
@@ -199,7 +228,7 @@ class APIHandler:
             tasks = [__upload_single_dicom(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
-    # TODO: maybe it is better to separate "complex" workflows to a separate class.
+    # ? maybe it is better to separate "complex" workflows to a separate class?
     def create_new_batch(self,
                          description: str,
                          file_path: str | IO | Sequence[str | IO],
@@ -210,14 +239,45 @@ class APIHandler:
                          ) -> tuple[str, list[str]]:
         """
         Create a new batch and upload the dicoms in the file_path to the batch.
+        Handy method to create a new batch and upload the dicoms in a single call.
 
         Args:
             description (str): The description of the batch
             file_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
-            label (Sequence[str]): The label of the batch. NOT USED YET. Defaults to None.
+            labels (Sequence[str]): The labels to assign to the dicoms.
+            anonymize (bool): Whether to anonymize the dicoms or not.
+            anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
+            mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
+                ''all'' keeps all parts.
 
         Returns:
-            tuple[str, list[str]]: The batch_id and the list of created dicom_ids.
+            tuple[str, list[str]]: The batch_id and the list of new created dicom_ids.
+
+        Examples:
+            .. tabs::
+                .. tab:: Example 1
+
+                    >>> api_handler.create_new_batch('New batch', 'path/to/dicom.dcm')
+
+                .. tab:: Example 2
+
+                    >>> with open('path/to/dicom.dcm', 'rb') as f:
+                    >>>     api_handler.create_new_batch('New batch', f)
+
+                .. tab:: Example 3    
+
+                    >>> api_handler.create_new_batch('New batch', ['path/to/dicom1.dcm', 'path/to/dicom2.dcm'])
+
+                .. tab:: Anonymize
+
+                    >>> api_handler.create_new_batch('New batch', 'path/to/dicom.dcm', anonymize=True)
+                    >>> api_handler.create_new_batch('New batch', 'path/to/dicom.dcm', anonymize=True, anonymize_retain_codes=[(0x0010, 0x0010)])
+
+                .. tab:: Mung filename
+
+                    >>> api_handler.create_new_batch('New batch', 'path/to/dicom.dcm', mung_filename=[1, 2, 3])
+                    >>> api_handler.create_new_batch('New batch', 'path/to/dicom.dcm', mung_filename='all')
+
         """
         if labels is not None:
             labels = [l.strip() for l in labels]
@@ -245,6 +305,16 @@ class APIHandler:
         return batch_id, results
 
     def get_batch_info(self, batch_id: str) -> dict:
+        """
+        Get the information of a batch.
+
+        Args:
+            batch_id (str): The batch unique id.
+
+        Returns:
+            dict: Informations the batch and its images.
+
+        """
         request_params = {
             'method': 'GET',
             'url': f'{self.root_url}/upload-batches/{batch_id}'
