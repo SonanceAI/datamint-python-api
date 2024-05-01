@@ -15,17 +15,59 @@ There three options to specify the API key:
 3. run `datamint config`? (TODO?) and follow the instructions?
 
 
-## Usage
+## API Usage
+First, setup your api handler:
+```python
+from datamintapi import APIHandler
+
+api_handler = APIHandler(api_key='my_api_key')
+```
+Alternatively, you can specify the API key as an environment variable and load it without specifying it in the constructor:
+1. In bash, run `export DATAMINT_API_KEY="my_api_key"`
+2. In your python code, just run: `api_handler = APIHandler()`
+
+### Upload dicoms
+
+#### Examples:
+
+##### Upload a single dicom file
+```python
+batch_id = "abcd1234"
+file_path = "/path/to/dicom.dcm"
+dicom_id = api_handler.upload_dicom(batch_id, file_path)
+print(f"Uploaded DICOM file with ID: {dicom_id}")
+```
+
+##### Upload dicom, anonymize it and add label 'pneumonia' to it
+```python
+batch_id = "abcd1234"
+file_path = "/path/to/dicom.dcm"
+dicom_id = api_handler.upload_dicom(batch_id, 
+                                    file_path,
+                                    anonymize=True,
+                                    labels=['pneumonia'])
+```
+
+#### Upload multiple dicoms and create a new batch
+```python
+api_handler.create_new_batch(description='CT scans',
+                             file_path='/path/to/dicom_files/',
+                             mung_filename='all', # This will convert files name to 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
+                            ):
+```
+
+
+
 ### Dataset
 Import the custom dataset class and create an instance: 
 ```python 
-import DatamintAPI
+from datamintapi import Dataset
 
-dataset = DatamintAPI.Dataset(root='../data',
-                              dataset_name='TestCTdataset',
-                              version='latest',
-                              api_key='my_api_key'
-                             )
+dataset = Dataset(root='../data',
+                  dataset_name='TestCTdataset',
+                  version='latest',
+                  api_key='my_api_key'
+                )
 ```
 and then use it in your PyTorch code as usual.
 
@@ -40,15 +82,15 @@ Here are some examples on how to use the custom dataset class:
 
 ##### Pytorch
 
-Inheriting `DatamintAPI.Dataset`:
+Inheriting datamint [`Dataset`](datamintapi/dataset.py):
 ```python
-import DatamintAPI
+import datamintapi
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
 
 
-class XrayFractureDataset(DatamintAPI.Dataset):
+class XrayFractureDataset(datamintapi.Dataset):
     def __getitem__(self, idx):
         image, dicom_metainfo, metainfo = super().__getitem__(idx)
 
@@ -66,7 +108,7 @@ class XrayFractureDataset(DatamintAPI.Dataset):
 dataset = XrayFractureDataset(root='data',
                               dataset_name='YOUR_DATASET_NAME',
                               version='latest',
-                              api_key='abc123',
+                              api_key='my_api_key',
                               transform=ToTensor()
                               )
 
@@ -84,7 +126,7 @@ for images, patients_sex, labels in dataloader:
 
 Alternative:
 ```python
-import DatamintAPI
+import datamintapi
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
@@ -94,11 +136,11 @@ from torch.utils.data import DataLoader
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# Create an instance of the DatamintAPI.Dataset
-dataset = DatamintAPI.Dataset(root='data',
+# Create an instance of the datamintapi.Dataset
+dataset = datamintapi.Dataset(root='data',
                               dataset_name='TestCTdataset',
                               version='latest',
-                              api_key='abc123',
+                              api_key='my_api_key',
                               transform=ToTensor()
                               )
 
@@ -126,8 +168,8 @@ for images, dicom_metainfo, metainfo in dataloader:
     # (... do something with the batch)
 ```
 
-### Command-line
-#### datamint-upload
+## Command-line Usage
+### datamint-upload
 Upload a single dicom file:
 ```bash
 datamint-upload datamint-upload --path data/dicom_file.dcm

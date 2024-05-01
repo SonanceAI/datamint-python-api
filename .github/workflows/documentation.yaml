@@ -1,0 +1,29 @@
+name: Deploy Sphinx documentation to Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+
+# Cancel any in-progress job or run
+concurrency:
+  group: gh-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pages:
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+    - id: deployment
+      uses: sphinx-notes/pages@v3
+      with:
+        documentation_path: docs/source
+        pyproject_extras: ""
