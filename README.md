@@ -61,13 +61,13 @@ api_handler.create_new_batch(description='CT scans',
 ### Dataset
 Import the custom dataset class and create an instance: 
 ```python 
-import DatamintAPI
+from datamintapi import Dataset
 
-dataset = DatamintAPI.Dataset(root='../data',
-                              dataset_name='TestCTdataset',
-                              version='latest',
-                              api_key='my_api_key'
-                             )
+dataset = Dataset(root='../data',
+                  dataset_name='TestCTdataset',
+                  version='latest',
+                  api_key='my_api_key'
+                )
 ```
 and then use it in your PyTorch code as usual.
 
@@ -82,15 +82,15 @@ Here are some examples on how to use the custom dataset class:
 
 ##### Pytorch
 
-Inheriting `DatamintAPI.Dataset`:
+Inheriting datamint [`Dataset`](datamintapi/dataset.py):
 ```python
-import DatamintAPI
+import datamintapi
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
 
 
-class XrayFractureDataset(DatamintAPI.Dataset):
+class XrayFractureDataset(datamintapi.Dataset):
     def __getitem__(self, idx):
         image, dicom_metainfo, metainfo = super().__getitem__(idx)
 
@@ -126,7 +126,7 @@ for images, patients_sex, labels in dataloader:
 
 Alternative:
 ```python
-import DatamintAPI
+import datamintapi
 import torch
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
@@ -136,8 +136,8 @@ from torch.utils.data import DataLoader
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-# Create an instance of the DatamintAPI.Dataset
-dataset = DatamintAPI.Dataset(root='data',
+# Create an instance of the datamintapi.Dataset
+dataset = datamintapi.Dataset(root='data',
                               dataset_name='TestCTdataset',
                               version='latest',
                               api_key='my_api_key',
