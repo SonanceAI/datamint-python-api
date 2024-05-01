@@ -154,9 +154,23 @@ class APIHandler:
         finally:
             f.close()
 
-    def upload_dicom(self, batch_id: str, file_path: str | IO, session=None) -> str:
+    def upload_dicom(self, batch_id: str,
+                     file_path: str | IO,
+                     anonymize: bool = False,
+                     anonymize_retain_codes: Sequence[tuple] = [],
+                     labels=None,
+                     mung_filename: Sequence[int] | Literal['all'] = None,
+                     session=None) -> str:
         loop = asyncio.get_event_loop()
-        return loop.run_until_complete(self._upload_dicom_async(batch_id, file_path, session))
+        task = self._upload_dicom_async(batch_id,
+                                        file_path,
+                                        anonymize=anonymize,
+                                        anonymize_retain_codes=anonymize_retain_codes,
+                                        labels=labels,
+                                        mung_filename=mung_filename,
+                                        session=session)
+
+        return loop.run_until_complete()
 
     async def _upload_multiple_dicoms(self,
                                       files_path: list[str | IO],
