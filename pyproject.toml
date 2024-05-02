@@ -37,11 +37,6 @@ responses = "^0.20.0"
 [tool.poetry.extras]
 docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "setuptools"]
 
-[[tool.poetry.source]]
-name = "torch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-priority = "explicit"
-
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
