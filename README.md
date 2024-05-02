@@ -168,7 +168,7 @@ for images, dicom_metainfo, metainfo in dataloader:
 ### datamint-upload
 Upload a single dicom file:
 ```bash
-datamint-upload datamint-upload --path data/dicom_file.dcm
+datamint-upload --path data/dicom_file.dcm
 ```
 
 Upload all dicom files inside a directory and all its subdirectories, recursively:

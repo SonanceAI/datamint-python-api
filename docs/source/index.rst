@@ -1,14 +1,31 @@
-.. DatamintAPI documentation master file, created by
-   sphinx-quickstart on Wed May  1 15:24:20 2024.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
+.. DatamintAPI documentation master file
 
-Welcome to DatamintAPI's documentation!
+
+.. image:: ../images/logo.png
+   :height: 250
+   :align: center
+   :alt: Datamint
+
+Documentation
 =======================================
+
+From inception to completion, Datamint is your reliable partner.
+It assists from the very first day when you make your data available to your team, right up to the moment you're set to launch your model.
+
+Datamint
+--------
+
+- `Homepage <https://www.datamint.io>`_
+- `Datamint Platform <https://staging.datamint.io/>`_
+- `Github <https://github.com/SonanceAI/datamint-python-api>`_
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+
+   getting_started
+   command_line_tools
+   client_api
 
 
 .. toctree::
@@ -16,6 +33,7 @@ Welcome to DatamintAPI's documentation!
    :caption: Python API
 
    datamint.apihandler
+   datamint.dataset
 
 
 Indices and tables

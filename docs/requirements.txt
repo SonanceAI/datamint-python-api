@@ -2,3 +2,4 @@ sphinx>=5.0.0
 sphinx_rtd_theme
 sphinx-tabs>=3.0.0
 setuptools>=57.0.0
+myst-parser

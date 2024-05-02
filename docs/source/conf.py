@@ -24,6 +24,7 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinx.ext.autosummary",
     'sphinx_tabs.tabs',
+    'myst_parser'
 ]
 
 napoleon_google_docstring = True

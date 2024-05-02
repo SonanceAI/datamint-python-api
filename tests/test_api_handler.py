@@ -60,7 +60,7 @@ class TestAPIHandler:
     def test_upload_dicoms(self, sample_dicom1):
         def _callback1(url, **kwargs):
             assert kwargs['data']['batch_id'] == batch_id
-            assert 'dicom' in kwargs['data']
+            assert str(sample_dicom1.PatientName) in str(kwargs['data']['dicom'].read())
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _callback2(url, **kwargs):
