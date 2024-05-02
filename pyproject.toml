@@ -32,6 +32,7 @@ setuptools = { version = ">=57.0", optional = true }
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
 responses = "^0.20.0"
+aioresponses = "^0.7.0"
 
 # Extra dependencies for docs
 [tool.poetry.extras]

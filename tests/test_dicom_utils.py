@@ -1,15 +1,11 @@
 import pytest
 import pydicom
-from datamintapi.utils.dicom_utils import anonymize_dicom
-
-CLEARED_MSG = "CLEARED_BY_DATAMINT"
+from datamintapi.utils.dicom_utils import anonymize_dicom, CLEARED_STR
 
 
 class TestDicomUtils:
     @pytest.fixture
     def sample_dataset1(self):
-        with open('/tmp/testlog.txt', 'a') as f:
-            f.write("Creating sample dataset 1\n")
         ds = pydicom.Dataset()
         ds.PatientName = "John Doe"
         ds.PatientID = "12345"
@@ -25,8 +21,8 @@ class TestDicomUtils:
         anonymized_ds = anonymize_dicom(ds, copy=True)
 
         # Check if the specified DICOM tags are cleared
-        assert anonymized_ds.PatientName == CLEARED_MSG
-        assert anonymized_ds.PatientID == CLEARED_MSG
+        assert anonymized_ds.PatientName == CLEARED_STR
+        assert anonymized_ds.PatientID == CLEARED_STR
         assert anonymized_ds.Modality == ds.Modality
         # Check if the SOPInstanceUID and MediaStorageSOPInstanceUID are changed
         assert anonymized_ds.SOPInstanceUID != ds.SOPInstanceUID
@@ -42,6 +38,6 @@ class TestDicomUtils:
         anonymized_ds = anonymize_dicom(ds, copy=False, retain_codes=retain_codes)
 
         # Check if the specified DICOM tags are retained
-        assert anonymized_ds.PatientName == CLEARED_MSG
+        assert anonymized_ds.PatientName == CLEARED_STR
         assert anonymized_ds.PatientID == '12345'
         assert anonymized_ds.Modality == 'CT'

@@ -1,7 +1,7 @@
 import importlib.resources
 import logging.config
 import argparse
-from datamintapi._api_handler import APIHandler
+from datamintapi.api_handler import APIHandler
 import os
 import argparse
 from humanize import naturalsize
@@ -209,13 +209,14 @@ def main():
     #######################################
 
     api_handler = APIHandler(ROOT_URL)
-    batch_id, results = api_handler.create_new_batch(args.name,
-                                                     file_path=files_path,
-                                                     labels=args.label,
-                                                     anonymize=args.retain_pii == False,
-                                                     anonymize_retain_codes=args.retain_attribute,
-                                                     mung_filename=args.mungfilename
-                                                     )
+    batch_id, results = api_handler.create_batch_with_dicoms(args.name,
+                                                             files_path=files_path,
+                                                             labels=args.label,
+                                                             on_error='skip',
+                                                             anonymize=args.retain_pii == False,
+                                                             anonymize_retain_codes=args.retain_attribute,
+                                                             mung_filename=args.mungfilename
+                                                             )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 

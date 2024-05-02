@@ -6,10 +6,11 @@ from copy import deepcopy
 import logging
 from pathlib import Path
 from pydicom.misc import is_dicom as pydicom_is_dicom
+from io import BytesIO
 
 _LOGGER = logging.getLogger(__name__)
 
-_CLEARED_STR = "CLEARED_BY_DATAMINT"
+CLEARED_STR = "CLEARED_BY_DATAMINT"
 
 
 def anonymize_dicom(ds: pydicom.Dataset,
@@ -72,7 +73,7 @@ def anonymize_dicom(ds: pydicom.Dataset,
                     del ds[tag]
                 else:
                     try:
-                        ds[tag].value = _CLEARED_STR
+                        ds[tag].value = CLEARED_STR
                     except ValueError as e:
                         ds[tag].value = 0
     return ds
@@ -88,3 +89,15 @@ def is_dicom(f: str | Path) -> bool:
         return True
 
     return pydicom_is_dicom(f)
+
+
+def to_bytesio(ds: pydicom.Dataset, name: str) -> BytesIO:
+    """
+    Convert a pydicom Dataset object to BytesIO object.
+    """
+    dicom_bytes = BytesIO()
+    pydicom.dcmwrite(dicom_bytes, ds)
+    dicom_bytes.seek(0)
+    dicom_bytes.name = name
+    dicom_bytes.mode = 'rb'
+    return dicom_bytes
