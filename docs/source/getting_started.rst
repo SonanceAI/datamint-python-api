@@ -3,6 +3,7 @@ Installation
 
 Datamint requires Python 3.8+.
 You can install Datamint and its dependencies using pip
+
 .. code-block:: bash
 
     pip install git+https://github.com/SonanceAI/datamint-python-api
@@ -14,4 +15,5 @@ We strongly recommend that you install Datamint in a dedicated virtualenv, to av
 
 Next Steps
 ------------
-Check our command line tools: :ref:`command_line_tools`
+- Check out our command line tools: :ref:`command_line_tools`
+- Check out our Python API documentation: :ref:`client_python_api`

@@ -200,6 +200,7 @@ class APIHandler:
                       on_error: Literal['raise', 'skip'] = 'raise',
                       labels=None,
                       mung_filename: Sequence[int] | Literal['all'] = None,
+
                       ) -> list[str]:
         """
         Upload dicoms to a batch.
@@ -336,3 +337,30 @@ class APIHandler:
             'url': f'{self.root_url}/upload-batches/{batch_id}'
         }
         return self._run_request(request_params).json()
+
+    def upload_segmentation(self,
+                            dicom_id: str,
+                            file_path: str,
+                            segmentation_name: str,
+                            task_id: Optional[str] = None,
+                            ) -> str:
+        """
+        Upload a segmentation to a dicom.
+
+        Args:
+            dicom_id (str): The dicom unique id.
+            file_path (str): The path to the segmentation file.
+            segmentation_name (str): The segmentation name.
+            task_id (Optional[str]): The task unique id.
+
+        Returns:
+            str: The segmentation unique id.
+
+        Raises:
+            DatamintException: If the dicom does not exists or the segmentation is invalid.
+
+        Example:
+            >>> batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
+            >>> api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
+        """
+        pass

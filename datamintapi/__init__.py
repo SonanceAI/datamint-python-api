@@ -5,5 +5,6 @@ TODO...
 """
 
 from .dataset import DatamintDataset as Dataset
+from .api_handler import APIHandler
 
 __name__ = "datamintapi"
