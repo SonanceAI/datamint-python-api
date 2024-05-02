@@ -7,24 +7,21 @@ Install via pip: `pip install git+https://github.com/SonanceAI/datamint-python-a
 > [!NOTE]
 > Not required if you don't plan to communicate with the server.
 
-There three options to specify the API key:
+There are three options to specify the API key:
 1. Specify API key as an enviroment variable:
   - **command line:** `export DATAMINT_API_KEY="my_api_key"; python my_script.py` 
   - **python:** `os.environ["DATAMINT_API_KEY"] = "my_api_key"`
-2. Specify API key in the API Handler constructor: TODO
-3. run `datamint config`? (TODO?) and follow the instructions?
-
-
-## API Usage
-First, setup your api handler:
+2. Specify API key in the API Handler constructor:
 ```python
 from datamintapi import APIHandler
 
 api_handler = APIHandler(api_key='my_api_key')
 ```
-Alternatively, you can specify the API key as an environment variable and load it without specifying it in the constructor:
-1. In bash, run `export DATAMINT_API_KEY="my_api_key"`
-2. In your python code, just run: `api_handler = APIHandler()`
+3. run `datamint config`? (TODO?) and follow the instructions?
+
+## API Usage
+
+Import the APIHandler class and create an instance: `api_handler = APIHandler()`
 
 ### Upload dicoms
 
@@ -35,7 +32,6 @@ Alternatively, you can specify the API key as an environment variable and load i
 batch_id = "abcd1234"
 file_path = "/path/to/dicom.dcm"
 dicom_id = api_handler.upload_dicom(batch_id, file_path)
-print(f"Uploaded DICOM file with ID: {dicom_id}")
 ```
 
 ##### Upload dicom, anonymize it and add label 'pneumonia' to it
@@ -53,7 +49,7 @@ dicom_id = api_handler.upload_dicom(batch_id,
 api_handler.create_new_batch(description='CT scans',
                              file_path='/path/to/dicom_files/',
                              mung_filename='all', # This will convert files name to 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
-                            ):
+                             ):
 ```
 
 
@@ -172,7 +168,7 @@ for images, dicom_metainfo, metainfo in dataloader:
 ### datamint-upload
 Upload a single dicom file:
 ```bash
-datamint-upload datamint-upload --path data/dicom_file.dcm
+datamint-upload --path data/dicom_file.dcm
 ```
 
 Upload all dicom files inside a directory and all its subdirectories, recursively:

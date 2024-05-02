@@ -27,10 +27,12 @@ sphinx_rtd_theme = { version = ">=2.0.0", optional = true }
 sphinx-tabs = { version = ">=3.0.0", optional = true }
 setuptools = { version = ">=57.0", optional = true }
 
+
 [tool.poetry.dev-dependencies]
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
 responses = "^0.20.0"
+aioresponses = "^0.7.0"
 
 # Extra dependencies for docs
 [tool.poetry.extras]

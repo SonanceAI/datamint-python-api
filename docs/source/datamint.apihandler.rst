@@ -1,5 +1,5 @@
 datamint.APIHandler
 ===================
 
-.. automodule:: datamintapi._api_handler
+.. automodule:: datamintapi.api_handler
    :members:
