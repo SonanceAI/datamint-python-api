@@ -1,18 +1,28 @@
+.. _client_python_api:
+
 Client API
 ==========
 
-Import the APIHandler class and create an instance: `api_handler = APIHandler()`
+Import the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` class and create an instance: ``api_handler = APIHandler()``
 
 Setup API key
 -------------
-.. note:: Not required if you don't plan to communicate with the server.
-
 There are three options to specify the API key:
 
 1. Specify API key as an environment variable:
-    - **command line:** ``export DATAMINT_API_KEY="my_api_key"; python my_script.py``
-    - **python:** ``os.environ["DATAMINT_API_KEY"] = "my_api_key"``
-2. Specify API key in the API Handler constructor:
+
+.. tabs:: 
+
+    .. code-tab:: bash
+
+        export DATAMINT_API_KEY="my_api_key"
+        python my_script.py
+
+    .. code-tab:: python
+
+        os.environ["DATAMINT_API_KEY"] = "my_api_key"
+    
+2. Specify API key in the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` constructor:
 
 .. code-block:: python
 
@@ -20,39 +30,73 @@ There are three options to specify the API key:
 
    api_handler = APIHandler(api_key='my_api_key')
 
-3. run ``datamint config``? (TODO?) and follow the instructions?
+3. run ``datamint config`` (TODO?) and follow the instructions.
 
-Upload dicoms
+Upload DICOMs
 -------------
 
-To upload dicoms, use the `upload_dicoms` method of the `APIHandler` class.
-
-To upload a single dicom file:
+In order to upload dicom file to the server, you need to create a batch first.
+To create a batch, use the :py:meth:`create_batch() <datamintapi.api_handler.APIHandler.create_batch>` method.
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicoms(batch_id='abcd1234', 
+    batch_id = api_handler.create_batch(description='CT scans',
+                                        size=3)
+
+.. note:: To create a batch and upload dicoms in a single call, see :ref:`create_batch_with_dicoms`.
+
+
+
+
+Upload a single DICOM file
+++++++++++++++++++++++++++++++++
+
+Use the `upload_dicoms` method of the `APIHandler` class:
+
+.. code-block:: python
+
+    dicom_id = api_handler.upload_dicoms(batch_id=batch_id, 
                                          file_path="/path/to/dicom.dcm")
     
 
-To upload a dicom, anonymize it and add label 'pneumonia' to it:
+Upload, anonymize and add a label
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicom(batch_id='abcd1234', 
+    dicom_id = api_handler.upload_dicom(batch_id=batch_id, 
                                         file_path=file_path,
                                         anonymize=True,
                                         labels=['pneumonia'])
 
-**To upload a directory of dicoms, while creating a new batch in a single call:**
+
+.. _create_batch_with_dicoms:
+
+Upload a directory of DICOMs, while creating a new batch in a single call
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+This is a convenience method that creates a new batch and uploads all dicom files in a directory.
 
 .. code-block:: python
 
-    api_handler.create_batch_with_dicoms(description='CT scans',
-                                         file_path='/path/to/dicom_files/',
-                                         mung_filename='all', # This will convert files name to 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
-                                         ):
+    batch_id, dicoms_ids = api_handler.create_batch_with_dicoms(description='CT scans',
+                                                                file_path='/path/to/dicom_files/',
+                                                                mung_filename='all',
+                                                                )
 
+, which outputs the batch_id and the list of dicom_ids that were uploaded.
+The `mung_filename='all'` parameters in this example converts the files names into 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
+
+
+Upload segmentation
+-------------------
+
+To upload a segmentation, use the :py:meth:`upload_segmentation() <datamintapi.api_handler.APIHandler.upload_segmentation>` method:
+
+.. code-block:: python
+    
+    batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
+    api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
 
 
 Dataset

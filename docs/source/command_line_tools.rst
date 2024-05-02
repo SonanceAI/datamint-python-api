@@ -20,9 +20,9 @@ You should see something like this:
 Uploading DICOMs to Datamint server
 -----------------------------------
 
-To upload a single DICOM or a directory of DICOM files to the Datamint server, use the
+To upload DICOM files to the Datamint server, use the
 ``datamint-upload`` command. For example, to upload all the DICOM files in the
-``/path/to/dicom_files`` directory, you can run:
+``/path/to/dicom_files`` directory, run:
 
 .. code-block:: bash
 
