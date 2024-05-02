@@ -13,7 +13,7 @@ copyright = '2024, Sonance Team'
 author = 'Sonance Team'
 
 # The full version, including alpha/beta/rc tags
-release = '0.1.0' #importlib.metadata.version("datamintapi")
+release = importlib.metadata.version("datamintapi")
 master_doc = "index"
 
 # -- General configuration ---------------------------------------------------
