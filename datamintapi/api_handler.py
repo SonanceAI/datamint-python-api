@@ -430,10 +430,26 @@ class APIHandler:
             str: The segmentation unique id.
 
         Raises:
-            DatamintException: If the dicom does not exists or the segmentation is invalid.
+            ResourceNotFoundError: If the dicom does not exists or the segmentation is invalid.
 
         Example:
             >>> batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
             >>> api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
         """
-        pass
+        try:
+            with open(file_path, 'rb') as f:
+                request_params = dict(
+                    method='POST',
+                    url=self.root_url+'/segmentations',
+                    data={'dicomId': dicom_id,
+                          'segmentationName': [segmentation_name],
+                          },
+                    files={'segmentationData': f}
+                )
+                if task_id is not None:
+                    request_params['data']['taskId'] = task_id
+                return self._run_request(request_params).json()['id']
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
+            raise e
