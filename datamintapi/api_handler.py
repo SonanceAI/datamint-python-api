@@ -1,6 +1,7 @@
 from typing import Optional, IO, Sequence, Literal
 import os
 from requests import Session
+from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
@@ -15,6 +16,21 @@ _USER_LOGGER = logging.getLogger('user_logger')
 
 class DatamintException(Exception):
     pass
+
+
+class ResourceNotFoundError(DatamintException):
+    def __init__(self,
+                 resource_type: str,
+                 params: dict):
+        """ Constructor.
+
+        Args:
+            resource_type (str): A resource type.
+            params (dict): Dict of params identifying the sought resource.
+        """
+        super().__init__(f"Resource '{resource_type}' not found for parameters: {params}")
+        self.resource_type = resource_type
+        self.params = params
 
 
 class DicomAlreadyStored(DatamintException):
@@ -200,7 +216,6 @@ class APIHandler:
                       on_error: Literal['raise', 'skip'] = 'raise',
                       labels=None,
                       mung_filename: Sequence[int] | Literal['all'] = None,
-
                       ) -> list[str]:
         """
         Upload dicoms to a batch.
@@ -217,6 +232,9 @@ class APIHandler:
 
         Returns:
             list[str]: The list of new created dicom_ids.
+
+        Raises:
+            ResourceNotFoundError: If the batch does not exists.
         """
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
@@ -248,7 +266,6 @@ class APIHandler:
         return file_path
 
     # ? maybe it is better to separate "complex" workflows to a separate class?
-
     def create_batch_with_dicoms(self,
                                  description: str,
                                  files_path: str | IO | Sequence[str | IO],
@@ -331,12 +348,20 @@ class APIHandler:
         Returns:
             dict: Informations the batch and its images.
 
+        Raises:
+            ResourceNotFoundError: If the batch does not exists.
+
         """
-        request_params = {
-            'method': 'GET',
-            'url': f'{self.root_url}/upload-batches/{batch_id}'
-        }
-        return self._run_request(request_params).json()
+        try:
+            request_params = {
+                'method': 'GET',
+                'url': f'{self.root_url}/upload-batches/{batch_id}'
+            }
+            return self._run_request(request_params).json()
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('batch', {'batch_id': batch_id})
+            raise e
 
     def upload_segmentation(self,
                             dicom_id: str,
