@@ -37,6 +37,13 @@ class DicomAlreadyStored(DatamintException):
     pass
 
 
+def _is_io_object(obj):
+    """
+    Check if an object is a file-like object.
+    """
+    return callable(getattr(obj, "read", None))
+
+
 class APIHandler:
     """
     Class to handle the API requests to the Datamint API
@@ -53,7 +60,6 @@ class APIHandler:
             msg = f"API key not provided! Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise Exception(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
-
 
     async def _run_request_async(self,
                                  request_args: dict,
@@ -136,36 +142,43 @@ class APIHandler:
                                          labels: list[str] = None,
                                          mung_filename: Sequence[int] | Literal['all'] = None,
                                          session=None) -> str:
+        if _is_io_object(file_path):
+            name = file_path.name
+        else:
+            name = file_path
+
+        name = os.path.expanduser(os.path.normpath(name))
+        name = os.path.join(*[x if x != '..' else '_' for x in Path(name).parts])
+
+        if mung_filename is not None:
+            file_parts = Path(name).parts
+            if file_parts[0] == os.path.sep:
+                file_parts = file_parts[1:]
+            if mung_filename == 'all':
+                new_file_path = '_'.join(file_parts)
+            else:
+                folder_parts = file_parts[:-1]
+                new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
+                new_file_path += '_' + file_parts[-1]
+            name = new_file_path
+            _LOGGER.debug(f"New file path: {name}")
+
         if anonymize:
             ds = pydicom.dcmread(file_path)
             ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
-
-            if mung_filename is not None:
-                file_parts = Path(file_path).parts
-                if file_parts[0] == os.path.sep:
-                    file_parts = file_parts[1:]
-                if mung_filename == 'all':
-                    new_file_path = '_'.join(file_parts)
-                else:
-                    folder_parts = file_parts[:-1]
-                    new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
-                    new_file_path += '_' + file_parts[-1]
-                name = new_file_path
-                _LOGGER.debug(f"New file path: {new_file_path}")
-            else:
-                name = file_path
-            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
             f = to_bytesio(ds, name)
-        elif isinstance(file_path, str):
+        elif isinstance(file_path, str) or isinstance(file_path, Path):
             f = open(file_path, 'rb')
         else:
             f = file_path
+
+        # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
 
         try:
             request_params = {
                 'method': 'POST',
                 'url': f'{self.root_url}/dicoms',
-                'data': {'batch_id': batch_id, 'dicom': f, 'filepath': file_path}
+                'data': {'batch_id': batch_id, 'dicom': f, 'filepath': name}
             }
 
             if labels is not None:
@@ -196,7 +209,7 @@ class APIHandler:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
-            
+
             async def __upload_single_dicom(file_path):
                 _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
                 async with self.semaphore:
@@ -258,7 +271,7 @@ class APIHandler:
             else:
                 file_path = [file_path]
         # Check if is an IO object
-        elif hasattr(file_path, 'read'):
+        elif _is_io_object(file_path):
             file_path = [file_path]
         elif not hasattr(file_path, '__len__'):
             if hasattr(file_path, '__iter__'):

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 from datamintapi.api_handler import APIHandler
 from datamintapi.api_handler import ResourceNotFoundError, DatamintException
 import responses
@@ -65,14 +65,14 @@ class TestAPIHandler:
         1. Test with anonymize=False
         2. Test with anonymize=True
         """
-        def _callback1(url, **kwargs):
-            assert kwargs['data']['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) in str(kwargs['data']['dicom'].read())
+        def _callback1(url, data, **kwargs):
+            assert data['batch_id'] == batch_id
+            assert str(sample_dicom1.PatientName) in str(data['dicom'].read())
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
-        def _callback2(url, **kwargs):
-            assert kwargs['data']['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) not in str(kwargs['data']['dicom'].read())
+        def _callback2(url, data, **kwargs):
+            assert data['batch_id'] == batch_id
+            assert str(sample_dicom1.PatientName) not in str(data['dicom'].read())
             return CallbackResult(status=201, payload={"id": "newdicomid2"})
 
         batch_id = 'batchid'
@@ -104,6 +104,59 @@ class TestAPIHandler:
                                                       anonymize=True)
 
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid2'
+
+    def test_upload_dicoms_mungfilename(self, sample_dicom1):
+        def my_open_mock(file, mode, *args, **kwargs):
+            return to_bytesio(sample_dicom1, file)
+
+        def _request_callback(url, data, **kwargs):
+            assert data['filepath'] == '__data_test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+        
+        def _request_callback2(url, data, **kwargs):
+            assert data['filepath'] == 'data/test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+        
+        def _request_callback3(url, data, **kwargs):
+            assert data['filepath'] == 'me_data_test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+
+        batch_id = 'batchid'
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        with patch('builtins.open', new=my_open_mock):
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                          files_path='../data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename='all')
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback2
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                        files_path='data/test_dicom.dcm',
+                                                        anonymize=False,
+                                                        mung_filename=None)
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback3
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                        files_path='/home/me/data/test_dicom.dcm',
+                                                        anonymize=False,
+                                                        mung_filename=[2,3])
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     @responses.activate
     def test_create_batch_with_dicoms(self, sample_dicom1):
