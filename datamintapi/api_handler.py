@@ -52,6 +52,8 @@ class APIHandler:
         if self.api_key is None:
             msg = f"API key not provided! Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise Exception(msg)
+        self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
+
 
     async def _run_request_async(self,
                                  request_args: dict,
@@ -194,11 +196,10 @@ class APIHandler:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
-            semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
-
+            
             async def __upload_single_dicom(file_path):
-                _LOGGER.debug(f"Current semaphore value: {semaphore._value}")
-                async with semaphore:
+                _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
+                async with self.semaphore:
                     return await self._upload_single_dicom_async(
                         batch_id, file_path, anonymize, anonymize_retain_codes,
                         labels=labels,
@@ -254,6 +255,8 @@ class APIHandler:
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
+            else:
+                file_path = [file_path]
         # Check if is an IO object
         elif hasattr(file_path, 'read'):
             file_path = [file_path]
@@ -263,6 +266,7 @@ class APIHandler:
             else:
                 file_path = [file_path]
 
+        _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path
 
     # ? maybe it is better to separate "complex" workflows to a separate class?
