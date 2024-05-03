@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal
+from typing import Optional, IO, Sequence, Literal, Generator
 import os
 from requests import Session
 from requests.exceptions import HTTPError
@@ -354,6 +354,37 @@ class APIHandler:
                                                                     mung_filename=mung_filename)
                                           )
         return batch_id, results
+
+    def get_batches(self) -> Generator[dict, None, None]:
+        """
+        Iterate over all the batches.
+
+        Returns:
+            Generator[dict, None, None]: A generator of dictionaries with information about the batches.
+
+        Example:
+            >>> for batch in api_handler.get_batches():
+            >>>     print(batch)
+        """
+
+        offset = 0
+        limit_page = 10
+
+        request_params = {
+            'method': 'GET',
+            'params': {'offset': offset, 'limit': limit_page},
+            'url': f'{self.root_url}/upload-batches'
+        }
+
+        results = self._run_request(request_params).json()['data']
+        while len(results) > 0:
+            for result in results:
+                yield result
+            if len(results) < limit_page:
+                break
+            offset += limit_page
+            request_params['params']['offset'] = offset
+            results = self._run_request(request_params).json()['data']
 
     def get_batch_info(self, batch_id: str) -> dict:
         """

@@ -1,4 +1,4 @@
-name: Run Unit Test via Pytest
+name: Run Unit Tests
 
 on:
   push:

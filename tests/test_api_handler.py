@@ -112,11 +112,11 @@ class TestAPIHandler:
         def _request_callback(url, data, **kwargs):
             assert data['filepath'] == '__data_test_dicom.dcm'
             return CallbackResult(status=201, payload={"id": "newdicomid"})
-        
+
         def _request_callback2(url, data, **kwargs):
             assert data['filepath'] == 'data/test_dicom.dcm'
             return CallbackResult(status=201, payload={"id": "newdicomid"})
-        
+
         def _request_callback3(url, data, **kwargs):
             assert data['filepath'] == 'me_data_test_dicom.dcm'
             return CallbackResult(status=201, payload={"id": "newdicomid"})
@@ -142,9 +142,9 @@ class TestAPIHandler:
                     callback=_request_callback2
                 )
                 new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                        files_path='data/test_dicom.dcm',
-                                                        anonymize=False,
-                                                        mung_filename=None)
+                                                          files_path='data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename=None)
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
@@ -153,9 +153,9 @@ class TestAPIHandler:
                     callback=_request_callback3
                 )
                 new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                        files_path='/home/me/data/test_dicom.dcm',
-                                                        anonymize=False,
-                                                        mung_filename=[2,3])
+                                                          files_path='/home/me/data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename=[2, 3])
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     @responses.activate
@@ -218,3 +218,34 @@ class TestAPIHandler:
         # Test non existing batch
         with pytest.raises(ResourceNotFoundError):
             api_handler.get_batch_info('non_existing_batch_id')
+
+    @responses.activate
+    def test_get_batches(self):
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        batches_data = [
+            {"id": "batch1", "description": "Batch 1"},
+            {"id": "batch2", "description": "Batch 2"},
+            {"id": "batch3", "description": "Batch 3"}
+        ]
+        responses.get(
+            f"{_TEST_URL}/upload-batches",
+            json={"data": batches_data},
+            status=200,
+        )
+
+        batches = list(api_handler.get_batches())
+        assert len(batches) == 3
+
+    @responses.activate
+    def test_get_batches_no_batch(self):
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        responses.get(
+            f"{_TEST_URL}/upload-batches",
+            json={"data": []},
+            status=200,
+        )
+
+        batches = list(api_handler.get_batches())
+        assert len(batches) == 0
