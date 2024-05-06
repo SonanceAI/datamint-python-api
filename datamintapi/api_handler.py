@@ -151,7 +151,8 @@ class APIHandler:
             }
 
             if labels is not None:
-                request_params['data']['labels[]'] = ','.join(labels)
+                for i, label in enumerate(labels):
+                    request_params['data'][f'labels[{i}]'] = label
             resp_data = await self._run_request_async(request_params, session)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
