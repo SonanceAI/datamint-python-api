@@ -20,6 +20,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+          cache: "pip"
       - name: Install dependencies
         # Install PyTorch cpu version to install faster
         run: |
@@ -30,13 +31,14 @@ jobs:
         run: |
           pytest tests --junitxml=junit/test-results.xml --cov=datamintapi --cov-report=html
       - name: Upload pytest test results
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: pytest-results
           path: junit/test-results.xml
-        # Use always() to always run this step to publish test results when there are test failures
-        if: ${{ always() }}
       - name: Upload coverage report
+        # Use always() to always run this step to publish test results when there are test failures
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
