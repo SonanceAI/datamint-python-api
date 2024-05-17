@@ -106,8 +106,12 @@ class TestAPIHandler:
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid2'
 
     def test_upload_dicoms_mungfilename(self, sample_dicom1):
-        def my_open_mock(file, mode, *args, **kwargs):
-            return to_bytesio(sample_dicom1, file)
+        from builtins import open
+
+        def my_open_mock(file, *args, **kwargs):
+            if file.endswith('.dcm'):
+                return to_bytesio(sample_dicom1, file)
+            return open(file, *args, **kwargs)
 
         def _request_callback(url, data, **kwargs):
             assert data['filepath'] == '__data_test_dicom.dcm'
@@ -249,3 +253,25 @@ class TestAPIHandler:
 
         batches = list(api_handler.get_batches())
         assert len(batches) == 0
+
+    @responses.activate
+    def test_upload_segmentation(self, sample_dicom1):
+        from builtins import open
+
+        def my_open_mock(file, *args, **kwargs):
+            if file == 'test_segmentation_file.nifti':
+                return to_bytesio(sample_dicom1, file)
+            return open(file, *args, **kwargs)
+        # Mocking the response from the server
+        responses.post(
+            f"{_TEST_URL}/segmentations",
+            json={"id": "test_segmentation_id"},
+            status=201,
+        )
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        dicom_id = 'test_dicom_id'
+        segmentation_name = 'test_segmentation_name'
+        file_path = 'test_segmentation_file.nifti'
+        with patch('builtins.open', new=my_open_mock):
+            segmentation_id = api_handler.upload_segmentation(dicom_id, file_path, segmentation_name)
+        assert segmentation_id == 'test_segmentation_id'
