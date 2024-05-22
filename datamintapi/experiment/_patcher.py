@@ -2,6 +2,7 @@ from unittest.mock import patch
 import importlib
 from typing import Sequence
 import logging
+from .experiment import Experiment
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -17,10 +18,8 @@ def _is_iterable(obj):
 class Wrapper:
     def __init__(self,
                  target: str,
-                 experiment,
                  cb_before: Sequence[callable] | callable = None,
                  cb_after: Sequence[callable] | callable = None) -> None:
-        self.experiment = experiment
         self.cb_before = cb_before if cb_before is not None else []
         if not _is_iterable(self.cb_before):
             self.cb_before = [self.cb_before]
@@ -32,8 +31,9 @@ class Wrapper:
 
     def _patch(self):
         def _callback(*args, **kwargs):
+            experiment = Experiment.get_singleton_experiment()
             for cb in self.cb_before:
-                cb(self.experiment, original, args, kwargs)
+                cb(experiment, original, args, kwargs)
 
             try:
                 return_value = original(*args, **kwargs)
@@ -42,7 +42,7 @@ class Wrapper:
                 return_value = exception
 
             for cb in self.cb_after:
-                cb(self.experiment, original, args, kwargs, return_value)
+                cb(experiment, original, args, kwargs, return_value)
 
             if isinstance(return_value, Exception):
                 raise return_value
@@ -60,12 +60,13 @@ class Wrapper:
         self.patcher.stop()
 
 
-def _backward_callback(experiment, original_obj, func_args, func_kwargs):
+def _backward_callback(experiment: Experiment,
+                       original_obj, func_args, func_kwargs):
     """
     This function is a wrapper for the backward method of the Pytorch Tensor class.
     """
     loss = func_args[0]
-    print(f"Logging the backward method of {original_obj.__name__} with loss={loss}")
+    experiment.log_metric("loss", loss.item())
 
 
 def get_function_from_string(target: str):
@@ -108,6 +109,6 @@ def initialize_automatic_logging():
 
     for p in params:
         try:
-            Wrapper(experiment=None, **p).start()
+            Wrapper(**p).start()
         except Exception as e:
             _LOGGER.debug(f"Error while patching {p['target']}: {e}")
