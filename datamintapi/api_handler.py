@@ -26,6 +26,8 @@ class APIHandler:
     Class to handle the API requests to the Datamint API
     """
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
+    ENDPOINT_UPLOAD_BATCHES = '/upload-batches'
+    ENDPOINT_RESOURCES = '/resources'
 
     def __init__(self,
                  root_url: str,
@@ -146,8 +148,13 @@ class APIHandler:
         try:
             request_params = {
                 'method': 'POST',
-                'url': f'{self.root_url}/dicoms',
-                'data': {'batch_id': batch_id, 'dicom': f, 'filepath': file_path}
+                'url': f'{self.root_url}/{APIHandler.ENDPOINT_RESOURCES}',
+                'data': {'batch_id': batch_id, 
+                         'dicom': f, 
+                         'filepath': file_path,
+                         'mimetype': 'application/dicom',
+                         'source': "api"
+                         }
             }
 
             if labels is not None:

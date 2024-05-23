@@ -74,7 +74,7 @@ class TestAPIHandler:
         with aioresponses() as mock_aioresp:
             # check that post request has data 'batch_id'
             mock_aioresp.post(
-                f"{_TEST_URL}/dicoms",
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                 callback=_callback1
             )
 
@@ -88,7 +88,7 @@ class TestAPIHandler:
         with aioresponses() as mock_aioresp:
             # check that post request has data 'batch_id'
             mock_aioresp.post(
-                f"{_TEST_URL}/dicoms",
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                 callback=_callback2
             )
 
