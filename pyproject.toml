@@ -11,7 +11,8 @@ include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
 [tool.poetry.dependencies]
 python = "^3.9"
 numpy = "*"
-torch = ">=1.2.0"
+# exclude version 2.3.0 due to a bug in the library
+torch = ">=1.2.0, !=2.3.0"
 torchvision = "*"
 tqdm = "^4.0.0"
 requests = "^2.0.0"
