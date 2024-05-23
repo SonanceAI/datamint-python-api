@@ -1,6 +1,7 @@
-from typing import Optional, IO, Sequence, Literal
+from typing import Optional, IO, Sequence, Literal, Generator
 import os
 from requests import Session
+from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
@@ -17,8 +18,30 @@ class DatamintException(Exception):
     pass
 
 
+class ResourceNotFoundError(DatamintException):
+    def __init__(self,
+                 resource_type: str,
+                 params: dict):
+        """ Constructor.
+
+        Args:
+            resource_type (str): A resource type.
+            params (dict): Dict of params identifying the sought resource.
+        """
+        super().__init__(f"Resource '{resource_type}' not found for parameters: {params}")
+        self.resource_type = resource_type
+        self.params = params
+
+
 class DicomAlreadyStored(DatamintException):
     pass
+
+
+def _is_io_object(obj):
+    """
+    Check if an object is a file-like object.
+    """
+    return callable(getattr(obj, "read", None))
 
 
 class APIHandler:
@@ -38,6 +61,7 @@ class APIHandler:
         if self.api_key is None:
             msg = f"API key not provided! Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise Exception(msg)
+        self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
     async def _run_request_async(self,
                                  request_args: dict,
@@ -120,30 +144,37 @@ class APIHandler:
                                          labels: list[str] = None,
                                          mung_filename: Sequence[int] | Literal['all'] = None,
                                          session=None) -> str:
+        if _is_io_object(file_path):
+            name = file_path.name
+        else:
+            name = file_path
+
+        name = os.path.expanduser(os.path.normpath(name))
+        name = os.path.join(*[x if x != '..' else '_' for x in Path(name).parts])
+
+        if mung_filename is not None:
+            file_parts = Path(name).parts
+            if file_parts[0] == os.path.sep:
+                file_parts = file_parts[1:]
+            if mung_filename == 'all':
+                new_file_path = '_'.join(file_parts)
+            else:
+                folder_parts = file_parts[:-1]
+                new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
+                new_file_path += '_' + file_parts[-1]
+            name = new_file_path
+            _LOGGER.debug(f"New file path: {name}")
+
         if anonymize:
             ds = pydicom.dcmread(file_path)
             ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
-
-            if mung_filename is not None:
-                file_parts = Path(file_path).parts
-                if file_parts[0] == os.path.sep:
-                    file_parts = file_parts[1:]
-                if mung_filename == 'all':
-                    new_file_path = '_'.join(file_parts)
-                else:
-                    folder_parts = file_parts[:-1]
-                    new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
-                    new_file_path += '_' + file_parts[-1]
-                name = new_file_path
-                _LOGGER.debug(f"New file path: {new_file_path}")
-            else:
-                name = file_path
-            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
             f = to_bytesio(ds, name)
-        elif isinstance(file_path, str):
+        elif isinstance(file_path, str) or isinstance(file_path, Path):
             f = open(file_path, 'rb')
         else:
             f = file_path
+
+        # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
 
         try:
             request_params = {
@@ -151,7 +182,7 @@ class APIHandler:
                 'url': f'{self.root_url}/{APIHandler.ENDPOINT_RESOURCES}',
                 'data': {'batch_id': batch_id, 
                          'dicom': f, 
-                         'filepath': file_path,
+                         'filepath': name,
                          'mimetype': 'application/dicom',
                          'source': "api"
                          }
@@ -186,11 +217,10 @@ class APIHandler:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
-            semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
             async def __upload_single_dicom(file_path):
-                _LOGGER.debug(f"Current semaphore value: {semaphore._value}")
-                async with semaphore:
+                _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
+                async with self.semaphore:
                     return await self._upload_single_dicom_async(
                         batch_id, file_path, anonymize, anonymize_retain_codes,
                         labels=labels,
@@ -208,7 +238,6 @@ class APIHandler:
                       on_error: Literal['raise', 'skip'] = 'raise',
                       labels=None,
                       mung_filename: Sequence[int] | Literal['all'] = None,
-
                       ) -> list[str]:
         """
         Upload dicoms to a batch.
@@ -225,6 +254,9 @@ class APIHandler:
 
         Returns:
             list[str]: The list of new created dicom_ids.
+
+        Raises:
+            ResourceNotFoundError: If the batch does not exists.
         """
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
@@ -244,8 +276,10 @@ class APIHandler:
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
+            else:
+                file_path = [file_path]
         # Check if is an IO object
-        elif hasattr(file_path, 'read'):
+        elif _is_io_object(file_path):
             file_path = [file_path]
         elif not hasattr(file_path, '__len__'):
             if hasattr(file_path, '__iter__'):
@@ -253,10 +287,10 @@ class APIHandler:
             else:
                 file_path = [file_path]
 
+        _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path
 
     # ? maybe it is better to separate "complex" workflows to a separate class?
-
     def create_batch_with_dicoms(self,
                                  description: str,
                                  files_path: str | IO | Sequence[str | IO],
@@ -329,6 +363,37 @@ class APIHandler:
                                           )
         return batch_id, results
 
+    def get_batches(self) -> Generator[dict, None, None]:
+        """
+        Iterate over all the batches.
+
+        Returns:
+            Generator[dict, None, None]: A generator of dictionaries with information about the batches.
+
+        Example:
+            >>> for batch in api_handler.get_batches():
+            >>>     print(batch)
+        """
+
+        offset = 0
+        limit_page = 10
+
+        request_params = {
+            'method': 'GET',
+            'params': {'offset': offset, 'limit': limit_page},
+            'url': f'{self.root_url}/upload-batches'
+        }
+
+        results = self._run_request(request_params).json()['data']
+        while len(results) > 0:
+            for result in results:
+                yield result
+            if len(results) < limit_page:
+                break
+            offset += limit_page
+            request_params['params']['offset'] = offset
+            results = self._run_request(request_params).json()['data']
+
     def get_batch_info(self, batch_id: str) -> dict:
         """
         Get information of a batch.
@@ -339,12 +404,20 @@ class APIHandler:
         Returns:
             dict: Informations the batch and its images.
 
+        Raises:
+            ResourceNotFoundError: If the batch does not exists.
+
         """
-        request_params = {
-            'method': 'GET',
-            'url': f'{self.root_url}/upload-batches/{batch_id}'
-        }
-        return self._run_request(request_params).json()
+        try:
+            request_params = {
+                'method': 'GET',
+                'url': f'{self.root_url}/upload-batches/{batch_id}'
+            }
+            return self._run_request(request_params).json()
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('batch', {'batch_id': batch_id})
+            raise e
 
     def upload_segmentation(self,
                             dicom_id: str,
@@ -365,10 +438,26 @@ class APIHandler:
             str: The segmentation unique id.
 
         Raises:
-            DatamintException: If the dicom does not exists or the segmentation is invalid.
+            ResourceNotFoundError: If the dicom does not exists or the segmentation is invalid.
 
         Example:
             >>> batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
             >>> api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
         """
-        pass
+        try:
+            with open(file_path, 'rb') as f:
+                request_params = dict(
+                    method='POST',
+                    url=self.root_url+'/segmentations',
+                    data={'dicomId': dicom_id,
+                          'segmentationName': [segmentation_name],
+                          },
+                    files={'segmentationData': f}
+                )
+                if task_id is not None:
+                    request_params['data']['taskId'] = task_id
+                return self._run_request(request_params).json()['id']
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
+            raise e

@@ -1,12 +1,14 @@
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 from datamintapi.api_handler import APIHandler
+from datamintapi.api_handler import ResourceNotFoundError, DatamintException
 import responses
 from aioresponses import aioresponses, CallbackResult
-from responses import matchers
 import pydicom
 from pydicom.dataset import FileMetaDataset
 from datamintapi.utils.dicom_utils import CLEARED_STR, to_bytesio
+import json
+import re
 
 _TEST_URL = 'https://test_url.com'
 
@@ -58,15 +60,20 @@ class TestAPIHandler:
         assert batch_id == 'test_id'
 
     def test_upload_dicoms(self, sample_dicom1):
-        def _callback1(url, **kwargs):
-            assert kwargs['data']['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) in str(kwargs['data']['dicom'].read())
+        """
+        Test the upload_dicoms method of the APIHandler class
+        1. Test with anonymize=False
+        2. Test with anonymize=True
+        """
+        def _callback1(url, data, **kwargs):
+            assert data['batch_id'] == batch_id
+            assert str(sample_dicom1.PatientName) in str(data['dicom'].read())
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
-        def _callback2(url, **kwargs):
-            assert kwargs['data']['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) not in str(kwargs['data']['dicom'].read())
-            return CallbackResult(status=201, payload={"id": "newdicomid"})
+        def _callback2(url, data, **kwargs):
+            assert data['batch_id'] == batch_id
+            assert str(sample_dicom1.PatientName) not in str(data['dicom'].read())
+            return CallbackResult(status=201, payload={"id": "newdicomid2"})
 
         batch_id = 'batchid'
 
@@ -95,3 +102,176 @@ class TestAPIHandler:
             new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
                                                       files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
                                                       anonymize=True)
+
+            assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid2'
+
+    def test_upload_dicoms_mungfilename(self, sample_dicom1):
+        from builtins import open
+
+        def my_open_mock(file, *args, **kwargs):
+            if file.endswith('.dcm'):
+                return to_bytesio(sample_dicom1, file)
+            return open(file, *args, **kwargs)
+
+        def _request_callback(url, data, **kwargs):
+            assert data['filepath'] == '__data_test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+
+        def _request_callback2(url, data, **kwargs):
+            assert data['filepath'] == 'data/test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+
+        def _request_callback3(url, data, **kwargs):
+            assert data['filepath'] == 'me_data_test_dicom.dcm'
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+
+        batch_id = 'batchid'
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        with patch('builtins.open', new=my_open_mock):
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                          files_path='../data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename='all')
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback2
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                          files_path='data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename=None)
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+
+            with aioresponses() as mock_aioresp:
+                mock_aioresp.post(
+                    f"{_TEST_URL}/dicoms",
+                    callback=_request_callback3
+                )
+                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
+                                                          files_path='/home/me/data/test_dicom.dcm',
+                                                          anonymize=False,
+                                                          mung_filename=[2, 3])
+                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+
+    @responses.activate
+    def test_create_batch_with_dicoms(self, sample_dicom1):
+        uploaded_batches_mock = []  # used to store the batch_id of the uploaded batches
+
+        def _request_callback(request):
+            uploaded_batches_mock.append('batch_id')
+            resp_body = {"id": 'batch_id'}
+            return (201, "", json.dumps(resp_body))
+
+        def _request_callback_batchinfo(request):
+            batch_id = request.url.split('/')[-1]
+            if batch_id not in uploaded_batches_mock:
+                return (500, "", "{}")
+            resp = {"id": batch_id,
+                    "description": "description",
+                    "images": [{"filename": "sample_dicom1"}]
+                    }
+            return (200, "", json.dumps(resp))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.POST,
+            f"{_TEST_URL}/upload-batches",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        responses.add_callback(
+            responses.GET,
+            re.compile(f"{_TEST_URL}/upload-batches/.+"),
+            content_type='application/json',
+            callback=_request_callback_batchinfo
+
+        )
+
+        with aioresponses() as mock_aioresp:
+            mock_aioresp.post(
+                f"{_TEST_URL}/dicoms",
+                payload={"id": "newdicomid"},
+                status=201
+            )
+
+            api_handler = APIHandler(_TEST_URL, 'test_api_key')
+            dc1_io = to_bytesio(sample_dicom1, 'sample_dicom1')
+            batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('description',
+                                                                        files_path=[dc1_io],
+                                                                        anonymize=False
+                                                                        )
+
+            assert batch_id == 'batch_id'
+            assert len(dicoms_ids) == 1 and dicoms_ids[0] == 'newdicomid'
+
+        batchinfo = api_handler.get_batch_info(batch_id)
+        assert batchinfo['description'] == 'description'
+        assert len(batchinfo['images']) == 1
+        assert batchinfo['images'][0]['filename'] == 'sample_dicom1'
+
+        # Test non existing batch
+        with pytest.raises(ResourceNotFoundError):
+            api_handler.get_batch_info('non_existing_batch_id')
+
+    @responses.activate
+    def test_get_batches(self):
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        batches_data = [
+            {"id": "batch1", "description": "Batch 1"},
+            {"id": "batch2", "description": "Batch 2"},
+            {"id": "batch3", "description": "Batch 3"}
+        ]
+        responses.get(
+            f"{_TEST_URL}/upload-batches",
+            json={"data": batches_data},
+            status=200,
+        )
+
+        batches = list(api_handler.get_batches())
+        assert len(batches) == 3
+
+    @responses.activate
+    def test_get_batches_no_batch(self):
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+
+        responses.get(
+            f"{_TEST_URL}/upload-batches",
+            json={"data": []},
+            status=200,
+        )
+
+        batches = list(api_handler.get_batches())
+        assert len(batches) == 0
+
+    @responses.activate
+    def test_upload_segmentation(self, sample_dicom1):
+        from builtins import open
+
+        def my_open_mock(file, *args, **kwargs):
+            if file == 'test_segmentation_file.nifti':
+                return to_bytesio(sample_dicom1, file)
+            return open(file, *args, **kwargs)
+        # Mocking the response from the server
+        responses.post(
+            f"{_TEST_URL}/segmentations",
+            json={"id": "test_segmentation_id"},
+            status=201,
+        )
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        dicom_id = 'test_dicom_id'
+        segmentation_name = 'test_segmentation_name'
+        file_path = 'test_segmentation_file.nifti'
+        with patch('builtins.open', new=my_open_mock):
+            segmentation_id = api_handler.upload_segmentation(dicom_id, file_path, segmentation_name)
+        assert segmentation_id == 'test_segmentation_id'
