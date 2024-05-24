@@ -3,7 +3,7 @@
 Client API
 ==========
 
-Import the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` class and create an instance: ``api_handler = APIHandler()``
+This section describes how to use the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` class in Python.
 
 Setup API key
 -------------
@@ -35,28 +35,17 @@ There are three options to specify the API key:
 Upload DICOMs
 -------------
 
-In order to upload dicom file to the server, you need to create a batch first.
-To create a batch, use the :py:meth:`create_batch() <datamintapi.api_handler.APIHandler.create_batch>` method.
-
-.. code-block:: python
-
-    batch_id = api_handler.create_batch(description='CT scans',
-                                        size=3)
-
-.. note:: To create a batch and upload dicoms in a single call, see :ref:`create_batch_with_dicoms`.
-
-
-
+First, import the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` class and create an instance: ``api_handler = APIHandler(...)``.
+Then, use one of the following methods to upload DICOM files.
 
 Upload a single DICOM file
 ++++++++++++++++++++++++++++++++
 
-Use the `upload_dicoms` method of the `APIHandler` class:
+Use the :py:meth:`upload_dicoms() <datamintapi.api_handler.APIHandler.upload_dicoms>` method
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicoms(batch_id=batch_id, 
-                                         file_path="/path/to/dicom.dcm")
+    dicom_id = api_handler.upload_dicoms(file_path="/path/to/dicom.dcm")
     
 
 Upload, anonymize and add a label
@@ -64,18 +53,31 @@ Upload, anonymize and add a label
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicom(batch_id=batch_id, 
-                                        file_path=file_path,
+    dicom_id = api_handler.upload_dicom(file_path=file_path,
                                         anonymize=True,
                                         labels=['pneumonia'])
 
 
-.. _create_batch_with_dicoms:
 
-Upload a directory of DICOMs, while creating a new batch in a single call
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Create a batch and upload DICOMs
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-This is a convenience method that creates a new batch and uploads all dicom files in a directory.
+A batch is a collection of DICOM files.
+To create a batch, use the :py:meth:`create_batch() <datamintapi.api_handler.APIHandler.create_batch>` method.
+
+.. code-block:: python
+
+    batch_id = api_handler.create_batch(description='CT scans',
+                                        size=3)
+
+With the batch created, use the batch_id to upload DICOM files to the batch:
+
+.. code-block:: python
+
+    dicom_id = api_handler.upload_dicom(batch_id=batch_id, 
+                                        file_path=file_path)
+
+To create a batch and upload dicoms in a single call, use :py:meth:`create_batch_with_dicoms() <datamintapi.api_handler.APIHandler.create_batch_with_dicoms>`,
 
 .. code-block:: python
 
@@ -86,7 +88,6 @@ This is a convenience method that creates a new batch and uploads all dicom file
 
 , which outputs the batch_id and the list of dicom_ids that were uploaded.
 The `mung_filename='all'` parameters in this example converts the files names into 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
-
 
 Upload segmentation
 -------------------
