@@ -9,8 +9,22 @@ from pydicom.dataset import FileMetaDataset
 from datamintapi.utils.dicom_utils import CLEARED_STR, to_bytesio
 import json
 import re
+from aiohttp import FormData
 
 _TEST_URL = 'https://test_url.com'
+
+
+def _get_request_data(request_data):
+    if isinstance(request_data, FormData):
+        for field in request_data._fields:
+            if hasattr(field[-1], 'read'):
+                dicom_bytes = field[-1]
+                break
+        data = str(request_data._fields)
+    else:
+        dicom_bytes = request_data['dicom']
+        data = str(request_data)
+    return dicom_bytes, data
 
 
 class TestAPIHandler:
@@ -59,20 +73,26 @@ class TestAPIHandler:
         batch_id = api_handler.create_batch('test_description', 2)
         assert batch_id == 'test_id'
 
-    def test_upload_dicoms(self, sample_dicom1):
+    def test_upload_dicoms_batch_id(self, sample_dicom1):
         """
         Test the upload_dicoms method of the APIHandler class
         1. Test with anonymize=False
         2. Test with anonymize=True
         """
         def _callback1(url, data, **kwargs):
-            assert data['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) in str(data['dicom'].read())
+            dicom_bytes, data = _get_request_data(data)
+            ds = pydicom.dcmread(dicom_bytes)
+
+            assert batch_id in data
+            assert str(sample_dicom1.PatientName) == str(ds.PatientName)
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _callback2(url, data, **kwargs):
-            assert data['batch_id'] == batch_id
-            assert str(sample_dicom1.PatientName) not in str(data['dicom'].read())
+            dicom_bytes, data = _get_request_data(data)
+            ds = pydicom.dcmread(dicom_bytes)
+
+            assert batch_id in data
+            assert str(sample_dicom1.PatientName) not in str(ds.PatientName)
             return CallbackResult(status=201, payload={"id": "newdicomid2"})
 
         batch_id = 'batchid'
@@ -81,7 +101,7 @@ class TestAPIHandler:
         with aioresponses() as mock_aioresp:
             # check that post request has data 'batch_id'
             mock_aioresp.post(
-                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
                 callback=_callback1
             )
 
@@ -95,7 +115,7 @@ class TestAPIHandler:
         with aioresponses() as mock_aioresp:
             # check that post request has data 'batch_id'
             mock_aioresp.post(
-                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
                 callback=_callback2
             )
 
@@ -104,6 +124,27 @@ class TestAPIHandler:
                                                       anonymize=True)
 
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid2'
+
+    def test_upload_dicoms_resources(self, sample_dicom1):
+        def _callback1(url, data, **kwargs):
+            dicom_bytes, data = _get_request_data(data)
+            ds = pydicom.dcmread(dicom_bytes)
+
+            assert str(sample_dicom1.PatientName) == str(ds.PatientName)
+            return CallbackResult(status=201, payload={"id": "newdicomid"})
+
+        with aioresponses() as mock_aioresp:
+            # check that post request has data 'batch_id'
+            mock_aioresp.post(
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+                callback=_callback1
+            )
+
+            api_handler = APIHandler(_TEST_URL, 'test_api_key')
+            new_dicoms_id = api_handler.upload_dicoms(files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
+                                                      channel='mychannel',
+                                                      anonymize=False)
+            assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     def test_upload_dicoms_mungfilename(self, sample_dicom1):
         from builtins import open
@@ -114,50 +155,52 @@ class TestAPIHandler:
             return open(file, *args, **kwargs)
 
         def _request_callback(url, data, **kwargs):
-            assert data['filepath'] == '__data_test_dicom.dcm'
+            dicom_bytes, data = _get_request_data(data)
+            assert '__data_test_dicom.dcm' in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _request_callback2(url, data, **kwargs):
-            assert data['filepath'] == 'data/test_dicom.dcm'
+            if isinstance(data, FormData):
+                data = str(data._fields)
+            else:
+                data = str(data)
+            assert 'data/test_dicom.dcm' in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _request_callback3(url, data, **kwargs):
-            assert data['filepath'] == 'me_data_test_dicom.dcm'
+            dicom_bytes, data = _get_request_data(data)
+            assert 'me_data_test_dicom.dcm' in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
-        batch_id = 'batchid'
         api_handler = APIHandler(_TEST_URL, 'test_api_key')
 
         with patch('builtins.open', new=my_open_mock):
             with aioresponses() as mock_aioresp:
                 mock_aioresp.post(
-                    f"{_TEST_URL}/dicoms",
+                    f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback
                 )
-                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                          files_path='../data/test_dicom.dcm',
+                new_dicoms_id = api_handler.upload_dicoms(files_path='../data/test_dicom.dcm',
                                                           anonymize=False,
                                                           mung_filename='all')
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
                 mock_aioresp.post(
-                    f"{_TEST_URL}/dicoms",
+                    f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback2
                 )
-                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                          files_path='data/test_dicom.dcm',
+                new_dicoms_id = api_handler.upload_dicoms(files_path='data/test_dicom.dcm',
                                                           anonymize=False,
                                                           mung_filename=None)
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
                 mock_aioresp.post(
-                    f"{_TEST_URL}/dicoms",
+                    f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback3
                 )
-                new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                          files_path='/home/me/data/test_dicom.dcm',
+                new_dicoms_id = api_handler.upload_dicoms(files_path='/home/me/data/test_dicom.dcm',
                                                           anonymize=False,
                                                           mung_filename=[2, 3])
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
@@ -199,7 +242,7 @@ class TestAPIHandler:
 
         with aioresponses() as mock_aioresp:
             mock_aioresp.post(
-                f"{_TEST_URL}/dicoms",
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
                 payload={"id": "newdicomid"},
                 status=201
             )
