@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator
+from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias
 import os
 from requests import Session
 from requests.exceptions import HTTPError
@@ -9,9 +9,15 @@ import nest_asyncio  # For running asyncio in jupyter notebooks
 from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio
 import pydicom
 from pathlib import Path
+from datetime import date
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+
+ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
+ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'published_on', 'filename']
+
+_PAGE_LIMIT = 10
 
 
 class DatamintException(Exception):
@@ -451,7 +457,7 @@ class APIHandler:
             }
             return self._run_request(request_params).json()
         except HTTPError as e:
-            if e.response is not None and e.response.status_code == 500:
+            if e.response is not None and e.response.status_code == 404:
                 raise ResourceNotFoundError('batch', {'batch_id': batch_id})
             raise e
 
@@ -494,6 +500,96 @@ class APIHandler:
                     request_params['data']['taskId'] = task_id
                 return self._run_request(request_params).json()['id']
         except HTTPError as e:
-            if e.response is not None and e.response.status_code == 500:
+            if e.response is not None and e.response.status_code == 404:
                 raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
             raise e
+
+    def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
+        """
+        Get resources by their unique ids.
+
+        Args:
+            ids (str | Sequence[str]): The resource unique id or a list of resource unique ids.
+
+        Returns:
+            dict | Sequence[dict]: The resource information or a list of resource information.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+
+        Example:
+            >>> api_handler.get_resources_by_ids('resource_id')
+            >>> api_handler.get_resources_by_ids(['resource_id1', 'resource_id2'])
+        """
+        input_is_a_string = isinstance(ids, str)  # used later to return a single object or a list of objects
+        if input_is_a_string:
+            ids = [ids]
+
+        resources = []
+        try:
+            for i in ids:
+                request_params = {
+                    'method': 'GET',
+                    'url': f'{self.root_url}/resources/{i}',
+                }
+
+                resources.append(self._run_request(request_params).json())
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 404:
+                raise ResourceNotFoundError('resource', {'resource_id': i})
+            raise e
+
+        return resources[0] if input_is_a_string else resources
+
+    def get_resources(self,
+                      status: ResourceStatus,
+                      from_date: Optional[date] = None,
+                      to_date: Optional[date] = None,
+                      labels: Optional[list[str]] = None,
+                      modality: Optional[str] = None,
+                      mimetype: Optional[str] = None,
+                      return_ids_only: bool = False,
+                      order_field: Optional[ResourceFields] = None,
+                      order_ascending: Optional[bool] = None,
+                      ) -> Generator[dict, None, None]:
+        # Convert datetime objects to ISO format
+        if from_date:
+            from_date = from_date.isoformat()
+        if to_date:
+            to_date = to_date.isoformat()
+
+        # Prepare the payload
+        payload = {
+            "from": from_date,
+            "to": to_date,
+            "modality": modality,
+            "status": status,
+            "mimetype": mimetype,
+            "ids": return_ids_only,
+            "order_field": order_field,
+            "order_by_asc": order_ascending,
+        }
+        if labels is not None:
+            for i, label in enumerate(labels):
+                payload[f'labels[{i}]'] = label
+
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/resources',
+            'params': payload
+        }
+
+        offset = 0
+        while True:
+            payload['offset'] = offset
+            payload['limit'] = _PAGE_LIMIT
+
+            response = self._run_request(request_params).json()
+
+            for r in response:
+                yield r
+
+            if len(response) < _PAGE_LIMIT:
+                break
+
+            offset += _PAGE_LIMIT
