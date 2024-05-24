@@ -217,7 +217,7 @@ class TestAPIHandler:
         def _request_callback_batchinfo(request):
             batch_id = request.url.split('/')[-1]
             if batch_id not in uploaded_batches_mock:
-                return (500, "", "{}")
+                return (404, "", "{}")
             resp = {"id": batch_id,
                     "description": "description",
                     "images": [{"filename": "sample_dicom1"}]
