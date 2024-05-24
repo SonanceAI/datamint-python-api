@@ -270,7 +270,6 @@ class APIHandler:
                       labels=None,
                       mung_filename: Sequence[int] | Literal['all'] = None,
                       channel: Optional[str] = None,
-                      modality: Optional[str] = None,
                       ) -> list[str]:
         """
         Upload dicoms to a batch.
@@ -285,7 +284,6 @@ class APIHandler:
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
-            modality (Optional[str]): The modality of the dicoms.
 
         Returns:
             list[str]: The list of new created dicom_ids.
@@ -303,7 +301,6 @@ class APIHandler:
                                          labels=labels,
                                          mung_filename=mung_filename,
                                          channel=channel,
-                                         modality=modality
                                          )
 
         return loop.run_until_complete(task)
@@ -337,6 +334,7 @@ class APIHandler:
                                  anonymize: bool = False,
                                  anonymize_retain_codes: Sequence[tuple] = [],
                                  mung_filename: Sequence[int] | Literal['all'] = None,
+                                 channel: Optional[str] = None,
                                  ) -> tuple[str, list[str]]:
         """
         Handy method to create a new batch and upload the dicoms in a single call.
@@ -396,6 +394,7 @@ class APIHandler:
                                                                     anonymize_retain_codes=anonymize_retain_codes,
                                                                     on_error=on_error,
                                                                     labels=labels,
+                                                                    channel=channel,
                                                                     mung_filename=mung_filename)
                                           )
         return batch_id, results

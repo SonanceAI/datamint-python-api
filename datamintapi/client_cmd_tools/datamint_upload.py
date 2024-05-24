@@ -120,7 +120,10 @@ def _parse_args() -> tuple:
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
                             If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
-    parser.add_argument('--name', type=str, default='remote upload', help='Name of the upload batch')
+    parser.add_argument('--name', type=str, help='Name of the upload batch')
+    parser.add_argument('--channel', type=str, required=False,
+                        help='Channel name (arbritary) to upload the dicoms to. \
+                            Useful for organizing the dicoms in the platform.')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
                         default=[],
@@ -166,6 +169,23 @@ def _parse_args() -> tuple:
     return args, file_path
 
 
+def _verify_files_batch(files_path, api_handler, batch_id) -> list:
+    """
+    Verify if the files in the batch_id are the same as the files in the results
+    """
+    _LOGGER.debug(f'batch_id: {batch_id}')
+    batch_info = api_handler.get_batch_info(batch_id)
+    batch_images = batch_info['images']
+    all_images_paths = [img['filepath'] for img in batch_images]
+
+    failure_files = []
+    for fsubmitted in files_path:
+        if fsubmitted not in all_images_paths:
+            failure_files.append(fsubmitted)
+
+    return failure_files
+
+
 def main():
     # Load the logging configuration file
     # TODO: move logging load configuration to a separate module
@@ -209,27 +229,31 @@ def main():
     #######################################
 
     api_handler = APIHandler(ROOT_URL)
-    batch_id, results = api_handler.create_batch_with_dicoms(args.name,
-                                                             files_path=files_path,
-                                                             labels=args.label,
-                                                             on_error='skip',
-                                                             anonymize=args.retain_pii == False,
-                                                             anonymize_retain_codes=args.retain_attribute,
-                                                             mung_filename=args.mungfilename
-                                                             )
+    if args.name is not None:
+        batch_id, results = api_handler.create_batch_with_dicoms(args.name,
+                                                                 files_path=files_path,
+                                                                 labels=args.label,
+                                                                 on_error='skip',
+                                                                 anonymize=args.retain_pii == False,
+                                                                 anonymize_retain_codes=args.retain_attribute,
+                                                                 mung_filename=args.mungfilename,
+                                                                 channel=args.channel
+                                                                 )
+        _LOGGER.debug(f"new Batch ID: {batch_id}")
+    else:
+        results = api_handler.upload_dicoms(channel=args.channel,
+                                            files_path=files_path,
+                                            labels=args.label,
+                                            on_error='skip',
+                                            anonymize=args.retain_pii == False,
+                                            anonymize_retain_codes=args.retain_attribute,
+                                            mung_filename=args.mungfilename
+                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 
     ### Check for failed uploads ###
-    _LOGGER.debug(f'batch_id: {batch_id}')
-    batch_info = api_handler.get_batch_info(batch_id)
-    batch_images = batch_info['images']
-    all_images_paths = [img['filepath'] for img in batch_images]
-
-    failure_files = []
-    for fsubmitted in files_path:
-        if fsubmitted not in all_images_paths:
-            failure_files.append(fsubmitted)
+    failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
     #################################
 
     # Refine: Use colors here?
