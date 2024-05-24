@@ -35,7 +35,7 @@ you can use the recursive option ``-r`` flag:
 
     datamint-upload --path /path/to/dicom_files -r
 
-To upload dicoms, associating them with a label, and giving the upload a name, run:
+To upload dicoms, associating them with a label, and associating them to a batch named "my_upload", run:
 
 .. code-block:: bash
 
@@ -52,6 +52,7 @@ See all available options by running ``datamint-upload --help``:
                             Change the filename in the upload parameters. If set to "all", the filename becomes the folder names joined together with "_". If one or more integers are passed (comma-separated), append that
                             depth of folder name to the filename.
     --name NAME           Name of the upload batch
+    --channel CHANNEL     Channel name (arbritary) to upload the dicoms to. Useful for organizing the dicoms in the platform.
     --retain-pii          Do not anonymize dicom
     --retain-attribute RETAIN_ATTRIBUTE
                             Retain the value of a single attribute code specified as hexidecimal integers. Example: (0x0008, 0x0050) or just (0008, 0050)
