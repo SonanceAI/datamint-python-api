@@ -22,10 +22,17 @@ _PAGE_LIMIT = 10
 
 
 class DatamintException(Exception):
+    """
+    Base class for exceptions in this module.
+    """
     pass
 
 
 class ResourceNotFoundError(DatamintException):
+    """
+    Exception raised when a resource is not found. 
+    For instance, when trying to get a resource by a non-existing id.
+    """
     def __init__(self,
                  resource_type: str,
                  params: dict):
@@ -38,10 +45,6 @@ class ResourceNotFoundError(DatamintException):
         super().__init__(f"Resource '{resource_type}' not found for parameters: {params}")
         self.resource_type = resource_type
         self.params = params
-
-
-class DicomAlreadyStored(DatamintException):
-    pass
 
 
 def _is_io_object(obj):
