@@ -6,10 +6,11 @@ import logging
 import asyncio
 import aiohttp
 import nest_asyncio  # For running asyncio in jupyter notebooks
-from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio
+from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
 import pydicom
 from pathlib import Path
 from datetime import date
+import mimetypes
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -145,17 +146,20 @@ class APIHandler:
         resp = self._run_request(request_params, session)
         return resp.json()['id']
 
-    async def _upload_single_dicom_async(self,
-                                         file_path: str | IO,
-                                         batch_id: Optional[str] = None,
-                                         anonymize: bool = False,
-                                         anonymize_retain_codes: Sequence[tuple] = [],
-                                         labels: list[str] = None,
-                                         mung_filename: Sequence[int] | Literal['all'] = None,
-                                         channel: Optional[str] = None,
-                                         session=None,
-                                         modality: Optional[str] = None,
-                                         ) -> str:
+    def _get_endpoint_url(self, endpoint: str) -> str:
+        return f'{self.root_url}/{endpoint}'
+
+    async def _upload_single_resource_async(self,
+                                            file_path: str | IO,
+                                            batch_id: Optional[str] = None,
+                                            anonymize: bool = False,
+                                            anonymize_retain_codes: Sequence[tuple] = [],
+                                            labels: list[str] = None,
+                                            mung_filename: Sequence[int] | Literal['all'] = None,
+                                            channel: Optional[str] = None,
+                                            session=None,
+                                            modality: Optional[str] = None,
+                                            ) -> str:
         if _is_io_object(file_path):
             name = file_path.name
         else:
@@ -180,11 +184,23 @@ class APIHandler:
             name = new_file_path
             _LOGGER.debug(f"New file path: {name}")
 
+        mimetype = mimetypes.guess_type(name)[0]
+        is_a_dicom_file = None
+        if mimetype is None:
+            is_a_dicom_file = is_dicom(name) or is_dicom(file_path)
+            if is_a_dicom_file:
+                mimetype = 'application/dicom'
+
+        _LOGGER.debug(f"File name '{name}' mimetype: {mimetype}")
+
         if anonymize:
-            ds = pydicom.dcmread(file_path)
-            ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
-            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-            f = to_bytesio(ds, name)
+            if is_a_dicom_file == True or is_dicom(file_path):
+                ds = pydicom.dcmread(file_path)
+                ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
+                # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
+                f = to_bytesio(ds, name)
+            else:
+                _LOGGER.warning(f"File {file_path} is not a dicom file. Skipping anonymization.")
         elif isinstance(file_path, str) or isinstance(file_path, Path):
             f = open(file_path, 'rb')
         else:
@@ -193,20 +209,21 @@ class APIHandler:
         try:
             form = aiohttp.FormData()
             if batch_id is not None:
-                url = f'{self.root_url}/{APIHandler.ENDPOINT_DICOMS}'
+                url = self._get_endpoint_url(APIHandler.ENDPOINT_DICOMS)
                 file_key = 'dicom'
                 if modality is not None:
                     _LOGGER.warning("Modality is ignored when uploading to a batch.")
                 modality = None
                 form.add_field('batch_id', batch_id)
             else:
-                url = f'{self.root_url}/{APIHandler.ENDPOINT_RESOURCES}'
+                url = self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)
                 file_key = 'resource'
                 form.add_field('source', 'api')
 
-            form.add_field(file_key, f, filename=name, content_type='application/dicom')
+            form.add_field(file_key, f, filename=name, content_type=mimetype)
             form.add_field('filepath', name)
-            form.add_field('mimetype', 'application/dicom')
+            if mimetype is not None:
+                form.add_field('mimetype', mimetype)
             if channel is not None:
                 form.add_field('channel', channel)
             if modality is not None:
@@ -234,26 +251,26 @@ class APIHandler:
         finally:
             f.close()
 
-    async def _upload_dicoms_async(self,
-                                   files_path: Sequence[str | IO],
-                                   batch_id: Optional[str] = None,
-                                   anonymize: bool = False,
-                                   anonymize_retain_codes: Sequence[tuple] = [],
-                                   on_error: Literal['raise', 'skip'] = 'raise',
-                                   labels=None,
-                                   mung_filename: Sequence[int] | Literal['all'] = None,
-                                   channel: Optional[str] = None,
-                                   modality: Optional[str] = None,
-                                   ) -> list[str]:
+    async def _upload_resources_async(self,
+                                      files_path: Sequence[str | IO],
+                                      batch_id: Optional[str] = None,
+                                      anonymize: bool = False,
+                                      anonymize_retain_codes: Sequence[tuple] = [],
+                                      on_error: Literal['raise', 'skip'] = 'raise',
+                                      labels=None,
+                                      mung_filename: Sequence[int] | Literal['all'] = None,
+                                      channel: Optional[str] = None,
+                                      modality: Optional[str] = None,
+                                      ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
 
-            async def __upload_single_dicom(file_path):
+            async def __upload_single_resource(file_path):
                 _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
                 async with self.semaphore:
-                    return await self._upload_single_dicom_async(
+                    return await self._upload_single_resource_async(
                         file_path=file_path,
                         anonymize=anonymize,
                         anonymize_retain_codes=anonymize_retain_codes,
@@ -264,7 +281,7 @@ class APIHandler:
                         modality=modality,
                         batch_id=batch_id
                     )
-            tasks = [__upload_single_dicom(f) for f in files_path]
+            tasks = [__upload_single_resource(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_dicoms(self,
@@ -278,7 +295,7 @@ class APIHandler:
                       channel: Optional[str] = None,
                       ) -> list[str]:
         """
-        Upload dicoms to a batch.
+        Upload dicoms. If batch_id is None, this is equivalent to :meth:`~upload_resources`.
 
         Args:
             files_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
@@ -299,15 +316,53 @@ class APIHandler:
         """
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
-        task = self._upload_dicoms_async(files_path=files_path,
-                                         batch_id=batch_id,
-                                         anonymize=anonymize,
-                                         anonymize_retain_codes=anonymize_retain_codes,
-                                         on_error=on_error,
-                                         labels=labels,
-                                         mung_filename=mung_filename,
-                                         channel=channel,
-                                         )
+        task = self._upload_resources_async(files_path=files_path,
+                                            batch_id=batch_id,
+                                            anonymize=anonymize,
+                                            anonymize_retain_codes=anonymize_retain_codes,
+                                            on_error=on_error,
+                                            labels=labels,
+                                            mung_filename=mung_filename,
+                                            channel=channel,
+                                            )
+
+        return loop.run_until_complete(task)
+
+    def upload_resources(self,
+                         files_path: str | IO | Sequence[str | IO],
+                         anonymize: bool = False,
+                         anonymize_retain_codes: Sequence[tuple] = [],
+                         on_error: Literal['raise', 'skip'] = 'raise',
+                         labels=None,
+                         mung_filename: Sequence[int] | Literal['all'] = None,
+                         channel: Optional[str] = None,
+                         ) -> list[str]:
+        """
+        Upload resources.
+
+        Args:
+            files_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
+            anonymize (bool): Whether to anonymize the dicoms or not.
+            anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
+            on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
+            labels (list[str]): The labels to assign to the dicoms.
+            mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
+                ''all'' keeps all parts.
+            channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
+
+        Returns:
+            list[str]: The list of new created dicom_ids.
+        """
+        files_path = APIHandler.__process_files_parameter(files_path)
+        loop = asyncio.get_event_loop()
+        task = self._upload_resources_async(files_path=files_path,
+                                            anonymize=anonymize,
+                                            anonymize_retain_codes=anonymize_retain_codes,
+                                            on_error=on_error,
+                                            labels=labels,
+                                            mung_filename=mung_filename,
+                                            channel=channel,
+                                            )
 
         return loop.run_until_complete(task)
 
@@ -395,13 +450,14 @@ class APIHandler:
                                      size=len(files_path),
                                      modality=modality)
         loop = asyncio.get_event_loop()
-        results = loop.run_until_complete(self._upload_dicoms_async(files_path, batch_id,
-                                                                    anonymize=anonymize,
-                                                                    anonymize_retain_codes=anonymize_retain_codes,
-                                                                    on_error=on_error,
-                                                                    labels=labels,
-                                                                    channel=channel,
-                                                                    mung_filename=mung_filename)
+        results = loop.run_until_complete(self._upload_resources_async(files_path,
+                                                                       batch_id=batch_id,
+                                                                       anonymize=anonymize,
+                                                                       anonymize_retain_codes=anonymize_retain_codes,
+                                                                       on_error=on_error,
+                                                                       labels=labels,
+                                                                       channel=channel,
+                                                                       mung_filename=mung_filename)
                                           )
         return batch_id, results
 

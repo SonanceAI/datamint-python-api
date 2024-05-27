@@ -6,25 +6,35 @@ import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.dataset import FileMetaDataset
-from datamintapi.utils.dicom_utils import CLEARED_STR, to_bytesio
+from datamintapi.utils.dicom_utils import to_bytesio
 import json
 import re
 from aiohttp import FormData
+from typing import Tuple
+from io import BytesIO
 
 _TEST_URL = 'https://test_url.com'
 
 
-def _get_request_data(request_data):
+def _get_request_data(request_data) -> Tuple[BytesIO, str]:
     if isinstance(request_data, FormData):
         for field in request_data._fields:
             if hasattr(field[-1], 'read'):
                 dicom_bytes = field[-1]
                 break
         data = str(request_data._fields)
-    else:
-        dicom_bytes = request_data['dicom']
+    elif isinstance(request_data, dict):
+        if 'dicom' in request_data:
+            dicom_bytes = request_data['dicom']
+        else:
+            dicom_bytes = request_data['resource']
         data = str(request_data)
+    else:  # Multipart object
+        raise NotImplementedError
     return dicom_bytes, data
+
+
+MP4_TEST_FILE = 'tests/data/test1.mp4'
 
 
 class TestAPIHandler:
@@ -318,3 +328,24 @@ class TestAPIHandler:
         with patch('builtins.open', new=my_open_mock):
             segmentation_id = api_handler.upload_segmentation(dicom_id, file_path, segmentation_name)
         assert segmentation_id == 'test_segmentation_id'
+
+    @responses.activate
+    def test_upload_resources(self):
+        def _callback(url, data, *args, **kwargs):
+            assert kwargs['headers']['apikey'] == 'test_api_key'
+
+            return CallbackResult(status=201, payload={"id": "new_resource_id"})
+
+        with aioresponses() as mock_aioresp:
+            # check that post request has data 'batch_id'
+            api_handler = APIHandler(_TEST_URL, 'test_api_key')
+            mock_aioresp.post(
+                api_handler._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES),
+                callback=_callback
+            )
+
+            new_resources_id = api_handler.upload_resources(files_path=MP4_TEST_FILE,
+                                                            labels=['label1', 'label2'],
+                                                            channel='mychannel',
+                                                            anonymize=False)
+            assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
