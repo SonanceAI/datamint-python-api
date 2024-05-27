@@ -330,7 +330,7 @@ class TestAPIHandler:
         assert segmentation_id == 'test_segmentation_id'
 
     @responses.activate
-    def test_upload_resources(self):
+    def test_upload_resources_video(self):
         def _callback(url, data, *args, **kwargs):
             assert kwargs['headers']['apikey'] == 'test_api_key'
 
@@ -349,3 +349,4 @@ class TestAPIHandler:
                                                             channel='mychannel',
                                                             anonymize=False)
             assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
+

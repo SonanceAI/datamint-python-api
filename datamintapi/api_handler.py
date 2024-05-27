@@ -51,6 +51,12 @@ def _is_io_object(obj):
     return callable(getattr(obj, "read", None))
 
 
+def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
+    if isinstance(file_path, str) or isinstance(file_path, Path):
+        return open(file_path, 'rb')
+    return file_path
+
+
 class APIHandler:
     """
     Class to handle the API requests to the Datamint API
@@ -201,10 +207,9 @@ class APIHandler:
                 f = to_bytesio(ds, name)
             else:
                 _LOGGER.warning(f"File {file_path} is not a dicom file. Skipping anonymization.")
-        elif isinstance(file_path, str) or isinstance(file_path, Path):
-            f = open(file_path, 'rb')
+                f = _open_io(file_path)
         else:
-            f = file_path
+            f = _open_io(file_path)
 
         try:
             form = aiohttp.FormData()
