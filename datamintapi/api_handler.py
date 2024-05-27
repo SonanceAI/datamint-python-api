@@ -16,7 +16,11 @@ _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
 ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
+"""TypeAlias: The available resource status. Possible values: 'new', 'inbox', 'published', 'archived'.
+"""
 ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'published_on', 'filename']
+"""TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
+"""
 
 _PAGE_LIMIT = 10
 
@@ -33,6 +37,7 @@ class ResourceNotFoundError(DatamintException):
     Exception raised when a resource is not found. 
     For instance, when trying to get a resource by a non-existing id.
     """
+
     def __init__(self,
                  resource_type: str,
                  params: dict):
@@ -393,7 +398,6 @@ class APIHandler:
         _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path
 
-    # ? maybe it is better to separate "complex" workflows to a separate class?
     def create_batch_with_dicoms(self,
                                  description: str,
                                  files_path: str | IO | Sequence[str | IO],
@@ -616,6 +620,29 @@ class APIHandler:
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
                       ) -> Generator[dict, None, None]:
+        """
+        Iterates over resources with the specified filters.
+        Filters can be combined to narrow down the search.
+        It returns full information of the resources by default, but it can be configured to return only the ids with parameter `return_ids_only`.
+
+        Args:
+            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published' or 'archived'.
+            from_date (Optional[date]): The start date.
+            to_date (Optional[date]): The end date.
+            labels (Optional[list[str]]): The labels to filter the resources.
+            modality (Optional[str]): The modality of the resources.
+            mimetype (Optional[str]): The mimetype of the resources.
+            return_ids_only (bool): Whether to return only the ids of the resources.
+            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~ResourceFields`.
+            order_ascending (Optional[bool]): Whether to order the resources in ascending order.
+
+        Returns:
+            Generator[dict, None, None]: A generator of dictionaries with the resources information.
+
+        Example:
+            >>> for resource in api_handler.get_resources(status='inbox'):
+            >>>     print(resource)
+        """
         # Convert datetime objects to ISO format
         if from_date:
             from_date = from_date.isoformat()
