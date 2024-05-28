@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias
+from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict
 import os
 from requests import Session
 from requests.exceptions import HTTPError
@@ -11,6 +11,7 @@ import pydicom
 from pathlib import Path
 from datetime import date
 import mimetypes
+import json
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -72,6 +73,7 @@ class APIHandler:
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
     ENDPOINT_RESOURCES = 'resources'
     ENDPOINT_DICOMS = 'dicoms'
+    ENDPOINT_CHANNELS = f'{ENDPOINT_RESOURCES}/channels'
 
     def __init__(self,
                  root_url: str,
@@ -684,3 +686,59 @@ class APIHandler:
                 break
 
             offset += _PAGE_LIMIT
+
+    def get_channels(self) -> Dict:
+        """
+        Get all the channels.
+
+        Returns:
+            dict: A dictionary with the channels information.
+
+        Example:
+            >>> api_handler.get_channels()
+            [{'channel': 'CT scans', 'count': '9'},
+             {'channel': 'testchannel', 'count': '1'},
+             {'channel': None, 'count': '6'}]
+
+        """
+        request_params = {
+            'method': 'GET',
+            'url': self._get_endpoint_url(APIHandler.ENDPOINT_CHANNELS)
+        }
+
+        return self._run_request(request_params).json()
+
+    def update_resource_labels(self, resource_id: str,
+                               labels: Sequence[str] = [],
+                               frame_labels: Sequence[Dict] = []
+                               ):
+        url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{resource_id}/labels"
+        data = {}
+
+        for i, l in enumerate(labels):
+            data[f'labels[{i}]'] = l
+
+        for i, fl in enumerate(frame_labels):
+            frame_label_i = {'frame': fl['frame']}
+            for j, flj in enumerate(fl['labels']):
+                frame_label_i[f'labels[{j}]'] = flj
+
+            data[f'frame_labels[{i}]'] = frame_label_i
+
+        request_params = {'method': 'PUT',
+                          'url': url,
+                          'json': data
+                          }
+
+        response = self._run_request(request_params)
+        return response
+
+    def download_resource_file(self,
+                               resource_id: str,
+                               save_path: str = None,
+                               auto_load: bool = True):
+        url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
+        request_params = {'method': 'GET',
+                          'url': url}
+        response = self._run_request(request_params)
+        return response
