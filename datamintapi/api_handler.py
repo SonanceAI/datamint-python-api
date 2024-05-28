@@ -721,7 +721,6 @@ class APIHandler:
         if frame_labels is not None:
             data['frame_labels'] = frame_labels
 
-
         request_params = {'method': 'PUT',
                           'url': url,
                           'json': data
@@ -733,9 +732,16 @@ class APIHandler:
     def download_resource_file(self,
                                resource_id: str,
                                save_path: str = None,
-                               auto_load: bool = True):
+                               #    auto_convert: bool = True
+                               ) -> bytes:
         url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
         request_params = {'method': 'GET',
+                          'headers': {'accept': 'application/octet-stream'},
                           'url': url}
-        response = self._run_request(request_params)
-        return response
+        try:
+            response = self._run_request(request_params)
+        except HTTPError as e:
+            if hasattr(e, 'response') and (e.response is not None) and e.response.status_code == 404:
+                raise ResourceNotFoundError('file', {'resource_id': resource_id})
+            raise e
+        return response.content
