@@ -103,6 +103,7 @@ class APIHandler:
             request_args['headers'] = {}
 
         request_args['headers']['apikey'] = self.api_key
+
         async with session.request(**request_args) as response:
             response.raise_for_status()
             if data_to_get == 'json':
@@ -114,7 +115,7 @@ class APIHandler:
 
     def _run_request(self,
                      request_args: dict,
-                     session=None):
+                     session: Session = None):
         if session is None:
             with Session() as s:
                 return self._run_request(request_args, s)
@@ -708,22 +709,18 @@ class APIHandler:
 
         return self._run_request(request_params).json()
 
-    def update_resource_labels(self, resource_id: str,
-                               labels: Sequence[str] = [],
-                               frame_labels: Sequence[Dict] = []
-                               ):
+    def set_resource_labels(self, resource_id: str,
+                            labels: Sequence[str] = None,
+                            frame_labels: Sequence[Dict] = None
+                            ):
         url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{resource_id}/labels"
         data = {}
 
-        for i, l in enumerate(labels):
-            data[f'labels[{i}]'] = l
+        if labels is not None:
+            data['labels'] = labels
+        if frame_labels is not None:
+            data['frame_labels'] = frame_labels
 
-        for i, fl in enumerate(frame_labels):
-            frame_label_i = {'frame': fl['frame']}
-            for j, flj in enumerate(fl['labels']):
-                frame_label_i[f'labels[{j}]'] = flj
-
-            data[f'frame_labels[{i}]'] = frame_label_i
 
         request_params = {'method': 'PUT',
                           'url': url,
