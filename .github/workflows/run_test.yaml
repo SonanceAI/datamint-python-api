@@ -41,5 +41,5 @@ jobs:
         if: always() && matrix.python-version == '3.10'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-report-${{ matrix.python-version }}
+          name: coverage-report
           path: htmlcov/
