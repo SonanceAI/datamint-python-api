@@ -112,30 +112,33 @@ def _walk_to_depth(path: str, depth: int, exclude_pattern: str = None):
 
 
 def _parse_args() -> tuple:
-    parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading dicom files')
+    parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading DICOM files and other resources')
+    parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
+                        required=True,
+                        help='Path to the resource file(s) or a directory')
     parser.add_argument('-r', '--recursive', nargs='?', const=-1,  # -1 means infinite
                         type=int,
-                        help='Recurse folders looking for dicoms. If a number is passed, recurse that number of levels.')
-    parser.add_argument('--mungfilename', type=_mungfilename_type,
-                        help='Change the filename in the upload parameters. \
-                            If set to "all", the filename becomes the folder names joined together with "_". \
-                            If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
-    parser.add_argument('--name', type=str, help='Name of the upload batch')
+                        help='Recurse folders looking for DICOMs. If a number is passed, recurse that number of levels.')
+    parser.add_argument('--exclude', type=str,
+                        help='Exclude folders that match the specified pattern. \
+                            Example: "*_not_to_upload" will exclude folders ending with "_not_to_upload')
+    parser.add_argument('--name', type=str, help='Name of the upload batch.')
     parser.add_argument('--channel', type=str, required=False,
-                        help='Channel name (arbritary) to upload the dicoms to. \
-                            Useful for organizing the dicoms in the platform.')
-    parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize dicom')
+                        help='Channel name (arbritary) to upload the resources to. \
+                            Useful for organizing the resources in the platform.')
+    parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize DICOMs')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
                         default=[],
                         help='Retain the value of a single attribute code specified as hexidecimal integers. \
                             Example: (0x0008, 0x0050) or just (0008, 0050)')
     parser.add_argument('-l', '--label', type=str, action='append', help='A label name to be applied to all files')
-    parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
-                        required=True,
-                        help='Path to the DICOM file(s) or a directory')
-    parser.add_argument('--exclude', type=str,
-                        help='Exclude folders that match the specified pattern. \
-                            Example: "*_not_to_upload" will exclude folders ending with "_not_to_upload')
+    parser.add_argument('--mungfilename', type=_mungfilename_type,
+                        help='Change the filename in the upload parameters. \
+                            If set to "all", the filename becomes the folder names joined together with "_". \
+                            If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
+
+    # parser.add_argument('--formats', type=str, nargs='+', default=['dcm', 'dicom'],
+    #                     help='File extensions to be considered for uploading. Default: dcm, dicom')
 
     args = parser.parse_args()
 
@@ -156,7 +159,7 @@ def _parse_args() -> tuple:
                      for f in os.listdir(args.path) if is_dicom(os.path.join(args.path, f))]
 
     if len(file_path) == 0:
-        raise ValueError(f"No dicom files found in {args.path}")
+        raise ValueError(f"No DICOM files found in {args.path}")
 
     _LOGGER.info(f"args parsed: {args}")
 
@@ -228,27 +231,29 @@ def main():
         return
     #######################################
 
+    has_a_dicom_file = any(is_dicom(f) for f in files_path)
+
     api_handler = APIHandler(ROOT_URL)
     if args.name is not None:
         batch_id, results = api_handler.create_batch_with_dicoms(args.name,
                                                                  files_path=files_path,
                                                                  labels=args.label,
                                                                  on_error='skip',
-                                                                 anonymize=args.retain_pii == False,
+                                                                 anonymize=args.retain_pii == False and has_a_dicom_file,
                                                                  anonymize_retain_codes=args.retain_attribute,
                                                                  mung_filename=args.mungfilename,
                                                                  channel=args.channel
                                                                  )
         _LOGGER.debug(f"new Batch ID: {batch_id}")
     else:
-        results = api_handler.upload_dicoms(channel=args.channel,
-                                            files_path=files_path,
-                                            labels=args.label,
-                                            on_error='skip',
-                                            anonymize=args.retain_pii == False,
-                                            anonymize_retain_codes=args.retain_attribute,
-                                            mung_filename=args.mungfilename
-                                            )
+        results = api_handler.upload_resources(channel=args.channel,
+                                               files_path=files_path,
+                                               labels=args.label,
+                                               on_error='skip',
+                                               anonymize=args.retain_pii == False and has_a_dicom_file,
+                                               anonymize_retain_codes=args.retain_attribute,
+                                               mung_filename=args.mungfilename
+                                               )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 

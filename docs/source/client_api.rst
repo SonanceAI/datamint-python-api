@@ -32,28 +32,66 @@ There are three options to specify the API key:
 
 3. run ``datamint config`` (TODO?) and follow the instructions.
 
-Upload DICOMs
--------------
+Upload DICOMs and other resources
+----------------------------------
 
 First, import the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` class and create an instance: ``api_handler = APIHandler(...)``.
-Then, use one of the following methods to upload DICOM files.
+This class is responsible for interacting with the Datamint server.
 
-Upload a single DICOM file
+Upload resource files
 ++++++++++++++++++++++++++++++++
 
-Use the :py:meth:`upload_dicoms() <datamintapi.api_handler.APIHandler.upload_dicoms>` method
+Use the :py:meth:`upload_resources() <datamintapi.api_handler.APIHandler.upload_resources>` method to upload any resource type, such as DICOMs, videos, image files:
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicoms(file_path="/path/to/dicom.dcm")
+    # Upload a single file
+    resource_id = api_handler.upload_resources("/path/to/dicom.dcm")
+
+    # Upload multiple files at once
+    resoures_ids = api_handler.upload_resources(["/path/to/dicom.dcm", 
+                                                 "/path/to/video.mp4"]
+                                                )
+
+You can see the list of all uploaded resources by calling the :py:meth:`get_resources() <datamintapi.api_handler.APIHandler.get_resources>` method:
+
+.. code-block:: python
+
+    resources = api_handler.get_resources(status='inbox') # status can be any of {'inbox', 'published', 'archived'}
+    # Alternatively, you can use apihandler.get_resources_by_ids(resources_ids)
+    for res in resources:
+        print(res)
+
+Group up resources using channels
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+For a better organization of resources, you can group them into channels:
+
+.. code-block:: python
+
+    # Uploads a resource and creates a new channel named 'CT scans':
+    resource_id = api_handler.upload_resources("/path/to/dicom.dcm",
+                                               channel='CT scans'
+                                               )
+
+    # This uploads a new resource to the same channel:
+    resource_id = api_handler.upload_resources("/path/to/dicom2.dcm",
+                                               channel='CT scans'
+                                               )                              
+    
+    # Get all resources from channel 'CT scans':
+    resources = api_handler.get_resources(channel='CT scans')
     
 
 Upload, anonymize and add a label
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+To anonymize and add a label to a DICOM file, use the parameters `anonymize`
+and `labels` of :py:meth:`upload_resources() <datamintapi.api_handler.APIHandler.upload_upload_resourcesdicom>`:
+
 .. code-block:: python
 
-    dicom_id = api_handler.upload_dicom(file_path=file_path,
+    dicom_id = api_handler.upload_resources(files_path='/path/to/video_data.mp4',
                                         anonymize=True,
                                         labels=['pneumonia'])
 
@@ -118,7 +156,7 @@ To use it, import the custom dataset class and create an instance:
 
 and then use it in your PyTorch code as usual.
 
-Here is an complete example that inherits :py:class:`datamintapi.dataset.DatamintDataset`:
+Here is a complete example that inherits :py:class:`datamintapi.dataset.DatamintDataset`:
 
 .. code-block:: python
 
