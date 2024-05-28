@@ -65,9 +65,9 @@ class APIHandler:
         self.root_url = root_url
         self.api_key = api_key if api_key is not None else os.getenv(APIHandler.DATAMINT_API_VENV_NAME)
         if self.api_key is None:
-            msg = f"API key not provided! Use the environment variable {
-                APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
-            raise Exception(msg)
+            msg = f"API key not provided! Use the environment variable \
+                {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
+            raise DatamintException(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
     async def _run_request_async(self,
