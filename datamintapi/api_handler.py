@@ -1,5 +1,6 @@
 from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict
 import os
+import pydicom.dataset
 from requests import Session
 from requests.exceptions import HTTPError
 import logging
@@ -12,6 +13,11 @@ from pathlib import Path
 from datetime import date
 import mimetypes
 import json
+from PIL import Image
+from io import BytesIO
+import cv2
+import nibabel as nib
+from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -733,22 +739,88 @@ class APIHandler:
     def _has_status_code(e, status_code: int) -> bool:
         return hasattr(e, 'response') and (e.response is not None) and e.response.status_code == status_code
 
+    @staticmethod
+    def convert_format(bytes_array: bytes,
+                       mimetype: str,
+                       file_path: str = None
+                       ) -> pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | bytes | nib_FileBasedImage:
+        content_io = BytesIO(bytes_array)
+        if mimetype == 'application/dicom':
+            return pydicom.dcmread(content_io)
+        elif mimetype in ('image/jpeg', 'image/png', 'image/tiff'):
+            return Image.open(content_io)
+        elif mimetype == 'video/mp4':
+            if file_path is None:
+                raise NotImplementedError("file_path=None is not implemented yet for video/mp4.")
+            return cv2.VideoCapture(file_path)
+        elif mimetype == 'application/json':
+            return json.loads(bytes_array)
+        elif mimetype == 'application/octet-stream':
+            return bytes_array
+        elif mimetype == 'application/nifti':
+            if file_path is None:
+                raise NotImplementedError("file_path=None is not implemented yet for application/nifti.")
+            return nib.load(file_path)
+
+        raise ValueError(f"Unsupported mimetype: {mimetype}")
+
     def download_resource_file(self,
                                resource_id: str,
-                               save_path: str = None,
-                               #    auto_convert: bool = True
-                               ) -> bytes:
+                               save_path: Optional[str] = None,
+                               auto_convert: bool = True
+                               ) -> bytes | pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage:
+        """
+        Download a resource file.
+
+        Args:
+            resource_id (str): The resource unique id.
+            save_path (Optional[str]): The path to save the file.
+            auto_convert (bool): Whether to convert the file to a known format or not.
+
+        Returns:
+            The resource content in bytes (if `auto_convert=False`) or the resource object (if `auto_convert=True`).
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+
+        Example:
+            >>> api_handler.download_resource_file('resource_id', auto_convert=False)
+                returns the resource content in bytes.
+            >>> api_handler.download_resource_file('resource_id', auto_convert=True)
+                Assuming this resource is a dicom file, it will return a pydicom.dataset.Dataset object. 
+            >>> api_handler.download_resource_file('resource_id', save_path='path/to/dicomfile.dcm')
+                saves the file in the specified path.
+        """
         url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
         request_params = {'method': 'GET',
                           'headers': {'accept': 'application/octet-stream'},
                           'url': url}
         try:
             response = self._run_request(request_params)
+            if auto_convert:
+                resource_info = self.get_resources_by_ids(resource_id)
+                mimetype = resource_info['mimetype']
+                try:
+                    resource_file = APIHandler.convert_format(response.content, mimetype, save_path)
+                except ValueError as e:
+                    _LOGGER.warning(f"Could not convert file to a known format: {e}")
+                    resource_file = response.content
+                except NotImplementedError as e:
+                    _LOGGER.warning(f"Conversion not implemented yet for {mimetype} and save_path=None." +
+                                    " Returning a bytes array. If you want the conversion for this mimetype, provide a save_path.")
+                    resource_file = response.content
+            else:
+                resource_file = response.content
         except HTTPError as e:
             if APIHandler._has_status_code(e, 404):
                 raise ResourceNotFoundError('file', {'resource_id': resource_id})
             raise e
-        return response.content
+
+        if save_path is not None:
+            with open(save_path, 'wb') as f:
+                f.write(response.content)
+
+        return resource_file
 
     def delete_resources(self, resource_ids: Sequence[str] | str) -> None:
         """
