@@ -729,6 +729,10 @@ class APIHandler:
         response = self._run_request(request_params)
         return response
 
+    @staticmethod
+    def _has_status_code(e, status_code: int) -> bool:
+        return hasattr(e, 'response') and (e.response is not None) and e.response.status_code == status_code
+
     def download_resource_file(self,
                                resource_id: str,
                                save_path: str = None,
@@ -741,7 +745,35 @@ class APIHandler:
         try:
             response = self._run_request(request_params)
         except HTTPError as e:
-            if hasattr(e, 'response') and (e.response is not None) and e.response.status_code == 404:
+            if APIHandler._has_status_code(e, 404):
                 raise ResourceNotFoundError('file', {'resource_id': resource_id})
             raise e
         return response.content
+
+    def delete_resources(self, resource_ids: Sequence[str] | str) -> None:
+        """
+        Delete resources by their unique ids.
+
+        Args:
+            resource_ids (Sequence[str] | str): The resource unique id or a list of resource unique ids.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+
+        Example:
+            >>> api_handler.delete_resources('e8b78358-656d-481f-8c98-d13b9ba6be1b')
+            >>> api_handler.delete_resources(['e8b78358-656d-481f-8c98-d13b9ba6be1b', '6f8b506c-6ea1-4e85-8e67-254767f95a7b'])
+        """
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids]
+        for rid in resource_ids:
+            url = f"{self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)}/{rid}"
+            request_params = {'method': 'DELETE',
+                              'url': url
+                              }
+            try:
+                self._run_request(request_params)
+            except HTTPError as e:
+                if APIHandler._has_status_code(e, 404):
+                    raise ResourceNotFoundError('resource', {'resource_id': rid})
+                raise e
