@@ -358,7 +358,7 @@ class APIHandler:
                          labels=None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
-                         ) -> list[str]:
+                         ) -> list[str | Exception]:
         """
         Upload resources.
 
