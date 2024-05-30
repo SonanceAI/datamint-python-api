@@ -141,8 +141,8 @@ To download a resource, use the :py:meth:`download_resources() <datamintapi.api_
     # dicom_obj is dicom object (pydicom.Dataset)
 
 The function above uses the resource mimetype to automatically convert to a proper object type (`pydicom.Dataset`, in this case.)
-If you do not this, but the bytes itself, use the `auto_convert=False` parameter.
-Additionally, if you want to save the file to disk, use the `save_path` parameter:
+If you do not this, but the bytes itself, use the ``auto_convert=False`` parameter.
+Additionally, if you want to save the file to disk, use the ``save_path`` parameter:
 
 .. code-block:: python
 
