@@ -171,7 +171,6 @@ def _parse_args() -> tuple:
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
                             If one or more integers are passed (comma-separated), append that depth of folder name to the filename.')
-
     parser.add_argument('--include-extensions', type=str, nargs='+',
                         help='File extensions to be considered for uploading. Default: all file extensions.' +
                         ' Example: --include-extensions dcm jpg png')
@@ -179,10 +178,9 @@ def _parse_args() -> tuple:
                         help='File extensions to be excluded from uploading. Default: none.' +
                         ' Example: --exclude-extensions txt csv'
                         )
-    parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
-    # Automatically answer yes to all prompts
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
 
     args = parser.parse_args()
 
@@ -254,6 +252,7 @@ def print_input_summary(files_path: List[str], include_extensions=None):
 
 def print_results_summary(files_path: List[str],
                           results: List[str | Exception]):
+    # Check for failed uploads
     failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
     _USER_LOGGER.info(f"\nUpload summary:")
     _USER_LOGGER.info(f"\tTotal files: {len(files_path)}")
@@ -327,7 +326,6 @@ def main():
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 
-    # Check for failed uploads
     print_results_summary(files_path, results)
 
 

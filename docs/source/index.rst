@@ -8,6 +8,7 @@
 
 Documentation
 =======================================
+**Version:** |release|
 
 From inception to completion, Datamint is your reliable partner.
 It assists from the very first day when you make your data available to your team, right up to the moment you're set to launch your model.

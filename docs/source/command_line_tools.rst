@@ -49,6 +49,24 @@ To upload resources, associating them with a label, and associating them to a ba
     datamint-upload --path /path/to/dicom_files -l "my_label" --name "my_upload"
 
 
+Example using include and exclude extensions options:
++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+To upload only DICOM files, run:
+
+.. code-block:: bash
+
+    datamint-upload --path /root_dir --include-extensions dcm
+
+To upload all files except the .txt and .csv files, run:
+
+.. code-block:: bash
+
+    datamint-upload --path /root_dir --exclude-extensions txt,csv
+
+All available options
++++++++++++++++++++++
+
 See all available options by running ``datamint-upload --help``:
 
     -h, --help            show this help message and exit
@@ -68,3 +86,9 @@ See all available options by running ``datamint-upload --help``:
     --mungfilename MUNGFILENAME
                             Change the filename in the upload parameters. If set to "all", the filename becomes the folder names joined together with "_". If one or more integers are passed (comma-separated), append that
                             depth of folder name to the filename.
+    --include-extensions INCLUDE_EXTENSIONS
+                            File extensions to be considered for uploading. Default: all file extensions. Example: ``--include-extensions dcm jpg png``
+    --exclude-extensions EXCLUDE_EXTENSIONS
+                          File extensions to be excluded from uploading. Default: none. Example: ``--exclude-extensions txt csv``
+    --yes                 Automatically answer yes to all prompts
+    --version             show program's version number and exit
