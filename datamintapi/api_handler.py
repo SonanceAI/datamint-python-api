@@ -88,14 +88,14 @@ class APIHandler:
         self.root_url = root_url
         self.api_key = api_key if api_key is not None else os.getenv(APIHandler.DATAMINT_API_VENV_NAME)
         if self.api_key is None:
-            msg = f"API key not provided! Use the environment variable {
-                APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
-            raise Exception(msg)
+            msg = f"API key not provided! Use the environment variable " + \
+                "{APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
+            raise DatamintException(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
     async def _run_request_async(self,
                                  request_args: dict,
-                                 session=None,
+                                 session: aiohttp.ClientSession = None,
                                  data_to_get: str = 'json'):
         if session is None:
             async with aiohttp.ClientSession() as s:
@@ -111,13 +111,24 @@ class APIHandler:
         request_args['headers']['apikey'] = self.api_key
 
         async with session.request(**request_args) as response:
-            response.raise_for_status()
+            self._check_errors_response(response, request_args)
             if data_to_get == 'json':
                 return await response.json()
             elif data_to_get == 'text':
                 return await response.text()
             else:
                 raise ValueError("data_to_get must be either 'json' or 'text'")
+
+    def _check_errors_response(self,
+                               response,
+                               request_args: dict):
+        try:
+            response.raise_for_status()
+        except HTTPError as e:
+            if response.status_code == 404:
+                raise DatamintException(f'The requested endpoint "{request_args["url"]}" could not be found. ' +
+                                        'Please check the URL and try again')
+            raise e
 
     def _run_request(self,
                      request_args: dict,
@@ -132,7 +143,7 @@ class APIHandler:
 
         request_args['headers']['apikey'] = self.api_key
         response = session.request(**request_args)
-        response.raise_for_status()
+        self._check_errors_response(response, request_args)
         return response
 
     def create_batch(self,

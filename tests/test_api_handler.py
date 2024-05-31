@@ -68,7 +68,7 @@ class TestAPIHandler:
 
         ### Second test case: Expecting an exception to be raised, since no api key is provided ###
         mock_getenv.return_value = None
-        with pytest.raises(Exception):
+        with pytest.raises(DatamintException):
             APIHandler('test_url')
 
     @responses.activate

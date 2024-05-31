@@ -1,6 +1,10 @@
 [tool.poetry]
 name = "DatamintAPI"
+<<<<<<< feat/upload-resource
 version = "0.3.0"
+=======
+version = "0.2.1"
+>>>>>>> main
 description = "A library for loading Datamint datasets into Pytorch"
 authors = ["Sonance Team"]
 readme = "README.md"
