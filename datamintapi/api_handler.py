@@ -284,7 +284,6 @@ class APIHandler:
                         mung_filename=mung_filename,
                         channel=channel,
                         modality=modality,
-                        batch_id=batch_id
                     )
             tasks = [__upload_single_resource(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
@@ -323,7 +322,6 @@ class APIHandler:
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
-                                            batch_id=batch_id,
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
