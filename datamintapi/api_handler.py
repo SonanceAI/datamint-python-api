@@ -18,6 +18,7 @@ from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
+from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -78,7 +79,6 @@ class APIHandler:
     """
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
     ENDPOINT_RESOURCES = 'resources'
-    ENDPOINT_DICOMS = 'dicoms'
     ENDPOINT_CHANNELS = f'{ENDPOINT_RESOURCES}/channels'
 
     def __init__(self,
@@ -154,46 +154,18 @@ class APIHandler:
         self._check_errors_response(response, request_args)
         return response
 
+    @deprecated(version='0.4.0', reason="This functions is not used anymore.")
     def create_batch(self,
                      description: str,
                      size: int,
-                     modality: Optional[str] = None,
-                     session=None) -> str:
-        """
-        Create a new batch.
-
-        Args:
-            description (str): The description of the batch
-            size (int): The number of dicoms in the batch
-            modality (str, optional): The modality of the batch. Defaults to None.
-
-        Returns:
-            str: The batch_id of the created batch. 
-
-        See Also:
-            :meth:`~get_batch_info`
-        """
-        post_params = {'description': description,
-                       'size': size
-                       }
-        if modality is not None:
-            post_params['modality'] = modality
-
-        request_params = {
-            'method': 'POST',
-            'url': f'{self.root_url}/upload-batches',
-            'json': post_params
-        }
-
-        resp = self._run_request(request_params, session)
-        return resp.json()['id']
+                     modality: Optional[str] = None) -> str:
+        return None
 
     def _get_endpoint_url(self, endpoint: str) -> str:
         return f'{self.root_url}/{endpoint}'
 
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
-                                            batch_id: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
                                             labels: list[str] = None,
@@ -249,17 +221,9 @@ class APIHandler:
 
         try:
             form = aiohttp.FormData()
-            if batch_id is not None:
-                url = self._get_endpoint_url(APIHandler.ENDPOINT_DICOMS)
-                file_key = 'dicom'
-                if modality is not None:
-                    _LOGGER.warning("Modality is ignored when uploading to a batch.")
-                modality = None
-                form.add_field('batch_id', batch_id)
-            else:
-                url = self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)
-                file_key = 'resource'
-                form.add_field('source', 'api')
+            url = self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)
+            file_key = 'resource'
+            form.add_field('source', 'api')
 
             form.add_field(file_key, f, filename=name, content_type=mimetype)
             form.add_field('filepath', name)
@@ -325,6 +289,7 @@ class APIHandler:
             tasks = [__upload_single_resource(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
+    @deprecated(version='0.4.0', reason="Use upload_resources instead with no batches.")
     def upload_dicoms(self,
                       files_path: str | IO | Sequence[str | IO],
                       batch_id: Optional[str] = None,
@@ -426,6 +391,7 @@ class APIHandler:
         _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path
 
+    @deprecated(version='0.4.0', reason="Use upload_resources instead.")
     def create_batch_with_dicoms(self,
                                  description: str,
                                  files_path: str | IO | Sequence[str | IO],
@@ -486,12 +452,8 @@ class APIHandler:
         if labels is not None:
             labels = [l.strip() for l in labels]
 
-        batch_id = self.create_batch(description,
-                                     size=len(files_path),
-                                     modality=modality)
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(self._upload_resources_async(files_path,
-                                                                       batch_id=batch_id,
                                                                        anonymize=anonymize,
                                                                        anonymize_retain_codes=anonymize_retain_codes,
                                                                        on_error=on_error,
@@ -499,7 +461,7 @@ class APIHandler:
                                                                        channel=channel,
                                                                        mung_filename=mung_filename)
                                           )
-        return batch_id, results
+        return None, results
 
     def get_batches(self) -> Generator[dict, None, None]:
         """
