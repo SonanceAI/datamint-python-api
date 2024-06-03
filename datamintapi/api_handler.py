@@ -125,9 +125,17 @@ class APIHandler:
         try:
             response.raise_for_status()
         except HTTPError as e:
-            if response.status_code == 404:
-                raise DatamintException(f'The requested endpoint "{request_args["url"]}" could not be found. ' +
-                                        'Please check the URL and try again')
+            _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
+            if APIHandler._has_status_code(e, 404):
+                try:
+                    error_data = response.json()
+                except Exception as e2:
+                    _LOGGER.error(f"Error parsing the response. {e2}")
+                else:
+                    if error_data['message'] == 'Not Found':
+                        # Will be caught by the caller and properly initialized:
+                        raise ResourceNotFoundError('unknown', {})
+
             raise e
 
     def _run_request(self,
@@ -544,10 +552,8 @@ class APIHandler:
                 'url': f'{self.root_url}/upload-batches/{batch_id}'
             }
             return self._run_request(request_params).json()
-        except HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
-                raise ResourceNotFoundError('batch', {'batch_id': batch_id})
-            raise e
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('batch', {'batch_id': batch_id})
 
     def upload_segmentation(self,
                             dicom_id: str,
@@ -587,10 +593,8 @@ class APIHandler:
                 if task_id is not None:
                     request_params['data']['taskId'] = task_id
                 return self._run_request(request_params).json()['id']
-        except HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
-                raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
-            raise e
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
 
     def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
         """
@@ -622,10 +626,8 @@ class APIHandler:
                 }
 
                 resources.append(self._run_request(request_params).json())
-        except HTTPError as e:
-            if e.response is not None and e.response.status_code == 404:
-                raise ResourceNotFoundError('resource', {'resource_id': i})
-            raise e
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('resource', {'resource_id': i})
 
         return resources[0] if input_is_a_string else resources
 
@@ -822,10 +824,8 @@ class APIHandler:
                     resource_file = response.content
             else:
                 resource_file = response.content
-        except HTTPError as e:
-            if APIHandler._has_status_code(e, 404):
-                raise ResourceNotFoundError('file', {'resource_id': resource_id})
-            raise e
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('file', {'resource_id': resource_id})
 
         if save_path is not None:
             with open(save_path, 'wb') as f:
@@ -856,7 +856,5 @@ class APIHandler:
                               }
             try:
                 self._run_request(request_params)
-            except HTTPError as e:
-                if APIHandler._has_status_code(e, 404):
-                    raise ResourceNotFoundError('resource', {'resource_id': rid})
-                raise e
+            except ResourceNotFoundError:
+                raise ResourceNotFoundError('resource', {'resource_id': rid})

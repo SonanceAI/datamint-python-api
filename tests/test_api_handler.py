@@ -12,6 +12,7 @@ import re
 from aiohttp import FormData
 from typing import Tuple
 from io import BytesIO
+import requests
 
 _TEST_URL = 'https://test_url.com'
 
@@ -227,7 +228,7 @@ class TestAPIHandler:
         def _request_callback_batchinfo(request):
             batch_id = request.url.split('/')[-1]
             if batch_id not in uploaded_batches_mock:
-                return (404, "", "{}")
+                return (404, "", '{"message":"Not Found","statusCode":404}')
             resp = {"id": batch_id,
                     "description": "description",
                     "images": [{"filename": "sample_dicom1"}]
@@ -350,3 +351,31 @@ class TestAPIHandler:
                                                             anonymize=False)
             assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
 
+    @responses.activate
+    def test_wrong_url(self):
+        def _request_callback(request):
+            if 'wrong_url' in request.url:
+                return (404, "", "404 Client Error: Not Found for url:")
+            resp = [{'channel': None, 'count': '3'}]
+            return (200, "", json.dumps(resp))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.GET,
+            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+        responses.add_callback(
+            responses.GET,
+            f"https://wrong_url/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        api_handler.get_channels()
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            api_handler = APIHandler('https://wrong_url', 'test_api_key')
+            api_handler.get_channels()
