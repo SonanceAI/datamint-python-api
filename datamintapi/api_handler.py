@@ -102,7 +102,7 @@ class APIHandler:
                 return await self._run_request_async(request_args, s)
 
         _LOGGER.info(f"Running request to {request_args['url']}")
-        _LOGGER.debug(f"Request args: {request_args}")
+        _LOGGER.debug(f"Reqguest args: {request_args}")
 
         # add apikey to the headers
         if 'headers' not in request_args:
@@ -482,15 +482,8 @@ class APIHandler:
             'url': f'{self.root_url}/upload-batches'
         }
 
-        results = self._run_request(request_params).json()['data']
-        while len(results) > 0:
-            for result in results:
-                yield result
-            if len(results) < limit_page:
-                break
-            offset += limit_page
-            request_params['params']['offset'] = offset
-            results = self._run_request(request_params).json()['data']
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
 
     def get_batch_info(self, batch_id: str) -> dict:
         """
@@ -601,6 +594,7 @@ class APIHandler:
                       return_ids_only: bool = False,
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
+                      channel: Optional[str] = None
                       ) -> Generator[dict, None, None]:
         """
         Iterates over resources with the specified filters.
@@ -641,10 +635,18 @@ class APIHandler:
             "ids": return_ids_only,
             "order_field": order_field,
             "order_by_asc": order_ascending,
+            "channel_name": channel
         }
+
         if labels is not None:
             for i, label in enumerate(labels):
                 payload[f'labels[{i}]'] = label
+
+        # Remove None values from the payload.
+        # Maybe it is not necessary.
+        for k in list(payload.keys()):
+            if payload[k] is None:
+                del payload[k]
 
         request_params = {
             'method': 'GET',
@@ -652,13 +654,22 @@ class APIHandler:
             'params': payload
         }
 
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
+
+    def _run_pagination_request(self,
+                                request_params: Dict,
+                                return_field: Optional[str] = None
+                                ) -> Generator[Dict, None, None]:
         offset = 0
+        params = request_params['params']
         while True:
-            payload['offset'] = offset
-            payload['limit'] = _PAGE_LIMIT
+            params['offset'] = offset
+            params['limit'] = _PAGE_LIMIT
 
             response = self._run_request(request_params).json()
-
+            if return_field is not None:
+                response = response[return_field]
             for r in response:
                 yield r
 
@@ -667,26 +678,36 @@ class APIHandler:
 
             offset += _PAGE_LIMIT
 
-    def get_channels(self) -> Dict:
+    def get_channels(self) -> Generator[Dict, None, None]:
         """
-        Get all the channels.
+        Iterates over the channels with the specified filters.
 
         Returns:
-            dict: A dictionary with the channels information.
+           Generator[dict, None, None]: A generator of dictionaries with the channels information.
 
         Example:
-            >>> api_handler.get_channels()
-            [{'channel': 'CT scans', 'count': '9'},
-             {'channel': 'testchannel', 'count': '1'},
-             {'channel': None, 'count': '6'}]
+            >>> list(api_handler.get_channels()) # Gets all channels
+            [{'channel_name': 'test_channel',
+                'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                    'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                    'resource_id': 'a05fe46d-2f66-46fc-b7ef-666464ad3a28',
+                                    'resource_file_name': '_%2Fdocs%2Fimages%2Flogo.png',
+                                    'resource_mimetype': 'image/png'}],
+                'deleted': False,
+                'created_at': '2024-06-04T12:38:12.976Z',
+                'updated_at': '2024-06-04T12:38:12.976Z',
+                'resource_count': '1'}]
 
         """
+
         request_params = {
             'method': 'GET',
-            'url': self._get_endpoint_url(APIHandler.ENDPOINT_CHANNELS)
+            'url': self._get_endpoint_url(APIHandler.ENDPOINT_CHANNELS),
+            'params': {}
         }
 
-        return self._run_request(request_params).json()
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
 
     def set_resource_labels(self, resource_id: str,
                             labels: Sequence[str] = None,

@@ -61,6 +61,35 @@ class TestAPIHandler:
 
         return ds
 
+    @pytest.fixture
+    def get_channels_sample(self) -> dict:
+        return {'data': [{'channel_name': None,
+                          'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': '78a0bce0-9182-49d9-a780-14f444d404eb',
+                                             'resource_file_name': '_%2Fdata%2Ftest_dicom2.dcm',
+                                             'resource_mimetype': 'application/dicom'},
+                                            {'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': '6daa205a-5312-4104-abbb-7ec00607a53a',
+                                             'resource_file_name': '_%2F_%2F_%2F_%2FVideos%2Fssstwitter.com_1709750263599.mp4',
+                                             'resource_mimetype': 'video/mp4'}],
+                          'deleted': False,
+                          'created_at': '2024-06-03T13:28:08.584Z',
+                          'updated_at': '2024-06-03T14:31:18.785Z',
+                          'resource_count': '2'},
+                         {'channel_name': 'test_channel',
+                          'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': 'a05fe46d-2f66-46fc-b7ef-666464ad3a28',
+                                             'resource_file_name': '_%2Fdocs%2Fimages%2Flogo.png',
+                                             'resource_mimetype': 'image/png'}],
+                          'deleted': False,
+                          'created_at': '2024-06-04T12:38:12.976Z',
+                          'updated_at': '2024-06-04T12:38:12.976Z',
+                          'resource_count': '1'}],
+                'totalCount': '1'}
+
     @patch('os.getenv')
     def test_api_handler_init(self, mock_getenv):
         mock_getenv.return_value = 'test_api_key'
@@ -352,12 +381,11 @@ class TestAPIHandler:
             assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
 
     @responses.activate
-    def test_wrong_url(self):
+    def test_wrong_url(self, get_channels_sample: dict):
         def _request_callback(request):
             if 'wrong_url' in request.url:
                 return (404, "", "404 Client Error: Not Found for url:")
-            resp = [{'channel': None, 'count': '3'}]
-            return (200, "", json.dumps(resp))
+            return (200, "", json.dumps(get_channels_sample))
 
         # Mocking the response from the server
         responses.add_callback(
@@ -374,8 +402,25 @@ class TestAPIHandler:
         )
 
         api_handler = APIHandler(_TEST_URL, 'test_api_key')
-        api_handler.get_channels()
+        list(api_handler.get_channels())
 
         with pytest.raises(requests.exceptions.HTTPError):
             api_handler = APIHandler('https://wrong_url', 'test_api_key')
-            api_handler.get_channels()
+            list(api_handler.get_channels())
+
+    @responses.activate
+    def test_get_channels(self, get_channels_sample: dict):
+        def _request_callback(request):
+            return (200, "", json.dumps(get_channels_sample))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.GET,
+            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        channels_info = list(api_handler.get_channels())
+        assert len(channels_info) == 2  # two channels
