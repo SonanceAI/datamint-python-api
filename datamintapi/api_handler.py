@@ -19,9 +19,12 @@ import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from deprecated.sphinx import deprecated
+import pydantic
+
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+
 
 ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
 """TypeAlias: The available resource status. Possible values: 'new', 'inbox', 'published', 'archived'.
@@ -31,6 +34,22 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 _PAGE_LIMIT = 10
+
+
+def validate_call(func, *args, **kwargs):
+    """
+    wraps the function with pydantic's validate_call decorator to only warn about validation errors.
+    """
+    new_func = pydantic.validate_call(func, *args, **kwargs)
+
+    def wrapper(*args, **kwargs):
+        try:
+            return new_func(*args, **kwargs)
+        except pydantic.ValidationError as e:
+            _LOGGER.warning(f"Validation error: {e}")
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 class DatamintException(Exception):
@@ -584,11 +603,12 @@ class APIHandler:
 
         return resources[0] if input_is_a_string else resources
 
+    @validate_call
     def get_resources(self,
                       status: ResourceStatus,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels: Optional[list[str]] = None,
+                      labels: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
                       return_ids_only: bool = False,
@@ -619,6 +639,8 @@ class APIHandler:
             >>> for resource in api_handler.get_resources(status='inbox'):
             >>>     print(resource)
         """
+        # check if status is valid
+
         # Convert datetime objects to ISO format
         if from_date:
             from_date = from_date.isoformat()
