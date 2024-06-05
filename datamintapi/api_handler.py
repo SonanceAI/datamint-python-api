@@ -185,6 +185,7 @@ class APIHandler:
 
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
+                                            mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
                                             labels: list[str] = None,
@@ -217,7 +218,8 @@ class APIHandler:
             name = new_file_path
             _LOGGER.debug(f"New file path: {name}")
 
-        mimetype = mimetypes.guess_type(name)[0]
+        if mimetype is None:
+            mimetype = mimetypes.guess_type(name)[0]
         is_a_dicom_file = None
         if mimetype is None:
             is_a_dicom_file = is_dicom(name) or is_dicom(file_path)
@@ -277,6 +279,7 @@ class APIHandler:
 
     async def _upload_resources_async(self,
                                       files_path: Sequence[str | IO],
+                                      mimetype: Optional[str] = None,
                                       batch_id: Optional[str] = None,
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
@@ -296,6 +299,7 @@ class APIHandler:
                 async with self.semaphore:
                     return await self._upload_single_resource_async(
                         file_path=file_path,
+                        mimetype=mimetype,
                         anonymize=anonymize,
                         anonymize_retain_codes=anonymize_retain_codes,
                         labels=labels,
@@ -353,10 +357,11 @@ class APIHandler:
 
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO],
+                         mimetype: Optional[str] = None,
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels=None,
+                         labels: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
                          ) -> list[str | Exception]:
@@ -365,10 +370,11 @@ class APIHandler:
 
         Args:
             files_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
+            mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels (list[str]): The labels to assign to the dicoms.
+            labels (Sequence[str]): The labels to assign to the dicoms.
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
@@ -376,9 +382,14 @@ class APIHandler:
         Returns:
             list[str]: The list of new created dicom_ids.
         """
+
+        if on_error not in ['raise', 'skip']:
+            raise ValueError("on_error must be either 'raise' or 'skip'")
+
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
+                                            mimetype=mimetype,
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
