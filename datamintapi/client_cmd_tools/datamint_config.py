@@ -60,7 +60,7 @@ def configure_api_key():
 
 
 def interactive_mode():
-    if not os.path.exists(configs.CONFIG_FILE) and configs.get_value(configs.APIKEY_KEY) is None:
+    if len(configs.read_config()) == 0:
         configure_api_key()
     while True:
         _USER_LOGGER.info("\nSelect the action you want to perform:")
@@ -88,7 +88,7 @@ def main():
     load_cmdline_logging_config()
     parser = argparse.ArgumentParser(description='DatamintAPI command line tool for configurations')
     parser.add_argument('--api-key', type=str, help='API key to set')
-    parser.add_argument('--default-url', type=str, help='Default URL to set')
+    parser.add_argument('--default-url', '--url', type=str, help='Default URL to set')
     parser.add_argument('-i', '--interactive', action='store_true',
                         help='Interactive mode. Providing no other arguments will also start the interactive mode.')
 
