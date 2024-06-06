@@ -1,9 +1,10 @@
-from logging import Logger
 import logging
+import logging.config
 from rich.console import ConsoleRenderable
 from rich.logging import RichHandler
 from rich.traceback import Traceback
-from rich.table import Table
+import yaml
+import importlib
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,3 +35,21 @@ class ConditionalRichHandler(RichHandler):
         except Exception as e:
             _LOGGER.error(f"Error rendering log. {e}")
         return ret
+
+
+def load_cmdline_logging_config():
+    # Load the logging configuration file
+    try:
+        try:
+            # try loading the developer's logging config
+            with open('logging_dev.yaml', 'r') as f:
+                config = yaml.safe_load(f)
+        except:
+            with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
+                config = yaml.safe_load(f.read())
+
+        logging.config.dictConfig(config)
+    except Exception as e:
+        print(f"Warning: Error loading logging configuration file: {e}")
+        _LOGGER.exception(e)
+        logging.basicConfig(level=logging.INFO)

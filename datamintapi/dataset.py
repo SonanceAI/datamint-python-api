@@ -11,6 +11,7 @@ import yaml
 import pydicom
 import numpy as np
 from torch.utils.data import Dataset
+from datamintapi import configs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class DatamintDataset(Dataset):
             If 'latest', the latest version will be downloaded. Default: 'latest'.
         api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
             environment variable 'DATAMINT_API_KEY'. Not necessary if
-            you dont want to download/update the dataset.
+            you don't want to download/update the dataset.
         transform (callable, optional): A function/transform that takes in an image (or a series of images)
             and returns a transformed version.
         target_transform (callable, optional): A function/transform that takes in the dataset metadata and transforms it.
@@ -61,9 +62,13 @@ class DatamintDataset(Dataset):
 
         self.version = version
         self.dataset_name = dataset_name
-        self.api_key = api_key if api_key is not None else os.getenv('DATAMINT_API_KEY')
+        self.api_key = api_key if api_key is not None else configs.get_value(configs.APIKEY_KEY)
         if self.api_key is None:
-            _LOGGER.warning("API key not provided. If you want to download, please provide an API key.")
+            _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
+                            f"either by passing it as an argument," +
+                            f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
+                            "using datamint-config command line tool."
+                            )
         self.dataset_dir = os.path.join(root, dataset_name)
         self.dataset_zippath = os.path.join(root, f'{dataset_name}.zip')
 
@@ -270,7 +275,8 @@ class DatamintDataset(Dataset):
 
         if local_version != last_version:
             print(
-                f"A newer version of the dataset is available. Your version: {local_version}. Last version: {last_version}.\n Would you like to update?\n (y/n)"
+                f"A newer version of the dataset is available. Your version: {local_version}." +
+                f" Last version: {last_version}.\n Would you like to update?\n (y/n)"
             )
             choice = input().lower()
             if choice == 'y':
@@ -284,8 +290,8 @@ if __name__ == '__main__':
     # Example usage for testing purposes.
     logging.basicConfig(level=logging.INFO)
     dataset = DatamintDataset(root='/tmp',
-                             dataset_name='TestCTdataset',
-                             version='latest')
+                              dataset_name='TestCTdataset',
+                              version='latest')
     print(dataset)
     img, ds, metadata = dataset[0]
     print('Image shape:', img.shape)  # image(s)

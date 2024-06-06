@@ -96,11 +96,6 @@ class TestAPIHandler:
         api_handler = APIHandler('test_url')
         assert api_handler.api_key == 'test_api_key'
 
-        ### Second test case: Expecting an exception to be raised, since no api key is provided ###
-        mock_getenv.return_value = None
-        with pytest.raises(DatamintException):
-            APIHandler('test_url')
-
     def test_upload_dicoms_resources(self, sample_dicom1):
         def _callback1(url, data, **kwargs):
             dicom_bytes, data = _get_request_data(data)

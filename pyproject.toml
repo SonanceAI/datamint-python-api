@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "DatamintAPI"
-version = "0.3.0"
+version = "0.4.0"
 description = "A library for loading Datamint datasets into Pytorch"
 authors = ["Sonance Team"]
 readme = "README.md"
@@ -26,6 +26,7 @@ nibabel = ">=4.0.0"
 opencv-python = ">=4.0.0"
 Deprecated = ">=1.2.0"
 pydantic = "^2.0.3"
+platformdirs = "^4.0.0"
 # Extra dependencies for docs
 sphinx = { version = ">=5.0", optional = true }
 sphinx_rtd_theme = { version = ">=2.0.0", optional = true }
@@ -55,3 +56,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 datamint-upload = 'datamintapi.client_cmd_tools.datamint_upload:main'
+datamint-config = 'datamintapi.client_cmd_tools.datamint_config:main'
