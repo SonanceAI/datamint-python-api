@@ -18,9 +18,13 @@ from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
+from deprecated.sphinx import deprecated
+import pydantic
+
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+
 
 ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
 """TypeAlias: The available resource status. Possible values: 'new', 'inbox', 'published', 'archived'.
@@ -30,6 +34,22 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 _PAGE_LIMIT = 10
+
+
+def validate_call(func, *args, **kwargs):
+    """
+    wraps the function with pydantic's validate_call decorator to only warn about validation errors.
+    """
+    new_func = pydantic.validate_call(func, *args, **kwargs)
+
+    def wrapper(*args, **kwargs):
+        try:
+            return new_func(*args, **kwargs)
+        except pydantic.ValidationError as e:
+            _LOGGER.warning(f"Validation error: {e}")
+            return func(*args, **kwargs)
+
+    return wrapper
 
 
 class DatamintException(Exception):
@@ -78,7 +98,6 @@ class APIHandler:
     """
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
     ENDPOINT_RESOURCES = 'resources'
-    ENDPOINT_DICOMS = 'dicoms'
     ENDPOINT_CHANNELS = f'{ENDPOINT_RESOURCES}/channels'
 
     def __init__(self,
@@ -102,7 +121,7 @@ class APIHandler:
                 return await self._run_request_async(request_args, s)
 
         _LOGGER.info(f"Running request to {request_args['url']}")
-        _LOGGER.debug(f"Request args: {request_args}")
+        _LOGGER.debug(f"Reqguest args: {request_args}")
 
         # add apikey to the headers
         if 'headers' not in request_args:
@@ -154,46 +173,19 @@ class APIHandler:
         self._check_errors_response(response, request_args)
         return response
 
+    @deprecated(version='0.4.0', reason="This functions is not used anymore.")
     def create_batch(self,
                      description: str,
                      size: int,
-                     modality: Optional[str] = None,
-                     session=None) -> str:
-        """
-        Create a new batch.
-
-        Args:
-            description (str): The description of the batch
-            size (int): The number of dicoms in the batch
-            modality (str, optional): The modality of the batch. Defaults to None.
-
-        Returns:
-            str: The batch_id of the created batch. 
-
-        See Also:
-            :meth:`~get_batch_info`
-        """
-        post_params = {'description': description,
-                       'size': size
-                       }
-        if modality is not None:
-            post_params['modality'] = modality
-
-        request_params = {
-            'method': 'POST',
-            'url': f'{self.root_url}/upload-batches',
-            'json': post_params
-        }
-
-        resp = self._run_request(request_params, session)
-        return resp.json()['id']
+                     modality: Optional[str] = None) -> str:
+        return None
 
     def _get_endpoint_url(self, endpoint: str) -> str:
         return f'{self.root_url}/{endpoint}'
 
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
-                                            batch_id: Optional[str] = None,
+                                            mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
                                             labels: list[str] = None,
@@ -226,7 +218,8 @@ class APIHandler:
             name = new_file_path
             _LOGGER.debug(f"New file path: {name}")
 
-        mimetype = mimetypes.guess_type(name)[0]
+        if mimetype is None:
+            mimetype = mimetypes.guess_type(name)[0]
         is_a_dicom_file = None
         if mimetype is None:
             is_a_dicom_file = is_dicom(name) or is_dicom(file_path)
@@ -249,17 +242,9 @@ class APIHandler:
 
         try:
             form = aiohttp.FormData()
-            if batch_id is not None:
-                url = self._get_endpoint_url(APIHandler.ENDPOINT_DICOMS)
-                file_key = 'dicom'
-                if modality is not None:
-                    _LOGGER.warning("Modality is ignored when uploading to a batch.")
-                modality = None
-                form.add_field('batch_id', batch_id)
-            else:
-                url = self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)
-                file_key = 'resource'
-                form.add_field('source', 'api')
+            url = self._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES)
+            file_key = 'resource'
+            form.add_field('source', 'api')
 
             form.add_field(file_key, f, filename=name, content_type=mimetype)
             form.add_field('filepath', name)
@@ -294,6 +279,7 @@ class APIHandler:
 
     async def _upload_resources_async(self,
                                       files_path: Sequence[str | IO],
+                                      mimetype: Optional[str] = None,
                                       batch_id: Optional[str] = None,
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
@@ -313,6 +299,7 @@ class APIHandler:
                 async with self.semaphore:
                     return await self._upload_single_resource_async(
                         file_path=file_path,
+                        mimetype=mimetype,
                         anonymize=anonymize,
                         anonymize_retain_codes=anonymize_retain_codes,
                         labels=labels,
@@ -320,11 +307,11 @@ class APIHandler:
                         mung_filename=mung_filename,
                         channel=channel,
                         modality=modality,
-                        batch_id=batch_id
                     )
             tasks = [__upload_single_resource(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
+    @deprecated(version='0.4.0', reason="Use upload_resources instead with no batches.")
     def upload_dicoms(self,
                       files_path: str | IO | Sequence[str | IO],
                       batch_id: Optional[str] = None,
@@ -358,7 +345,6 @@ class APIHandler:
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
-                                            batch_id=batch_id,
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
@@ -371,10 +357,11 @@ class APIHandler:
 
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO],
+                         mimetype: Optional[str] = None,
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels=None,
+                         labels: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
                          ) -> list[str | Exception]:
@@ -383,10 +370,11 @@ class APIHandler:
 
         Args:
             files_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
+            mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels (list[str]): The labels to assign to the dicoms.
+            labels (Sequence[str]): The labels to assign to the dicoms.
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
@@ -394,9 +382,14 @@ class APIHandler:
         Returns:
             list[str]: The list of new created dicom_ids.
         """
+
+        if on_error not in ['raise', 'skip']:
+            raise ValueError("on_error must be either 'raise' or 'skip'")
+
         files_path = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
+                                            mimetype=mimetype,
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
@@ -426,6 +419,7 @@ class APIHandler:
         _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path
 
+    @deprecated(version='0.4.0', reason="Use upload_resources instead.")
     def create_batch_with_dicoms(self,
                                  description: str,
                                  files_path: str | IO | Sequence[str | IO],
@@ -486,12 +480,8 @@ class APIHandler:
         if labels is not None:
             labels = [l.strip() for l in labels]
 
-        batch_id = self.create_batch(description,
-                                     size=len(files_path),
-                                     modality=modality)
         loop = asyncio.get_event_loop()
         results = loop.run_until_complete(self._upload_resources_async(files_path,
-                                                                       batch_id=batch_id,
                                                                        anonymize=anonymize,
                                                                        anonymize_retain_codes=anonymize_retain_codes,
                                                                        on_error=on_error,
@@ -499,7 +489,7 @@ class APIHandler:
                                                                        channel=channel,
                                                                        mung_filename=mung_filename)
                                           )
-        return batch_id, results
+        return None, results
 
     def get_batches(self) -> Generator[dict, None, None]:
         """
@@ -522,15 +512,8 @@ class APIHandler:
             'url': f'{self.root_url}/upload-batches'
         }
 
-        results = self._run_request(request_params).json()['data']
-        while len(results) > 0:
-            for result in results:
-                yield result
-            if len(results) < limit_page:
-                break
-            offset += limit_page
-            request_params['params']['offset'] = offset
-            results = self._run_request(request_params).json()['data']
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
 
     def get_batch_info(self, batch_id: str) -> dict:
         """
@@ -631,16 +614,18 @@ class APIHandler:
 
         return resources[0] if input_is_a_string else resources
 
+    @validate_call
     def get_resources(self,
                       status: ResourceStatus,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels: Optional[list[str]] = None,
+                      labels: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
                       return_ids_only: bool = False,
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
+                      channel: Optional[str] = None
                       ) -> Generator[dict, None, None]:
         """
         Iterates over resources with the specified filters.
@@ -665,6 +650,8 @@ class APIHandler:
             >>> for resource in api_handler.get_resources(status='inbox'):
             >>>     print(resource)
         """
+        # check if status is valid
+
         # Convert datetime objects to ISO format
         if from_date:
             from_date = from_date.isoformat()
@@ -681,10 +668,18 @@ class APIHandler:
             "ids": return_ids_only,
             "order_field": order_field,
             "order_by_asc": order_ascending,
+            "channel_name": channel
         }
+
         if labels is not None:
             for i, label in enumerate(labels):
                 payload[f'labels[{i}]'] = label
+
+        # Remove None values from the payload.
+        # Maybe it is not necessary.
+        for k in list(payload.keys()):
+            if payload[k] is None:
+                del payload[k]
 
         request_params = {
             'method': 'GET',
@@ -692,13 +687,22 @@ class APIHandler:
             'params': payload
         }
 
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
+
+    def _run_pagination_request(self,
+                                request_params: Dict,
+                                return_field: Optional[str] = None
+                                ) -> Generator[Dict, None, None]:
         offset = 0
+        params = request_params['params']
         while True:
-            payload['offset'] = offset
-            payload['limit'] = _PAGE_LIMIT
+            params['offset'] = offset
+            params['limit'] = _PAGE_LIMIT
 
             response = self._run_request(request_params).json()
-
+            if return_field is not None:
+                response = response[return_field]
             for r in response:
                 yield r
 
@@ -707,26 +711,36 @@ class APIHandler:
 
             offset += _PAGE_LIMIT
 
-    def get_channels(self) -> Dict:
+    def get_channels(self) -> Generator[Dict, None, None]:
         """
-        Get all the channels.
+        Iterates over the channels with the specified filters.
 
         Returns:
-            dict: A dictionary with the channels information.
+           Generator[dict, None, None]: A generator of dictionaries with the channels information.
 
         Example:
-            >>> api_handler.get_channels()
-            [{'channel': 'CT scans', 'count': '9'},
-             {'channel': 'testchannel', 'count': '1'},
-             {'channel': None, 'count': '6'}]
+            >>> list(api_handler.get_channels()) # Gets all channels
+            [{'channel_name': 'test_channel',
+                'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                    'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                    'resource_id': 'a05fe46d-2f66-46fc-b7ef-666464ad3a28',
+                                    'resource_file_name': '_%2Fdocs%2Fimages%2Flogo.png',
+                                    'resource_mimetype': 'image/png'}],
+                'deleted': False,
+                'created_at': '2024-06-04T12:38:12.976Z',
+                'updated_at': '2024-06-04T12:38:12.976Z',
+                'resource_count': '1'}]
 
         """
+
         request_params = {
             'method': 'GET',
-            'url': self._get_endpoint_url(APIHandler.ENDPOINT_CHANNELS)
+            'url': self._get_endpoint_url(APIHandler.ENDPOINT_CHANNELS),
+            'params': {}
         }
 
-        return self._run_request(request_params).json()
+        yield from self._run_pagination_request(request_params,
+                                                return_field='data')
 
     def set_resource_labels(self, resource_id: str,
                             labels: Sequence[str] = None,

@@ -157,8 +157,7 @@ def _parse_args() -> tuple:
     parser.add_argument('--exclude', type=str,
                         help='Exclude folders that match the specified pattern. \
                             Example: "*_not_to_upload" will exclude folders ending with "_not_to_upload')
-    parser.add_argument('--name', type=str, help='Name of the upload batch.')
-    parser.add_argument('--channel', type=str, required=False,
+    parser.add_argument('--channel', '--name', type=str, required=False,
                         help='Channel name (arbritary) to upload the resources to. \
                             Useful for organizing the resources in the platform.')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize DICOMs')
@@ -303,26 +302,14 @@ def main():
     has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
     api_handler = APIHandler(ROOT_URL)
-    if args.name is not None:
-        batch_id, results = api_handler.create_batch_with_dicoms(args.name,
-                                                                 files_path=files_path,
-                                                                 labels=args.label,
-                                                                 on_error='skip',
-                                                                 anonymize=args.retain_pii == False and has_a_dicom_file,
-                                                                 anonymize_retain_codes=args.retain_attribute,
-                                                                 mung_filename=args.mungfilename,
-                                                                 channel=args.channel
-                                                                 )
-        _LOGGER.debug(f"new Batch ID: {batch_id}")
-    else:
-        results = api_handler.upload_resources(channel=args.channel,
-                                               files_path=files_path,
-                                               labels=args.label,
-                                               on_error='skip',
-                                               anonymize=args.retain_pii == False and has_a_dicom_file,
-                                               anonymize_retain_codes=args.retain_attribute,
-                                               mung_filename=args.mungfilename
-                                               )
+    results = api_handler.upload_resources(channel=args.channel,
+                                           files_path=files_path,
+                                           labels=args.label,
+                                           on_error='skip',
+                                           anonymize=args.retain_pii == False and has_a_dicom_file,
+                                           anonymize_retain_codes=args.retain_attribute,
+                                           mung_filename=args.mungfilename
+                                           )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 
