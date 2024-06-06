@@ -33,7 +33,6 @@ jobs:
           pytest tests --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --cov=datamintapi --cov-report=html
       - name: Test datamint-config
         run: |
-          datamint-config --help
           datamint-config --api-key testapikey --url "http://localhost:3001"
       - name: Upload pytest test results
         if: failure()
