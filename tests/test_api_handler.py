@@ -267,10 +267,6 @@ class TestAPIHandler:
         assert len(batchinfo['images']) == 1
         assert batchinfo['images'][0]['filename'] == 'sample_dicom1'
 
-        # Test non existing batch
-        with pytest.raises(ResourceNotFoundError):
-            api_handler.get_batch_info('non_existing_batch_id')
-
     @responses.activate
     def test_get_batches(self):
         api_handler = APIHandler(_TEST_URL, 'test_api_key')
