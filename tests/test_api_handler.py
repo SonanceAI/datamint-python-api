@@ -134,7 +134,7 @@ class TestAPIHandler:
                 data = str(data._fields)
             else:
                 data = str(data)
-            assert os.path.join('data', 'test_dicom.dcm') in data
+            assert 'test_dicom.dcm' in data and 'data_test' not in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _request_callback3(url, data, **kwargs):
