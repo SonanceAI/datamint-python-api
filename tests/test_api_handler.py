@@ -1,18 +1,17 @@
 import pytest
 from unittest.mock import patch, mock_open
 from datamintapi.api_handler import APIHandler
-from datamintapi.api_handler import ResourceNotFoundError, DatamintException
 import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.dataset import FileMetaDataset
 from datamintapi.utils.dicom_utils import to_bytesio
 import json
-import re
 from aiohttp import FormData
 from typing import Tuple
 from io import BytesIO
 import requests
+import os
 
 _TEST_URL = 'https://test_url.com'
 
@@ -113,8 +112,8 @@ class TestAPIHandler:
 
             api_handler = APIHandler(_TEST_URL, 'test_api_key')
             new_dicoms_id = api_handler.upload_resources(files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
-                                                      channel='mychannel',
-                                                      anonymize=False)
+                                                         channel='mychannel',
+                                                         anonymize=False)
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     def test_upload_dicoms_mungfilename(self, sample_dicom1):
@@ -135,7 +134,7 @@ class TestAPIHandler:
                 data = str(data._fields)
             else:
                 data = str(data)
-            assert 'data/test_dicom.dcm' in data
+            assert os.path.join('data', 'test_dicom.dcm') in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _request_callback3(url, data, **kwargs):
@@ -151,7 +150,7 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback
                 )
-                new_dicoms_id = api_handler.upload_resources(files_path='../data/test_dicom.dcm',
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('..', 'data', 'test_dicom.dcm'),
                                                              anonymize=False,
                                                              mung_filename='all')
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
@@ -161,9 +160,9 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback2
                 )
-                new_dicoms_id = api_handler.upload_resources(files_path='data/test_dicom.dcm',
-                                                          anonymize=False,
-                                                          mung_filename=None)
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('data', 'test_dicom.dcm'),
+                                                             anonymize=False,
+                                                             mung_filename=None)
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
@@ -171,9 +170,9 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback3
                 )
-                new_dicoms_id = api_handler.upload_resources(files_path='/home/me/data/test_dicom.dcm',
-                                                          anonymize=False,
-                                                          mung_filename=[2, 3])
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('home', 'me', 'data', 'test_dicom.dcm'),
+                                                             anonymize=False,
+                                                             mung_filename=[2, 3])
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     @responses.activate
