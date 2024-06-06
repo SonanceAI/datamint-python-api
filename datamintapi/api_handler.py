@@ -11,6 +11,7 @@ import pydicom
 from pathlib import Path
 from datetime import date
 import mimetypes
+from datamintapi import configs
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -69,19 +70,23 @@ class APIHandler:
     """
     Class to handle the API requests to the Datamint API
     """
-    DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
+    DATAMINT_API_VENV_NAME = configs.ENV_VARS[configs.APIKEY_KEY]
     ENDPOINT_RESOURCES = 'resources'
     ENDPOINT_DICOMS = 'dicoms'
+    DEFAULT_ROOT_URL = 'https://stagingapi.datamint.io'
 
     def __init__(self,
-                 root_url: str,
+                 root_url: Optional[str] = None,
                  api_key: Optional[str] = None):
         nest_asyncio.apply()  # For running asyncio in jupyter notebooks
-        self.root_url = root_url
-        self.api_key = api_key if api_key is not None else os.getenv(APIHandler.DATAMINT_API_VENV_NAME)
+        self.root_url = root_url if root_url is not None else configs.get_value(configs.APIURL_KEY)
+        if self.root_url is None:
+            self.root_url = APIHandler.DEFAULT_ROOT_URL
+
+        self.api_key = api_key if api_key is not None else configs.get_value(configs.APIKEY_KEY)
         if self.api_key is None:
             msg = f"API key not provided! Use the environment variable " + \
-                "{APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
+                f"{APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise DatamintException(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 

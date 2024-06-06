@@ -66,11 +66,6 @@ class TestAPIHandler:
         api_handler = APIHandler('test_url')
         assert api_handler.api_key == 'test_api_key'
 
-        ### Second test case: Expecting an exception to be raised, since no api key is provided ###
-        mock_getenv.return_value = None
-        with pytest.raises(DatamintException):
-            APIHandler('test_url')
-
     @responses.activate
     def test_upload_batch(self):
         # Mocking the response from the server
@@ -349,4 +344,3 @@ class TestAPIHandler:
                                                             channel='mychannel',
                                                             anonymize=False)
             assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
-

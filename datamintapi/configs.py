@@ -9,6 +9,10 @@ from pathlib import Path
 APIURL_KEY = 'default_api_url'
 APIKEY_KEY = 'api_key'
 
+ENV_VARS = {
+    APIKEY_KEY: 'DATAMINT_API_KEY',
+}
+
 _NETRC_MACHINE_KEY = 'api.datamint.io'
 
 _LOGGER = logging.getLogger(__name__)
@@ -64,11 +68,19 @@ def set_value(key: str,
     _LOGGER.debug(f"Configuration saved to {CONFIG_FILE}.")
 
 
-def get_value(key: str):
+def get_value(key: str,
+              include_envvars: bool = True):
+    if include_envvars:
+        if key in ENV_VARS:
+            env_var = os.getenv(ENV_VARS[key])
+            if env_var is not None:
+                return env_var
+
     if key == APIKEY_KEY:
         try:
             api_key = _get_netrc_api_key()
             if api_key is not None:
+                _LOGGER.info("API key loaded from netrc file.")
                 return api_key
         except Exception as e:
             _LOGGER.info(f"Error reading API key from .netrc file: {e}.")

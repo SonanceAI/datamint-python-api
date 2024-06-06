@@ -16,8 +16,6 @@ from datamintapi.utils.logging_utils import load_cmdline_logging_config
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
-ROOT_URL = 'https://stagingapi.datamint.io'
-
 MAX_RECURSION_LIMIT = 1000
 
 
@@ -72,25 +70,14 @@ def _walk_to_depth(path: str, depth: int, exclude_pattern: str = None):
 
 def handle_api_key() -> str:
     """
-    Checks for API keys in the env variable `DATAMINT_API_KEY`.
+    Checks for API keys.
     If it does not exist, it asks the user to input it.
     Then, it asks the user if he wants to save the API key at a proper location in the machine
     """
-    api_key = os.getenv('DATAMINT_API_KEY')
+    api_key = configs.get_value(configs.APIKEY_KEY)
     if api_key is None:
-        try:
-            token = configs.get_value(configs.APIKEY_KEY)
-            if token is not None:
-                _LOGGER.info("API key loaded from netrc file.")
-                return token[2]
-            _USER_LOGGER.info("API key not found. Please provide it:")
-            api_key = ask_api_key(True)
-            if api_key is None:
-                return None
-        except OSError as e:
-            _USER_LOGGER.error(f"Error accessing netrc file. Contact your system administrator if you want to\
-                               save the API key locally.")
-            _LOGGER.exception(e)
+        _USER_LOGGER.info("API key not found. Please provide it:")
+        api_key = ask_api_key(ask_to_save=True)
 
     return api_key
 
@@ -152,7 +139,7 @@ def _parse_args() -> tuple:
     if api_key is None:
         _USER_LOGGER.error("API key not provided. Aborting.")
         sys.exit(1)
-    os.environ['DATAMINT_API_KEY'] = api_key
+    os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
 
     return args, file_path
 
@@ -203,7 +190,7 @@ def main():
 
     has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
-    api_handler = APIHandler(ROOT_URL)
+    api_handler = APIHandler()
     if args.name is not None:
         batch_id, results = api_handler.create_batch_with_dicoms(args.name,
                                                                  files_path=files_path,
