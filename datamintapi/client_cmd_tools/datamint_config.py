@@ -68,7 +68,7 @@ def interactive_mode():
         _USER_LOGGER.info(" (2) Configure the default URL")
         _USER_LOGGER.info(" (3) Show all configuration settings")
         _USER_LOGGER.info(" (4) Clear all configuration settings")
-        _USER_LOGGER.info(" (5) Exit")
+        _USER_LOGGER.info(" (q) Exit")
         choice = input("Enter your choice: ").lower().strip()
         if choice == '1':
             configure_api_key()
@@ -81,7 +81,7 @@ def interactive_mode():
         elif choice in ('5', 'q', 'exit', 'quit'):
             break
         else:
-            _USER_LOGGER.info("Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.")
+            _USER_LOGGER.info("Invalid choice. Please enter a number between 1 and 4 or 'q' to quit.")
 
 
 def main():
