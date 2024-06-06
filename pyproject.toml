@@ -23,6 +23,7 @@ nest-asyncio = "^1.0.0"
 humanize = "^4.0.0"
 rich = ">=10.0.0"
 nibabel = ">=4.0.0"
+platformdirs = "^4.0.0"
 # Extra dependencies for docs
 sphinx = { version = ">=5.0", optional = true }
 sphinx_rtd_theme = { version = ">=2.0.0", optional = true }
@@ -52,3 +53,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 datamint-upload = 'datamintapi.client_cmd_tools.datamint_upload:main'
+datamint-config = 'datamintapi.client_cmd_tools.datamint_config:main'
