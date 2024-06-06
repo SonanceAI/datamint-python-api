@@ -275,8 +275,8 @@ class DatamintDataset(Dataset):
 
         if local_version != last_version:
             print(
-                f"A newer version of the dataset is available. Your version: {
-                    local_version}. Last version: {last_version}.\n Would you like to update?\n (y/n)"
+                f"A newer version of the dataset is available. Your version: {local_version}." +
+                f" Last version: {last_version}.\n Would you like to update?\n (y/n)"
             )
             choice = input().lower()
             if choice == 'y':
