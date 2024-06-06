@@ -1,24 +1,20 @@
-import importlib.resources
-import logging.config
 import argparse
 from datamintapi.api_handler import APIHandler
 import os
 import argparse
 from humanize import naturalsize
 import logging
-import yaml
-import importlib
-from netrc import netrc
 from pathlib import Path
 import sys
 from datamintapi.utils.dicom_utils import is_dicom
 import fnmatch
+from datamintapi import configs
+from datamintapi.client_cmd_tools.datamint_config import ask_api_key
+from datamintapi.utils.logging_utils import load_cmdline_logging_config
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
-
-ROOT_URL = 'https://stagingapi.datamint.io'
 
 MAX_RECURSION_LIMIT = 1000
 
@@ -47,45 +43,6 @@ def _tuple_int_type(x: str):
         )
 
 
-def _handle_api_key() -> str:
-    """
-    Checks for API keys in the env variable `DATAMINT_API_KEY`.
-    If it does not exist, it asks the user to input it.
-    Then, it asks the user if he wants to save the API key at a proper location in the machine
-    TODO: move this function to a separate module
-    """
-    api_key = os.getenv('DATAMINT_API_KEY')
-    if api_key is None:
-        try:
-
-            netrc_file = Path.home() / ".netrc"
-            if netrc_file.exists():
-                token = netrc(netrc_file).authenticators('api.datamint.io')
-                if token is not None:
-                    _LOGGER.info("API key loaded from netrc file.")
-                    return token[2]
-            _USER_LOGGER.info("API key not found in enviroment variable DATAMINT_API_KEY. Please provide it:")
-            api_key = input('API key (leave empty to abort): ').strip()
-            if api_key == '':
-                return None
-
-            ans = input("Save the API key so it automatically loads next time? (y/n): ")
-            try:
-                if ans.lower() == 'y':
-                    with open(netrc_file, 'a') as f:
-                        f.write(f"\nmachine api.datamint.io\n  login user\n  password {api_key}\n")
-                    _USER_LOGGER.info(f"API key saved to {netrc_file}")
-            except Exception as e:
-                _USER_LOGGER.error(f"Error saving API key.")
-                _LOGGER.exception(e)
-        except OSError as e:
-            _USER_LOGGER.error(f"Error accessing netrc file. Contact your system administrator if you want to\
-                               save the API key locally.")
-            _LOGGER.exception(e)
-
-    return api_key
-
-
 def _mungfilename_type(arg):
     if arg.lower() == 'all':
         return 'all'
@@ -111,8 +68,23 @@ def _walk_to_depth(path: str, depth: int, exclude_pattern: str = None):
             yield child
 
 
+def handle_api_key() -> str:
+    """
+    Checks for API keys.
+    If it does not exist, it asks the user to input it.
+    Then, it asks the user if he wants to save the API key at a proper location in the machine
+    """
+    api_key = configs.get_value(configs.APIKEY_KEY)
+    if api_key is None:
+        _USER_LOGGER.info("API key not found. Please provide it:")
+        api_key = ask_api_key(ask_to_save=True)
+
+    return api_key
+
+
 def _parse_args() -> tuple:
-    parser = argparse.ArgumentParser(description='DatamintAPI command line tool for uploading DICOM files and other resources')
+    parser = argparse.ArgumentParser(
+        description='DatamintAPI command line tool for uploading DICOM files and other resources')
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
                         required=True,
                         help='Path to the resource file(s) or a directory')
@@ -163,11 +135,11 @@ def _parse_args() -> tuple:
 
     _LOGGER.info(f"args parsed: {args}")
 
-    api_key = _handle_api_key()
+    api_key = handle_api_key()
     if api_key is None:
         _USER_LOGGER.error("API key not provided. Aborting.")
         sys.exit(1)
-    os.environ['DATAMINT_API_KEY'] = api_key
+    os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
 
     return args, file_path
 
@@ -190,22 +162,7 @@ def _verify_files_batch(files_path, api_handler, batch_id) -> list:
 
 
 def main():
-    # Load the logging configuration file
-    # TODO: move logging load configuration to a separate module
-    try:
-        try:
-            # try loading the developer's logging config
-            with open('logging_dev.yaml', 'r') as f:
-                config = yaml.safe_load(f)
-        except:
-            with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
-                config = yaml.safe_load(f.read())
-
-        logging.config.dictConfig(config)
-    except Exception as e:
-        print(f"Warning: Error loading logging configuration file: {e}")
-        _LOGGER.exception(e)
-        logging.basicConfig(level=logging.INFO)
+    load_cmdline_logging_config()
 
     try:
         args, files_path = _parse_args()
@@ -233,7 +190,7 @@ def main():
 
     has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
-    api_handler = APIHandler(ROOT_URL)
+    api_handler = APIHandler()
     if args.name is not None:
         batch_id, results = api_handler.create_batch_with_dicoms(args.name,
                                                                  files_path=files_path,

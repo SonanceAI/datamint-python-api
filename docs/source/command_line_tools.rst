@@ -3,19 +3,45 @@
 Command-line tools
 ==================
 
-To see if the Datamint command-line tool was installed correctly, you can run the
-following command:
+To see if the Datamint command-line tools were installed correctly, run:
 
 .. code-block:: bash
 
-    datamint-upload --help
+    datamint-config --help
 
 You should see this in the first line:
 
 .. code-block:: bash
 
-    usage: datamint-upload [-h] --path FILE [-r [RECURSIVE]] [--exclude EXCLUDE] [--name NAME] [--channel CHANNEL] [--retain-pii] [--retain-attribute RETAIN_ATTRIBUTE] [-l LABEL] [--mungfilename MUNGFILENAME]
+    usage: usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
     (...)
+
+There are two command-line tools available:
+
+- ``datamint-config``: To configure the Datamint API key and URL.
+- ``datamint-upload``: To upload DICOM files to the Datamint server.
+
+.. _configuring_datamint_settings:
+
+Configuring the Datamint settings
+---------------------------------
+
+The ``datamint-config`` command-line tool is useful for configuring the Datamint API key and URL,
+consequently avoiding the need to manually pass them as arguments or environment variables to the other commands later.
+
+To manage Datamint configurations, just run 
+
+.. code-block:: bash
+
+    datamint-config
+
+It starts an interactive prompt, guiding you through the configuration process.
+
+To set the API key and URL without the interactive prompt, use the command-line options:
+
+.. code-block:: bash
+
+    datamint-config --api-key YOUR_API_KEY --url "https://stagingapi.datamint.io"
 
 Uploading DICOMs/resources to Datamint server
 ---------------------------------------------
