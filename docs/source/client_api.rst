@@ -126,6 +126,31 @@ To create a batch and upload dicoms in a single call, use :py:meth:`create_batch
 , which outputs the batch_id and the list of dicom_ids that were uploaded.
 The `mung_filename='all'` parameters in this example converts the files names into 'path_to_dicom_files/1.dcm', 'path_to_dicom_files/2.dcm', etc.
 
+Download resources
+------------------
+
+To download a resource, use the :py:meth:`download_resources() <datamintapi.api_handler.APIHandler.download_resources>` method:
+
+.. code-block:: python
+
+    resources = api_handler.get_resources(status='inbox', mimetype='application/dicom')
+    resource_id = resources[0]['id']
+
+    dicom_obj = api_handler.download_resources(resource_id)
+    # dicom_obj is dicom object (pydicom.Dataset)
+
+The function above uses the resource mimetype to automatically convert to a proper object type (`pydicom.Dataset`, in this case.)
+If you do not this, but the bytes itself, use the ``auto_convert=False`` parameter.
+Additionally, if you want to save the file to disk, use the ``save_path`` parameter:
+
+.. code-block:: python
+
+    dicom_bytes = api_handler.download_resources(resource_id, 
+                                                 auto_convert=False,
+                                                 save_path='path/to/save/dicom.dcm')
+    # dicom_bytes is a bytes object
+
+
 Upload segmentation
 -------------------
 
@@ -197,7 +222,7 @@ Here is a complete example that inherits :py:class:`datamintapi.dataset.Datamint
 
         # (...) do something with the batch
 
-Alternative if you don't want to inherit from :py:class:`datamintapi.dataset.DatamintDataset`:
+Alternative code, if you want to load all the data and metadata:
 
 .. code-block:: python
 
@@ -220,8 +245,6 @@ Alternative if you don't want to inherit from :py:class:`datamintapi.dataset.Dat
                                 )
 
     # This function tells the dataloader how to group the items in a batch
-
-
     def collate_fn(batch):
         images = [item[0] for item in batch]
         dicom_metainfo = [item[1] for item in batch]

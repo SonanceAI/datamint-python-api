@@ -1,17 +1,17 @@
 import pytest
 from unittest.mock import patch, mock_open
 from datamintapi.api_handler import APIHandler
-from datamintapi.api_handler import ResourceNotFoundError, DatamintException
 import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.dataset import FileMetaDataset
 from datamintapi.utils.dicom_utils import to_bytesio
 import json
-import re
 from aiohttp import FormData
 from typing import Tuple
 from io import BytesIO
+import requests
+import os
 
 _TEST_URL = 'https://test_url.com'
 
@@ -60,75 +60,40 @@ class TestAPIHandler:
 
         return ds
 
+    @pytest.fixture
+    def get_channels_sample(self) -> dict:
+        return {'data': [{'channel_name': None,
+                          'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': '78a0bce0-9182-49d9-a780-14f444d404eb',
+                                             'resource_file_name': '_%2Fdata%2Ftest_dicom2.dcm',
+                                             'resource_mimetype': 'application/dicom'},
+                                            {'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': '6daa205a-5312-4104-abbb-7ec00607a53a',
+                                             'resource_file_name': '_%2F_%2F_%2F_%2FVideos%2Fssstwitter.com_1709750263599.mp4',
+                                             'resource_mimetype': 'video/mp4'}],
+                          'deleted': False,
+                          'created_at': '2024-06-03T13:28:08.584Z',
+                          'updated_at': '2024-06-03T14:31:18.785Z',
+                          'resource_count': '2'},
+                         {'channel_name': 'test_channel',
+                          'resource_data': [{'created_by': 'datamint-dev@mail.com',
+                                             'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
+                                             'resource_id': 'a05fe46d-2f66-46fc-b7ef-666464ad3a28',
+                                             'resource_file_name': '_%2Fdocs%2Fimages%2Flogo.png',
+                                             'resource_mimetype': 'image/png'}],
+                          'deleted': False,
+                          'created_at': '2024-06-04T12:38:12.976Z',
+                          'updated_at': '2024-06-04T12:38:12.976Z',
+                          'resource_count': '1'}],
+                'totalCount': '1'}
+
     @patch('os.getenv')
     def test_api_handler_init(self, mock_getenv):
         mock_getenv.return_value = 'test_api_key'
         api_handler = APIHandler('test_url')
         assert api_handler.api_key == 'test_api_key'
-
-    @responses.activate
-    def test_upload_batch(self):
-        # Mocking the response from the server
-        responses.post(
-            f"{_TEST_URL}/upload-batches",
-            json={"id": "test_id"},
-            status=201,
-        )
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
-        batch_id = api_handler.create_batch('test_description', 2)
-        assert batch_id == 'test_id'
-
-    def test_upload_dicoms_batch_id(self, sample_dicom1):
-        """
-        Test the upload_dicoms method of the APIHandler class
-        1. Test with anonymize=False
-        2. Test with anonymize=True
-        """
-        def _callback1(url, data, **kwargs):
-            dicom_bytes, data = _get_request_data(data)
-            ds = pydicom.dcmread(dicom_bytes)
-
-            assert batch_id in data
-            assert str(sample_dicom1.PatientName) == str(ds.PatientName)
-            return CallbackResult(status=201, payload={"id": "newdicomid"})
-
-        def _callback2(url, data, **kwargs):
-            dicom_bytes, data = _get_request_data(data)
-            ds = pydicom.dcmread(dicom_bytes)
-
-            assert batch_id in data
-            assert str(sample_dicom1.PatientName) not in str(ds.PatientName)
-            return CallbackResult(status=201, payload={"id": "newdicomid2"})
-
-        batch_id = 'batchid'
-
-        ### With anonymize=False ###
-        with aioresponses() as mock_aioresp:
-            # check that post request has data 'batch_id'
-            mock_aioresp.post(
-                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
-                callback=_callback1
-            )
-
-            api_handler = APIHandler(_TEST_URL, 'test_api_key')
-            new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                      files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
-                                                      anonymize=False)
-            assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
-
-        ### With anonymize=True ###
-        with aioresponses() as mock_aioresp:
-            # check that post request has data 'batch_id'
-            mock_aioresp.post(
-                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
-                callback=_callback2
-            )
-
-            new_dicoms_id = api_handler.upload_dicoms(batch_id=batch_id,
-                                                      files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
-                                                      anonymize=True)
-
-            assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid2'
 
     def test_upload_dicoms_resources(self, sample_dicom1):
         def _callback1(url, data, **kwargs):
@@ -146,9 +111,9 @@ class TestAPIHandler:
             )
 
             api_handler = APIHandler(_TEST_URL, 'test_api_key')
-            new_dicoms_id = api_handler.upload_dicoms(files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
-                                                      channel='mychannel',
-                                                      anonymize=False)
+            new_dicoms_id = api_handler.upload_resources(files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
+                                                         channel='mychannel',
+                                                         anonymize=False)
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
     def test_upload_dicoms_mungfilename(self, sample_dicom1):
@@ -169,7 +134,7 @@ class TestAPIHandler:
                 data = str(data._fields)
             else:
                 data = str(data)
-            assert 'data/test_dicom.dcm' in data
+            assert 'test_dicom.dcm' in data and 'data_test' not in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
         def _request_callback3(url, data, **kwargs):
@@ -185,9 +150,9 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback
                 )
-                new_dicoms_id = api_handler.upload_dicoms(files_path='../data/test_dicom.dcm',
-                                                          anonymize=False,
-                                                          mung_filename='all')
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('..', 'data', 'test_dicom.dcm'),
+                                                             anonymize=False,
+                                                             mung_filename='all')
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
@@ -195,9 +160,9 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback2
                 )
-                new_dicoms_id = api_handler.upload_dicoms(files_path='data/test_dicom.dcm',
-                                                          anonymize=False,
-                                                          mung_filename=None)
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('data', 'test_dicom.dcm'),
+                                                             anonymize=False,
+                                                             mung_filename=None)
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
@@ -205,67 +170,10 @@ class TestAPIHandler:
                     f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                     callback=_request_callback3
                 )
-                new_dicoms_id = api_handler.upload_dicoms(files_path='/home/me/data/test_dicom.dcm',
-                                                          anonymize=False,
-                                                          mung_filename=[2, 3])
+                new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('home', 'me', 'data', 'test_dicom.dcm'),
+                                                             anonymize=False,
+                                                             mung_filename=[2, 3])
                 assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
-
-    @responses.activate
-    def test_create_batch_with_dicoms(self, sample_dicom1):
-        uploaded_batches_mock = []  # used to store the batch_id of the uploaded batches
-
-        def _request_callback(request):
-            uploaded_batches_mock.append('batch_id')
-            resp_body = {"id": 'batch_id'}
-            return (201, "", json.dumps(resp_body))
-
-        def _request_callback_batchinfo(request):
-            batch_id = request.url.split('/')[-1]
-            if batch_id not in uploaded_batches_mock:
-                return (404, "", "{}")
-            resp = {"id": batch_id,
-                    "description": "description",
-                    "images": [{"filename": "sample_dicom1"}]
-                    }
-            return (200, "", json.dumps(resp))
-
-        # Mocking the response from the server
-        responses.add_callback(
-            responses.POST,
-            f"{_TEST_URL}/upload-batches",
-            content_type='application/json',
-            callback=_request_callback
-        )
-
-        responses.add_callback(
-            responses.GET,
-            re.compile(f"{_TEST_URL}/upload-batches/.+"),
-            content_type='application/json',
-            callback=_request_callback_batchinfo
-
-        )
-
-        with aioresponses() as mock_aioresp:
-            mock_aioresp.post(
-                f"{_TEST_URL}/{APIHandler.ENDPOINT_DICOMS}",
-                payload={"id": "newdicomid"},
-                status=201
-            )
-
-            api_handler = APIHandler(_TEST_URL, 'test_api_key')
-            dc1_io = to_bytesio(sample_dicom1, 'sample_dicom1')
-            batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('description',
-                                                                        files_path=[dc1_io],
-                                                                        anonymize=False
-                                                                        )
-
-            assert batch_id == 'batch_id'
-            assert len(dicoms_ids) == 1 and dicoms_ids[0] == 'newdicomid'
-
-        batchinfo = api_handler.get_batch_info(batch_id)
-        assert batchinfo['description'] == 'description'
-        assert len(batchinfo['images']) == 1
-        assert batchinfo['images'][0]['filename'] == 'sample_dicom1'
 
     @responses.activate
     def test_get_batches(self):
@@ -340,3 +248,48 @@ class TestAPIHandler:
                                                             channel='mychannel',
                                                             anonymize=False)
             assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
+
+    @responses.activate
+    def test_wrong_url(self, get_channels_sample: dict):
+        def _request_callback(request):
+            if 'wrong_url' in request.url:
+                return (404, "", "404 Client Error: Not Found for url:")
+            return (200, "", json.dumps(get_channels_sample))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.GET,
+            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+        responses.add_callback(
+            responses.GET,
+            f"https://wrong_url/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        list(api_handler.get_channels())
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            api_handler = APIHandler('https://wrong_url', 'test_api_key')
+            list(api_handler.get_channels())
+
+    @responses.activate
+    def test_get_channels(self, get_channels_sample: dict):
+        def _request_callback(request):
+            return (200, "", json.dumps(get_channels_sample))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.GET,
+            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}/channels",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        channels_info = list(api_handler.get_channels())
+        assert len(channels_info) == 2  # two channels
