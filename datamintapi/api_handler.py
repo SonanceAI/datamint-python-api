@@ -197,6 +197,8 @@ class APIHandler:
                                             channel: Optional[str] = None,
                                             session=None,
                                             modality: Optional[str] = None,
+                                            publish: bool = False,
+                                            publish_to: Optional[str] = None,
                                             ) -> str:
         if _is_io_object(file_path):
             name = file_path.name
@@ -292,12 +294,13 @@ class APIHandler:
                                       mung_filename: Sequence[int] | Literal['all'] = None,
                                       channel: Optional[str] = None,
                                       modality: Optional[str] = None,
+                                      publish: bool = False,
+                                      publish_to: Optional[str] = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         async with aiohttp.ClientSession() as session:
-
             async def __upload_single_resource(file_path):
                 _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
                 async with self.semaphore:
@@ -311,6 +314,8 @@ class APIHandler:
                         mung_filename=mung_filename,
                         channel=channel,
                         modality=modality,
+                        publish=publish,
+                        publish_to=publish_to
                     )
             tasks = [__upload_single_resource(f) for f in files_path]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
@@ -368,6 +373,8 @@ class APIHandler:
                          labels: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
+                         publish: bool = False,
+                         publish_to: Optional[str] = None,
                          ) -> list[str | Exception]:
         """
         Upload resources.
@@ -382,6 +389,13 @@ class APIHandler:
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
+            publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
+            publish_to (Optional[str]): The dataset id to publish the resources to.
+                They will have the 'published' status and will be added to the dataset.
+                If this is set, `publish` parameter is ignored.
+
+        Raises:
+            ResourceNotFoundError: If `publish_to` is supplied, and the dataset does not exists.
 
         Returns:
             list[str]: The list of new created dicom_ids.
@@ -400,9 +414,58 @@ class APIHandler:
                                             labels=labels,
                                             mung_filename=mung_filename,
                                             channel=channel,
+                                            publish=publish,
+                                            publish_to=publish_to
                                             )
 
-        return loop.run_until_complete(task)
+        resource_ids = loop.run_until_complete(task)
+        _LOGGER.info(f"Resources uploaded: {resource_ids}")
+        if publish:
+            for rid in resource_ids:
+                if rid is not None and not isinstance(rid, Exception):
+                    try:
+                        self.publish_resource(rid, publish_to)
+                    except Exception as e:
+                        _LOGGER.error(f"Error publishing resource {rid}: {e}")
+                        if on_error == 'raise':
+                            raise e
+
+        return resource_ids
+
+    def publish_resource(self,
+                         resource_id: str,
+                         dataset_id: Optional[str] = None) -> None:
+        """
+        Publish a resource, chaging its status to 'published'.
+
+        Args:
+            resource_id (str): The resource unique id.
+            dataset_id (Optional[str]): The dataset unique id to publish the resource to.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists or the dataset does not exists.
+
+        """
+        params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/resources/{resource_id}/publish',
+        }
+
+        try:
+            self._run_request(params)
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+        except HTTPError as e:
+            if APIHandler._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
+                _LOGGER.warning(f"Resource {resource_id} is not in inbox status. Skipping publishing")
+            else:
+                raise e
+
+        if dataset_id is not None:
+            try:
+                raise NotImplementedError("publishing to a dataset is not implemented yet.")
+            except ResourceNotFoundError:
+                raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
 
     @staticmethod
     def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Sequence[str | IO]:

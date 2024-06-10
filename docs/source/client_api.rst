@@ -151,6 +151,26 @@ Additionally, if you want to save the file to disk, use the ``save_path`` parame
     # dicom_bytes is a bytes object
 
 
+Publishing a resource
+---------------------
+
+To publish a resource, use the :py:meth:`publish_resource() <datamintapi.api_handler.APIHandler.publish_resource>` method:
+
+.. code-block:: python
+
+    resources = api_handler.get_resources(status='inbox')
+    resource_id = resources[0]['id'] # assuming there is at least one resource in the inbox
+
+    api_handler.publish_resource(resource_id)
+
+You can also publish resources while uploading them:
+
+.. code-block:: python
+
+    resource_id = api_handler.upload_resources(files_path='/path/to/video_data.mp4',
+                                               publish=True
+                                               )
+
 Upload segmentation
 -------------------
 
