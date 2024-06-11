@@ -65,11 +65,13 @@ def walk_to_depth(path: str,
                   exclude_pattern: str = None) -> Generator[Path, None, None]:
     path = Path(path)
     for child in path.iterdir():
-        if child.is_dir() and depth != 0:
-            if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
-                continue
-            yield from walk_to_depth(child, depth-1, exclude_pattern)
+        if child.is_dir():
+            if depth != 0:
+                if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
+                    continue
+                yield from walk_to_depth(child, depth-1, exclude_pattern)
         else:
+            _LOGGER.debug(f"yielding {child} from {path}")
             yield child
 
 
@@ -242,7 +244,7 @@ def main():
     try:
         args, files_path = _parse_args()
     except Exception as e:
-        _USER_LOGGER.error(f'Error parsing arguments. {e}')
+        _USER_LOGGER.error(f'Error validating arguments. {e}')
         return
 
     print_input_summary(files_path, args.include_extensions)
