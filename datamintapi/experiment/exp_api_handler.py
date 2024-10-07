@@ -1,11 +1,16 @@
 from datamintapi import APIHandler
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 import json
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ExperimentAPIHandler(APIHandler):
-    def __init__(self, root_url: str, api_key: Optional[str] = None):
-        super().__init__(root_url, api_key)
+    def __init__(self,
+                 root_url: Optional[str] = None,
+                 api_key: Optional[str] = None):
+        super().__init__(root_url=root_url, api_key=api_key)
         self.exp_url = f"{self.root_url}/experiments"
 
     def create_experiment(self,
@@ -22,6 +27,8 @@ class ExperimentAPIHandler(APIHandler):
                      "environment": environment
                      }
         }
+
+        _LOGGER.debug(f"Creating experiment with name {name} and params {json.dumps(request_params)}")
 
         response = self._run_request(request_params)
 
@@ -50,15 +57,11 @@ class ExperimentAPIHandler(APIHandler):
     def log_summary(self,
                     exp_id: str,
                     result_summary: Dict,
-                    name: str,
-                    description: str) -> None:
+                    ) -> None:
         request_params = {
             'method': 'POST',
             'url': f"{self.exp_url}/{exp_id}/summary",
-            'json': {"name": name,
-                     "description": description,
-                     "result_summary": result_summary
-                     }
+            'json': {"result_summary": result_summary}
         }
 
         resp = self._run_request(request_params)
@@ -95,3 +98,31 @@ class ExperimentAPIHandler(APIHandler):
         }
 
         resp = self._run_request(request_params)
+
+    def log_entry(self,
+                  exp_id: str,
+                  entry: Dict):
+
+        if not isinstance(entry, dict):
+            raise ValueError(f"Invalid type for entry: {type(entry)}")
+
+        request_params = {
+            'method': 'POST',
+            'url': f"{self.exp_url}/{exp_id}/log",
+            'json': entry
+        }
+
+        _LOGGER.debug(f'logging entry with params: {json.dumps(request_params)}')
+
+        resp = self._run_request(request_params)
+        return resp
+
+    def finish_experiment(self, exp_id: str):
+        _LOGGER.info(f"Finishing experiment with id {exp_id}")
+        _LOGGER.warning("Finishing experiment not implemented yet")
+        # request_params = {
+        #     'method': 'POST',
+        #     'url': f"{self.exp_url}/{exp_id}/finish"
+        # }
+
+        # resp = self._run_request(request_params)

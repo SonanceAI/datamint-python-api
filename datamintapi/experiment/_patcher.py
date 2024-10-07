@@ -31,9 +31,8 @@ class Wrapper:
 
     def _patch(self):
         def _callback(*args, **kwargs):
-            experiment = Experiment.get_singleton_experiment()
             for cb in self.cb_before:
-                cb(experiment, original, args, kwargs)
+                cb(original, args, kwargs)
 
             try:
                 return_value = original(*args, **kwargs)
@@ -42,7 +41,7 @@ class Wrapper:
                 return_value = exception
 
             for cb in self.cb_after:
-                cb(experiment, original, args, kwargs, return_value)
+                cb(original, args, kwargs, return_value)
 
             if isinstance(return_value, Exception):
                 raise return_value
@@ -58,15 +57,6 @@ class Wrapper:
 
     def stop(self):
         self.patcher.stop()
-
-
-def _backward_callback(experiment: Experiment,
-                       original_obj, func_args, func_kwargs):
-    """
-    This function is a wrapper for the backward method of the Pytorch Tensor class.
-    """
-    loss = func_args[0]
-    experiment.log_metric("loss", loss.item())
 
 
 def get_function_from_string(target: str):
@@ -91,19 +81,39 @@ def get_function_from_string(target: str):
     return cur_obj
 
 
+class PytorchPatcher:
+    AUTO_LOSS_LOG_INTERVAL = 20
+
+    def _backward_callback(self,
+                           original_obj, func_args, func_kwargs):
+        """
+        This method is a wrapper for the backward method of the Pytorch Tensor class.
+        """
+        exp = Experiment.get_singleton_experiment()
+        loss = func_args[0]
+        if exp.cur_step is None:
+            exp.cur_step = 0
+        else:
+            exp._set_step(exp.cur_step + 1)
+        if exp.cur_step % PytorchPatcher.AUTO_LOSS_LOG_INTERVAL == 0:
+            exp.log_metric("loss", loss.item())
+
+
 def initialize_automatic_logging():
     """
     This function initializes the automatic logging of Pytorch loss using patching.
     """
 
+    pytorch_patcher = PytorchPatcher()
+
     params = [
         {
             'target': 'torch.Tensor.backward',
-            'cb_before': _backward_callback
+            'cb_before': pytorch_patcher._backward_callback
         },
         {
             'target': 'torch.tensor.Tensor.backward',
-            'cb_before': _backward_callback
+            'cb_before': pytorch_patcher._backward_callback
         }
     ]
 

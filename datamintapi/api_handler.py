@@ -49,15 +49,25 @@ class APIHandler:
     Class to handle the API requests to the Datamint API
     """
     DATAMINT_API_VENV_NAME = 'DATAMINT_API_KEY'
+    DATAMINT_URL_VENV = 'DATAMINT_URL'
 
     def __init__(self,
-                 root_url: str,
+                 root_url: Optional[str] = None,
                  api_key: Optional[str] = None):
         nest_asyncio.apply()  # For running asyncio in jupyter notebooks
+        if root_url is None:
+            root_url = os.getenv(APIHandler.DATAMINT_URL_VENV, 'https://stagingapi.datamint.io')
+            if root_url is None:
+                msg = ("root_url not provided!" +
+                       f" Use the environment variable {APIHandler.DATAMINT_URL_VENV}" +
+                       " or pass it as an argument.")
+                raise Exception(msg)
         self.root_url = root_url
         self.api_key = api_key if api_key is not None else os.getenv(APIHandler.DATAMINT_API_VENV_NAME)
         if self.api_key is None:
-            msg = f"API key not provided! Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
+            msg = ("API key not provided!" +
+                   f" Use the environment variable {APIHandler.DATAMINT_API_VENV_NAME}" +
+                   " or pass it as an argument.")
             raise Exception(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
