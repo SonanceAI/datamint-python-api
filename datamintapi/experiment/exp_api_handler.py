@@ -2,6 +2,11 @@ from datamintapi import APIHandler
 from typing import Optional, Dict, List, Union
 import json
 import logging
+import torch
+from io import BytesIO
+import asyncio
+import aiohttp
+import os
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,3 +131,40 @@ class ExperimentAPIHandler(APIHandler):
         # }
 
         # resp = self._run_request(request_params)
+
+    def log_model(self,
+                  exp_id: str,
+                  model: Union[torch.nn.Module, str, BytesIO],
+                  hyper_params: Optional[Dict] = None,
+                  torch_save_kwargs: Dict = {}) -> None:
+        if isinstance(model, torch.nn.Module):
+            f = BytesIO()
+            torch.save(model, f, **torch_save_kwargs)
+            f.seek(0)
+            f.name = None
+        elif isinstance(model, str):
+            f = open(model, 'rb')
+        elif isinstance(model, BytesIO):
+            f = model
+        else:
+            raise ValueError(f"Invalid type for model: {type(model)}")
+
+        try:
+            loop = asyncio.get_event_loop()
+
+            form = aiohttp.FormData()
+            form.add_field('files', f, filename=f.name)
+            if hyper_params is not None:
+                form.add_field('data',
+                               json.dumps(hyper_params),
+                               content_type='application/json')
+            request_params = {
+                'method': 'POST',
+                'url': f"{self.exp_url}/{exp_id}/model",
+                'data': form
+            }
+
+            task = self._run_request_async(request_params)
+            resp = loop.run_until_complete(task)
+        finally:
+            f.close()

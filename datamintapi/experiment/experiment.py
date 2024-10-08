@@ -1,9 +1,11 @@
 import logging
 from .exp_api_handler import ExperimentAPIHandler
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from pytorch_lightning.loggers import WandbLogger, CometLogger
 from collections import defaultdict
+import torch
+from io import BytesIO
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -14,10 +16,10 @@ class Experiment:
                  name: str,
                  dataset_id: str,
                  description: Optional[str] = None,
-                 api_key: Optional[str] = None) -> None:
+                 api_key: Optional[str] = None,
+                 root_url: Optional[str] = None) -> None:
         self.name = name
-        # FIXME: Change to get URL from config
-        self.apihandler = ExperimentAPIHandler(api_key=api_key)
+        self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
@@ -104,6 +106,15 @@ class Experiment:
                     result_summary: Dict) -> None:
         self.apihandler.log_summary(exp_id=self.exp_id,
                                     result_summary=result_summary)
+
+    def log_model(self,
+                  model: Union[torch.nn.Module, str, BytesIO],
+                  hyper_params: Optional[Dict] = None,
+                  torch_save_kwargs: Dict = {}):
+        self.apihandler.log_model(exp_id=self.exp_id,
+                                  model=model,
+                                  hyper_params=hyper_params,
+                                  torch_save_kwargs=torch_save_kwargs)
 
     def finish(self):
         _LOGGER.info("Finishing experiment")
