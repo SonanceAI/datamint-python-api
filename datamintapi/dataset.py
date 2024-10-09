@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Tuple
 from torchvision.datasets.utils import extract_archive
 import logging
 import shutil
@@ -11,6 +11,9 @@ import yaml
 import pydicom
 import numpy as np
 from torch.utils.data import Dataset
+from torch.utils.data import DataLoader
+import torch
+from torchvision import transforms
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,7 +39,7 @@ class DatamintDataset(Dataset):
         target_transform (callable, optional): A function/transform that takes in the dataset metadata and transforms it.
     """
 
-    root_url = 'https://stagingapi.datamint.io'
+    default_root_url = 'https://stagingapi.datamint.io'
 
     def __init__(self,
                  root: str,
@@ -44,17 +47,35 @@ class DatamintDataset(Dataset):
                  version: int | str = 'latest',
                  api_key: Optional[str] = None,
                  transform: Callable[[np.ndarray], Any] = None,
-                 target_transform: Callable[[dict], Any] = None
+                 target_transform: Callable[[dict], Any] = None,
+                 server_url: Optional[str] = None,
+                 use_default_transform: bool = True,
+                 return_dicom: bool = True,
+                 return_metainfo: bool = True,
                  # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
                  ):
+        if server_url is None:
+            _LOGGER.debug(f"Using default server URL: {DatamintDataset.default_root_url}")
+            server_url = DatamintDataset.default_root_url
+        self.server_url = server_url
         if isinstance(root, str):
             root = os.path.expanduser(root)
         if not os.path.isdir(root):
             raise NotADirectoryError(f"Root directory not found: {root}")
 
         self.root = root
+
+        # transforms TODO: load from server?
+        if use_default_transform:
+            self.default_transf = transforms.Compose([transforms.ToTensor(),
+                                                      transforms.Normalize((0.5,), (0.5,))])
+        else:
+            self.default_transf = None
         self.transform = transform
         self.target_transform = target_transform
+
+        self.return_dicom = return_dicom
+        self.return_metainfo = return_metainfo
 
         if isinstance(version, str) and version != 'latest':
             raise ValueError("Version must be an integer or 'latest'")
@@ -81,18 +102,19 @@ class DatamintDataset(Dataset):
         # Loads the metadata
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
             self.metainfo = json.load(file)
-        self.images_metainfo = self.metainfo['images']
+        self.images_metainfo = self.metainfo['resources']
         self._check_integrity()
 
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
-            if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['image_file'])):
-                raise DatamintDatasetException(f"Image file {imginfo['image_file']} not found.")
+            if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
+                raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
     def _get_datasetinfo_by_name(self, dataset_name: str) -> dict:
+        # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
         request_params = {
             'method': 'GET',
-            'url': f'{DatamintDataset.root_url}/datasets',
+            'url': f'{self.server_url}/datasets',
             'headers': {'apikey': self.api_key}
         }
         with Session() as session:
@@ -115,7 +137,7 @@ class DatamintDataset(Dataset):
     def _get_jwttoken(self, dataset_id, session) -> str:
         request_params = {
             'method': 'GET',
-            'url': f'{DatamintDataset.root_url}/datasets/{dataset_id}/download/dicom',
+            'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
             'headers': {'apikey': self.api_key},
             'params': {'version': self.version},
             'stream': True
@@ -173,10 +195,11 @@ class DatamintDataset(Dataset):
         Raises:
             SonanceDatasetException: If the download fails.
         """
+        # FIXME: Use `APIHandler.get_dataset_by_id` instead of direct requests
         dataset_info = self._get_datasetinfo_by_name(self.dataset_name)
         dataset_id = dataset_info['id']
         if self.version == 'latest':
-            self.version = dataset_info['last_version']
+            self.version = dataset_info['updated_at']  # dataset_info['last_version']
 
         with Session() as session:
             jwt_token = self._get_jwttoken(dataset_id, session)
@@ -184,7 +207,7 @@ class DatamintDataset(Dataset):
             # Initiate the download
             request_params = {
                 'method': 'GET',
-                'url': f'{DatamintDataset.root_url}/datasets/download/{jwt_token}',
+                'url': f'{self.server_url}/datasets/download/{jwt_token}',
                 'headers': {'apikey': self.api_key},
                 'stream': True
             }
@@ -217,7 +240,7 @@ class DatamintDataset(Dataset):
 
         img_metainfo = self.images_metainfo[index]
 
-        filepath = os.path.join(self.dataset_dir, img_metainfo['image_file'])
+        filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
         # loads the dicom file
         ds = pydicom.dcmread(filepath)
 
@@ -226,18 +249,29 @@ class DatamintDataset(Dataset):
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16
             img = (img//256).astype(np.uint8)
-        if hasattr(ds, '_pixel_array'):
+        if self.return_dicom and hasattr(ds, '_pixel_array'):
             ds._pixel_array = None  # Free up memory
         else:
             _LOGGER.warning("ds._pixel_array not found. This may cause memory issues. Check pydicom version.")
 
+        if self.default_transf is not None:
+            img = self.default_transf(img)
         if self.transform is not None:
             img = self.transform(img)
+        if isinstance(img, np.ndarray):
+            img = torch.from_numpy(img)
 
         if self.target_transform is not None:
             img_metainfo = self.target_transform(img_metainfo)
 
-        return img, ds, img_metainfo
+        ret = [img]
+        if self.return_dicom:
+            ret.append(ds)
+        if self.return_metainfo:
+            ret.append(img_metainfo)
+        ret = tuple(ret)
+
+        return ret
 
     def __iter__(self):
         for i in range(len(self)):
@@ -270,7 +304,8 @@ class DatamintDataset(Dataset):
 
         if local_version != last_version:
             print(
-                f"A newer version of the dataset is available. Your version: {local_version}. Last version: {last_version}.\n Would you like to update?\n (y/n)"
+                f"A newer version of the dataset is available. Your version: {
+                    local_version}. Last version: {last_version}.\n Would you like to update?\n (y/n)"
             )
             choice = input().lower()
             if choice == 'y':
@@ -279,13 +314,45 @@ class DatamintDataset(Dataset):
                 return
         _LOGGER.info('Local version is up to date with the latest version.')
 
+    def get_dataloader(self, *args, batch_size: int, **kwargs) -> DataLoader:
+        return DataLoader(self,
+                          *args,
+                          batch_size=batch_size,
+                          collate_fn=self.get_collate_fn(),
+                          **kwargs)
+
+    def get_collate_fn(self) -> Callable:
+        def collate_fn(batch) -> Tuple:
+            k = 0
+            images = [item[0] for item in batch]
+            if isinstance(images[0], torch.Tensor):
+                images = torch.stack(images)
+            elif isinstance(images[0], np.ndarray):
+                images = np.stack(images)
+            else:
+                _LOGGER.warning(f"Unknown image type: {type(images[0])}. Proceeding with the original structure.")
+
+            collated_batch = [images]
+            if self.return_dicom:
+                k += 1
+                dicom_metainfo = [item[k] for item in batch]
+                collated_batch.append(dicom_metainfo)
+            if self.return_metainfo:
+                k += 1
+                metainfo = [item[k] for item in batch]
+                collated_batch.append(metainfo)
+
+            return tuple(collated_batch)
+
+        return collate_fn
+
 
 if __name__ == '__main__':
     # Example usage for testing purposes.
     logging.basicConfig(level=logging.INFO)
     dataset = DatamintDataset(root='/tmp',
-                             dataset_name='TestCTdataset',
-                             version='latest')
+                              dataset_name='TestCTdataset',
+                              version='latest')
     print(dataset)
     img, ds, metadata = dataset[0]
     print('Image shape:', img.shape)  # image(s)
