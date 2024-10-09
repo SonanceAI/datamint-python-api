@@ -117,14 +117,13 @@ class ExperimentAPIHandler(APIHandler):
             'json': entry
         }
 
-        _LOGGER.debug(f'logging entry with params: {json.dumps(request_params)}')
-
         resp = self._run_request(request_params)
         return resp
 
     def finish_experiment(self, exp_id: str):
-        _LOGGER.info(f"Finishing experiment with id {exp_id}")
-        _LOGGER.warning("Finishing experiment not implemented yet")
+        pass
+        # _LOGGER.info(f"Finishing experiment with id {exp_id}")
+        # _LOGGER.warning("Finishing experiment not implemented yet")
         # request_params = {
         #     'method': 'POST',
         #     'url': f"{self.exp_url}/{exp_id}/finish"

@@ -23,6 +23,7 @@ class Experiment:
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
+        self.finish_callbacks = []
         # self.loghandler = LogRequestHandler()
 
         Experiment._set_singleton_experiment(self)
@@ -86,7 +87,7 @@ class Experiment:
 
         if show_in_summary == True:
             for name, value in metrics.items():
-                self.summary_log['metrics'][name] = value
+                self.add_to_summary({'metrics': {name: value}})
 
         entry = [{'type': 'metric',
                   'name': name,
@@ -102,8 +103,26 @@ class Experiment:
         self.apihandler.log_entry(exp_id=self.exp_id,
                                   entry={'logs': entry})
 
+    def add_to_summary(self,
+                       dic: Dict):
+        for key, value in dic.items():
+            if key not in self.summary_log:
+                self.summary_log[key] = value
+                continue
+            cur_value = self.summary_log[key]
+            if isinstance(value, dict) and isinstance(cur_value, dict):
+                self.summary_log[key].update(value)
+            elif isinstance(value, list) and isinstance(cur_value, list):
+                self.summary_log[key].extend(value)
+            elif isinstance(value, tuple) and isinstance(cur_value, tuple):
+                self.summary_log[key] += value
+            else:
+                _LOGGER.warning(f"Key {key} already exists in summary. Overwriting value.")
+                self.summary_log[key] = value
+
     def log_summary(self,
                     result_summary: Dict) -> None:
+        _LOGGER.debug(f"Logging summary: {result_summary}")
         self.apihandler.log_summary(exp_id=self.exp_id,
                                     result_summary=result_summary)
 
@@ -116,10 +135,16 @@ class Experiment:
                                   hyper_params=hyper_params,
                                   torch_save_kwargs=torch_save_kwargs)
 
+    def _add_finish_callback(self, callback):
+        self.finish_callbacks.append(callback)
+
     def finish(self):
         _LOGGER.info("Finishing experiment")
+        for callback in self.finish_callbacks:
+            callback(self)
         # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
+        self.apihandler.finish_experiment(self.exp_id)
 
 
 class LogHistory:
