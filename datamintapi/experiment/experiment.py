@@ -1,37 +1,80 @@
 import logging
 from .exp_api_handler import ExperimentAPIHandler
+from datamintapi.api_handler import DatamintException
 from datetime import datetime
 from typing import List, Dict, Optional, Union
 from pytorch_lightning.loggers import WandbLogger, CometLogger
 from collections import defaultdict
 import torch
 from io import BytesIO
+from datamintapi import Dataset as DatamintDataset
+import os
 
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class Experiment:
+
+    DATAMINT_DEFAULT_DIR = ".datamint"
+    DATAMINT_DATASETS_DIR = 'datasets'
+
     def __init__(self,
                  name: str,
-                 dataset_id: str,
+                 dataset_id: Optional[str] = None,
+                 dataset_name: Optional[str] = None,
                  description: Optional[str] = None,
                  api_key: Optional[str] = None,
-                 root_url: Optional[str] = None) -> None:
+                 root_url: Optional[str] = None,
+                 dataset_dir: Optional[str] = None) -> None:
         self.name = name
         self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
         self.finish_callbacks = []
+
+        if dataset_dir is None:
+            # store them in the home directory
+            dataset_dir = os.path.join(os.path.expanduser("~"),
+                                       Experiment.DATAMINT_DEFAULT_DIR)
+        dataset_dir = os.path.join(dataset_dir, Experiment.DATAMINT_DATASETS_DIR)
+
+        if not os.path.exists(dataset_dir):
+            os.makedirs(dataset_dir)
+        self.dataset_dir = dataset_dir
+
+        dataset_info = Experiment._get_dataset_info(self.apihandler,
+                                                    dataset_id,
+                                                    dataset_name)
+        self.dataset_id = dataset_info['id']
+        self.dataset_name = dataset_info['name']
+        self.dataset = None
         # self.loghandler = LogRequestHandler()
 
         Experiment._set_singleton_experiment(self)
 
-        self.exp_id = self.apihandler.create_experiment(dataset_id=dataset_id,
+        self.exp_id = self.apihandler.create_experiment(dataset_id=self.dataset_id,
                                                         name=name,
                                                         description=description,
                                                         environment={})  # TODO: Add environment
+
+    @staticmethod
+    def _get_dataset_info(apihandler: ExperimentAPIHandler,
+                          dataset_id,
+                          dataset_name) -> Dict:
+        if dataset_id is None:
+            if dataset_name is None:
+                raise ValueError("dataset_name or dataset_id must be provided.")
+            datasets_infos = apihandler.get_datasetsinfo_by_name(dataset_name)
+            if len(datasets_infos) == 0:
+                raise DatamintException(f"No dataset found with name {dataset_name}")
+            if len(datasets_infos) >= 2:
+                raise DatamintException(f"Multiple datasets found with name {dataset_name}. Please provide dataset_id.")
+
+            return datasets_infos[0]
+
+        return apihandler.get_dataset_by_id(dataset_id)
 
     @staticmethod
     def get_singleton_experiment() -> 'Experiment':
@@ -45,6 +88,7 @@ class Experiment:
             _LOGGER.warning(
                 "There is already an active Experiment. Setting a new Experiment will overwrite the existing one."
             )
+
         EXPERIMENT = experiment
 
     def _set_step(self, step: Optional[int]) -> int:
@@ -137,6 +181,17 @@ class Experiment:
 
     def _add_finish_callback(self, callback):
         self.finish_callbacks.append(callback)
+
+    def get_dataset(self, split: str = 'all') -> DatamintDataset:
+        # FIXME: Implement split
+        _LOGGER.warning("split parameter is not implemented yet. Returning the full dataset.")
+        if self.dataset is None:
+            self.dataset = DatamintDataset(self.dataset_dir,
+                                           dataset_name=self.dataset_name,
+                                           api_key=self.apihandler.api_key,
+                                           server_url=self.apihandler.root_url,
+                                           return_dicom=False)
+        return self.dataset
 
     def finish(self):
         _LOGGER.info("Finishing experiment")
