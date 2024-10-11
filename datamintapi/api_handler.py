@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict
+from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict, Tuple, Union, List
 import os
 import pydicom.dataset
 from requests import Session
@@ -21,6 +21,7 @@ from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from deprecated.sphinx import deprecated
 import pydantic
 from datamintapi import configs
+import numpy as np
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -605,46 +606,168 @@ class APIHandler:
         except ResourceNotFoundError:
             raise ResourceNotFoundError('batch', {'batch_id': batch_id})
 
-    def upload_segmentation(self,
-                            dicom_id: str,
-                            file_path: str,
-                            segmentation_name: str,
-                            task_id: Optional[str] = None,
-                            ) -> str:
+    @staticmethod
+    def _numpy_to_bytesio_png(seg_imgs: np.ndarray) -> Generator[BytesIO, None, None]:
         """
-        Upload a segmentation to a dicom.
+        Args:
+            seg_img (np.ndarray): The segmentation image with dimensions (height, width, #frames).
+        """
+
+        if seg_imgs.ndim == 2:
+            seg_imgs = seg_imgs[..., None]
+
+        seg_imgs = seg_imgs.astype(np.uint8)
+        for i in range(seg_imgs.shape[2]):
+            img = seg_imgs[:, :, i]
+            img = Image.fromarray(img).convert('L')
+            img_bytes = BytesIO()
+            img.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+            yield img_bytes
+
+    @staticmethod
+    def _generate_segmentations_ios(file_path: str) -> Tuple[int, Generator[IO, None, None]]:
+        if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
+            segs_imgs = nib.load(file_path).get_fdata()
+            if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
+                raise ValueError(f"Invalid segmentation shape: {segs_imgs.shape}")
+
+            fios = APIHandler._numpy_to_bytesio_png(segs_imgs)
+            nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
+        elif file_path.endswith('.png'):
+            fios = (open(file_path, 'rb') for _ in range(1))
+            nframes = 1
+        else:
+            raise ValueError(f"Unsupported file format of '{file_path}'")
+
+        return nframes, fios
+
+    @staticmethod
+    def _get_segmentation_names(uniq_vals: np.ndarray,
+                                names: Optional[Union[str, Dict[int, str]]] = None
+                                ) -> List[str]:
+        uniq_vals = uniq_vals[uniq_vals != 0]
+        if names is None:
+            names = 'seg'
+        if isinstance(names, str):
+            return [f'{names}_{v}' for v in uniq_vals]
+        if isinstance(names, dict):
+            return [names[v] for v in uniq_vals]
+        raise ValueError("names must be a string or a dictionary.")
+
+    @staticmethod
+    def _split_segmentations(img: np.ndarray,
+                             uniq_vals: np.ndarray,
+                             f: IO,
+                             ) -> Generator[BytesIO, None, None]:
+        # remove zero from uniq_vals
+        uniq_vals = uniq_vals[uniq_vals != 0]
+
+        for v in uniq_vals:
+            img_v = (img == v).astype(np.uint8)
+
+            f = BytesIO()
+            Image.fromarray(img_v*255).convert('RGB').save(f, format='PNG')
+            f.seek(0)
+            yield f
+
+    def upload_segmentations(self,
+                             resource_id: str,
+                             file_path: str,
+                             name: Optional[Union[str, Dict[int, str]]] = None,
+                             frame_index: int = None,
+                             discard_empty_segmentations: bool = True
+                             ) -> str:
+        """
+        Upload segmentations to a resource.
 
         Args:
-            dicom_id (str): The dicom unique id.
+            resource_id (str): The dicom unique id.
             file_path (str): The path to the segmentation file.
-            segmentation_name (str): The segmentation name.
-            task_id (Optional[str]): The task unique id.
+            name (str): The segmentation name.
 
         Returns:
             str: The segmentation unique id.
 
         Raises:
-            ResourceNotFoundError: If the dicom does not exists or the segmentation is invalid.
+            ResourceNotFoundError: If the reousrce does not exists or the segmentation is invalid.
 
         Example:
-            >>> batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
-            >>> api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
+            >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
         """
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File {file_path} not found.")
+
+        if isinstance(frame_index, int):
+            frame_index = [frame_index]
+
+        # Generate IOs for the segmentations.
+        nframes, fios = APIHandler._generate_segmentations_ios(file_path)
+        _LOGGER.debug(f"Number of frames in `file_path`: {nframes}")
+        #######
+
+        if frame_index is None:
+            frame_index = list(range(nframes))
+        elif len(frame_index) != nframes:
+            raise ValueError("Do not provide frame_index for images of multiple frames.")
+
         try:
-            with open(file_path, 'rb') as f:
-                request_params = dict(
-                    method='POST',
-                    url=self.root_url+'/segmentations',
-                    data={'dicomId': dicom_id,
-                          'segmentationName': [segmentation_name],
-                          },
-                    files={'segmentationData': f}
-                )
-                if task_id is not None:
-                    request_params['data']['taskId'] = task_id
-                return self._run_request(request_params).json()['id']
+            # For each frame, create the annotations and upload the segmentations.
+            for fidx, f in zip(frame_index, fios):
+                try:
+                    img = np.array(Image.open(f))
+                    ### Check that frame is not empty ###
+                    uniq_vals = np.unique(img)
+                    if discard_empty_segmentations:
+                        if len(uniq_vals) == 1 and uniq_vals[0] == 0:
+                            msg = f"Discarding empty segmentation for frame {fidx}"
+                            _LOGGER.debug(msg)
+                            _USER_LOGGER.debug(msg)
+                            continue
+                        f.seek(0)
+                        # TODO: Optimize this. It is not necessary to open the image twice.
+
+                    segnames = APIHandler._get_segmentation_names(uniq_vals, names=name)
+                    segs_generator = APIHandler._split_segmentations(img, uniq_vals, f)
+                    annotations = []
+                    for segname in segnames:
+                        ### Annotation creation ###
+                        annotations.append({
+                            "identifier": segname,
+                            "scope": 'frame',
+                            "frame_index": fidx,
+                            "type": 'segmentation',
+                        })
+
+                    _LOGGER.info(f"Creating {len(annotations)} annotations for frame {fidx}")
+                    request_params = dict(
+                        method='POST',
+                        url=f'{self.root_url}/annotations/{resource_id}/annotations',
+                        json=annotations
+                    )
+                    resp = self._run_request(request_params).json()
+                    for r in resp:
+                        if 'error' in r:
+                            raise DatamintException(resp['error'])
+                    annotids = resp
+                    #######
+                    ### Upload segmentation ###
+                    _LOGGER.info(f"Uploading segmentations for frame {fidx}")
+                    for annotid, f in zip(annotids, segs_generator):
+                        request_params = dict(
+                            method='POST',
+                            url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
+                            files={'file': f},
+                        )
+                        resp = self._run_request(request_params).json()
+                        if 'error' in resp:
+                            raise DatamintException(resp['error'])
+                    #######
+                finally:
+                    f.close()
         except ResourceNotFoundError:
-            raise ResourceNotFoundError('dicom', {'dicom_id': dicom_id})
+            raise ResourceNotFoundError('resource', {'resource_id': resource_id})
 
     def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
         """
