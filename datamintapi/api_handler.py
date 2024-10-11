@@ -126,7 +126,7 @@ class APIHandler:
                 return await self._run_request_async(request_args, s)
 
         _LOGGER.info(f"Running request to {request_args['url']}")
-        _LOGGER.debug(f"Reqguest args: {request_args}")
+        _LOGGER.debug(f"Request args: {request_args}")
 
         # add apikey to the headers
         if 'headers' not in request_args:
@@ -261,6 +261,7 @@ class APIHandler:
                 form.add_field('channel', channel)
             if modality is not None:
                 form.add_field('modality', modality)
+            # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
             if labels is not None:
                 for i, label in enumerate(labels):
                     form.add_field(f'labels[{i}]', label)
@@ -268,7 +269,7 @@ class APIHandler:
             request_params = {
                 'method': 'POST',
                 'url': url,
-                'data': form,
+                'data': form
             }
 
             resp_data = await self._run_request_async(request_params, session)
@@ -276,7 +277,7 @@ class APIHandler:
                 raise DatamintException(resp_data['error'])
             _LOGGER.info(f"Response on uploading {file_path}: {resp_data}")
 
-            _USER_LOGGER.info(f'{file_path} uploaded')
+            _USER_LOGGER.info(f'"{file_path}" uploaded')
             return resp_data['id']
         except Exception as e:
             _LOGGER.error(f"Error uploading {file_path}: {e}")
@@ -297,15 +298,19 @@ class APIHandler:
                                       modality: Optional[str] = None,
                                       publish: bool = False,
                                       publish_to: Optional[str] = None,
+                                      segmentation_files: Optional[List[Dict]] = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
+        if segmentation_files is None:
+            segmentation_files = [None] * len(files_path)
+
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path):
+            async def __upload_single_resource(file_path, segfiles: Dict):
                 _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
                 async with self.semaphore:
-                    return await self._upload_single_resource_async(
+                    rid = await self._upload_single_resource_async(
                         file_path=file_path,
                         mimetype=mimetype,
                         anonymize=anonymize,
@@ -316,9 +321,16 @@ class APIHandler:
                         channel=channel,
                         modality=modality,
                         publish=publish,
-                        publish_to=publish_to
+                        publish_to=publish_to,
                     )
-            tasks = [__upload_single_resource(f) for f in files_path]
+                    if segfiles is not None:
+                        files_path = segfiles['files']
+                        names = segfiles.get('names', [None] * len(files_path))
+                        for f, name in zip(files_path, names):
+                            await self._upload_segmentations_async(rid, file_path=f, name=name)
+                    return rid
+
+            tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     @deprecated(version='0.4.0', reason="Use upload_resources instead with no batches.")
@@ -376,6 +388,7 @@ class APIHandler:
                          channel: Optional[str] = None,
                          publish: bool = False,
                          publish_to: Optional[str] = None,
+                         segmentation_files: Optional[List[Union[List[str], Dict]]] = None,
                          ) -> list[str | Exception]:
         """
         Upload resources.
@@ -394,6 +407,7 @@ class APIHandler:
             publish_to (Optional[str]): The dataset id to publish the resources to.
                 They will have the 'published' status and will be added to the dataset.
                 If this is set, `publish` parameter is ignored.
+            segmentation_files (Optional[List]): The segmentation files to upload.
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the dataset does not exists.
@@ -406,6 +420,9 @@ class APIHandler:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         files_path, is_list = APIHandler.__process_files_parameter(files_path)
+        if segmentation_files is not None:
+            segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
+                                  for segfiles in segmentation_files]
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
                                             mimetype=mimetype,
@@ -416,12 +433,14 @@ class APIHandler:
                                             mung_filename=mung_filename,
                                             channel=channel,
                                             publish=publish,
-                                            publish_to=publish_to
+                                            publish_to=publish_to,
+                                            segmentation_files=segmentation_files,
                                             )
 
         resource_ids = loop.run_until_complete(task)
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
         if publish:
+            _USER_LOGGER.info('Publishing resources')
             for rid in resource_ids:
                 if rid is not None and not isinstance(rid, Exception):
                     try:
@@ -661,7 +680,7 @@ class APIHandler:
         if isinstance(names, str):
             return [f'{names}_{v}' for v in uniq_vals]
         if isinstance(names, dict):
-            return [names[v] for v in uniq_vals]
+            return [names.get(v, names.get('default', '')+'_'+str(v)) for v in uniq_vals]
         raise ValueError("names must be a string or a dictionary.")
 
     @staticmethod
@@ -680,31 +699,27 @@ class APIHandler:
             f.seek(0)
             yield f
 
-    def upload_segmentations(self,
-                             resource_id: str,
-                             file_path: str,
-                             name: Optional[Union[str, Dict[int, str]]] = None,
-                             frame_index: int = None,
-                             discard_empty_segmentations: bool = True
-                             ) -> str:
-        """
-        Upload segmentations to a resource.
+    async def _upload_annotations_async(self,
+                                        resource_id: str,
+                                        annotations: List[Dict]) -> List[str]:
+        request_params = dict(
+            method='POST',
+            url=f'{self.root_url}/annotations/{resource_id}/annotations',
+            json=annotations
+        )
+        resp = await self._run_request_async(request_params)
+        for r in resp:
+            if 'error' in r:
+                raise DatamintException(resp['error'])
+        return resp
 
-        Args:
-            resource_id (str): The dicom unique id.
-            file_path (str): The path to the segmentation file.
-            name (str): The segmentation name.
-
-        Returns:
-            str: The segmentation unique id.
-
-        Raises:
-            ResourceNotFoundError: If the reousrce does not exists or the segmentation is invalid.
-
-        Example:
-            >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
-        """
-
+    async def _upload_segmentations_async(self,
+                                          resource_id: str,
+                                          file_path: str,
+                                          name: Optional[Union[str, Dict[int, str]]] = None,
+                                          frame_index: int = None,
+                                          discard_empty_segmentations: bool = True
+                                          ) -> str:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
@@ -741,7 +756,6 @@ class APIHandler:
                     segs_generator = APIHandler._split_segmentations(img, uniq_vals, f)
                     annotations = []
                     for segname in segnames:
-                        ### Annotation creation ###
                         annotations.append({
                             "identifier": segname,
                             "scope": 'frame',
@@ -749,34 +763,65 @@ class APIHandler:
                             "type": 'segmentation',
                         })
 
-                    _LOGGER.info(f"Creating {len(annotations)} annotations for frame {fidx}")
-                    request_params = dict(
-                        method='POST',
-                        url=f'{self.root_url}/annotations/{resource_id}/annotations',
-                        json=annotations
-                    )
-                    resp = self._run_request(request_params).json()
-                    for r in resp:
-                        if 'error' in r:
-                            raise DatamintException(resp['error'])
-                    annotids = resp
-                    #######
+                    _LOGGER.debug(f"Creating {len(annotations)} annotations for frame {fidx}")
+                    annotids = await self._upload_annotations_async(resource_id, annotations)
+
                     ### Upload segmentation ###
-                    _LOGGER.info(f"Uploading segmentations for frame {fidx}")
-                    for annotid, f in zip(annotids, segs_generator):
+                    if len(annotids) != len(segnames):
+                        _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
+                                        f" does not match the number of annotations ({len(segnames)})")
+                    for annotid, segname, f in zip(annotids, segnames, segs_generator):
+                        form = aiohttp.FormData()
+                        form.add_field('file', f, filename=segname, content_type='image/png')
                         request_params = dict(
                             method='POST',
                             url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
-                            files={'file': f},
+                            data=form,
                         )
-                        resp = self._run_request(request_params).json()
+                        resp = await self._run_request_async(request_params)
                         if 'error' in resp:
                             raise DatamintException(resp['error'])
                     #######
                 finally:
                     f.close()
+            _USER_LOGGER.info(f'Segmentations "{os.path.basename(file_path)}" uploaded for resource {resource_id}')
         except ResourceNotFoundError:
             raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+
+    def upload_segmentations(self,
+                             resource_id: str,
+                             file_path: str,
+                             name: Optional[Union[str, Dict[int, str]]] = None,
+                             frame_index: int = None,
+                             discard_empty_segmentations: bool = True
+                             ) -> str:
+        """
+        Upload segmentations to a resource.
+
+        Args:
+            resource_id (str): The resource unique id.
+            file_path (str): The path to the segmentation file.
+            name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary with the names of the segmentations.
+            frame_index (int): The frame index of the segmentation.
+            discard_empty_segmentations (bool): Whether to discard empty segmentations or not.
+
+        Returns:
+            str: The segmentation unique id.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists or the segmentation is invalid.
+
+        Example:
+            >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
+        """
+        loop = asyncio.get_event_loop()
+        task = self._upload_segmentations_async(resource_id,
+                                                file_path=file_path,
+                                                name=name,
+                                                frame_index=frame_index,
+                                                discard_empty_segmentations=discard_empty_segmentations)
+        ret = loop.run_until_complete(task)
+        return ret
 
     def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
         """

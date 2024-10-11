@@ -178,8 +178,8 @@ To upload a segmentation, use the :py:meth:`upload_segmentation() <datamintapi.a
 
 .. code-block:: python
     
-    batch_id, dicoms_ids = api_handler.create_batch_with_dicoms('New batch', 'path/to/dicom.dcm')
-    api_handler.upload_segmentation(dicoms_ids[0], 'path/to/segmentation.nifti', 'Segmentation name')
+    resource_id = api_handler.upload_resources("/path/to/dicom1.dcm") # or use an existing resource_id
+    api_handler.upload_segmentation(resource_id, 'path/to/segmentation.nifti', 'SegmentationName')
 
 
 Dataset
