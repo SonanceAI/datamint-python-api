@@ -104,6 +104,39 @@ To upload all files except the .txt and .csv files, run:
 
     datamint-upload --path /root_dir --exclude-extensions txt,csv
 
+Uploading segmentations along with the resources
+++++++++++++++++++++++++++++++++++++++++++++++++
+
+To upload segmentations along with the resources, you can use
+
+.. code-block:: bash
+
+    datamint-upload --path data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --publish
+
+, where both "data/OAI_CARE/dicoms/" and "data/OAI_CARE/segmentations/" must obey the same folder structure.
+Both folders and files can have arbritary names,
+but if you want to provide the segmentation label names, the segmentation file names must contain the segmentation name and you must provide a yaml file like this one:
+
+.. code-block:: yaml
+
+    segmentation_names: ["Bones", "BoneHead", "BML"]
+    class_names: {
+        1: "Femur",
+        2: "Tibia",
+        4: "FC",
+        8: "TC",
+        16: "PAT"
+    }
+
+, where the `segmentation_names` are the names being that a segmentation files (for instance, BoneHead is in 'Case14_9587749__TSE_BoneHead_2.nii.gz') 
+and the `class_names` is mapping the pixel values to the class names.
+`class_names` is optional, so you can provide only the `segmentation_names` if you don't want to map the pixel values.
+You can provide the segmentation names file with the `--segmentation_names` flag:
+
+.. code-block:: bash
+    
+    datamint-upload --path data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
+
 All available options
 +++++++++++++++++++++
 
