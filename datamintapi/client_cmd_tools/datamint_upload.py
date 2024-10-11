@@ -8,12 +8,13 @@ from pathlib import Path
 import sys
 from datamintapi.utils.dicom_utils import is_dicom
 import fnmatch
-from typing import Sequence, List, Generator
+from typing import Sequence, List, Generator, Dict, Tuple
 from collections import defaultdict
 from datamintapi import __version__ as datamintapi_version
 from datamintapi import configs
 from datamintapi.client_cmd_tools.datamint_config import ask_api_key
 from datamintapi.utils.logging_utils import load_cmdline_logging_config
+import yaml
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -118,7 +119,61 @@ def handle_api_key() -> str:
     return api_key
 
 
-def _parse_args() -> tuple:
+def _find_segmentation_files(segmentation_root_path: str,
+                             images_files: List[str],
+                             segmentation_metainfo: Dict = None
+                             ) -> List[Dict]:
+    """
+    Find the segmentation files that match the images files based on the same folder structure
+    """
+    segmentation_files = []
+    acceptable_extensions = ['.nii.gz', '.nii', '.png']
+
+    if segmentation_metainfo is not None:
+        segnames = sorted(segmentation_metainfo['segmentation_names'],
+                          key=lambda x: len(x))
+        classnames = segmentation_metainfo.get('class_names', None)
+
+    if segmentation_root_path is not None:
+        root_path = Path(segmentation_root_path).parent
+        for imgpath in images_files:
+            imgpath_parent = Path(imgpath).parent
+            path_structure = imgpath_parent.relative_to(root_path).parts[1:]
+            path_structure = Path(*path_structure)
+
+            seg_path = Path(segmentation_root_path) / path_structure
+            # list all segmentation files (nii.gz, nii, png) in the same folder structure
+            seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
+
+            if len(seg_files) > 0:
+                seginfo = {
+                    'files': [str(f) for f in seg_files]
+                }
+                if segmentation_metainfo is not None:
+                    snames_associated = []
+                    for segfile in seg_files:
+                        for segname in segnames:
+                            if segname in str(segfile):
+                                if classnames is not None:
+                                    new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
+                                    new_segname.update({'default': segname})
+                                else:
+                                    new_segname = segname
+                                snames_associated.append(new_segname)
+                                break
+                        else:
+                            _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
+                            snames_associated.append(None)
+                    seginfo['names'] = snames_associated
+
+                segmentation_files.append(seginfo)
+            else:
+                segmentation_files.append(None)
+
+    return segmentation_files
+
+
+def _parse_args() -> Tuple:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
@@ -152,6 +207,13 @@ def _parse_args() -> tuple:
                         help='File extensions to be excluded from uploading. Default: none.' +
                         ' Example: --exclude-extensions txt csv'
                         )
+    parser.add_argument('--segmentation_path', type=_is_valid_path_argparse, metavar="FILE",
+                        required=False,
+                        help='Path to the segmentation file(s) or a directory')
+    parser.add_argument('--segmentation_names', type=_is_valid_path_argparse, metavar="FILE",
+                        required=False,
+                        help='Path to a yaml file containing the segmentation names.' +
+                        ' The file may contain two keys: "segmentation_names" and "class_names".')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
@@ -182,6 +244,17 @@ def _parse_args() -> tuple:
     if len(file_path) == 0:
         raise ValueError(f"No valid file was found in {args.path}")
 
+    if args.segmentation_names is not None:
+        with open(args.segmentation_names, 'r') as f:
+            segmentation_names = yaml.safe_load(f)
+    else:
+        segmentation_names = None
+
+    _LOGGER.debug(f'finding segmentations at {args.segmentation_path}')
+    segmentation_files = _find_segmentation_files(args.segmentation_path,
+                                                  file_path,
+                                                  segmentation_metainfo=segmentation_names)
+
     _LOGGER.info(f"args parsed: {args}")
 
     api_key = handle_api_key()
@@ -190,7 +263,7 @@ def _parse_args() -> tuple:
         sys.exit(1)
     os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
 
-    return args, file_path
+    return args, file_path, segmentation_files
 
 
 def print_input_summary(files_path: List[str], include_extensions=None):
@@ -245,7 +318,7 @@ def main():
     load_cmdline_logging_config()
 
     try:
-        args, files_path = _parse_args()
+        args, files_path, segfiles = _parse_args()
     except Exception as e:
         _USER_LOGGER.error(f'Error validating arguments. {e}')
         return
@@ -269,7 +342,8 @@ def main():
                                            anonymize=args.retain_pii == False and has_a_dicom_file,
                                            anonymize_retain_codes=args.retain_attribute,
                                            mung_filename=args.mungfilename,
-                                           publish=args.publish
+                                           publish=args.publish,
+                                           segmentation_files=segfiles,
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
