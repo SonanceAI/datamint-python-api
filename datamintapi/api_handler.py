@@ -352,7 +352,7 @@ class APIHandler:
         Raises:
             ResourceNotFoundError: If the batch does not exists.
         """
-        files_path = APIHandler.__process_files_parameter(files_path)
+        files_path, _ = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
                                             anonymize=anonymize,
@@ -405,7 +405,7 @@ class APIHandler:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
-        files_path = APIHandler.__process_files_parameter(files_path)
+        files_path, is_list = APIHandler.__process_files_parameter(files_path)
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
                                             mimetype=mimetype,
@@ -431,7 +431,9 @@ class APIHandler:
                         if on_error == 'raise':
                             raise e
 
-        return resource_ids
+        if is_list:
+            return resource_ids
+        return resource_ids[0]
 
     def publish_resource(self,
                          resource_id: str,
@@ -469,23 +471,30 @@ class APIHandler:
                 raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
 
     @staticmethod
-    def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Sequence[str | IO]:
+    def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Tuple[Sequence[str | IO], bool]:
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
+                is_list = True
                 file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
             else:
+                is_list = False
                 file_path = [file_path]
         # Check if is an IO object
         elif _is_io_object(file_path):
+            is_list = False
             file_path = [file_path]
         elif not hasattr(file_path, '__len__'):
             if hasattr(file_path, '__iter__'):
+                is_list = True
                 file_path = list(file_path)
             else:
+                is_list = False
                 file_path = [file_path]
+        else:
+            is_list = True
 
         _LOGGER.debug(f'Processed file path: {file_path}')
-        return file_path
+        return file_path, is_list
 
     @deprecated(version='0.4.0', reason="Use upload_resources instead.")
     def create_batch_with_dicoms(self,
@@ -543,7 +552,7 @@ class APIHandler:
 
         """
 
-        files_path = APIHandler.__process_files_parameter(files_path)
+        files_path, _ = APIHandler.__process_files_parameter(files_path)
 
         if labels is not None:
             labels = [l.strip() for l in labels]
