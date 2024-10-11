@@ -54,6 +54,14 @@ To upload DICOM files to the Datamint server, use the
 
     datamint-upload --path /path/to/dicom_files/
 
+By default, the DICOM files are anonymized before uploading. If you want to
+retain the personal identifiable information (PII) in the DICOM files, use the
+``--retain-pii`` flag:
+
+.. code-block:: bash
+
+    datamint-upload --path /path/to/dicom_files/ --retain-pii
+
 To upload all DICOMs in a directory and also in its subdirectories,
 you can use the recursive option ``-r`` flag:
 
@@ -73,6 +81,12 @@ To upload resources, associating them with a label, and associating them to a ba
 .. code-block:: bash
 
     datamint-upload --path /path/to/dicom_files -l "my_label" --name "my_upload"
+
+You can bypass the inbox/review and directly publish your resources with the ``--publish`` flag:
+
+.. code-block:: bash
+
+    datamint-upload --path /path/to/resource_file --publish
 
 
 Example using include and exclude extensions options:
@@ -109,6 +123,7 @@ See all available options by running ``datamint-upload --help``:
                             Retain the value of a single attribute code specified as hexidecimal integers. Example: (0x0008, 0x0050) or just (0008, 0050)
     -l LABEL, --label LABEL
                             A label name to be applied to all files
+                            --publish             Publish the uploaded resources, giving them the status "published" instead of "inbox"
     --mungfilename MUNGFILENAME
                             Change the filename in the upload parameters. If set to "all", the filename becomes the folder names joined together with "_". If one or more integers are passed (comma-separated), append that
                             depth of folder name to the filename.

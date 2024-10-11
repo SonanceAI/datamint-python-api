@@ -103,6 +103,7 @@ def filter_files(files_path: Sequence[Path],
 
     return files_path
 
+
 def handle_api_key() -> str:
     """
     Checks for API keys.
@@ -138,6 +139,8 @@ def _parse_args() -> tuple:
                         help='Retain the value of a single attribute code specified as hexidecimal integers. \
                             Example: (0x0008, 0x0050) or just (0008, 0050)')
     parser.add_argument('-l', '--label', type=str, action='append', help='A label name to be applied to all files')
+    parser.add_argument('--publish', action='store_true',
+                        help='Publish the uploaded resources, giving them the status "published" instead of "inbox"')
     parser.add_argument('--mungfilename', type=_mungfilename_type,
                         help='Change the filename in the upload parameters. \
                             If set to "all", the filename becomes the folder names joined together with "_". \
@@ -265,7 +268,8 @@ def main():
                                            on_error='skip',
                                            anonymize=args.retain_pii == False and has_a_dicom_file,
                                            anonymize_retain_codes=args.retain_attribute,
-                                           mung_filename=args.mungfilename
+                                           mung_filename=args.mungfilename,
+                                           publish=args.publish
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
