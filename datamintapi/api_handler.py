@@ -801,7 +801,8 @@ class APIHandler:
         Args:
             resource_id (str): The resource unique id.
             file_path (str): The path to the segmentation file.
-            name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary with the names of the segmentations.
+            name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
+                example: {1: 'Femur', 2: 'Tibia'}.
             frame_index (int): The frame index of the segmentation.
             discard_empty_segmentations (bool): Whether to discard empty segmentations or not.
 
