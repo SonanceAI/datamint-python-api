@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 from datamintapi.utils.dicom_utils import is_dicom
 import fnmatch
-from typing import Sequence, List, Generator, Dict, Tuple
+from typing import Sequence, List, Generator, Dict, Tuple, Optional, Any
 from collections import defaultdict
 from datamintapi import __version__ as datamintapi_version
 from datamintapi import configs
@@ -122,10 +122,14 @@ def handle_api_key() -> str:
 def _find_segmentation_files(segmentation_root_path: str,
                              images_files: List[str],
                              segmentation_metainfo: Dict = None
-                             ) -> List[Dict]:
+                             ) -> Optional[List[Dict]]:
     """
     Find the segmentation files that match the images files based on the same folder structure
     """
+
+    if segmentation_root_path is None:
+        return None
+
     segmentation_files = []
     acceptable_extensions = ['.nii.gz', '.nii', '.png']
 
@@ -134,46 +138,45 @@ def _find_segmentation_files(segmentation_root_path: str,
                           key=lambda x: len(x))
         classnames = segmentation_metainfo.get('class_names', None)
 
-    if segmentation_root_path is not None:
-        root_path = Path(segmentation_root_path).parent
-        for imgpath in images_files:
-            imgpath_parent = Path(imgpath).parent
-            path_structure = imgpath_parent.relative_to(root_path).parts[1:]
-            path_structure = Path(*path_structure)
+    root_path = Path(segmentation_root_path).parent
+    for imgpath in images_files:
+        imgpath_parent = Path(imgpath).parent
+        path_structure = imgpath_parent.relative_to(root_path).parts[1:]
+        path_structure = Path(*path_structure)
 
-            seg_path = Path(segmentation_root_path) / path_structure
-            # list all segmentation files (nii.gz, nii, png) in the same folder structure
-            seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
+        seg_path = Path(segmentation_root_path) / path_structure
+        # list all segmentation files (nii.gz, nii, png) in the same folder structure
+        seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
 
-            if len(seg_files) > 0:
-                seginfo = {
-                    'files': [str(f) for f in seg_files]
-                }
-                if segmentation_metainfo is not None:
-                    snames_associated = []
-                    for segfile in seg_files:
-                        for segname in segnames:
-                            if segname in str(segfile):
-                                if classnames is not None:
-                                    new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
-                                    new_segname.update({'default': segname})
-                                else:
-                                    new_segname = segname
-                                snames_associated.append(new_segname)
-                                break
-                        else:
-                            _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
-                            snames_associated.append(None)
-                    seginfo['names'] = snames_associated
+        if len(seg_files) > 0:
+            seginfo = {
+                'files': [str(f) for f in seg_files]
+            }
+            if segmentation_metainfo is not None:
+                snames_associated = []
+                for segfile in seg_files:
+                    for segname in segnames:
+                        if segname in str(segfile):
+                            if classnames is not None:
+                                new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
+                                new_segname.update({'default': segname})
+                            else:
+                                new_segname = segname
+                            snames_associated.append(new_segname)
+                            break
+                    else:
+                        _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
+                        snames_associated.append(None)
+                seginfo['names'] = snames_associated
 
-                segmentation_files.append(seginfo)
-            else:
-                segmentation_files.append(None)
+            segmentation_files.append(seginfo)
+        else:
+            segmentation_files.append(None)
 
     return segmentation_files
 
 
-def _parse_args() -> Tuple:
+def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
@@ -266,7 +269,10 @@ def _parse_args() -> Tuple:
     return args, file_path, segmentation_files
 
 
-def print_input_summary(files_path: List[str], include_extensions=None):
+def print_input_summary(files_path: List[str],
+                        args,
+                        segfiles: Optional[List[Dict]],
+                        include_extensions=None):
     ### Create a summary of the upload ###
     total_files = len(files_path)
     total_size = sum(os.path.getsize(file) for file in files_path)
@@ -296,6 +302,13 @@ def print_input_summary(files_path: List[str], include_extensions=None):
         _USER_LOGGER.warning("Multiple file extensions found!" +
                              " Make sure you are uploading the correct files.")
 
+    if segfiles is not None:
+        _USER_LOGGER.info(f"Number of images with an associated segmentation: {len(segfiles)} ({len(segfiles) / total_files:.0%})")
+        # count number of segmentations files with names
+        if args.segmentation_names is not None:
+            segnames_count = sum([1 if 'names' in seg else 0 for seg in segfiles if seg is not None])
+            _USER_LOGGER.info(f"Number of segmentations with associated name: {segnames_count} ({segnames_count / len(segfiles):.0%})")
+
 
 def print_results_summary(files_path: List[str],
                           results: List[str | Exception]):
@@ -323,7 +336,10 @@ def main():
         _USER_LOGGER.error(f'Error validating arguments. {e}')
         return
 
-    print_input_summary(files_path, args.include_extensions)
+    print_input_summary(files_path,
+                        args=args,
+                        segfiles=segfiles,
+                        include_extensions=args.include_extensions)
 
     if not args.yes:
         confirmation = input("Do you want to proceed with the upload? (y/n): ")
