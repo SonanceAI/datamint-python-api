@@ -137,6 +137,15 @@ You can provide the segmentation names file with the `--segmentation_names` flag
     
     datamint-upload --path data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
 
+To check if the segmentations were uploaded correctly, you can see some information after running your command line:
+
+.. code-block:: console
+
+    (...)
+    Number of images with an associated segmentation: 4 (100%)                                                                                                                                                                                                      
+    Number of segmentations with associated name: 4 (100%)   
+    Do you want to proceed with the upload? (y/n): 
+
 All available options
 +++++++++++++++++++++
 
@@ -164,5 +173,9 @@ See all available options by running ``datamint-upload --help``:
                             File extensions to be considered for uploading. Default: all file extensions. Example: ``--include-extensions dcm jpg png``
     --exclude-extensions EXCLUDE_EXTENSIONS
                           File extensions to be excluded from uploading. Default: none. Example: ``--exclude-extensions txt csv``
+    --segmentation_path FILE
+                          Path to the segmentation file(s) or a directory
+    --segmentation_names FILE
+                          Path to a yaml file containing the segmentation names. The file may contain two keys: "segmentation_names" and "class_names".
     --yes                 Automatically answer yes to all prompts
     --version             show program's version number and exit
