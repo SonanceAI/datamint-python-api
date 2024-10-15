@@ -253,7 +253,7 @@ class APIHandler:
             form.add_field('source', 'api')
 
             form.add_field(file_key, f, filename=name, content_type=mimetype)
-            form.add_field('filepath', name)
+            form.add_field('source_filepath', name)
             if mimetype is not None:
                 form.add_field('mimetype', mimetype)
             if channel is not None:
