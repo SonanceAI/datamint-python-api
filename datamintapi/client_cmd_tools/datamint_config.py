@@ -1,5 +1,4 @@
 import argparse
-import os
 import logging
 from datamintapi import configs
 from datamintapi.utils.logging_utils import load_cmdline_logging_config
