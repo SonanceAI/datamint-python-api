@@ -3,14 +3,12 @@ import requests
 from tqdm import tqdm
 from requests import Session
 from typing import Optional, Callable, Any
-from torchvision.datasets.utils import extract_archive
 import logging
 import shutil
 import json
 import yaml
 import pydicom
 import numpy as np
-from torch.utils.data import Dataset
 from datamintapi import configs
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,7 +18,7 @@ class DatamintDatasetException(Exception):
     pass
 
 
-class DatamintDataset(Dataset):
+class DatamintDataset:
     """
     Class to download and load datasets from the Datamint API.
 
@@ -178,6 +176,8 @@ class DatamintDataset(Dataset):
         Raises:
             SonanceDatasetException: If the download fails.
         """
+        from torchvision.datasets.utils import extract_archive
+
         dataset_info = self._get_datasetinfo_by_name(self.dataset_name)
         dataset_id = dataset_info['id']
         if self.version == 'latest':
@@ -285,14 +285,6 @@ class DatamintDataset(Dataset):
                 return
         _LOGGER.info('Local version is up to date with the latest version.')
 
-
-if __name__ == '__main__':
-    # Example usage for testing purposes.
-    logging.basicConfig(level=logging.INFO)
-    dataset = DatamintDataset(root='/tmp',
-                              dataset_name='TestCTdataset',
-                              version='latest')
-    print(dataset)
-    img, ds, metadata = dataset[0]
-    print('Image shape:', img.shape)  # image(s)
-    print('Metadata:', metadata)  # metadata
+    def __add__(self, other):
+        from torch.utils.data import ConcatDataset
+        return ConcatDataset([self, other])
