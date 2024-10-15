@@ -238,6 +238,7 @@ class APIHandler:
         if anonymize:
             if is_a_dicom_file == True or is_dicom(file_path):
                 ds = pydicom.dcmread(file_path)
+                _LOGGER.info(f"Anonymizing {file_path}")
                 ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
                 # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
                 f = to_bytesio(ds, name)
@@ -394,15 +395,15 @@ class APIHandler:
         Upload resources.
 
         Args:
-            files_path (str | IO | Sequence[str | IO]): The path to the dicom file or a list of paths to dicom files.
+            files_path (str | IO | Sequence[str | IO]): The path to the resource file or a list of paths to resources files.
             mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels (Sequence[str]): The labels to assign to the dicoms.
-            mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the dicom file.
+            labels (Sequence[str]): The labels to assign to the resources.
+            mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the resource file.
                 ''all'' keeps all parts.
-            channel (Optional[str]): The channel to upload the dicoms to. An arbitrary name to group the dicoms.
+            channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
             publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
             publish_to (Optional[str]): The dataset id to publish the resources to.
                 They will have the 'published' status and will be added to the dataset.
@@ -952,6 +953,7 @@ class APIHandler:
                 yield r
 
             if len(response) < _PAGE_LIMIT:
+                _LOGGER.debug(f"Last page reached. Total resources: {offset + len(response)}")
                 break
 
             offset += _PAGE_LIMIT
