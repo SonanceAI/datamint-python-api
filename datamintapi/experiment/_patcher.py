@@ -1,8 +1,13 @@
 from unittest.mock import patch
 import importlib
-from typing import Sequence
+from typing import Sequence, Any, Dict
 import logging
 from .experiment import Experiment
+from torch.utils.data import DataLoader
+from collections import defaultdict
+import torch
+import numpy as np
+import pandas as pd
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,16 +21,53 @@ def _is_iterable(obj):
 
 
 class Wrapper:
+    class IteratorWrapper:
+        def __init__(self, iterator,
+                     cb_after_iter_return,
+                     original_func,
+                     cb_args,
+                     cb_kwargs) -> None:
+            self.iterator = iterator
+            self.cb_args = cb_args
+            self.cb_kwargs = cb_kwargs
+            self.original_func = original_func
+            self.cb_after_iter_return = cb_after_iter_return
+
+        def __iter__(self):
+            self.iterator = iter(self.iterator)
+            return self
+
+        def __next__(self):
+            try:
+                return next(self.iterator)
+            except StopIteration as e:
+                for cb in self.cb_after_iter_return:
+                    cb(self.original_func, self.cb_args, self.cb_kwargs, original_iter=self.iterator)
+                raise e
+
+        def __getattr__(self, item):
+            if item != '__iter__':
+                return getattr(self.iterator, item)
+            return self.__iter__
+
+        def __len__(self):
+            return len(self.iterator)
+
     def __init__(self,
                  target: str,
                  cb_before: Sequence[callable] | callable = None,
-                 cb_after: Sequence[callable] | callable = None) -> None:
+                 cb_after: Sequence[callable] | callable = None,
+                 cb_after_iter_return: Sequence[callable] | callable = None,
+                 ) -> None:
         self.cb_before = cb_before if cb_before is not None else []
+        self.cb_after = cb_after if cb_after is not None else []
+        self.cb_after_iter_return = cb_after_iter_return if cb_after_iter_return is not None else []
         if not _is_iterable(self.cb_before):
             self.cb_before = [self.cb_before]
-        self.cb_after = cb_after if cb_after is not None else []
         if not _is_iterable(self.cb_after):
             self.cb_after = [self.cb_after]
+        if not _is_iterable(self.cb_after_iter_return):
+            self.cb_after_iter_return = [self.cb_after_iter_return]
         self.target = target
         self._patch()
 
@@ -36,6 +78,12 @@ class Wrapper:
 
             try:
                 return_value = original(*args, **kwargs)
+                # if return_value is a generator, wrap it
+                if len(self.cb_after_iter_return) > 0 and _is_iterable(return_value):
+                    return_value = self._wrap_iterator(return_value,
+                                                       original,
+                                                       args, kwargs)
+
             except Exception as exception:
                 # We are assuming the patched function does not return an exception.
                 return_value = exception
@@ -57,6 +105,13 @@ class Wrapper:
 
     def stop(self):
         self.patcher.stop()
+
+    def _wrap_iterator(self, iterator, original_func, args, kwargs):
+        return Wrapper.IteratorWrapper(iterator,
+                                       self.cb_after_iter_return,
+                                       original_func=original_func,
+                                       cb_args=args,
+                                       cb_kwargs=kwargs)
 
 
 def get_function_from_string(target: str):
@@ -82,40 +137,257 @@ def get_function_from_string(target: str):
 
 
 class PytorchPatcher:
+    class DataLoaderInfo:
+        def __init__(self, dataloader: DataLoader):
+            self.dataloader = dataloader
+            self.times_started_iter = 0  # This includes the current iteration
+            self.is_iterating = False
+            self.metrics = []
+            self.iteration_idx = None
+
+            for obj in [dataloader, dataloader.batch_sampler]:
+                if hasattr(obj, 'batch_size'):
+                    self.batch_size = obj.batch_size
+                    _LOGGER.debug(f"Found batch size {self.batch_size} for dataloader {dataloader}")
+                    break
+            else:
+                self.batch_size = None
+                _LOGGER.debug(f"Could not find batch size for dataloader {dataloader}")
+
+        def __str__(self) -> str:
+            return f"DataLoaderInfo: {self.dataloader}, number_of_times_iterated: {self.times_started_iter}, " \
+                f"is_iterating: {self.is_iterating}"
+
+        def append_metric(self, name: str, value: float, step, epoch):
+            self.metrics.append([name, value, step, epoch])
+
     AUTO_LOSS_LOG_INTERVAL = 20
 
-    def _backward_callback(self,
-                           original_obj, func_args, func_kwargs):
+    def __init__(self) -> None:
+        self.dataloaders_info: Dict[Any, PytorchPatcher.DataLoaderInfo] = {}
+        self.metrics_association = {}  # Associate metrics with dataloaders
+        self.last_dataloader = None
+
+    def _dataloader_created(self,
+                            original_obj, func_args, func_kwargs,
+                            return_value):
+
+        dataloader = func_args[0]
+        if dataloader in self.dataloaders_info:
+            _LOGGER.warning("Dataloader already exists")
+        _LOGGER.debug('Adding a new dataloader')
+        self.dataloaders_info[dataloader] = PytorchPatcher.DataLoaderInfo(dataloader)
+
+    def _inc_exp_step(self) -> int:
+        exp = Experiment.get_singleton_experiment()
+        if exp.cur_step is None:
+            exp._set_step(0)
+        else:
+            exp._set_step(exp.cur_step + 1)
+
+        return exp.cur_step
+
+    def _backward_cb(self,
+                     original_obj, func_args, func_kwargs):
         """
         This method is a wrapper for the backward method of the Pytorch Tensor class.
         """
-        exp = Experiment.get_singleton_experiment()
         loss = func_args[0]
-        if exp.cur_step is None:
-            exp.cur_step = 0
+        cur_step = self._inc_exp_step()
+
+        if cur_step % PytorchPatcher.AUTO_LOSS_LOG_INTERVAL == 0:
+            self._log_metric('loss', loss.item())
+
+    def clf_loss_computed(self,
+                          original_obj, func_args, func_kwargs, return_value):
+        exp = Experiment.get_singleton_experiment()
+        loss = return_value.detach().cpu()
+        # if is not a 0-d tensor, do not log
+        if len(loss.shape) != 0:
+            return
+        loss = loss.item()
+        loss_name = original_obj.__name__
+        cur_step = self._inc_exp_step()
+
+        dataloader = self.get_last_dataloader()
+        if dataloader is not None and self.dataloaders_info[dataloader].is_iterating:
+            self.metrics_association[func_args[0]] = dataloader
+
+        if cur_step % PytorchPatcher.AUTO_LOSS_LOG_INTERVAL == 0:
+            self._log_metric(loss_name, loss, dataloader=dataloader)
+
+    def _dataloader_start_iterating_cb(self,
+                                       original_obj, func_args, func_kwargs):
+        """
+        This method is a wrapper for the __iter__ method of the Pytorch DataLoader class.
+        """
+        exp = Experiment.get_singleton_experiment()
+        dataloader = func_args[0]  # self
+        dataloader_info = self.dataloaders_info[dataloader]
+        dataloader_info.is_iterating = True
+        if dataloader_info.iteration_idx is None:
+            dataloader_info.iteration_idx = self._get_dataloader_iteration_idx()+1
+        exp._set_epoch(dataloader_info.times_started_iter)
+        dataloader_info.times_started_iter += 1
+
+        self.last_dataloader = dataloader
+
+        _LOGGER.debug(f'Dataloader is iterating: {dataloader_info}')
+
+    def _dataloader_stop_iterating_cb(self,
+                                      original_obj, func_args, func_kwargs, original_iter):
+        dataloader = func_args[0]
+        self.dataloaders_info[dataloader].is_iterating = False
+        # find the dataloader that is still iterating # FIXME: For 3 dataloaders being iterating
+        for dloader, dlinfo in self.dataloaders_info.items():
+            if dlinfo.is_iterating:
+                self.last_dataloader = dloader
+                break
         else:
-            exp._set_step(exp.cur_step + 1)
-        if exp.cur_step % PytorchPatcher.AUTO_LOSS_LOG_INTERVAL == 0:
-            exp.log_metric("loss", loss.item())
+            _LOGGER.debug("No dataloader is iterating")
+
+        _LOGGER.debug(f'Dataloader stopped iterating: {self.dataloaders_info[dataloader]}')
+
+    def _log_metric(self, name, value,
+                    dataloader=None,
+                    **kwargs):
+        exp = Experiment.get_singleton_experiment()
+        if self.finish_callback not in exp.finish_callbacks:
+            exp._add_finish_callback(self.finish_callback)
+
+        if dataloader is None:
+            dataloader = self.get_last_dataloader()
+            dloader_info = self.dataloaders_info[dataloader]
+            if not dloader_info.is_iterating:
+                dataloader = None
+        else:
+            dloader_info = self.dataloaders_info[dataloader]
+
+        if dataloader is not None:
+            name = f"dataset{dloader_info.iteration_idx+1}/{name}"
+            dloader_info.append_metric(name, value, exp.cur_step, exp.cur_epoch)
+
+        _LOGGER.debug(f"Logging metric {name} with value {value}")
+        exp.log_metric(name, value, **kwargs)
+
+    def torchmetric_clf_computed(self,
+                                 original_obj, func_args, func_kwargs, return_value):
+        if isinstance(return_value, torch.Tensor):
+            return_value = return_value.item()
+
+        dataloader = self.metrics_association.get(func_args[0], None)
+
+        self._log_metric(func_args[0].__class__.__name__,
+                         value=return_value,
+                         dataloader=dataloader)
+
+    def torchmetric_clf_updated(self,
+                                original_obj, func_args, func_kwargs):
+        dataloader = self.get_last_dataloader()
+        if dataloader is None or not self.dataloaders_info[dataloader].is_iterating:
+            _LOGGER.debug("Dataloader not found or not iterating")
+            return
+
+        self.metrics_association[func_args[0]] = dataloader
+
+    def _get_dataloader_iteration_idx(self) -> int:
+        dataloader = self.get_last_dataloader()
+        if dataloader is None:
+            return -1
+        return self.dataloaders_info[dataloader].iteration_idx
+
+    def get_last_dataloader(self):
+        return self.last_dataloader
+
+    def finish_callback(self, exp: Experiment):
+        # Get the dataloader with 1 iteration
+        dataloader = None
+        for dloader, dlinfo in self.dataloaders_info.items():
+            if dlinfo.times_started_iter == 1:
+                dataloader = dloader
+                break
+        if dataloader is None:
+            dataloader = self.get_last_dataloader()
+        if dataloader is None:
+            _LOGGER.warning("No dataloader to log found")
+            return
+
+        dlinfo = self.dataloaders_info[dataloader]
+        dlinfo_metrics = pd.DataFrame(dlinfo.metrics,
+                                      columns=['name', 'value', 'step', 'epoch'])
+        summary = {'metrics': {}}
+        # only use value from the last epoch
+        dlinfo_metrics = dlinfo_metrics[dlinfo_metrics['epoch'] == dlinfo_metrics['epoch'].max()]
+
+        for metric_name, value in dlinfo_metrics.groupby('name')['value'].mean().items():
+            summary['metrics'][metric_name] = value
+
+        exp.add_to_summary(summary)
 
 
-def initialize_automatic_logging():
+def initialize_automatic_logging(enable_rich_logging: bool = True):
     """
     This function initializes the automatic logging of Pytorch loss using patching.
     """
+    from rich.logging import RichHandler
+
+    # check if RichHandler is already in the handlers
+    if enable_rich_logging and not any(isinstance(h, RichHandler) for h in logging.getLogger().handlers):
+        logging.getLogger().handlers.append(RichHandler())  # set rich logging handler for the root logger
+    # logging.getLogger("datamintapi").setLevel(logging.INFO)
 
     pytorch_patcher = PytorchPatcher()
 
+    torchmetrics_clfs_base_metrics = ['Recall', 'Precision', 'AveragePrecision',
+                                      'F1Score', 'Accuracy', 'AUROC',
+                                      'CohenKappa']
+
+    torchmetrics_clf_metrics = [f'Multiclass{m}' for m in torchmetrics_clfs_base_metrics]
+    torchmetrics_clf_metrics += [f'Binary{m}' for m in torchmetrics_clfs_base_metrics]
+    torchmetrics_clf_metrics = [f'torchmetrics.classification.{m}' for m in torchmetrics_clf_metrics]
+    torchmetrics_detseg_metrics = ['torchmetrics.segmentation.GeneralizedDiceScore',
+                                   'torchmetrics.detection.iou.IntersectionOverUnion',
+                                   'torchmetrics.detection.giou.GeneralizedIntersectionOverUnion']
+
+    torchmetrics_metrics = torchmetrics_clf_metrics + torchmetrics_detseg_metrics
+
     params = [
         {
-            'target': 'torch.Tensor.backward',
-            'cb_before': pytorch_patcher._backward_callback
+            'target': ['torch.Tensor.backward', 'torch.tensor.Tensor.backward'],
+            'cb_before': pytorch_patcher._backward_cb
         },
         {
-            'target': 'torch.tensor.Tensor.backward',
-            'cb_before': pytorch_patcher._backward_callback
+            'target': 'torch.utils.data.DataLoader.__iter__',
+            'cb_before': pytorch_patcher._dataloader_start_iterating_cb,
+            'cb_after_iter_return': pytorch_patcher._dataloader_stop_iterating_cb
+        },
+        {
+            'target': 'torch.utils.data.DataLoader.__init__',
+            'cb_after': pytorch_patcher._dataloader_created
+        },
+        {
+            'target': ['torch.nn.functional.cross_entropy', 'torch.nn.functional.nll_loss'],
+            'cb_after': pytorch_patcher.clf_loss_computed
+        },
+        {
+            'target': [f'{m}.compute' for m in torchmetrics_metrics],
+            'cb_after': pytorch_patcher.torchmetric_clf_computed
+        },
+        {
+            'target': [f'{m}.update' for m in torchmetrics_metrics],
+            'cb_before': pytorch_patcher.torchmetric_clf_updated
         }
     ]
+
+    # explode the list of targets into individual targets
+    new_params = []
+    for p in params:
+        if isinstance(p['target'], list):
+            for t in p['target']:
+                new_params.append({**p, 'target': t})
+        else:
+            new_params.append(p)
+    params = new_params
 
     for p in params:
         try:
