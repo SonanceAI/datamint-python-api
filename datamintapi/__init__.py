@@ -6,5 +6,7 @@ TODO...
 
 from .dataset import DatamintDataset as Dataset
 from .api_handler import APIHandler
+import importlib.metadata
 
 __name__ = "datamintapi"
+__version__ = importlib.metadata.version(__name__)

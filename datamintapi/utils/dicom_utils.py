@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from pydicom.misc import is_dicom as pydicom_is_dicom
 from io import BytesIO
+import os
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,8 +51,8 @@ def anonymize_dicom(ds: pydicom.Dataset,
         (0x0010, 0x0030), (0x0010, 0x0032), (0x0010, 0x0040), (0x0010, 0x1000), (0x0010, 0x1001),
         (0x0010, 0x1010), (0x0010, 0x1020), (0x0010, 0x1030), (0x0010, 0x1090), (0x0010, 0x2160),
         (0x0010, 0x2180), (0x0010, 0x21B0), (0x0010, 0x4000), (0x0018, 0x1000), (0x0018, 0x1030),
-        # (0x0020, 0x000D),
-        (0x0020, 0x000E), (0x0020, 0x0010), (0x0020, 0x0052), (0x0020, 0x0200), (0x0020, 0x4000),
+        # (0x0020, 0x000D), (0x0020, 0x000E) StudyInstanceUID  and SeriesInstanceUID are retained
+        (0x0020, 0x0010), (0x0020, 0x0052), (0x0020, 0x0200), (0x0020, 0x4000),
         (0x0040, 0x0275), (0x0040, 0xA730), (0x0088, 0x0140), (0x3006, 0x0024), (0x3006, 0x00C2)
     ]
 
@@ -79,16 +80,29 @@ def anonymize_dicom(ds: pydicom.Dataset,
     return ds
 
 
-def is_dicom(f: str | Path) -> bool:
-    if f.is_dir():
-        return False
+def is_dicom(f: str | Path | BytesIO) -> bool:
+    if isinstance(f, BytesIO):
+        fp = BytesIO(f.getbuffer())  # Avoid modifying the original BytesIO object
+        fp.read(128)  # preamble
+
+        return fp.read(4) == b"DICM"
+
     if isinstance(f, Path):
         f = str(f)
+    if os.path.isdir(f):
+        return False
 
     if f.endswith('.dcm') or f.endswith('.dicom'):
         return True
 
-    return pydicom_is_dicom(f)
+    # Check if the file has an extension
+    if os.path.splitext(f)[1] != '':
+        return False
+
+    try:
+        return pydicom_is_dicom(f)
+    except FileNotFoundError as e:
+        return None
 
 
 def to_bytesio(ds: pydicom.Dataset, name: str) -> BytesIO:
