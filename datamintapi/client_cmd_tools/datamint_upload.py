@@ -146,7 +146,6 @@ def _find_segmentation_files(segmentation_root_path: str,
         imgpath_parent = Path(imgpath).absolute().parent
         # Find the closest common parent between the image and the segmentation root
         common_parent = []
-        _LOGGER.debug(f'{imgpath_parent} | {segmentation_root_path.parent}')
         for imgpath_part, segpath_part in zip(imgpath_parent.parts, segmentation_root_path.parent.parts):
             if imgpath_part != segpath_part:
                 break
