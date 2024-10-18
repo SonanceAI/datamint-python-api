@@ -136,23 +136,34 @@ def _find_segmentation_files(segmentation_root_path: str,
         segnames = sorted(segmentation_metainfo['segmentation_names'],
                           key=lambda x: len(x))
         classnames = segmentation_metainfo.get('class_names', None)
+        _LOGGER.debug(f"Number of segmentation names: {len(segnames)}")
+        if classnames is not None:
+            _LOGGER.debug(f"Number of class names: {len(classnames)}")
+
+    segmentation_root_path = Path(segmentation_root_path).absolute()
 
     for imgpath in images_files:
-        imgpath_parent = Path(imgpath).parent
-        _LOGGER.debug(f"imgpath_parent: {imgpath_parent}")
+        imgpath_parent = Path(imgpath).absolute().parent
         # Find the closest common parent between the image and the segmentation root
-        common_parent = Path('.')
-        for i, (imgpath_part, segpath_part) in enumerate(zip(imgpath_parent.parts, Path(segmentation_root_path).parent.parts)):
+        common_parent = []
+        _LOGGER.debug(f'{imgpath_parent} | {segmentation_root_path.parent}')
+        for imgpath_part, segpath_part in zip(imgpath_parent.parts, segmentation_root_path.parent.parts):
             if imgpath_part != segpath_part:
-                common_parent = Path(*imgpath_parent.parts[:i])
                 break
+            common_parent.append(imgpath_part)
+        if len(common_parent) == 0:
+            common_parent = Path('/')
+        else:
+            common_parent = Path(*common_parent)
 
+        _LOGGER.debug(f"_find_segmentation_files::common_parent: {common_parent}")
         path_structure = imgpath_parent.relative_to(common_parent).parts[1:]
 
         # path_structure = imgpath_parent.relative_to(root_path).parts[1:]
         path_structure = Path(*path_structure)
 
-        seg_path = Path(segmentation_root_path) / path_structure
+        real_seg_root_path = common_parent / Path(Path(segmentation_root_path).relative_to(common_parent).parts[0])
+        seg_path = real_seg_root_path / path_structure
         # list all segmentation files (nii.gz, nii, png) in the same folder structure
         seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
 
@@ -323,17 +334,18 @@ def print_input_summary(files_path: List[str],
                              " Make sure you are uploading the correct files.")
 
     if segfiles is not None:
+        num_segfiles = sum([1 if seg is not None else 0 for seg in segfiles])
         msg = f"Number of images with an associated segmentation: " +\
-            f"{len(segfiles)} ({len(segfiles) / total_files:.0%})"
-        if len(segfiles) == 0:
+            f"{num_segfiles} ({num_segfiles / total_files:.0%})"
+        if num_segfiles == 0:
             _USER_LOGGER.warning(msg)
         else:
             _USER_LOGGER.info(msg)
         # count number of segmentations files with names
-        if args.segmentation_names is not None:
+        if args.segmentation_names is not None and num_segfiles > 0:
             segnames_count = sum([1 if 'names' in seg else 0 for seg in segfiles if seg is not None])
             msg = f"Number of segmentations with associated name: " + \
-                f"{segnames_count} ({segnames_count / len(segfiles):.0%})"
+                f"{segnames_count} ({segnames_count / num_segfiles:.0%})"
             if segnames_count == 0:
                 _USER_LOGGER.warning(msg)
             else:
