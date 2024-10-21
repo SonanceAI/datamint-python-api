@@ -254,10 +254,12 @@ class DatamintDataset:
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16
             img = (img//256).astype(np.uint8)
-        if self.return_dicom and hasattr(ds, '_pixel_array'):
-            ds._pixel_array = None  # Free up memory
-        else:
-            _LOGGER.warning("ds._pixel_array not found. This may cause memory issues. Check pydicom version.")
+        if self.return_dicom:
+            # Free up memory
+            if hasattr(ds, '_pixel_array'):
+                ds._pixel_array = None
+            if hasattr(ds, 'PixelData'):
+                ds.PixelData = None
 
         if self.default_transf is not None:
             img = self.default_transf(img)
@@ -318,10 +320,11 @@ class DatamintDataset:
             else:
                 return
         _LOGGER.info('Local version is up to date with the latest version.')
+
     def __add__(self, other):
         from torch.utils.data import ConcatDataset
         return ConcatDataset([self, other])
-    
+
     def get_dataloader(self, *args, batch_size: int, **kwargs) -> DataLoader:
         return DataLoader(self,
                           *args,

@@ -149,21 +149,16 @@ class ExperimentAPIHandler(APIHandler):
             raise ValueError(f"Invalid type for model: {type(model)}")
 
         try:
-            loop = asyncio.get_event_loop()
-
-            form = aiohttp.FormData()
-            form.add_field('files', f, filename=f.name)
-            if hyper_params is not None:
-                form.add_field('data',
-                               json.dumps(hyper_params),
-                               content_type='application/json')
+            json_data = {
+                'hyper_params': hyper_params,
+            }
             request_params = {
                 'method': 'POST',
                 'url': f"{self.exp_url}/{exp_id}/model",
-                'data': form
+                'json': json_data,
+                'files': [(f.name, f)]
             }
 
-            task = self._run_request_async(request_params)
-            resp = loop.run_until_complete(task)
+            task = self._run_request(request_params)
         finally:
             f.close()

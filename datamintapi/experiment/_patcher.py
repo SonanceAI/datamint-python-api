@@ -8,6 +8,7 @@ from collections import defaultdict
 import torch
 import numpy as np
 import pandas as pd
+import atexit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -340,6 +341,11 @@ class PytorchPatcher:
             exp.set_model(model)
             _LOGGER.debug(f'Found user model {model.__class__.__name__}')
 
+    def at_exit_cb(self):
+        exp = Experiment.get_singleton_experiment()
+        if exp is not None:
+            exp.finish()
+
 
 def initialize_automatic_logging(enable_rich_logging: bool = True):
     """
@@ -414,3 +420,8 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
             Wrapper(**p).start()
         except Exception as e:
             _LOGGER.debug(f"Error while patching {p['target']}: {e}")
+
+    try:
+        atexit.register(pytorch_patcher.at_exit_cb)
+    except Exception:
+        _LOGGER.warning("Failed to use atexit.register")
