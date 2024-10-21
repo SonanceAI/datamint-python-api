@@ -33,6 +33,7 @@ class Experiment:
         self.summary_log = defaultdict(dict)
         self.finish_callbacks = []
         self.model: torch.nn.Module = None
+        self.model_hyper_params = None
         self.is_finished = False
 
         if dataset_dir is None:
@@ -60,8 +61,9 @@ class Experiment:
                                                         description=description,
                                                         environment={})  # TODO: Add environment
 
-    def set_model(self, model):
+    def set_model(self, model, hyper_params=None):
         self.model = model
+        self.model_hyper_params = hyper_params
 
     @staticmethod
     def _get_dataset_info(apihandler: ExperimentAPIHandler,
@@ -177,8 +179,25 @@ class Experiment:
     def log_model(self,
                   model: Union[torch.nn.Module, str, BytesIO],
                   hyper_params: Optional[Dict] = None,
+                  log_model_attributes: bool = True,
                   torch_save_kwargs: Dict = {}):
-        self.model = model
+        if self.model is None:
+            self.model = model
+            self.model_hyper_params = hyper_params
+
+        if log_model_attributes:
+            if hyper_params is None:
+                hyper_params = {}
+            hyper_params['__model_classname'] = model.__class__.__name__
+            # get all attributes of the model that are int, float or string
+            for attr_name, attr_value in model.__dict__.items():
+                if attr_name.startswith('_'):
+                    continue
+                if attr_name in ['training']:
+                    continue
+                if isinstance(attr_value, (int, float, str)):
+                    hyper_params[attr_name] = attr_value
+
         self.apihandler.log_model(exp_id=self.exp_id,
                                   model=model,
                                   hyper_params=hyper_params,
@@ -208,7 +227,7 @@ class Experiment:
         # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
         if self.model is not None:
-            self.log_model(model=self.model)
+            self.log_model(model=self.model, hyper_params=self.model_hyper_params)
         self.apihandler.finish_experiment(self.exp_id)
         self.is_finished = True
 
