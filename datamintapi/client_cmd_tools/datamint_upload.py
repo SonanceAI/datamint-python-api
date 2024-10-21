@@ -1,7 +1,6 @@
 import argparse
 from datamintapi.api_handler import APIHandler
 import os
-import argparse
 from humanize import naturalsize
 import logging
 from pathlib import Path
@@ -137,14 +136,33 @@ def _find_segmentation_files(segmentation_root_path: str,
         segnames = sorted(segmentation_metainfo['segmentation_names'],
                           key=lambda x: len(x))
         classnames = segmentation_metainfo.get('class_names', None)
+        _LOGGER.debug(f"Number of segmentation names: {len(segnames)}")
+        if classnames is not None:
+            _LOGGER.debug(f"Number of class names: {len(classnames)}")
 
-    root_path = Path(segmentation_root_path).parent
+    segmentation_root_path = Path(segmentation_root_path).absolute()
+
     for imgpath in images_files:
-        imgpath_parent = Path(imgpath).parent
-        path_structure = imgpath_parent.relative_to(root_path).parts[1:]
+        imgpath_parent = Path(imgpath).absolute().parent
+        # Find the closest common parent between the image and the segmentation root
+        common_parent = []
+        for imgpath_part, segpath_part in zip(imgpath_parent.parts, segmentation_root_path.parent.parts):
+            if imgpath_part != segpath_part:
+                break
+            common_parent.append(imgpath_part)
+        if len(common_parent) == 0:
+            common_parent = Path('/')
+        else:
+            common_parent = Path(*common_parent)
+
+        _LOGGER.debug(f"_find_segmentation_files::common_parent: {common_parent}")
+        path_structure = imgpath_parent.relative_to(common_parent).parts[1:]
+
+        # path_structure = imgpath_parent.relative_to(root_path).parts[1:]
         path_structure = Path(*path_structure)
 
-        seg_path = Path(segmentation_root_path) / path_structure
+        real_seg_root_path = common_parent / Path(Path(segmentation_root_path).relative_to(common_parent).parts[0])
+        seg_path = real_seg_root_path / path_structure
         # list all segmentation files (nii.gz, nii, png) in the same folder structure
         seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
 
@@ -220,8 +238,13 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
-
+    parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
+    if args.verbose:
+        # Get the console handler and set to debug
+        logging.getLogger().handlers[0].setLevel(logging.DEBUG)
+        _LOGGER.setLevel(logging.DEBUG)
+        _USER_LOGGER.setLevel(logging.DEBUG)
 
     if args.retain_pii and len(args.retain_attribute) > 0:
         raise ValueError("Cannot use --retain-pii and --retain-attribute together.")
@@ -230,43 +253,50 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
     if args.include_extensions is not None and args.exclude_extensions is not None:
         raise ValueError("--include-extensions and --exclude-extensions are mutually exclusive.")
 
-    if os.path.isfile(args.path):
-        file_path = [args.path]
-        if args.recursive is not None:
-            _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
-    else:
-        try:
-            recursive_depth = 0 if args.recursive is None else args.recursive
-            file_path = walk_to_depth(args.path, recursive_depth, args.exclude)
-            file_path = filter_files(file_path, args.include_extensions, args.exclude_extensions)
-            file_path = list(map(str, file_path))  # from Path to str
-        except Exception as e:
-            _LOGGER.error(f'Error in recursive search: {e}')
-            raise e
+    try:
 
-    if len(file_path) == 0:
-        raise ValueError(f"No valid file was found in {args.path}")
+        if os.path.isfile(args.path):
+            file_path = [args.path]
+            if args.recursive is not None:
+                _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
+        else:
+            try:
+                recursive_depth = 0 if args.recursive is None else args.recursive
+                file_path = walk_to_depth(args.path, recursive_depth, args.exclude)
+                file_path = filter_files(file_path, args.include_extensions, args.exclude_extensions)
+                file_path = list(map(str, file_path))  # from Path to str
+            except Exception as e:
+                _LOGGER.error(f'Error in recursive search: {e}')
+                raise e
 
-    if args.segmentation_names is not None:
-        with open(args.segmentation_names, 'r') as f:
-            segmentation_names = yaml.safe_load(f)
-    else:
-        segmentation_names = None
+        if len(file_path) == 0:
+            raise ValueError(f"No valid file was found in {args.path}")
 
-    _LOGGER.debug(f'finding segmentations at {args.segmentation_path}')
-    segmentation_files = _find_segmentation_files(args.segmentation_path,
-                                                  file_path,
-                                                  segmentation_metainfo=segmentation_names)
+        if args.segmentation_names is not None:
+            with open(args.segmentation_names, 'r') as f:
+                segmentation_names = yaml.safe_load(f)
+        else:
+            segmentation_names = None
 
-    _LOGGER.info(f"args parsed: {args}")
+        _LOGGER.debug(f'finding segmentations at {args.segmentation_path}')
+        segmentation_files = _find_segmentation_files(args.segmentation_path,
+                                                      file_path,
+                                                      segmentation_metainfo=segmentation_names)
 
-    api_key = handle_api_key()
-    if api_key is None:
-        _USER_LOGGER.error("API key not provided. Aborting.")
-        sys.exit(1)
-    os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
+        _LOGGER.info(f"args parsed: {args}")
 
-    return args, file_path, segmentation_files
+        api_key = handle_api_key()
+        if api_key is None:
+            _USER_LOGGER.error("API key not provided. Aborting.")
+            sys.exit(1)
+        os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
+
+        return args, file_path, segmentation_files
+
+    except Exception as e:
+        if args.verbose:
+            _LOGGER.exception(e)
+        raise e
 
 
 def print_input_summary(files_path: List[str],
@@ -303,11 +333,22 @@ def print_input_summary(files_path: List[str],
                              " Make sure you are uploading the correct files.")
 
     if segfiles is not None:
-        _USER_LOGGER.info(f"Number of images with an associated segmentation: {len(segfiles)} ({len(segfiles) / total_files:.0%})")
+        num_segfiles = sum([1 if seg is not None else 0 for seg in segfiles])
+        msg = f"Number of images with an associated segmentation: " +\
+            f"{num_segfiles} ({num_segfiles / total_files:.0%})"
+        if num_segfiles == 0:
+            _USER_LOGGER.warning(msg)
+        else:
+            _USER_LOGGER.info(msg)
         # count number of segmentations files with names
-        if args.segmentation_names is not None:
+        if args.segmentation_names is not None and num_segfiles > 0:
             segnames_count = sum([1 if 'names' in seg else 0 for seg in segfiles if seg is not None])
-            _USER_LOGGER.info(f"Number of segmentations with associated name: {segnames_count} ({segnames_count / len(segfiles):.0%})")
+            msg = f"Number of segmentations with associated name: " + \
+                f"{segnames_count} ({segnames_count / num_segfiles:.0%})"
+            if segnames_count == 0:
+                _USER_LOGGER.warning(msg)
+            else:
+                _USER_LOGGER.info(msg)
 
 
 def print_results_summary(files_path: List[str],
