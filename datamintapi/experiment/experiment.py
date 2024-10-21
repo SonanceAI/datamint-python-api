@@ -3,7 +3,6 @@ from .exp_api_handler import ExperimentAPIHandler
 from datamintapi.api_handler import DatamintException
 from datetime import datetime
 from typing import List, Dict, Optional, Union
-from pytorch_lightning.loggers import WandbLogger, CometLogger
 from collections import defaultdict
 import torch
 from io import BytesIO
@@ -33,6 +32,8 @@ class Experiment:
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
         self.finish_callbacks = []
+        self.model: torch.nn.Module = None
+        self.is_finished = False
 
         if dataset_dir is None:
             # store them in the home directory
@@ -58,6 +59,9 @@ class Experiment:
                                                         name=name,
                                                         description=description,
                                                         environment={})  # TODO: Add environment
+
+    def set_model(self, model):
+        self.model = model
 
     @staticmethod
     def _get_dataset_info(apihandler: ExperimentAPIHandler,
@@ -174,6 +178,7 @@ class Experiment:
                   model: Union[torch.nn.Module, str, BytesIO],
                   hyper_params: Optional[Dict] = None,
                   torch_save_kwargs: Dict = {}):
+        self.model = model
         self.apihandler.log_model(exp_id=self.exp_id,
                                   model=model,
                                   hyper_params=hyper_params,
@@ -194,12 +199,18 @@ class Experiment:
         return self.dataset
 
     def finish(self):
+        if self.is_finished:
+            _LOGGER.debug("Experiment is already finished.")
+            return
         _LOGGER.info("Finishing experiment")
         for callback in self.finish_callbacks:
             callback(self)
         # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
+        if self.model is not None:
+            self.log_model(model=self.model)
         self.apihandler.finish_experiment(self.exp_id)
+        self.is_finished = True
 
 
 class LogHistory:

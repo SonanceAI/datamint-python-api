@@ -324,6 +324,22 @@ class PytorchPatcher:
 
         exp.add_to_summary(summary)
 
+    def module_constructed_cb(self,
+                              original_obj, func_args, func_kwargs, value):
+        exp = Experiment.get_singleton_experiment()
+        if exp is not None and exp.model is None:
+            model = func_args[0]
+            
+            # check that is not a torchmetrics model
+            if model.__module__.startswith('torchmetrics.'):
+                return
+            # Not a loss function
+            if model.__module__.startswith('torch.nn.modules.loss'):
+                return
+            
+            exp.set_model(model)
+            _LOGGER.debug(f'Found user model {model.__class__.__name__}')
+
 
 def initialize_automatic_logging(enable_rich_logging: bool = True):
     """
@@ -376,6 +392,10 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
         {
             'target': [f'{m}.update' for m in torchmetrics_metrics],
             'cb_before': pytorch_patcher.torchmetric_clf_updated
+        },
+        {
+            'target': 'torch.nn.modules.module.Module.__init__',
+            'cb_after': pytorch_patcher.module_constructed_cb
         }
     ]
 
