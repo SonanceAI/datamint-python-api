@@ -18,13 +18,16 @@ initialize_automatic_logging()
 os.environ["DATAMINT_API_KEY"] = "abc123"
 
 # Define the network architecture:
+
+
 class Classifier(nn.Module):
-    def __init__(self):
+    def __init__(self, n_classes):
         super().__init__()
+        self.n_classes = n_classes
         self.fc1 = nn.Linear(784, 256)
         self.fc2 = nn.Linear(256, 128)
         self.fc3 = nn.Linear(128, 64)
-        self.fc4 = nn.Linear(64, 10)
+        self.fc4 = nn.Linear(64, n_classes)
 
     def forward(self, x):
         # make sure input tensor is flattened
@@ -39,11 +42,14 @@ class Classifier(nn.Module):
 
 
 def main():
-    model = Classifier()
-    criterion = nn.NLLLoss()
     exp = Experiment(name="test_experiment",
                      dataset_name='dataset1',
                      api_key='abc123')
+
+    model = Classifier(n_classes=10)
+    metrics = [Recall(task="multiclass", num_classes=10, average="macro"),
+               Precision(task="multiclass", num_classes=10, average="macro")]
+    criterion = nn.NLLLoss()
 
     trainloader = exp.get_dataset("train").get_dataloader(batch_size=1)
     testloader = exp.get_dataset("test").get_dataloader(batch_size=1)
@@ -55,8 +61,6 @@ def main():
     metrics = [Recall(task="multiclass", num_classes=10, average="macro"),
                Precision(task="multiclass", num_classes=10, average="macro")]
     test_loop(model, criterion, testloader, metrics)
-
-    exp.finish()
 
 
 def training_loop(model, criterion, trainloader, lr=0.003):
