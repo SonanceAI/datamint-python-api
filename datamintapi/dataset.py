@@ -281,9 +281,9 @@ class DatamintDataset:
 
         # Find the correct filepath and index
         if self.return_frame_by_frame:
-            for num_frames in self.num_frames_per_dicom:
+            for i, num_frames in enumerate(self.num_frames_per_dicom):
                 if index < num_frames:
-                    img_metainfo = self.images_metainfo[index]
+                    img_metainfo = self.images_metainfo[i]
                     break
                 index -= num_frames
         else:
