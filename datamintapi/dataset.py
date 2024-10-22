@@ -12,7 +12,8 @@ import numpy as np
 from datamintapi import configs
 from torch.utils.data import DataLoader
 import torch
-from torchvision import transforms
+from torchvision.transforms.functional import to_tensor
+from pydicom.pixels import pixel_array
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,12 +46,12 @@ class DatamintDataset:
                  dataset_name: str,
                  version: int | str = 'latest',
                  api_key: Optional[str] = None,
-                 transform: Callable[[np.ndarray], Any] = None,
+                 transform: Callable[[torch.Tensor], Any] = None,
                  target_transform: Callable[[dict], Any] = None,
                  server_url: Optional[str] = None,
-                 use_default_transform: bool = True,
-                 return_dicom: bool = True,
+                 return_dicom: bool = False,
                  return_metainfo: bool = True,
+                 return_frame_by_frame: bool = False,
                  # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
                  ):
         if server_url is None:
@@ -64,17 +65,12 @@ class DatamintDataset:
 
         self.root = root
 
-        # transforms TODO: load from server?
-        if use_default_transform:
-            self.default_transf = transforms.Compose([transforms.ToTensor(),
-                                                      transforms.Normalize((0.5,), (0.5,))])
-        else:
-            self.default_transf = None
         self.transform = transform
         self.target_transform = target_transform
 
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
+        self.return_frame_by_frame = return_frame_by_frame
 
         if isinstance(version, str) and version != 'latest':
             raise ValueError("Version must be an integer or 'latest'")
@@ -107,6 +103,18 @@ class DatamintDataset:
             self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
         self._check_integrity()
+
+        if self.return_frame_by_frame:
+            _LOGGER.debug("Loading frame-by-frame metadata...")
+            self.num_frames_per_dicom = []
+            for imginfo in self.images_metainfo:
+                filepath = os.path.join(self.dataset_dir, imginfo['file'])
+                # loads the dicom file
+                ds = pydicom.dcmread(filepath)
+                self.num_frames_per_dicom.append(ds.NumberOfFrames if hasattr(ds, 'NumberOfFrames') else 1)
+            self.dataset_length = sum(self.num_frames_per_dicom)
+        else:
+            self.dataset_length = len(self.images_metainfo)
 
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
@@ -233,6 +241,33 @@ class DatamintDataset:
                             remove_finished=True
                             )
 
+    def _load_image(self, filepath: str, index: int = None) -> Tuple[torch.Tensor, pydicom.FileDataset]:
+        ds = pydicom.dcmread(filepath)
+
+        if self.return_frame_by_frame:
+            img = pixel_array(ds, index=index)
+        else:
+            img = ds.pixel_array
+        # Free up memory
+        if hasattr(ds, '_pixel_array'):
+            ds._pixel_array = None
+        if hasattr(ds, 'PixelData'):
+            ds.PixelData = None
+
+        if img.dtype == np.uint16:
+            # Pytorch doesn't support uint16
+            img = (img//256).astype(np.uint8)
+
+        if len(img.shape) == 3:
+            # from (C, H, W) to (H, W, C) because ToTensor() expects the last dimension to be the channel, although it outputs (C, H, W).
+            img = img.transpose(1, 2, 0)
+        if len(img.shape) == 2:
+            img = img[..., np.newaxis]
+
+        img = to_tensor(img)  # Converts to torch.Tensor, normalizes to [0, 1] and changes the shape to (C, H, W)
+
+        return img, ds
+
     def __getitem__(self, index: int) -> tuple[Any, pydicom.FileDataset, dict]:
         """
         Args:
@@ -241,27 +276,23 @@ class DatamintDataset:
         Returns:
             tuple: (image, dicom_metadata, metadata) Transformed image, dicom_metadata, and transformed metadata.
         """
+        if index < 0 or index >= self.dataset_length:
+            raise IndexError(f"Index {index} out of bounds for dataset of length {self.dataset_length}")
 
-        img_metainfo = self.images_metainfo[index]
-
+        # Find the correct filepath and index
+        if self.return_frame_by_frame:
+            for num_frames in self.num_frames_per_dicom:
+                if index < num_frames:
+                    img_metainfo = self.images_metainfo[index]
+                    break
+                index -= num_frames
+        else:
+            img_metainfo = self.images_metainfo[index]
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
-        # loads the dicom file
-        ds = pydicom.dcmread(filepath)
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
-        img = ds.pixel_array
-        if img.dtype == np.uint16:
-            # Pytorch doesn't support uint16
-            img = (img//256).astype(np.uint8)
-        if self.return_dicom:
-            # Free up memory
-            if hasattr(ds, '_pixel_array'):
-                ds._pixel_array = None
-            if hasattr(ds, 'PixelData'):
-                ds.PixelData = None
+        img, ds = self._load_image(filepath, index)
 
-        if self.default_transf is not None:
-            img = self.default_transf(img)
         if self.transform is not None:
             img = self.transform(img)
         if isinstance(img, np.ndarray):
@@ -284,7 +315,7 @@ class DatamintDataset:
             yield self[i]
 
     def __len__(self) -> int:
-        return len(self.images_metainfo)
+        return self.dataset_length
 
     def _check_version(self):
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
