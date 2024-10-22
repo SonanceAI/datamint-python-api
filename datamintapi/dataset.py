@@ -268,13 +268,14 @@ class DatamintDataset:
 
         return img, ds
 
-    def __getitem__(self, index: int) -> tuple[Any, pydicom.FileDataset, dict]:
+    def __getitem__(self, index: int) -> Tuple[Any, pydicom.FileDataset, dict]:
         """
         Args:
             index (int): Index
 
         Returns:
             tuple: (image, dicom_metadata, metadata) Transformed image, dicom_metadata, and transformed metadata.
+                If no transformation is given, the image is a tensor of shape (C, H, W).
         """
         if index < 0 or index >= self.dataset_length:
             raise IndexError(f"Index {index} out of bounds for dataset of length {self.dataset_length}")
@@ -286,6 +287,10 @@ class DatamintDataset:
                     img_metainfo = self.images_metainfo[i]
                     break
                 index -= num_frames
+
+            if self.return_metainfo:
+                img_metainfo = dict(img_metainfo) # copy
+                img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations'] if ann['index'] == index]
         else:
             img_metainfo = self.images_metainfo[index]
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
