@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 import torch
 from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
+from .api_handler import APIHandler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,8 +40,6 @@ class DatamintDataset:
         target_transform (callable, optional): A function/transform that takes in the dataset metadata and transforms it.
     """
 
-    default_root_url = 'https://api.datamint.io'
-
     def __init__(self,
                  root: str,
                  dataset_name: str,
@@ -55,8 +54,9 @@ class DatamintDataset:
                  # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
                  ):
         if server_url is None:
-            _LOGGER.debug(f"Using default server URL: {DatamintDataset.default_root_url}")
-            server_url = DatamintDataset.default_root_url
+            server_url = configs.get_value(configs.APIURL_KEY)
+            if server_url is None:
+                server_url = APIHandler.DEFAULT_ROOT_URL
         self.server_url = server_url
         if isinstance(root, str):
             root = os.path.expanduser(root)
