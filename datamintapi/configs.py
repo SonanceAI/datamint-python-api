@@ -11,6 +11,7 @@ APIKEY_KEY = 'api_key'
 
 ENV_VARS = {
     APIKEY_KEY: 'DATAMINT_API_KEY',
+    APIURL_KEY: 'DATAMINT_API_URL'
 }
 
 _NETRC_MACHINE_KEY = 'api.datamint.io'
