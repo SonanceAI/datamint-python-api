@@ -327,8 +327,12 @@ class APIHandler:
                     if segfiles is not None:
                         files_path = segfiles['files']
                         names = segfiles.get('names', [None] * len(files_path))
-                        for f, name in zip(files_path, names):
-                            await self._upload_segmentations_async(rid, file_path=f, name=name)
+                        if isinstance(names, dict):
+                            names = [names]*len(files_path)
+                        frame_indices = segfiles.get('frame_index', [None] * len(files_path))
+                        for f, name, frame_index in zip(files_path, names, frame_indices):
+                            if f is not None:
+                                await self._upload_segmentations_async(rid, file_path=f, name=name, frame_index=frame_index)
                     return rid
 
             tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
@@ -422,6 +426,15 @@ class APIHandler:
 
         files_path, is_list = APIHandler.__process_files_parameter(files_path)
         if segmentation_files is not None:
+            if is_list:
+                if len(segmentation_files) != len(files_path):
+                    raise ValueError("The number of segmentation files must match the number of resources.")
+            else:
+                if isinstance(segmentation_files, list) and isinstance(segmentation_files[0], list):
+                    raise ValueError("segmentation_files should not be a list of lists if files_path is not a list.")
+                if isinstance(segmentation_files, dict):
+                    segmentation_files = [segmentation_files]
+
             segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
                                   for segfiles in segmentation_files]
         loop = asyncio.get_event_loop()
