@@ -206,6 +206,8 @@ class APIHandler:
         else:
             name = file_path
 
+        
+
         if session is not None and not isinstance(session, aiohttp.ClientSession):
             raise ValueError("session must be an aiohttp.ClientSession object.")
 
@@ -233,7 +235,8 @@ class APIHandler:
             if is_a_dicom_file:
                 mimetype = 'application/dicom'
 
-        _LOGGER.debug(f"File name '{name}' mimetype: {mimetype}")
+        filename = os.path.basename(name)
+        _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
 
         if anonymize:
             if is_a_dicom_file == True or is_dicom(file_path):
@@ -254,8 +257,8 @@ class APIHandler:
             file_key = 'resource'
             form.add_field('source', 'api')
 
-            form.add_field(file_key, f, filename=name, content_type=mimetype)
-            form.add_field('source_filepath', name)
+            form.add_field(file_key, f, filename=filename, content_type=mimetype)
+            form.add_field('source_filepath', name) # full path to the file
             if mimetype is not None:
                 form.add_field('mimetype', mimetype)
             if channel is not None:
