@@ -8,6 +8,7 @@ import torch
 from io import BytesIO
 from datamintapi import Dataset as DatamintDataset
 import os
+import numpy as np
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -206,16 +207,42 @@ class Experiment:
     def _add_finish_callback(self, callback):
         self.finish_callbacks.append(callback)
 
-    def get_dataset(self, split: str = 'all') -> DatamintDataset:
-        # FIXME: Implement split
-        _LOGGER.warning("split parameter is not implemented yet. Returning the full dataset.")
-        if self.dataset is None:
-            self.dataset = DatamintDataset(self.dataset_dir,
-                                           dataset_name=self.dataset_name,
-                                           api_key=self.apihandler.api_key,
-                                           server_url=self.apihandler.root_url,
-                                           return_dicom=False)
-        return self.dataset
+    def get_dataset(self, split: str = 'all', **kwargs) -> DatamintDataset:
+        if split not in ['all', 'train', 'test', 'val']:
+            raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
+
+        self.dataset = DatamintDataset(self.dataset_dir,
+                                       dataset_name=self.dataset_name,
+                                       api_key=self.apihandler.api_key,
+                                       server_url=self.apihandler.root_url,
+                                       return_metainfo=True,
+                                       return_dicom=False,
+                                       **kwargs)
+
+        if split == 'all':
+            return self.dataset
+
+        # FIXME: samples should be marked as train, test, val previously
+
+        train_split_val = 0.8
+        test_split_val = 0.1
+        indices = list(range(len(self.dataset)))
+        rs = np.random.RandomState(42)
+        rs.shuffle(indices)
+        train_split_idx = int(train_split_val * len(self.dataset))
+        test_split_idx = int(np.ceil(test_split_val * len(self.dataset))) + train_split_idx
+        train_indices = indices[:train_split_idx]
+        test_indices = indices[train_split_idx:test_split_idx]
+        val_indices = indices[test_split_idx:]
+
+        if split == 'train':
+            indices_to_split = train_indices
+        elif split == 'test':
+            indices_to_split = test_indices
+        elif split == 'val':
+            indices_to_split = val_indices
+
+        return self.dataset.subset(indices_to_split)
 
     def finish(self):
         if self.is_finished:

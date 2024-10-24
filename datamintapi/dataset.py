@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any, Tuple
+from typing import Optional, Callable, Any, Tuple, List, Dict
 import logging
 import shutil
 import json
@@ -15,6 +15,7 @@ import torch
 from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
 from .api_handler import APIHandler
+from collections import defaultdict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class DatamintDataset:
                  server_url: Optional[str] = None,
                  return_dicom: bool = False,
                  return_metainfo: bool = True,
+                 return_seg_annotations: bool = True,
                  return_frame_by_frame: bool = False,
                  # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
                  ):
@@ -70,6 +72,7 @@ class DatamintDataset:
 
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
+        self.return_seg_annotations = return_seg_annotations
         self.return_frame_by_frame = return_frame_by_frame
 
         if isinstance(version, str) and version != 'latest':
@@ -104,6 +107,15 @@ class DatamintDataset:
         self.images_metainfo = self.metainfo['resources']
         self._check_integrity()
 
+        # fix images_metainfo labels
+        for imginfo in self.images_metainfo:
+            if imginfo['frame_labels'] is not None:
+                for flabels in imginfo['frame_labels']:
+                    if flabels['label'] is None:
+                        flabels['label'] = []
+                    elif isinstance(flabels['label'], str):
+                        flabels['label'] = flabels['label'].split(',')
+
         if self.return_frame_by_frame:
             _LOGGER.debug("Loading frame-by-frame metadata...")
             self.num_frames_per_dicom = []
@@ -115,6 +127,30 @@ class DatamintDataset:
             self.dataset_length = sum(self.num_frames_per_dicom)
         else:
             self.dataset_length = len(self.images_metainfo)
+
+        self.subset_indices = list(range(self.dataset_length))
+        self.labels_set, self.label2code = self.get_labels_set()
+        self.code2label = {v: k for k, v in self.label2code.items()}
+        self.num_labels = len(self.labels_set)
+
+    def get_labels_set(self) -> Tuple[List[str], Dict[str, int]]:
+        """
+        Returns the set of labels and a dictionary that maps labels to integers.
+
+        Returns:
+            Tuple[List[str], Dict[str, int]]: The set of labels and the dictionary that maps labels to integers
+        """
+        if hasattr(self, 'labels_set'):
+            return self.labels_set, self.label2code
+
+        all_labels = set()
+        for imginfo in self.images_metainfo:
+            if 'frame_labels' in imginfo and imginfo['frame_labels'] is not None:
+                labels = [l for flabels in imginfo['frame_labels'] for l in flabels['label']]
+                all_labels.update(labels)
+        all_labels = sorted(list(all_labels))
+        label2code = {label: idx for idx, label in enumerate(all_labels)}
+        return all_labels, label2code
 
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
@@ -193,7 +229,7 @@ class DatamintDataset:
         if self.root is not None:
             body.append(f"Root location: {self.root}")
         if self.transform is not None:
-            body += [repr(self.transforms)]
+            body += [repr(self.transform)]
         if self.target_transform is not None:
             body += [repr(self.target_transform)]
         lines = [head] + [" " * 4 + line for line in body]
@@ -268,18 +304,39 @@ class DatamintDataset:
 
         return img, ds
 
-    def __getitem__(self, index: int) -> Tuple[Any, pydicom.FileDataset, dict]:
-        """
-        Args:
-            index (int): Index
+    def _process_frame_labels(self, frame_labels: List[dict], img_frame_idx: int, num_frames: int) -> torch.Tensor:
+        # Convert frame_labels into a dictionary of int tensors, where the key is the user_id
+        # and the value is a tensor of size (num_frames, num_labels)
+        # If return_frame_by_frame is True, the size is (num_labels, )
+        if self.return_frame_by_frame:
+            labels_ret_size = (len(self.labels_set),)
+        else:
+            labels_ret_size = (num_frames, len(self.labels_set))
 
-        Returns:
-            tuple: (image, dicom_metadata, metadata) Transformed image, dicom_metadata, and transformed metadata.
-                If no transformation is given, the image is a tensor of shape (C, H, W).
-        """
-        if index < 0 or index >= self.dataset_length:
-            raise IndexError(f"Index {index} out of bounds for dataset of length {self.dataset_length}")
+        if frame_labels is None:
+            return torch.zeros(size=labels_ret_size, dtype=torch.int32)
 
+        frame_labels_byuser = defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
+        for flabel in frame_labels:
+            user_id = flabel['created_by']
+            frame_idx = flabel['frame']
+            if self.return_frame_by_frame:
+                if frame_idx != img_frame_idx:
+                    continue
+                labels_onehot_i = frame_labels_byuser[user_id]
+            else:
+                labels_onehot_i = frame_labels_byuser[user_id][frame_idx]
+
+            for l in flabel['label']:
+                label_code = self.label2code[l]
+                labels_onehot_i[label_code] = 1
+
+        # merge all user labels using max value
+        labels_onehot_merged = torch.stack(list(frame_labels_byuser.values())).max(dim=0)[0]
+
+        return labels_onehot_merged
+
+    def __getitem_internal(self, index: int) -> Dict[str, Any]:
         # Find the correct filepath and index
         if self.return_frame_by_frame:
             for i, num_frames in enumerate(self.num_frames_per_dicom):
@@ -288,15 +345,23 @@ class DatamintDataset:
                     break
                 index -= num_frames
 
-            if self.return_metainfo:
-                img_metainfo = dict(img_metainfo) # copy
+            img_metainfo = dict(img_metainfo)  # copy
+            if self.return_metainfo and self.return_seg_annotations:
                 img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations'] if ann['index'] == index]
         else:
             img_metainfo = self.images_metainfo[index]
+
+        if self.return_seg_annotations == False:
+            img_metainfo.pop('annotations', None)
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
         img, ds = self._load_image(filepath, index)
+
+        # process frame_labels
+        frame_labels = img_metainfo['frame_labels']
+        labels_onehot = self._process_frame_labels(frame_labels, index, img.shape[0])
+        # labels_onehot has shape (num_frames, num_labels) or (num_labels, ) if return_frame_by_frame is True
 
         if self.transform is not None:
             img = self.transform(img)
@@ -306,21 +371,37 @@ class DatamintDataset:
         if self.target_transform is not None:
             img_metainfo = self.target_transform(img_metainfo)
 
-        ret = [img]
+        ret = {'image': img}
+
         if self.return_dicom:
-            ret.append(ds)
+            ret['dicom'] = ds
         if self.return_metainfo:
-            ret.append(img_metainfo)
-        ret = tuple(ret)
+            ret['metainfo'] = img_metainfo
+
+        ret['labels'] = labels_onehot
 
         return ret
+
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        """
+        Args:
+            index (int): Index
+
+        Returns:
+            tuple: (image, dicom_metadata, metadata) Transformed image, dicom_metadata, and transformed metadata.
+                If no transformation is given, the image is a tensor of shape (C, H, W).
+        """
+        if index < 0 or index >= len(self):
+            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
+
+        return self.__getitem_internal(self.subset_indices[index])
 
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
 
     def __len__(self) -> int:
-        return self.dataset_length
+        return len(self.subset_indices)
 
     def _check_version(self):
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
@@ -368,26 +449,25 @@ class DatamintDataset:
                           **kwargs)
 
     def get_collate_fn(self) -> Callable:
-        def collate_fn(batch) -> Tuple:
-            k = 0
-            images = [item[0] for item in batch]
-            if isinstance(images[0], torch.Tensor):
-                images = torch.stack(images)
-            elif isinstance(images[0], np.ndarray):
-                images = np.stack(images)
-            else:
-                _LOGGER.warning(f"Unknown image type: {type(images[0])}. Proceeding with the original structure.")
+        def collate_fn(batch: Dict) -> Dict:
+            keys = ['image', 'dicom', 'metainfo', 'labels']
+            collated_batch = {}
+            for key in keys:
+                if key in batch[0]:
+                    collated_batch[key] = [item[key] for item in batch]
+                    if isinstance(collated_batch[key][0], torch.Tensor):
+                        collated_batch[key] = torch.stack(collated_batch[key])
+                    elif isinstance(collated_batch[key][0], np.ndarray):
+                        collated_batch[key] = np.stack(collated_batch[key])
 
-            collated_batch = [images]
-            if self.return_dicom:
-                k += 1
-                dicom_metainfo = [item[k] for item in batch]
-                collated_batch.append(dicom_metainfo)
-            if self.return_metainfo:
-                k += 1
-                metainfo = [item[k] for item in batch]
-                collated_batch.append(metainfo)
-
-            return tuple(collated_batch)
+            return collated_batch
 
         return collate_fn
+
+    def subset(self, indices: List[int]) -> 'DatamintDataset':
+        if len(self.subset_indices) > self.dataset_length:
+            raise ValueError(f"Subset indices must be less than the dataset length: {self.dataset_length}")
+
+        self.subset_indices = indices
+
+        return self

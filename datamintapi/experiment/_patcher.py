@@ -87,7 +87,8 @@ class Wrapper:
 
             except Exception as exception:
                 # We are assuming the patched function does not return an exception.
-                return_value = exception
+                # return_value = exception
+                raise exception
 
             for cb in self.cb_after:
                 cb(original, args, kwargs, return_value)
@@ -343,7 +344,7 @@ class PytorchPatcher:
 
     def at_exit_cb(self):
         exp = Experiment.get_singleton_experiment()
-        if exp is not None:
+        if exp is not None and (exp.cur_step is not None or exp.cur_epoch is not None):
             exp.finish()
 
 
@@ -365,6 +366,7 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
                                       'CohenKappa']
 
     torchmetrics_clf_metrics = [f'Multiclass{m}' for m in torchmetrics_clfs_base_metrics]
+    torchmetrics_clf_metrics += [f'Multilabel{m}' for m in torchmetrics_clfs_base_metrics]
     torchmetrics_clf_metrics += [f'Binary{m}' for m in torchmetrics_clfs_base_metrics]
     torchmetrics_clf_metrics = [f'torchmetrics.classification.{m}' for m in torchmetrics_clf_metrics]
     torchmetrics_detseg_metrics = ['torchmetrics.segmentation.GeneralizedDiceScore',
