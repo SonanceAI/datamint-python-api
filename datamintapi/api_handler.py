@@ -951,11 +951,11 @@ class APIHandler:
         }
 
         yield from self._run_pagination_request(request_params,
-                                                return_field='data')
+                                                return_field=['data',0,'resources'])
 
     def _run_pagination_request(self,
                                 request_params: Dict,
-                                return_field: Optional[str] = None
+                                return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
         params = request_params['params']
@@ -965,7 +965,11 @@ class APIHandler:
 
             response = self._run_request(request_params).json()
             if return_field is not None:
-                response = response[return_field]
+                if isinstance(return_field, list) or isinstance(return_field, tuple):
+                    for field in return_field:
+                        response = response[field]
+                else:
+                    response = response[return_field]
             for r in response:
                 yield r
 
