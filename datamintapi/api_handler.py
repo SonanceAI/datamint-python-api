@@ -34,7 +34,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 10
+_PAGE_LIMIT = 50
 
 
 def validate_call(func, *args, **kwargs):
@@ -266,9 +266,10 @@ class APIHandler:
             if modality is not None:
                 form.add_field('modality', modality)
             # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
-            if labels is not None:
-                for i, label in enumerate(labels):
-                    form.add_field(f'labels[{i}]', label)
+            if labels is not None and len(labels) > 0:
+                # comma separated list of labels
+                labels = ','.join([l.strip() for l in labels])
+                form.add_field('labels', labels)
 
             request_params = {
                 'method': 'POST',
