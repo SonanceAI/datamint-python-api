@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "DatamintAPI"
-version = "0.6.3"
+version = "0.6.4"
 description = "A library for loading Datamint datasets into Pytorch"
 authors = ["Sonance Team"]
 readme = "README.md"
