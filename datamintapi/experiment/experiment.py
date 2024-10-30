@@ -2,7 +2,7 @@ import logging
 from .exp_api_handler import ExperimentAPIHandler
 from datamintapi.api_handler import DatamintException
 from datetime import datetime
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Any
 from collections import defaultdict
 import torch
 from io import BytesIO
@@ -26,7 +26,8 @@ class Experiment:
                  description: Optional[str] = None,
                  api_key: Optional[str] = None,
                  root_url: Optional[str] = None,
-                 dataset_dir: Optional[str] = None) -> None:
+                 dataset_dir: Optional[str] = None,
+                 log_enviroment: bool = True) -> None:
         self.name = name
         self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
         self.cur_step = None
@@ -36,6 +37,7 @@ class Experiment:
         self.model: torch.nn.Module = None
         self.model_hyper_params = None
         self.is_finished = False
+        self.log_enviroment = log_enviroment
 
         if dataset_dir is None:
             # store them in the home directory
@@ -57,10 +59,51 @@ class Experiment:
 
         Experiment._set_singleton_experiment(self)
 
+        env_info = Experiment.get_enviroment_info() if log_enviroment else {}
         self.exp_id = self.apihandler.create_experiment(dataset_id=self.dataset_id,
                                                         name=name,
                                                         description=description,
-                                                        environment={})  # TODO: Add environment
+                                                        environment=env_info)
+
+    @staticmethod
+    def get_enviroment_info() -> Dict[str, Any]:
+        import os
+        import platform
+        import torch
+        import torchvision
+        import numpy as np
+        import psutil
+        import socket
+
+        # find all ip address, removing localhost
+        ip_addresses = [addr.address for iface in psutil.net_if_addrs().values()
+                        for addr in iface if addr.family == socket.AF_INET and not addr.address.startswith('127.0.')]
+        ip_addresses = list(set(ip_addresses))
+        if len(ip_addresses) == 1:
+            ip_addresses = ip_addresses[0]
+
+        # Get the enviroment and machine information, such as OS, Python version, machine name, RAM size, etc.
+        env = {
+            'python_version': platform.python_version(),
+            'torch_version': torch.__version__,
+            'torchvision_version': torchvision.__version__,
+            'numpy_version': np.__version__,
+            'os': platform.system(),
+            'os_version': platform.version(),
+            'os_name': platform.system(),
+            'machine_name': platform.node(),
+            'cpu': platform.processor(),
+            'ram_gb': psutil.virtual_memory().total / (1024. ** 3),
+            'gpu': torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
+            'gpu_count': torch.cuda.device_count(),
+            'gpu_memory': torch.cuda.get_device_properties(0).total_memory / (1024. ** 3) if torch.cuda.is_available() else None,
+            'processor_count': os.cpu_count(),
+            'processor_name': platform.processor(),
+            'hostname': os.uname().nodename,
+            'ip_address': ip_addresses,
+        }
+
+        return env
 
     def set_model(self, model, hyper_params=None):
         self.model = model
