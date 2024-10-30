@@ -4,11 +4,11 @@ from typing import Sequence, Any, Dict
 import logging
 from .experiment import Experiment
 from torch.utils.data import DataLoader
-from collections import defaultdict
 import torch
 import numpy as np
 import pandas as pd
 import atexit
+from collections import OrderedDict
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ def _is_iterable(obj):
 class Wrapper:
     class IteratorWrapper:
         def __init__(self, iterator,
+                     cb_before_first_next,
                      cb_after_iter_return,
                      original_func,
                      cb_args,
@@ -32,18 +33,25 @@ class Wrapper:
             self.cb_args = cb_args
             self.cb_kwargs = cb_kwargs
             self.original_func = original_func
+            self.cb_before_first_next = cb_before_first_next
             self.cb_after_iter_return = cb_after_iter_return
+            self.first_next = True
 
         def __iter__(self):
             self.iterator = iter(self.iterator)
             return self
 
         def __next__(self):
+            if self.first_next:
+                for cb in self.cb_before_first_next:
+                    cb(self.original_func, self.cb_args, self.cb_kwargs, original_iter=self.iterator)
+                self.first_next = False
             try:
                 return next(self.iterator)
             except StopIteration as e:
                 for cb in self.cb_after_iter_return:
                     cb(self.original_func, self.cb_args, self.cb_kwargs, original_iter=self.iterator)
+                self.first_next = True
                 raise e
 
         def __getattr__(self, item):
@@ -58,17 +66,21 @@ class Wrapper:
                  target: str,
                  cb_before: Sequence[callable] | callable = None,
                  cb_after: Sequence[callable] | callable = None,
+                 cb_before_first_next: Sequence[callable] | callable = None,
                  cb_after_iter_return: Sequence[callable] | callable = None,
                  ) -> None:
         self.cb_before = cb_before if cb_before is not None else []
         self.cb_after = cb_after if cb_after is not None else []
         self.cb_after_iter_return = cb_after_iter_return if cb_after_iter_return is not None else []
+        self.cb_before_first_next = cb_before_first_next if cb_before_first_next is not None else []
         if not _is_iterable(self.cb_before):
             self.cb_before = [self.cb_before]
         if not _is_iterable(self.cb_after):
             self.cb_after = [self.cb_after]
         if not _is_iterable(self.cb_after_iter_return):
             self.cb_after_iter_return = [self.cb_after_iter_return]
+        if not _is_iterable(self.cb_before_first_next):
+            self.cb_before_first_next = [self.cb_before_first_next]
         self.target = target
         self._patch()
 
@@ -110,6 +122,7 @@ class Wrapper:
 
     def _wrap_iterator(self, iterator, original_func, args, kwargs):
         return Wrapper.IteratorWrapper(iterator,
+                                       self.cb_before_first_next,
                                        self.cb_after_iter_return,
                                        original_func=original_func,
                                        cb_args=args,
@@ -166,7 +179,7 @@ class PytorchPatcher:
     AUTO_LOSS_LOG_INTERVAL = 20
 
     def __init__(self) -> None:
-        self.dataloaders_info: Dict[Any, PytorchPatcher.DataLoaderInfo] = {}
+        self.dataloaders_info: Dict[Any, PytorchPatcher.DataLoaderInfo] = OrderedDict()
         self.metrics_association = {}  # Associate metrics with dataloaders
         self.last_dataloader = None
 
@@ -219,10 +232,7 @@ class PytorchPatcher:
             self._log_metric(loss_name, loss, dataloader=dataloader)
 
     def _dataloader_start_iterating_cb(self,
-                                       original_obj, func_args, func_kwargs):
-        """
-        This method is a wrapper for the __iter__ method of the Pytorch DataLoader class.
-        """
+                                       original_obj, func_args, func_kwargs, original_iter):
         exp = Experiment.get_singleton_experiment()
         dataloader = func_args[0]  # self
         dataloader_info = self.dataloaders_info[dataloader]
@@ -302,14 +312,22 @@ class PytorchPatcher:
         return self.last_dataloader
 
     def finish_callback(self, exp: Experiment):
-        # Get the dataloader with 1 iteration
+        # Get the last dataloader with 1 iteration, and assume it is the test dataloader
         dataloader = None
-        for dloader, dlinfo in self.dataloaders_info.items():
+        phase = None
+        for dloader, dlinfo in reversed(self.dataloaders_info.items()):
             if dlinfo.times_started_iter == 1:
                 dataloader = dloader
+                phase = 'test'
                 break
+        else:
+            _LOGGER.debug('No dataloader with 1 iteration found')
         if dataloader is None:
             dataloader = self.get_last_dataloader()
+            if len(self.dataloaders_info) > 1:
+                phase = 'test'
+            else:
+                _LOGGER.warning("No test dataloader found")
         if dataloader is None:
             _LOGGER.warning("No dataloader to log found")
             return
@@ -322,6 +340,9 @@ class PytorchPatcher:
         dlinfo_metrics = dlinfo_metrics[dlinfo_metrics['epoch'] == dlinfo_metrics['epoch'].max()]
 
         for metric_name, value in dlinfo_metrics.groupby('name')['value'].mean().items():
+            if phase is not None:
+                metric_name = metric_name.split('/', 1)[-1]
+                metric_name = f"{phase}/{metric_name}"
             summary['metrics'][metric_name] = value
 
         exp.add_to_summary(summary)
@@ -331,14 +352,14 @@ class PytorchPatcher:
         exp = Experiment.get_singleton_experiment()
         if exp is not None and exp.model is None:
             model = func_args[0]
-            
+
             # check that is not a torchmetrics model
             if model.__module__.startswith('torchmetrics.'):
                 return
             # Not a loss function
             if model.__module__.startswith('torch.nn.modules.loss'):
                 return
-            
+
             exp.set_model(model)
             _LOGGER.debug(f'Found user model {model.__class__.__name__}')
 
@@ -382,7 +403,7 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
         },
         {
             'target': 'torch.utils.data.DataLoader.__iter__',
-            'cb_before': pytorch_patcher._dataloader_start_iterating_cb,
+            'cb_before_first_next': pytorch_patcher._dataloader_start_iterating_cb,
             'cb_after_iter_return': pytorch_patcher._dataloader_stop_iterating_cb
         },
         {
