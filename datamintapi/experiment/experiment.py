@@ -57,6 +57,12 @@ class Experiment:
         self.dataset = None
         # self.loghandler = LogRequestHandler()
 
+        # Check if experiment already exists with the same name
+        experiments = self.apihandler.get_experiments()
+        for exp in experiments:
+            if exp['name'] == name:
+                raise DatamintException(f"Experiment with name '{name}' already exists.")
+
         Experiment._set_singleton_experiment(self)
 
         env_info = Experiment.get_enviroment_info() if log_enviroment else {}
