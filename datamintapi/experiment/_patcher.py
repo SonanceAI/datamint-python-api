@@ -359,6 +359,12 @@ class PytorchPatcher:
             # Not a loss function
             if model.__module__.startswith('torch.nn.modules.loss'):
                 return
+            # Not a torchvision transform
+            if model.__module__.startswith('torchvision.transforms'):
+                return
+            # Not a optimizer
+            if model.__module__.startswith('torch.optim'):
+                return
 
             exp.set_model(model)
             _LOGGER.debug(f'Found user model {model.__class__.__name__}')

@@ -242,6 +242,12 @@ class Experiment:
                 if isinstance(attr_value, (int, float, str)):
                     hyper_params[attr_name] = attr_value
 
+        # Add additional useful information
+        hyper_params.update({
+            '__num_layers': len(list(model.children())),
+            '__num_parameters': sum(p.numel() for p in model.parameters()),
+        })
+
         self.apihandler.log_model(exp_id=self.exp_id,
                                   model=model,
                                   hyper_params=hyper_params,
