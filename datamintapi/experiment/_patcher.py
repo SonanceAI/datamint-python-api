@@ -12,6 +12,8 @@ from collections import OrderedDict
 
 _LOGGER = logging.getLogger(__name__)
 
+IS_INITIALIZED = False
+
 
 def _is_iterable(obj):
     try:
@@ -380,6 +382,11 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
     This function initializes the automatic logging of Pytorch loss using patching.
     """
     from rich.logging import RichHandler
+    global IS_INITIALIZED
+
+    if IS_INITIALIZED == True:
+        return
+    IS_INITIALIZED = True
 
     # check if RichHandler is already in the handlers
     if enable_rich_logging and not any(isinstance(h, RichHandler) for h in logging.getLogger().handlers):
@@ -432,7 +439,9 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
             'target': 'torch.nn.modules.module.Module.__init__',
             'cb_after': pytorch_patcher.module_constructed_cb
         }
+        # TODO: Add callback for BCELoss and others losses
     ]
+    
 
     # explode the list of targets into individual targets
     new_params = []
