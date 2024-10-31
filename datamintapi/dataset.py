@@ -377,6 +377,8 @@ class DatamintDataset:
             ret['dicom'] = ds
         if self.return_metainfo:
             ret['metainfo'] = img_metainfo
+        if self.return_seg_annotations:
+            ret['annotations'] = img_metainfo['annotations']
 
         ret['labels'] = labels_onehot
 
@@ -450,7 +452,7 @@ class DatamintDataset:
 
     def get_collate_fn(self) -> Callable:
         def collate_fn(batch: Dict) -> Dict:
-            keys = ['image', 'dicom', 'metainfo', 'labels']
+            keys = batch[0].keys()
             collated_batch = {}
             for key in keys:
                 if key in batch[0]:
