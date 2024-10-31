@@ -33,6 +33,8 @@ class DatamintDataset:
         dataset_name (str): Name of the dataset to download.
         version (int | str): Version of the dataset to download.
             If 'latest', the latest version will be downloaded. Default: 'latest'.
+            .. deprecated:: 0.7.0
+        auto_update (bool): If True, the dataset will be checked for updates and downloaded if necessary.
         api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
             environment variable 'DATAMINT_API_KEY'. Not necessary if
             you don't want to download/update the dataset.
@@ -45,7 +47,8 @@ class DatamintDataset:
                  root: str,
                  project_name: str,
                  dataset_name: str = None,
-                 version: int | str = 'latest',
+                 version=None,
+                 auto_update: bool = True,
                  api_key: Optional[str] = None,
                  transform: Callable[[torch.Tensor], Any] = None,
                  target_transform: Callable[[dict], Any] = None,
@@ -71,10 +74,9 @@ class DatamintDataset:
         self.return_metainfo = return_metainfo
         self.return_frame_by_frame = return_frame_by_frame
 
-        if isinstance(version, str) and version != 'latest':
-            raise ValueError("Version must be an integer or 'latest'")
-
-        self.version = version
+        if version is not None:
+            _LOGGER.warning("The 'version' argument is deprecated and will be removed in future versions. " +
+                            "See the 'auto_update' argument instead.")
 
         if dataset_name is not None and project_name is not None:
             raise ValueError("Either 'dataset_name' or 'project_name' must be provided, not both.")
@@ -84,6 +86,17 @@ class DatamintDataset:
         if project_name is not None:
             dataset_name = project_name
 
+        self.dataset_dir = os.path.join(root, dataset_name)
+        self.dataset_zippath = os.path.join(root, f'{dataset_name}.zip')
+
+        local_dataset_exists = os.path.exists(os.path.join(self.dataset_dir, 'dataset.json'))
+
+        if project_name is not None and not (local_dataset_exists and auto_update==False):
+            self.project_info = self.get_info()
+            self.dataset_id = self.project_info['dataset_id']
+        else:
+            self.dataset_id = None
+
         self.api_key = self.api_handler.api_key
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
@@ -91,14 +104,14 @@ class DatamintDataset:
                             f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
                             "using datamint-config command line tool."
                             )
-        self.dataset_dir = os.path.join(root, dataset_name)
-        self.dataset_zippath = os.path.join(root, f'{dataset_name}.zip')
+
 
         # Download/Updates the dataset, if necessary.
-        if os.path.exists(self.dataset_dir):
+        if local_dataset_exists:
             _LOGGER.info(f"Dataset directory already exists: {self.dataset_dir}")
-            _LOGGER.info("Checking for updates...")
-            self._check_version()
+            if auto_update:
+                _LOGGER.info("Checking for updates...")
+                self._check_version()
         else:
             if self.api_key is None:
                 raise DatamintDatasetException("API key is required to download the dataset.")
@@ -106,8 +119,9 @@ class DatamintDataset:
             self.download()
 
         # Loads the metadata
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
-            self.metainfo = json.load(file)
+        if not hasattr(self, 'metainfo'):
+            with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
+                self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
         self._check_integrity()
 
@@ -128,9 +142,9 @@ class DatamintDataset:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
                 raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
-    @deprecated(version='0.7.0', reason="Datas are now stored in projects. Use 'project_name' instead of 'dataset_name'.")
-    def _get_datasetinfo_by_name(self, dataset_name: str) -> dict:
+    def _get_datasetinfo(self) -> Dict:
         # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
+
         request_params = {
             'method': 'GET',
             'url': f'{self.server_url}/datasets',
@@ -139,13 +153,22 @@ class DatamintDataset:
         with Session() as session:
             response = self._run_request(session, request_params)
             resp = response.json()
+
+        if self.dataset_id is not None:
+            value_to_search = self.dataset_id
+            field_to_search = 'id'
+        else:
+            value_to_search = self.dataset_name
+            field_to_search = 'name'
+
         for d in resp['data']:
-            if d['name'] == dataset_name:
+            if d[field_to_search] == value_to_search:
                 return d
 
-        available_datasets = [d['name'] for d in resp['data']]
+        available_datasets = [(d['name'], d['id']) for d in resp['data']]
         raise DatamintDatasetException(
-            f"Dataset with name '{dataset_name}' not found. Available datasets: {available_datasets}"
+            f"Dataset with {field_to_search} '{value_to_search}' not found." +
+            f" Available datasets: {available_datasets}"
         )
 
     def get_info(self) -> Dict:
@@ -153,7 +176,7 @@ class DatamintDataset:
         for project in all_projects:
             if project['name'] == self.project_name:
                 return project
-            
+
         available_projects = [p['name'] for p in all_projects]
         raise DatamintDatasetException(
             f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
@@ -227,17 +250,11 @@ class DatamintDataset:
         """
         from torchvision.datasets.utils import extract_archive
 
-        if self.project_name is not None:
-            project_info = self.get_info()
-            dataset_id = project_info['dataset_id']
-        else:
-            dataset_info = self._get_datasetinfo_by_name(self.dataset_name)
-            dataset_id = dataset_info['id']
-        # if self.version == 'latest':
-        #     self.version = dataset_info['updated_at']  # dataset_info['last_version']
+        dataset_info = self._get_datasetinfo()
+        self.last_updaded_at = dataset_info['updated_at']
 
         with Session() as session:
-            jwt_token = self._get_jwttoken(dataset_id, session)
+            jwt_token = self._get_jwttoken(self.dataset_id, session)
 
             # Initiate the download
             request_params = {
@@ -263,6 +280,13 @@ class DatamintDataset:
                             self.dataset_dir,
                             remove_finished=True
                             )
+        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
+            self.metainfo = json.load(file)
+        if 'updated_at' not in self.metainfo:
+            self.metainfo['updated_at'] = self.last_updaded_at
+        # save the updated_at date
+        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
+            json.dump(self.metainfo, file)
 
     def _load_image(self, filepath: str, index: int = None) -> Tuple[torch.Tensor, pydicom.FileDataset]:
         ds = pydicom.dcmread(filepath)
@@ -346,37 +370,27 @@ class DatamintDataset:
         return self.dataset_length
 
     def _check_version(self):
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
-            local_dataset_info = json.load(file)
-        if 'version' in local_dataset_info:
-            local_version = int(local_dataset_info['version'])
-        else:
-            _LOGGER.warning("Local version not found in 'dataset.json'. Assuming version 1.")
-            local_version = 1
-        if isinstance(self.version, int):
-            if local_version != self.version:
-                self.download()
+        metainfo_path = os.path.join(self.dataset_dir, 'dataset.json')
+        if not os.path.exists(metainfo_path):
+            self.download()
             return
+        with open(metainfo_path, 'r') as file:
+            local_dataset_info = json.load(file)
+        local_updated_at = local_dataset_info.get('updated_at', None)
 
         try:
-            external_metadata_info = self._get_datasetinfo_by_name(self.dataset_name)
-            last_version = external_metadata_info['last_version']
-            if last_version is None:
-                last_version = 1
+            external_metadata_info = self._get_datasetinfo()
+            server_updated_at = external_metadata_info['updated_at']
         except Exception as e:
             _LOGGER.warning(f"Failed to check for updates in {self.dataset_name}: {e}")
             return
 
-        if local_version != last_version:
-            print(
-                f"A newer version of the dataset is available. Your version: {local_version}." +
-                f" Last version: {last_version}.\n Would you like to update?\n (y/n)"
+        if local_updated_at is None or local_updated_at != server_updated_at:
+            _LOGGER.info(
+                f"A newer version of the dataset is available. Your version: {local_dataset_info}." +
+                f" Last version: {server_updated_at}."
             )
-            choice = input().lower()
-            if choice == 'y':
-                self.download()
-            else:
-                return
+            self.download()
         _LOGGER.info('Local version is up to date with the latest version.')
 
     def __add__(self, other):
