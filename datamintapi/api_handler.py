@@ -114,7 +114,7 @@ class APIHandler:
         if self.api_key is None:
             msg = f"API key not provided! Use the environment variable " + \
                 f"{APIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
-            raise DatamintException(msg)
+            _LOGGER.warning(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
 
     async def _run_request_async(self,
@@ -1140,3 +1140,20 @@ class APIHandler:
                 self._run_request(request_params)
             except ResourceNotFoundError:
                 raise ResourceNotFoundError('resource', {'resource_id': rid})
+
+
+    def get_projects(self) -> List[Dict]:
+        """
+        Get the list of projects.
+
+        Returns:
+            List[Dict]: The list of projects.
+
+        Example:
+            >>> api_handler.get_projects()
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects'
+        }
+        return self._run_request(request_params).json()['data']

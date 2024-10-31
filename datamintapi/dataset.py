@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any, Tuple
+from typing import Optional, Callable, Any, Tuple, Dict
 import logging
 import shutil
 import json
@@ -14,12 +14,13 @@ from torch.utils.data import DataLoader
 import torch
 from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
-from .api_handler import APIHandler
+from .api_handler import APIHandler, DatamintException
+from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class DatamintDatasetException(Exception):
+class DatamintDatasetException(DatamintException):
     pass
 
 
@@ -42,7 +43,8 @@ class DatamintDataset:
 
     def __init__(self,
                  root: str,
-                 dataset_name: str,
+                 project_name: str,
+                 dataset_name: str = None,
                  version: int | str = 'latest',
                  api_key: Optional[str] = None,
                  transform: Callable[[torch.Tensor], Any] = None,
@@ -53,11 +55,8 @@ class DatamintDataset:
                  return_frame_by_frame: bool = False,
                  # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
                  ):
-        if server_url is None:
-            server_url = configs.get_value(configs.APIURL_KEY)
-            if server_url is None:
-                server_url = APIHandler.DEFAULT_ROOT_URL
-        self.server_url = server_url
+        self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
+        self.server_url = self.api_handler.root_url
         if isinstance(root, str):
             root = os.path.expanduser(root)
         if not os.path.isdir(root):
@@ -76,8 +75,16 @@ class DatamintDataset:
             raise ValueError("Version must be an integer or 'latest'")
 
         self.version = version
+
+        if dataset_name is not None and project_name is not None:
+            raise ValueError("Either 'dataset_name' or 'project_name' must be provided, not both.")
+
         self.dataset_name = dataset_name
-        self.api_key = api_key if api_key is not None else configs.get_value(configs.APIKEY_KEY)
+        self.project_name = project_name
+        if project_name is not None:
+            dataset_name = project_name
+
+        self.api_key = self.api_handler.api_key
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
                             f"either by passing it as an argument," +
@@ -121,6 +128,7 @@ class DatamintDataset:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
                 raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
+    @deprecated(version='0.7.0', reason="Datas are now stored in projects. Use 'project_name' instead of 'dataset_name'.")
     def _get_datasetinfo_by_name(self, dataset_name: str) -> dict:
         # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
         request_params = {
@@ -140,6 +148,17 @@ class DatamintDataset:
             f"Dataset with name '{dataset_name}' not found. Available datasets: {available_datasets}"
         )
 
+    def get_info(self) -> Dict:
+        all_projects = self.api_handler.get_projects()
+        for project in all_projects:
+            if project['name'] == self.project_name:
+                return project
+            
+        available_projects = [p['name'] for p in all_projects]
+        raise DatamintDatasetException(
+            f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
+        )
+
     def _run_request(self, session, request_args) -> requests.Response:
         response = session.request(**request_args)
         response.raise_for_status()
@@ -150,7 +169,7 @@ class DatamintDataset:
             'method': 'GET',
             'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
             'headers': {'apikey': self.api_key},
-            'params': {'version': self.version},
+            # 'params': {'version': self.version},
             'stream': True
         }
         response = self._run_request(session, request_params)
@@ -208,10 +227,14 @@ class DatamintDataset:
         """
         from torchvision.datasets.utils import extract_archive
 
-        dataset_info = self._get_datasetinfo_by_name(self.dataset_name)
-        dataset_id = dataset_info['id']
-        if self.version == 'latest':
-            self.version = dataset_info['updated_at']  # dataset_info['last_version']
+        if self.project_name is not None:
+            project_info = self.get_info()
+            dataset_id = project_info['dataset_id']
+        else:
+            dataset_info = self._get_datasetinfo_by_name(self.dataset_name)
+            dataset_id = dataset_info['id']
+        # if self.version == 'latest':
+        #     self.version = dataset_info['updated_at']  # dataset_info['last_version']
 
         with Session() as session:
             jwt_token = self._get_jwttoken(dataset_id, session)
@@ -289,7 +312,7 @@ class DatamintDataset:
                 index -= num_frames
 
             if self.return_metainfo:
-                img_metainfo = dict(img_metainfo) # copy
+                img_metainfo = dict(img_metainfo)  # copy
                 img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations'] if ann['index'] == index]
         else:
             img_metainfo = self.images_metainfo[index]
