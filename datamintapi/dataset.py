@@ -30,7 +30,8 @@ class DatamintDataset:
 
     Args:
         root (str): Root directory of dataset where data already exists or will be downloaded.
-        dataset_name (str): Name of the dataset to download.
+        project_name (str): Name of the project to download.
+        dataset_name (str): Name of the dataset to download. Deprecated, use 'project_name' instead.
         version (int | str): Version of the dataset to download.
             If 'latest', the latest version will be downloaded. Default: 'latest'.
             .. deprecated:: 0.7.0
@@ -100,7 +101,7 @@ class DatamintDataset:
         self.api_key = self.api_handler.api_key
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
-                            f"either by passing it as an argument," +
+                            f"eifther by passing it as an argument," +
                             f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
                             "using datamint-config command line tool."
                             )
@@ -188,6 +189,8 @@ class DatamintDataset:
         return response
 
     def _get_jwttoken(self, dataset_id, session) -> str:
+        if dataset_id is None:
+            raise ValueError("Dataset ID is required to download the dataset.")
         request_params = {
             'method': 'GET',
             'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
@@ -251,6 +254,7 @@ class DatamintDataset:
         from torchvision.datasets.utils import extract_archive
 
         dataset_info = self._get_datasetinfo()
+        self.dataset_id = dataset_info['id']
         self.last_updaded_at = dataset_info['updated_at']
 
         with Session() as session:
@@ -387,7 +391,7 @@ class DatamintDataset:
 
         if local_updated_at is None or local_updated_at != server_updated_at:
             _LOGGER.info(
-                f"A newer version of the dataset is available. Your version: {local_dataset_info}." +
+                f"A newer version of the dataset is available. Your version: {local_updated_at}." +
                 f" Last version: {server_updated_at}."
             )
             self.download()
