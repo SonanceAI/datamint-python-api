@@ -4,19 +4,19 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-from datamintapi.experiment._patcher import initialize_automatic_logging
 from datamintapi.experiment.experiment import Experiment
 import logging
-import os
-from torchmetrics import Recall, Precision, Specificity, F1Score
+from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchmetrics
 from torchvision import transforms as T
+from typing import Sequence
 
 LOGGER = logging.getLogger(__name__)
 
-initialize_automatic_logging()
+## Set API Key ##
+# run `datamint-config` in the terminal to set the API key OR set it here:
+# os.environ["DATAMINT_API_KEY"] = "abc123", # uncomment this line if you have not configured the API key
 
-os.environ["DATAMINT_API_KEY"] = "abc123"
 
 # Define the network architecture:
 
@@ -43,10 +43,11 @@ class Classifier(nn.Module):
 
 
 def main():
-    exp = Experiment(name="Experiment6",
-                     dataset_name='dataset2',
-                    #  root_url='https://stagingapi.datamint.io',
-                     api_key='abc123')
+    # Initialize the experiment. This will create a new experiment on the platform.
+    exp = Experiment(name="Experiment2",
+                     dataset_name='DicomDataset',
+                     #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+                     )
 
     ### Load dataset ###
     dataset_params = dict(
@@ -57,8 +58,8 @@ def main():
     train_dataset = exp.get_dataset("train", **dataset_params)
     test_dataset = exp.get_dataset("test", **dataset_params)
 
-    trainloader = train_dataset.get_dataloader(batch_size=1)
-    testloader = test_dataset.get_dataloader(batch_size=1)
+    trainloader = train_dataset.get_dataloader(batch_size=4)
+    testloader = test_dataset.get_dataloader(batch_size=4)
 
     ####################
 
@@ -69,7 +70,9 @@ def main():
     metrics = [Recall(task="multilabel", num_labels=num_labels, average="macro"),
                Precision(task="multilabel", num_labels=num_labels, average="macro"),
                Specificity(task="multilabel", num_labels=num_labels, average="macro"),
-               F1Score(task="multilabel", num_labels=num_labels, average="macro")
+               F1Score(task="multilabel", num_labels=num_labels, average="macro"),
+               Accuracy(task="multilabel", num_labels=num_labels, average="macro"),
+               MatthewsCorrCoef(task="multilabel", num_labels=num_labels)
                ]
     criterion = nn.BCELoss()
     ####################
@@ -78,11 +81,14 @@ def main():
 
     # Evaluate the model on the test data
     test_loop(model, criterion, testloader, metrics)
+    exp.log_model(model, log_model_attributes=True)
 
 
-def training_loop(model, criterion, trainloader, metrics, lr=0.003):
+def training_loop(model, criterion, trainloader,
+                  metrics: Sequence[torchmetrics.Metric],
+                  lr=0.003):
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    epochs = 2
+    epochs = 4
     with tqdm(total=epochs) as pbar:
         for e in range(epochs):
             pbar.set_description(f"Epoch {e}")
@@ -90,15 +96,14 @@ def training_loop(model, criterion, trainloader, metrics, lr=0.003):
             for batch in trainloader:
                 # batch is a dictionary with keys "images", "labels"
                 images = batch["image"]
-                labels = batch["labels"].float()  # labels is a tensor of shape (batch_size, num_labels)
+                labels = batch["labels"]  # labels is a tensor of shape (batch_size, num_labels)
                 yhat = model(images)
-                loss = criterion(yhat, labels)
+                loss = criterion(yhat, labels.float())
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                loss = criterion(yhat, labels)
                 for metric in metrics:
                     metric.update(yhat, labels)
 
@@ -107,22 +112,25 @@ def training_loop(model, criterion, trainloader, metrics, lr=0.003):
             LOGGER.info(f"Training loss: {epoch_loss}")
             pbar.set_postfix(loss=epoch_loss)
             pbar.update(1)
+        LOGGER.info("Training metrics:")
         for metric in metrics:
-            LOGGER.info(f"training {metric.__class__.__name__}: {metric.compute()}")
+            LOGGER.info(f"\t{metric.__class__.__name__}: {metric.compute()}")
+            metric.reset()
 
     LOGGER.info("Finished training")
 
 
-def test_loop(model, criterion, testloader, metrics: torchmetrics.Metric):
+def test_loop(model, criterion, testloader,
+              metrics: Sequence[torchmetrics.Metric]):
     model.eval()
     eval_loss = 0
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
             images = batch["image"]
-            labels = batch["labels"].float()  # labels is a tensor of shape (batch_size, num_labels)
+            labels = batch["labels"]  # labels is a tensor of shape (batch_size, num_labels)
             pred = model(images)
-            loss = criterion(pred, labels)
+            loss = criterion(pred, labels.float())
             for metric in metrics:
                 metric.update(pred, labels)
             eval_loss += loss.item()
@@ -130,10 +138,15 @@ def test_loop(model, criterion, testloader, metrics: torchmetrics.Metric):
     eval_loss /= len(testloader)
 
     LOGGER.info(f"Eval Loss: {eval_loss}")
+    LOGGER.info("Testing metrics:")
     for metric in metrics:
-        LOGGER.info(f"{metric.__class__.__name__}: {metric.compute()}")
+        LOGGER.info(f"\t{metric.__class__.__name__}: {metric.compute()}")
+        metric.reset()
 
 
 if __name__ == "__main__":
+    import rich.logging
     LOGGER.setLevel(logging.INFO)
+    logging.getLogger().addHandler(rich.logging.RichHandler())
     main()
+

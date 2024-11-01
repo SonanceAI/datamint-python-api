@@ -10,9 +10,27 @@ from datamintapi import Dataset as DatamintDataset
 import os
 import numpy as np
 
-
 _LOGGER = logging.getLogger(__name__)
 
+
+class _DryRunExperimentAPIHandler(ExperimentAPIHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def create_experiment(self, dataset_id: str, name: str, description: str, environment: Dict) -> str:
+        return "dry_run"
+
+    def log_entry(self, exp_id: str, entry: Dict):
+        pass
+
+    def log_summary(self, exp_id: str, result_summary: Dict):
+        pass
+
+    def log_model(self, exp_id: str, model: Union[torch.nn.Module, str, BytesIO], hyper_params: Optional[Dict] = None, torch_save_kwargs: Dict = {}):
+        pass
+
+    def finish_experiment(self, exp_id: str):
+        pass
 
 class Experiment:
 
@@ -21,15 +39,23 @@ class Experiment:
 
     def __init__(self,
                  name: str,
+                 project_name: Optional[str] = None,
                  dataset_id: Optional[str] = None,
                  dataset_name: Optional[str] = None,
                  description: Optional[str] = None,
                  api_key: Optional[str] = None,
                  root_url: Optional[str] = None,
                  dataset_dir: Optional[str] = None,
-                 log_enviroment: bool = True) -> None:
+                 log_enviroment: bool = True,
+                 dry_run: bool = False
+                 ) -> None:
         self.name = name
-        self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
+        self.dry_run = dry_run
+        if dry_run:
+            self.apihandler = _DryRunExperimentAPIHandler(api_key=api_key, root_url=root_url)
+            _LOGGER.warning("Running in dry-run mode. No data will be uploaded to the platform.")
+        else:
+            self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)

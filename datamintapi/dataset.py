@@ -16,6 +16,7 @@ from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
 from .api_handler import APIHandler
 from collections import defaultdict
+from PIL import Image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,14 +47,14 @@ class DatamintDataset:
                  dataset_name: str,
                  version: int | str = 'latest',
                  api_key: Optional[str] = None,
-                 transform: Callable[[torch.Tensor], Any] = None,
-                 target_transform: Callable[[dict], Any] = None,
+                 image_transform: Callable[[torch.Tensor], Any] = None,
+                 mask_transform: Callable[[torch.Tensor], Any] = None,
                  server_url: Optional[str] = None,
                  return_dicom: bool = False,
                  return_metainfo: bool = True,
                  return_seg_annotations: bool = True,
                  return_frame_by_frame: bool = False,
-                 # dicom_transform: Optional[Callable[[pydicom.Dataset], Any]] = None # TODO: Discuss if this will be useful?
+                 return_as_semantic_segmentation: bool = False,
                  ):
         if server_url is None:
             server_url = configs.get_value(configs.APIURL_KEY)
@@ -67,13 +68,14 @@ class DatamintDataset:
 
         self.root = root
 
-        self.transform = transform
-        self.target_transform = target_transform
+        self.image_transform = image_transform
+        self.mask_transform = mask_transform
 
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
         self.return_seg_annotations = return_seg_annotations
         self.return_frame_by_frame = return_frame_by_frame
+        self.return_as_semantic_segmentation = return_as_semantic_segmentation
 
         if isinstance(version, str) and version != 'latest':
             raise ValueError("Version must be an integer or 'latest'")
@@ -129,11 +131,12 @@ class DatamintDataset:
             self.dataset_length = len(self.images_metainfo)
 
         self.subset_indices = list(range(self.dataset_length))
-        self.labels_set, self.label2code = self.get_labels_set()
+        self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
         self.code2label = {v: k for k, v in self.label2code.items()}
         self.num_labels = len(self.labels_set)
+        self.num_segmentation_labels = len(self.segmentation_labels)
 
-    def get_labels_set(self) -> Tuple[List[str], Dict[str, int]]:
+    def get_labels_set(self) -> Tuple[List[str], Dict[str, int], List[str], Dict[str, int]]:
         """
         Returns the set of labels and a dictionary that maps labels to integers.
 
@@ -144,13 +147,21 @@ class DatamintDataset:
             return self.labels_set, self.label2code
 
         all_labels = set()
+        segmentation_labels = set()
         for imginfo in self.images_metainfo:
             if 'frame_labels' in imginfo and imginfo['frame_labels'] is not None:
                 labels = [l for flabels in imginfo['frame_labels'] for l in flabels['label']]
                 all_labels.update(labels)
+            if 'annotations' in imginfo and imginfo['annotations'] is not None:
+                for ann in imginfo['annotations']:
+                    if ann['type'] == 'segmentation':
+                        segmentation_labels.update([ann['name']])
+
         all_labels = sorted(list(all_labels))
         label2code = {label: idx for idx, label in enumerate(all_labels)}
-        return all_labels, label2code
+        segmentation_labels = sorted(list(segmentation_labels))
+        segmentation_label2code = {label: idx+1 for idx, label in enumerate(segmentation_labels)}
+        return all_labels, label2code, segmentation_labels, segmentation_label2code
 
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
@@ -228,10 +239,10 @@ class DatamintDataset:
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
             body.append(f"Root location: {self.root}")
-        if self.transform is not None:
-            body += [repr(self.transform)]
-        if self.target_transform is not None:
-            body += [repr(self.target_transform)]
+        if self.image_transform is not None:
+            body += [repr(self.image_transform)]
+        if self.mask_transform is not None:
+            body += [repr(self.mask_transform)]
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
@@ -351,6 +362,8 @@ class DatamintDataset:
         else:
             img_metainfo = self.images_metainfo[index]
 
+        # FIXME: deal with multiple annotators
+
         if self.return_seg_annotations == False:
             img_metainfo.pop('annotations', None)
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
@@ -358,18 +371,73 @@ class DatamintDataset:
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
         img, ds = self._load_image(filepath, index)
 
+        segmentations = [None] * img.shape[0]
+        seg_labels = [None] * img.shape[0]
+        # Load segmentation annotations
+        for ann in img_metainfo['annotations']:
+            if ann['type'] == 'segmentation':
+                if 'file' not in ann:
+                    _LOGGER.warning(f"Segmentation annotation without file in {img_metainfo['file']})")
+                    continue
+                segfilepath = ann['file']  # png file
+                segfilepath = os.path.join(self.dataset_dir, segfilepath)
+                # FIXME: avoid enforcing resizing the mask
+                seg = np.array(Image.open(segfilepath).convert('L').resize((img.shape[2], img.shape[1]), Image.NEAREST))
+                seg = torch.from_numpy(seg)
+                seg = seg == 255   # binary mask
+                # map the segmentation label to the code
+                seg_code = self.segmentation_label2code[ann['name']]
+                if self.return_frame_by_frame:
+                    frame_index = 0
+                else:
+                    frame_index = ann['index']
+
+                if segmentations[frame_index] is None:
+                    segmentations[frame_index] = []
+                    seg_labels[frame_index] = []
+
+                segmentations[frame_index].append(seg)
+                seg_labels[frame_index].append(seg_code)
+
+        # convert to tensor
+        for i in range(len(segmentations)):
+            if segmentations[i] is not None:
+                segmentations[i] = torch.stack(segmentations[i])
+                seg_labels[i] = torch.tensor(seg_labels[i], dtype=torch.int32)
+            else:
+                segmentations[i] = torch.zeros((1, img.shape[1], img.shape[2]), dtype=torch.bool)
+                seg_labels[i] = torch.zeros(1, dtype=torch.int32)
+
         # process frame_labels
         frame_labels = img_metainfo['frame_labels']
         labels_onehot = self._process_frame_labels(frame_labels, index, img.shape[0])
         # labels_onehot has shape (num_frames, num_labels) or (num_labels, ) if return_frame_by_frame is True
 
-        if self.transform is not None:
-            img = self.transform(img)
+        if self.image_transform is not None:
+            img = self.image_transform(img)
+        if self.mask_transform is not None and segmentations is not None:
+            for i in range(len(segmentations)):
+                if segmentations[i] is not None:
+                    segmentations[i] = self.mask_transform(segmentations[i])
+
+        if self.return_as_semantic_segmentation:
+            if segmentations is not None:
+                new_segmentations = torch.zeros((len(segmentations), len(self.segmentation_labels)+1, img.shape[1], img.shape[2]),
+                                                dtype=torch.uint8)
+                for i in range(len(segmentations)):
+                    # for each frame
+                    new_segmentations[i, seg_labels[i]] += segmentations[i]
+                new_segmentations = new_segmentations > 0
+                # pixels that are not in any segmentation are labeled as background
+                new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
+                segmentations = new_segmentations.float()
+            
+
         if isinstance(img, np.ndarray):
             img = torch.from_numpy(img)
 
-        if self.target_transform is not None:
-            img_metainfo = self.target_transform(img_metainfo)
+        if self.return_frame_by_frame:
+            segmentations = segmentations[0]
 
         ret = {'image': img}
 
@@ -379,6 +447,8 @@ class DatamintDataset:
             ret['metainfo'] = img_metainfo
         if self.return_seg_annotations:
             ret['annotations'] = img_metainfo['annotations']
+            ret['segmentations'] = segmentations
+            ret['seg_labels'] = seg_labels
 
         ret['labels'] = labels_onehot
 
@@ -455,12 +525,14 @@ class DatamintDataset:
             keys = batch[0].keys()
             collated_batch = {}
             for key in keys:
-                if key in batch[0]:
-                    collated_batch[key] = [item[key] for item in batch]
-                    if isinstance(collated_batch[key][0], torch.Tensor):
+                collated_batch[key] = [item[key] for item in batch]
+                if isinstance(collated_batch[key][0], torch.Tensor):
+                    # check if every tensor has the same shape
+                    shapes = [tensor.shape for tensor in collated_batch[key]]
+                    if all(shape == shapes[0] for shape in shapes):
                         collated_batch[key] = torch.stack(collated_batch[key])
-                    elif isinstance(collated_batch[key][0], np.ndarray):
-                        collated_batch[key] = np.stack(collated_batch[key])
+                elif isinstance(collated_batch[key][0], np.ndarray):
+                    collated_batch[key] = np.stack(collated_batch[key])
 
             return collated_batch
 
