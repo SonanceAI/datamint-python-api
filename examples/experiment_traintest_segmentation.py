@@ -25,6 +25,7 @@ from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
 import torchmetrics
 from torchvision import transforms as T
 from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLabV3_MobileNet_V3_Large_Weights
+from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchvision
 from typing import Sequence
 
@@ -35,12 +36,39 @@ LOGGER = logging.getLogger(__name__)
 # run `datamint-config` in the terminal to set the API key OR set it here:
 # os.environ["DATAMINT_API_KEY"] = "abc123", # uncomment this line if you have not configured the API key
 
+
+class ClsMetricForSegmentation(torchmetrics.Metric):
+    def __init__(self, num_labels: int, metrics, **kwargs):
+        super().__init__(**kwargs)
+        self.num_labels = num_labels
+        self.metrics = metrics
+
+    def update(self, yhat, y):
+        yhat_cls = yhat.amax(dim=(2, 3)).float()  # yhat_cls.shape = (batch_size, num_classes)
+        y_cls = y.amax(dim=(2, 3)).float()  # y_cls.shape = (batch_size, num_classes)
+        for metric in self.metrics:
+            metric.update(yhat_cls, y_cls)
+
+    def compute(self):
+        return {metric.__class__.__name__: metric.compute() for metric in self.metrics}
+
+    def reset(self):
+        for metric in self.metrics:
+            metric.reset()
+
+
 def initialize_model(num_classes: int, weights):
+    # Load the pre-trained model.
     model = deeplabv3_mobilenet_v3_large(weights=weights)
 
     model.aux_classifier = None
+    # Freezing the weights of the model
     for param in model.parameters():
         param.requires_grad = False
+
+    # Replace the classifier head with a new one that has the correct number of output classes.
+    # This is specific to the deeplabv3_mobilenet_v3_large model.
+    # For other models, you may need to replace a different part of the model.
     model.classifier = torchvision.models.segmentation.deeplabv3.DeepLabHead(960, num_classes)
 
     return model
@@ -49,8 +77,8 @@ def initialize_model(num_classes: int, weights):
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
     exp = Experiment(name='My First Experiment',
-                     dataset_name='MyDataset',
-                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+                     dataset_name='DicomDataset',
+                     dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
@@ -67,9 +95,12 @@ def main():
         return_as_semantic_segmentation=True,
     )
 
+    # Load the train and test datasets. This returns a subclass of PyTorch dataset object.
     train_dataset = exp.get_dataset("train", **dataset_params)
     test_dataset = exp.get_dataset("test", **dataset_params)
 
+    # Create dataloaders for the train and test datasets.
+    # This method has the convinience of automatically dealing with collate_fn.
     trainloader = train_dataset.get_dataloader(batch_size=4, drop_last=True)
     testloader = test_dataset.get_dataloader(batch_size=4, drop_last=True)
 
@@ -81,6 +112,23 @@ def main():
     model = initialize_model(num_segmentation_classes, weights)
     metrics = [MeanIoU(num_classes=num_segmentation_classes),
                GeneralizedDiceScore(num_classes=num_segmentation_classes)]
+
+    cls_metrics_params = dict(
+        task="multilabel",
+        num_labels=num_segmentation_classes,
+        average="macro"
+    )
+
+    # These metrics will be used when converting the segmentation output to classification output.
+    # A true positive here is when IOU>0.5
+    cls_metrics = [Recall(**cls_metrics_params),
+                   Precision(**cls_metrics_params),
+                   Specificity(**cls_metrics_params),
+                   F1Score(**cls_metrics_params),
+                   Accuracy(**cls_metrics_params),
+                   #    MatthewsCorrCoef(task="multilabel", num_labels=num_labels)
+                   ]
+    metrics.append(ClsMetricForSegmentation(num_segmentation_classes, cls_metrics))
     criterion = nn.CrossEntropyLoss()
     ####################
 
@@ -90,8 +138,8 @@ def main():
     test_loop(model, criterion, testloader, metrics)
 
 
-def training_loop(model, criterion, trainloader, 
-                  metrics:Sequence[torchmetrics.Metric],
+def training_loop(model, criterion, trainloader,
+                  metrics: Sequence[torchmetrics.Metric],
                   lr=0.003):
     optimizer = optim.Adam(model.parameters(), lr=lr)
     epochs = 2
