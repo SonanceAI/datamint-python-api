@@ -163,6 +163,48 @@ class DatamintDataset:
         segmentation_label2code = {label: idx+1 for idx, label in enumerate(segmentation_labels)}
         return all_labels, label2code, segmentation_labels, segmentation_label2code
 
+    def get_framelabel_distribution(self, normalize=False) -> Dict[str, float]:
+        """
+        Returns the distribution of labels in the dataset.
+
+        Returns:
+            Dict[str, int]: The distribution of labels in the dataset.
+        """
+        label_distribution = {label: 0 for label in self.labels_set}
+        for imginfo in self.images_metainfo:
+            if 'frame_labels' in imginfo and imginfo['frame_labels'] is not None:
+                for flabels in imginfo['frame_labels']:
+                    for l in flabels['label']:
+                        label_distribution[l] += 1
+
+        if normalize:
+            total = sum(label_distribution.values())
+            if total == 0:
+                return label_distribution
+            label_distribution = {k: v/total for k, v in label_distribution.items()}
+        return label_distribution
+    
+    def get_segmentationlabel_distribution(self, normalize=False) -> Dict[str, float]:
+        """
+        Returns the distribution of segmentation labels in the dataset.
+
+        Returns:
+            Dict[str, int]: The distribution of segmentation labels in the dataset.
+        """
+        label_distribution = {label: 0 for label in self.segmentation_labels}
+        for imginfo in self.images_metainfo:
+            if 'annotations' in imginfo and imginfo['annotations'] is not None:
+                for ann in imginfo['annotations']:
+                    if ann['type'] == 'segmentation':
+                        label_distribution[ann['name']] += 1
+
+        if normalize:
+            total = sum(label_distribution.values())
+            if total == 0:
+                return label_distribution
+            label_distribution = {k: v/total for k, v in label_distribution.items()}
+        return label_distribution
+    
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
@@ -431,7 +473,6 @@ class DatamintDataset:
                 # pixels that are not in any segmentation are labeled as background
                 new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
                 segmentations = new_segmentations.float()
-            
 
         if isinstance(img, np.ndarray):
             img = torch.from_numpy(img)

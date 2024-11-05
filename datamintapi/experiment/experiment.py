@@ -14,6 +14,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class _DryRunExperimentAPIHandler(ExperimentAPIHandler):
+    """
+    Dry-run implementation of the ExperimentAPIHandler.
+    No data will be uploaded to the platform.
+    """
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -32,7 +37,24 @@ class _DryRunExperimentAPIHandler(ExperimentAPIHandler):
     def finish_experiment(self, exp_id: str):
         pass
 
+
 class Experiment:
+    """
+    Experiment class to log metrics, models, and other information to the platform.
+
+    Args:
+        name (str): Name of the experiment.
+        project_name (str): Name of the project.
+        dataset_id (str): ID of the dataset.
+        dataset_name (str): Name of the dataset.
+        description (str): Description of the experiment.
+        api_key (str): API key for the platform.
+        root_url (str): Root URL of the platform.
+        dataset_dir (str): Directory to store the datasets.
+        log_enviroment (bool): Log the enviroment information.
+        dry_run (bool): Run in dry-run mode. No data will be uploaded to the platform
+
+    """
 
     DATAMINT_DEFAULT_DIR = ".datamint"
     DATAMINT_DATASETS_DIR = 'datasets'
@@ -80,6 +102,8 @@ class Experiment:
                                                     dataset_name)
         self.dataset_id = dataset_info['id']
         self.dataset_name = dataset_info['name']
+        self.dataset_info = dataset_info
+
         self.dataset = None
         # self.loghandler = LogRequestHandler()
 
@@ -96,14 +120,19 @@ class Experiment:
                                                         name=name,
                                                         description=description,
                                                         environment=env_info)
+        self.time_started = datetime.now(datetime.timezone.utc)
+        self.time_finished = None
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
-        import os
+        """
+        Get the enviroment information of the machine such as OS, Python version, etc.
+
+        Returns:
+            Dict: Enviroment information.
+        """
         import platform
-        import torch
         import torchvision
-        import numpy as np
         import psutil
         import socket
 
@@ -288,6 +317,28 @@ class Experiment:
     def _add_finish_callback(self, callback):
         self.finish_callbacks.append(callback)
 
+    def _log_dataset_stats(self, dataset: DatamintDataset):
+        dataset_stats = {
+            'num_samples': len(dataset),
+            'num_labels': len(dataset.num_labels),
+            'num_segmentation_labels': dataset.num_segmentation_labels,
+            'frame_label_distribution': dataset.get_framelabel_distribution(normalize=True),
+            'segmentation_label_distribution': dataset.get_segmentationlabel_distribution(normalize=True),
+        }
+
+        keys_to_get = ['updated_at', 'total_resource']
+        dataset_stats.update({k: v for k, v in dataset.metainfo.items() if k in keys_to_get})
+
+        self.add_to_summary({'dataset_stats': dataset_stats})
+        dataset_params_names = ['return_dicom', 'return_metainfo', 'return_seg_annotations'
+                                'return_frame_by_frame', 'return_as_semantic_segmentation']
+        dataset_stats['dataset_params'] = {k: getattr(dataset, k) for k in dataset_params_names if hasattr(dataset, k)}
+        dataset_stats['dataset_params']['image_transform'] = repr(dataset.image_transform)
+        dataset_stats['dataset_params']['mask_transform'] = repr(dataset.mask_transform)
+
+        self.apihandler.log_entry(exp_id=self.exp_id,
+                                  entry={'dataset_stats': dataset_stats})
+
     def get_dataset(self, split: str = 'all', **kwargs) -> DatamintDataset:
         if split not in ['all', 'train', 'test', 'val']:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
@@ -332,6 +383,9 @@ class Experiment:
         _LOGGER.info("Finishing experiment")
         for callback in self.finish_callbacks:
             callback(self)
+        self.time_finished = datetime.now(datetime.timezone.utc)
+        time_spent_seconds = (self.time_finished - self.time_started).total_seconds()
+        self.add_to_summary({'time_spent_seconds': time_spent_seconds})
         # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
         if self.model is not None:

@@ -120,7 +120,6 @@ def main():
     )
 
     # These metrics will be used when converting the segmentation output to classification output.
-    # A true positive here is when IOU>0.5
     cls_metrics = [Recall(**cls_metrics_params),
                    Precision(**cls_metrics_params),
                    Specificity(**cls_metrics_params),
