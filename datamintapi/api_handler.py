@@ -34,7 +34,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 10
+_PAGE_LIMIT = 50
 
 
 def validate_call(func, *args, **kwargs):
@@ -206,6 +206,8 @@ class APIHandler:
         else:
             name = file_path
 
+        
+
         if session is not None and not isinstance(session, aiohttp.ClientSession):
             raise ValueError("session must be an aiohttp.ClientSession object.")
 
@@ -233,7 +235,8 @@ class APIHandler:
             if is_a_dicom_file:
                 mimetype = 'application/dicom'
 
-        _LOGGER.debug(f"File name '{name}' mimetype: {mimetype}")
+        filename = os.path.basename(name)
+        _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
 
         if anonymize:
             if is_a_dicom_file == True or is_dicom(file_path):
@@ -254,8 +257,8 @@ class APIHandler:
             file_key = 'resource'
             form.add_field('source', 'api')
 
-            form.add_field(file_key, f, filename=name, content_type=mimetype)
-            form.add_field('source_filepath', name)
+            form.add_field(file_key, f, filename=filename, content_type=mimetype)
+            form.add_field('source_filepath', name) # full path to the file
             if mimetype is not None:
                 form.add_field('mimetype', mimetype)
             if channel is not None:
@@ -263,9 +266,10 @@ class APIHandler:
             if modality is not None:
                 form.add_field('modality', modality)
             # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
-            if labels is not None:
-                for i, label in enumerate(labels):
-                    form.add_field(f'labels[{i}]', label)
+            if labels is not None and len(labels) > 0:
+                # comma separated list of labels
+                labels = ','.join([l.strip() for l in labels])
+                form.add_field('labels', labels)
 
             request_params = {
                 'method': 'POST',
@@ -327,8 +331,12 @@ class APIHandler:
                     if segfiles is not None:
                         files_path = segfiles['files']
                         names = segfiles.get('names', [None] * len(files_path))
-                        for f, name in zip(files_path, names):
-                            await self._upload_segmentations_async(rid, file_path=f, name=name)
+                        if isinstance(names, dict):
+                            names = [names]*len(files_path)
+                        frame_indices = segfiles.get('frame_index', [None] * len(files_path))
+                        for f, name, frame_index in zip(files_path, names, frame_indices):
+                            if f is not None:
+                                await self._upload_segmentations_async(rid, file_path=f, name=name, frame_index=frame_index)
                     return rid
 
             tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
@@ -422,6 +430,15 @@ class APIHandler:
 
         files_path, is_list = APIHandler.__process_files_parameter(files_path)
         if segmentation_files is not None:
+            if is_list:
+                if len(segmentation_files) != len(files_path):
+                    raise ValueError("The number of segmentation files must match the number of resources.")
+            else:
+                if isinstance(segmentation_files, list) and isinstance(segmentation_files[0], list):
+                    raise ValueError("segmentation_files should not be a list of lists if files_path is not a list.")
+                if isinstance(segmentation_files, dict):
+                    segmentation_files = [segmentation_files]
+
             segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
                                   for segfiles in segmentation_files]
         loop = asyncio.get_event_loop()
@@ -934,11 +951,11 @@ class APIHandler:
         }
 
         yield from self._run_pagination_request(request_params,
-                                                return_field='data')
+                                                return_field=['data',0,'resources'])
 
     def _run_pagination_request(self,
                                 request_params: Dict,
-                                return_field: Optional[str] = None
+                                return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
         params = request_params['params']
@@ -948,7 +965,11 @@ class APIHandler:
 
             response = self._run_request(request_params).json()
             if return_field is not None:
-                response = response[return_field]
+                if isinstance(return_field, list) or isinstance(return_field, tuple):
+                    for field in return_field:
+                        response = response[field]
+                else:
+                    response = response[return_field]
             for r in response:
                 yield r
 

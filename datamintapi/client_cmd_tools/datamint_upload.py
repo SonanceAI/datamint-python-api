@@ -165,11 +165,29 @@ def _find_segmentation_files(segmentation_root_path: str,
         seg_path = real_seg_root_path / path_structure
         # list all segmentation files (nii.gz, nii, png) in the same folder structure
         seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
+        if len(seg_files) == 0:
+            filename = Path(imgpath).stem
+            seg_path = seg_path / filename
+            seg_files = [fname for ext in acceptable_extensions for fname in seg_path.glob(f'*{ext}')]
 
         if len(seg_files) > 0:
             seginfo = {
                 'files': [str(f) for f in seg_files]
             }
+
+            frame_indices = []
+            for segfile in seg_files:
+                if segfile.suffix == '.png':
+                    try:
+                        frame_index = int(segfile.stem)
+                    except ValueError:
+                        frame_index = None
+
+                    frame_indices.append(frame_index)
+
+            if len(frame_indices) > 0:
+                seginfo['frame_index'] = frame_indices
+
             if segmentation_metainfo is not None:
                 snames_associated = []
                 for segfile in seg_files:
