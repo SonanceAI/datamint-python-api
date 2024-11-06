@@ -1,4 +1,4 @@
-from datamintapi import APIHandler
+from datamintapi.base_api_handler import BaseAPIHandler
 from typing import Optional, Dict, List, Union
 import json
 import logging
@@ -11,7 +11,7 @@ import os
 _LOGGER = logging.getLogger(__name__)
 
 
-class ExperimentAPIHandler(APIHandler):
+class ExperimentAPIHandler(BaseAPIHandler):
     def __init__(self,
                  root_url: Optional[str] = None,
                  api_key: Optional[str] = None):
