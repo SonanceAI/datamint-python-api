@@ -56,7 +56,6 @@ class RootAPIHandler(BaseAPIHandler):
                                             session=None,
                                             modality: Optional[str] = None,
                                             publish: bool = False,
-                                            publish_to: Optional[str] = None,
                                             ) -> str:
         if _is_io_object(file_path):
             name = file_path.name
@@ -157,7 +156,6 @@ class RootAPIHandler(BaseAPIHandler):
                                       channel: Optional[str] = None,
                                       modality: Optional[str] = None,
                                       publish: bool = False,
-                                      publish_to: Optional[str] = None,
                                       segmentation_files: Optional[List[Dict]] = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
@@ -181,7 +179,6 @@ class RootAPIHandler(BaseAPIHandler):
                         channel=channel,
                         modality=modality,
                         publish=publish,
-                        publish_to=publish_to,
                     )
                     if segfiles is not None:
                         files_path = segfiles['files']
@@ -224,13 +221,13 @@ class RootAPIHandler(BaseAPIHandler):
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
             publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
-            publish_to (Optional[str]): The dataset id to publish the resources to.
+            publish_to (Optional[str]): The project name to publish the resources to.
                 They will have the 'published' status and will be added to the dataset.
                 If this is set, `publish` parameter is ignored.
             segmentation_files (Optional[List]): The segmentation files to upload.
 
         Raises:
-            ResourceNotFoundError: If `publish_to` is supplied, and the dataset does not exists.
+            ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
 
         Returns:
             list[str]: The list of new created dicom_ids.
@@ -262,18 +259,21 @@ class RootAPIHandler(BaseAPIHandler):
                                             mung_filename=mung_filename,
                                             channel=channel,
                                             publish=publish,
-                                            publish_to=publish_to,
                                             segmentation_files=segmentation_files,
                                             )
 
         resource_ids = loop.run_until_complete(task)
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
-        if publish:
+
+        if publish_to is not None:
+            self.publish_resources(resource_ids,
+                                   project_name=publish_to)
+        elif publish:
             _USER_LOGGER.info('Publishing resources')
             for rid in resource_ids:
                 if rid is not None and not isinstance(rid, Exception):
                     try:
-                        self.publish_resource(rid, publish_to)
+                        self.publish_resources(rid, publish_to)
                     except Exception as e:
                         _LOGGER.error(f"Error publishing resource {rid}: {e}")
                         if on_error == 'raise':
@@ -283,40 +283,85 @@ class RootAPIHandler(BaseAPIHandler):
             return resource_ids
         return resource_ids[0]
 
-    def publish_resource(self,
-                         resource_id: str,
-                         dataset_id: Optional[str] = None) -> None:
+    def publish_resources(self,
+                          resource_ids: Union[str, Sequence[str]],
+                          project_name: Optional[str] = None,
+                          ) -> None:
         """
         Publish a resource, chaging its status to 'published'.
 
         Args:
-            resource_id (str): The resource unique id.
-            dataset_id (Optional[str]): The dataset unique id to publish the resource to.
+            resource_ids (str|Sequence[str]): The resource unique id or a list of resource unique ids.
+            project_name (str): The project name to publish the resource to.
 
         Raises:
-            ResourceNotFoundError: If the resource does not exists or the dataset does not exists.
+            ResourceNotFoundError: If the resource does not exists or the project does not exists.
 
         """
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids]
+
+        if project_name is None:
+            for resource_id in resource_ids:
+                params = {
+                    'method': 'POST',
+                    'url': f'{self.root_url}/resources/{resource_id}/publish',
+                }
+
+                try:
+                    self._run_request(params)
+                except ResourceNotFoundError:
+                    raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+                except HTTPError as e:
+                    if BaseAPIHandler._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
+                        _LOGGER.warning(f"Resource {resource_id} is not in inbox status. Skipping publishing")
+                    else:
+                        raise e
+            return
+
+        # get the project id by its name
+        project = self.get_project_by_name(project_name)
+        if 'error' in project:
+            raise ResourceNotFoundError('project', {'project_name': project_name})
+
+        dataset_id = project['dataset_id']
+
         params = {
             'method': 'POST',
-            'url': f'{self.root_url}/resources/{resource_id}/publish',
+            'url': f'{self.root_url}/datasets/{dataset_id}/resources',
+            'json': {'resource_ids_to_add': resource_ids, 'all_files_selected': True}
+        }
+
+        self._run_request(params)
+
+    def get_project_by_name(self, project_name: str) -> Dict:
+        """
+        Get a project by its name.
+
+        Args:
+            project_name (str): The project name.
+
+        Returns:
+            dict: The project information.
+
+        Raises:
+            ResourceNotFoundError: If the project does not exists.
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects',
         }
 
         try:
-            self._run_request(params)
-        except ResourceNotFoundError:
-            raise ResourceNotFoundError('resource', {'resource_id': resource_id})
-        except HTTPError as e:
-            if BaseAPIHandler._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
-                _LOGGER.warning(f"Resource {resource_id} is not in inbox status. Skipping publishing")
-            else:
-                raise e
+            all_projects = self._run_request(request_params).json()['data']
+            for project in all_projects:
+                if project['name'] == project_name:
+                    return project
+            return {'error': 'No project with specified name found',
+                    'all_projects': [project['name'] for project in all_projects]}
 
-        if dataset_id is not None:
-            try:
-                raise NotImplementedError("publishing to a dataset is not implemented yet.")
-            except ResourceNotFoundError:
-                raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
+        except ResourceNotFoundError:
+            raise ResourceNotFoundError('project', {'project_name': project_name})
 
     @staticmethod
     def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Tuple[Sequence[str | IO], bool]:
