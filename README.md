@@ -42,6 +42,13 @@ from datamintapi import APIHandler
 api_handler = APIHandler(api_key='my_api_key')
 ```
 
+Tutorials
+---------
+
+You can find example notebooks in the `notebooks` folder:
+
+- [Uploading your resources](notebooks/upload_data.ipynb)
+
 Other functionalities
 ---------------------
 
