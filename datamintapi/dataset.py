@@ -14,7 +14,8 @@ from torch.utils.data import DataLoader
 import torch
 from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
-from .api_handler import APIHandler, DatamintException
+from .api_handler import APIHandler
+from .base_api_handler import DatamintException
 from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
