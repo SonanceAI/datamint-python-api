@@ -35,7 +35,7 @@ python my_script.py
 os.environ["DATAMINT_API_KEY"] = "my_api_key"
 ```
 
-3.  Specify API key in the [APIHandler](datamintapi/api_handler.py#L95) constructor:
+3.  Specify API key in the [APIHandler](datamintapi/api_handler.py) constructor:
 
 ```python
 from datamintapi import APIHandler
