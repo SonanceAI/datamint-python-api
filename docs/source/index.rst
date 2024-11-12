@@ -25,8 +25,10 @@ Datamint
    :caption: Contents:
 
    getting_started
+   setup_api_key
    command_line_tools
    client_api
+   pytorch_integration
 
 
 .. toctree::
