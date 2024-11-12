@@ -147,36 +147,64 @@ With ``auto_convert=True``, the function uses the resource mimetype to automatic
 If you do not want this, but the bytes itself, use the ``auto_convert=False``.
 
 
-Publishing a resource
+Publishing resources
 ---------------------
 
-To publish a resource, use the :py:meth:`publish_resource() <datamintapi.api_handler.APIHandler.publish_resource>` method:
+To publish a resource, use :py:meth:`publish_resource() <datamintapi.api_handler.APIHandler.publish_resource>`:
 
 .. code-block:: python
 
     resources = api_handler.get_resources(status='inbox')
     resource_id = resources[0]['id'] # assuming there is at least one resource in the inbox
 
+    # Change status from 'inbox' to 'published'
     api_handler.publish_resource(resource_id)
+
+To publish to a project, pass the project name or id as an argument:
+
+.. code-block:: python
+
+    api_handler.publish_resource(resource_id, project_name='ProjectName')
 
 You can also publish resources while uploading them:
 
 .. code-block:: python
 
     resource_id = api_handler.upload_resources(files_path='/path/to/video_data.mp4',
-                                               publish=True
+                                               publish=True,
+                                               # publish_to='ProjectName' # optional
                                                )
 
 Upload segmentation
 -------------------
 
-To upload a segmentation, use the :py:meth:`upload_segmentation() <datamintapi.api_handler.APIHandler.upload_segmentation>` method:
+To upload a segmentation, use :py:meth:`upload_segmentations() <datamintapi.api_handler.APIHandler.upload_segmentations>`:
 
 .. code-block:: python
     
     resource_id = api_handler.upload_resources("/path/to/dicom1.dcm") # or use an existing resource_id
-    api_handler.upload_segmentation(resource_id, 'path/to/segmentation.nifti', 'SegmentationName')
+    api_handler.upload_segmentations(resource_id, 
+                                    'path/to/segmentation.nii.gz', # Can be a nifti file or an png file
+                                     name='SegmentationName')
 
+
+If your segmentation has multiple classes, you can pass a dictionary mapping pixel values to class names.
+Let's say you have a segmentation with 2 classes, where pixel value 0 is background, 1 is 'tumor', and 2 is 'metal':
+
+.. code-block:: python
+
+    class_names = {
+        # Do not specify the background class, it is always 0 
+        1: "tumor",
+        2: "metal",
+    }
+
+    api_handler.upload_segmentations(resource_id, 
+                                    'path/to/segmentation.nii.gz', # Can be a nifti file or an png file
+                                     name=class_names
+                                    )
+
+See also the tutorial notebook on uploading data: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
 
 Dataset
 -------

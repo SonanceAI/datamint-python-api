@@ -37,11 +37,11 @@ To manage Datamint configurations, just run
 
 It starts an interactive prompt, guiding you through the configuration process.
 
-To set the API key and URL without the interactive prompt, use the command-line options:
+To set the API key without the interactive prompt, use the command-line option ``--api-key``:
 
 .. code-block:: bash
 
-    datamint-config --api-key YOUR_API_KEY --url "https://stagingapi.datamint.io"
+    datamint-config --api-key YOUR_API_KEY
 
 Uploading DICOMs/resources to Datamint server
 ---------------------------------------------
