@@ -147,6 +147,16 @@ class BaseAPIHandler:
 
             raise e
 
+    def _check_errors_response_json(self,
+                                    response):
+        response_json = response.json()
+        if isinstance(response_json, dict):
+            response_json = [response_json]
+        if isinstance(response_json, list):
+            for r in response_json:
+                if isinstance(r, dict) and 'error' in r:
+                    raise DatamintException(r['error'])
+
     def _run_request(self,
                      request_args: dict,
                      session: Session = None):
@@ -168,7 +178,7 @@ class BaseAPIHandler:
 
     def _run_pagination_request(self,
                                 request_params: Dict,
-                                return_field: Optional[str] = None
+                                return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
         params = request_params['params']
@@ -176,9 +186,15 @@ class BaseAPIHandler:
             params['offset'] = offset
             params['limit'] = _PAGE_LIMIT
 
-            response = self._run_request(request_params).json()
+            response = self._run_request(request_params)
+            self._check_errors_response_json(response)
+            response = response.json()
             if return_field is not None:
-                response = response[return_field]
+                if isinstance(return_field, list) or isinstance(return_field, tuple):
+                    for field in return_field:
+                        response = response[field]
+                else:
+                    response = response[return_field]
             for r in response:
                 yield r
 
@@ -216,3 +232,31 @@ class BaseAPIHandler:
             return nib.load(file_path)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
+
+
+    def create_project(self, 
+                       name: str,
+                       description: str,
+                       is_active_learning:bool=False) -> dict:
+        """
+        Create a new project.
+
+        Args:
+            name (str): The name of the project.
+
+        Returns:
+            dict: The created project.
+
+        Raises:
+            DatamintException: If the project could not be created.
+        """
+        request_args = {
+            'url': self._get_endpoint_url('projects'),
+            'method': 'POST',
+            'json': {'name': name, 
+                     'is_active_learning': is_active_learning,
+                     'description': description}
+        }
+        response = self._run_request(request_args)
+        self._check_errors_response_json(response)
+        return response.json()
