@@ -28,7 +28,7 @@ from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLa
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchvision
 from typing import Sequence
-
+from torchvision.transforms import v2
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,10 +77,9 @@ def initialize_model(num_classes: int, weights):
 
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
-    exp = Experiment(name='My First Experiment',
+    exp = Experiment(name='My First Experiment2',
                      dataset_name='project_test_dataset',
-                    # dataset_id='c042e016-7645-4480-a287-eb884c0e46e3',
-                     dry_run=False  # Set dry_run=True to avoid uploading the results to the platform
+                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
@@ -89,7 +88,8 @@ def main():
     dataset_params = dict(
         return_frame_by_frame=True,
         image_transform=T.Compose([T.Resize((520, 520)),
-                                   T.Lambda(lambda x: torch.cat([x, x, x], dim=0)), # Convert to 3-channel image
+                                   #    T.Lambda(lambda x: torch.cat([x, x, x], dim=0)), # Convert to 3-channel image
+                                   v2.RGB(),
                                    weights.transforms()
                                    ]),
         mask_transform=T.Resize((520, 520), antialias=False, interpolation=T.InterpolationMode.NEAREST),
@@ -109,7 +109,6 @@ def main():
     ####################
 
     num_segmentation_classes = train_dataset.num_segmentation_labels+1  # +1 for the background class
-    print(f"Number of segmentation classes: {num_segmentation_classes}")
 
     ### Define the model, loss function, and metrics ###
     model = initialize_model(num_segmentation_classes, weights)
