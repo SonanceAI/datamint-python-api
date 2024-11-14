@@ -239,7 +239,6 @@ class DatamintDataset:
             'method': 'GET',
             'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
             'headers': {'apikey': self.api_key},
-            'params': {'version': self.version},
             'stream': True
         }
         response = self._run_request(session, request_params)

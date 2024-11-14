@@ -1,7 +1,7 @@
 import logging
-from .exp_api_handler import ExperimentAPIHandler
-from datamintapi.api_handler import DatamintException
-from datetime import datetime
+from datamintapi.api_handler import APIHandler
+from datamintapi.base_api_handler import DatamintException
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union, Any
 from collections import defaultdict
 import torch
@@ -13,7 +13,7 @@ import numpy as np
 _LOGGER = logging.getLogger(__name__)
 
 
-class _DryRunExperimentAPIHandler(ExperimentAPIHandler):
+class _DryRunExperimentAPIHandler(APIHandler):
     """
     Dry-run implementation of the ExperimentAPIHandler.
     No data will be uploaded to the platform.
@@ -77,7 +77,7 @@ class Experiment:
             self.apihandler = _DryRunExperimentAPIHandler(api_key=api_key, root_url=root_url)
             _LOGGER.warning("Running in dry-run mode. No data will be uploaded to the platform.")
         else:
-            self.apihandler = ExperimentAPIHandler(api_key=api_key, root_url=root_url)
+            self.apihandler = APIHandler(api_key=api_key, root_url=root_url)
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
@@ -120,7 +120,7 @@ class Experiment:
                                                         name=name,
                                                         description=description,
                                                         environment=env_info)
-        self.time_started = datetime.now(datetime.timezone.utc)
+        self.time_started = datetime.now(timezone.utc)
         self.time_finished = None
 
     @staticmethod
@@ -171,7 +171,7 @@ class Experiment:
         self.model_hyper_params = hyper_params
 
     @staticmethod
-    def _get_dataset_info(apihandler: ExperimentAPIHandler,
+    def _get_dataset_info(apihandler: APIHandler,
                           dataset_id,
                           dataset_name) -> Dict:
         if dataset_id is None:
