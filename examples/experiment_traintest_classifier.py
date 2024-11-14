@@ -9,7 +9,7 @@ import logging
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchmetrics
 from torchvision import transforms as T
-from typing import Sequence
+from typing import Sequence, Dict
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,15 +44,15 @@ class Classifier(nn.Module):
 
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
-    exp = Experiment(name="Experiment2",
-                     dataset_name='DicomDataset',
-                     #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+    exp = Experiment(name="Experiment6",
+                     dataset_name='project_test_dataset',
+                     dry_run=False  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
     dataset_params = dict(
         return_frame_by_frame=True,
-        transform=T.Resize((28, 28))
+        image_transform=T.Resize((28, 28))
     )
 
     train_dataset = exp.get_dataset("train", **dataset_params)
@@ -64,15 +64,22 @@ def main():
     ####################
 
     num_labels = train_dataset.num_labels
+    task = "multilabel" if num_labels > 1 else "binary"
+
+    cls_metrics_params = dict(
+        task=task,
+        num_labels=num_labels,
+        average="macro"
+    )
 
     ### Define the model, loss function, and metrics ###
     model = Classifier(num_labels=num_labels)
-    metrics = [Recall(task="multilabel", num_labels=num_labels, average="macro"),
-               Precision(task="multilabel", num_labels=num_labels, average="macro"),
-               Specificity(task="multilabel", num_labels=num_labels, average="macro"),
-               F1Score(task="multilabel", num_labels=num_labels, average="macro"),
-               Accuracy(task="multilabel", num_labels=num_labels, average="macro"),
-               MatthewsCorrCoef(task="multilabel", num_labels=num_labels)
+    metrics = [Recall(**cls_metrics_params),
+               Precision(**cls_metrics_params),
+               Specificity(**cls_metrics_params),
+               F1Score(**cls_metrics_params),
+               Accuracy(**cls_metrics_params),
+               MatthewsCorrCoef(task=task, num_labels=num_labels)
                ]
     criterion = nn.BCELoss()
     ####################
@@ -80,15 +87,21 @@ def main():
     training_loop(model, criterion, trainloader, metrics)
 
     # Evaluate the model on the test data
-    test_loop(model, criterion, testloader, metrics)
-    exp.log_model(model, log_model_attributes=True)
+    results = test_loop(model, criterion, testloader, metrics)
+
+    exp.log_classification_predictions(predictions=results['predictions'],
+                                       label_names=test_dataset.labels_set,
+                                       resource_ids=results['resource_ids'],
+                                       dataset_split="test",
+                                       frame_idxs=results['frame_idxs']
+                                       )
 
 
 def training_loop(model, criterion, trainloader,
                   metrics: Sequence[torchmetrics.Metric],
                   lr=0.003):
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    epochs = 4
+    epochs = 2
     with tqdm(total=epochs) as pbar:
         for e in range(epochs):
             pbar.set_description(f"Epoch {e}")
@@ -121,19 +134,32 @@ def training_loop(model, criterion, trainloader,
 
 
 def test_loop(model, criterion, testloader,
-              metrics: Sequence[torchmetrics.Metric]):
+              metrics: Sequence[torchmetrics.Metric]) -> Dict:
     model.eval()
     eval_loss = 0
+
+    predictions = []
+    resourse_ids = []
+    frame_idxs = []
+
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
             images = batch["image"]
             labels = batch["labels"]  # labels is a tensor of shape (batch_size, num_labels)
+            resourse_ids_i = [b['id'] for b in batch['metainfo']]
+            frame_idxs_i = [b['frame_index'] for b in batch['metainfo']]
+
             pred = model(images)
             loss = criterion(pred, labels.float())
             for metric in metrics:
                 metric.update(pred, labels)
             eval_loss += loss.item()
+
+            # For logging
+            predictions.append(pred)
+            resourse_ids.extend(resourse_ids_i)
+            frame_idxs.extend(frame_idxs_i)
 
     eval_loss /= len(testloader)
 
@@ -143,10 +169,13 @@ def test_loop(model, criterion, testloader,
         LOGGER.info(f"\t{metric.__class__.__name__}: {metric.compute()}")
         metric.reset()
 
+    return {'predictions': torch.cat(predictions),
+            'resource_ids': resourse_ids,
+            'frame_idxs': frame_idxs}
+
 
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()
-

@@ -32,6 +32,7 @@ from typing import Sequence
 
 LOGGER = logging.getLogger(__name__)
 
+
 ## Set API Key ##
 # run `datamint-config` in the terminal to set the API key OR set it here:
 # os.environ["DATAMINT_API_KEY"] = "abc123", # uncomment this line if you have not configured the API key
@@ -77,8 +78,9 @@ def initialize_model(num_classes: int, weights):
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
     exp = Experiment(name='My First Experiment',
-                     dataset_name='DicomDataset',
-                     dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+                     dataset_name='project_test_dataset',
+                    # dataset_id='c042e016-7645-4480-a287-eb884c0e46e3',
+                     dry_run=False  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
@@ -87,7 +89,7 @@ def main():
     dataset_params = dict(
         return_frame_by_frame=True,
         image_transform=T.Compose([T.Resize((520, 520)),
-                                   T.Lambda(lambda x: torch.cat([x, x, x], dim=0)),
+                                   T.Lambda(lambda x: torch.cat([x, x, x], dim=0)), # Convert to 3-channel image
                                    weights.transforms()
                                    ]),
         mask_transform=T.Resize((520, 520), antialias=False, interpolation=T.InterpolationMode.NEAREST),
@@ -107,6 +109,7 @@ def main():
     ####################
 
     num_segmentation_classes = train_dataset.num_segmentation_labels+1  # +1 for the background class
+    print(f"Number of segmentation classes: {num_segmentation_classes}")
 
     ### Define the model, loss function, and metrics ###
     model = initialize_model(num_segmentation_classes, weights)
@@ -114,7 +117,7 @@ def main():
                GeneralizedDiceScore(num_classes=num_segmentation_classes)]
 
     cls_metrics_params = dict(
-        task="multilabel",
+        task="multilabel" if num_segmentation_classes > 1 else "binary",
         num_labels=num_segmentation_classes,
         average="macro"
     )
@@ -202,5 +205,6 @@ def test_loop(model, criterion, testloader, metrics: Sequence[torchmetrics.Metri
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
+    logging.getLogger('datamintapi').setLevel(logging.INFO)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()

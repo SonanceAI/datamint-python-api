@@ -183,7 +183,7 @@ class DatamintDataset:
                 return label_distribution
             label_distribution = {k: v/total for k, v in label_distribution.items()}
         return label_distribution
-    
+
     def get_segmentationlabel_distribution(self, normalize=False) -> Dict[str, float]:
         """
         Returns the distribution of segmentation labels in the dataset.
@@ -204,7 +204,7 @@ class DatamintDataset:
                 return label_distribution
             label_distribution = {k: v/total for k, v in label_distribution.items()}
         return label_distribution
-    
+
     def _check_integrity(self):
         for imginfo in self.images_metainfo:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
@@ -389,8 +389,8 @@ class DatamintDataset:
         return labels_onehot_merged
 
     def __getitem_internal(self, index: int) -> Dict[str, Any]:
-        # Find the correct filepath and index
         if self.return_frame_by_frame:
+            # Find the correct filepath and index
             for i, num_frames in enumerate(self.num_frames_per_dicom):
                 if index < num_frames:
                     img_metainfo = self.images_metainfo[i]
@@ -398,6 +398,8 @@ class DatamintDataset:
                 index -= num_frames
 
             img_metainfo = dict(img_metainfo)  # copy
+            # insert frame index
+            img_metainfo['frame_index'] = index
             if self.return_metainfo and self.return_seg_annotations:
                 img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations'] if ann['index'] == index]
         else:

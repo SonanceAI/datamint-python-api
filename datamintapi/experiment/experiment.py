@@ -53,7 +53,8 @@ class Experiment:
         dataset_dir (str): Directory to store the datasets.
         log_enviroment (bool): Log the enviroment information.
         dry_run (bool): Run in dry-run mode. No data will be uploaded to the platform
-
+        auto_log (bool): Automatically log the experiment using patching mechanisms.
+        tags (List[str]): Tags to add to the experiment.
     """
 
     DATAMINT_DEFAULT_DIR = ".datamint"
@@ -69,8 +70,13 @@ class Experiment:
                  root_url: Optional[str] = None,
                  dataset_dir: Optional[str] = None,
                  log_enviroment: bool = True,
-                 dry_run: bool = False
+                 dry_run: bool = False,
+                 auto_log=True,
+                 tags: Optional[List[str]] = None
                  ) -> None:
+        from ._patcher import initialize_automatic_logging
+        if auto_log:
+            initialize_automatic_logging()
         self.name = name
         self.dry_run = dry_run
         if dry_run:
@@ -122,6 +128,9 @@ class Experiment:
                                                         environment=env_info)
         self.time_started = datetime.now(timezone.utc)
         self.time_finished = None
+        if tags is not None:
+            self.apihandler.log_entry(exp_id=self.exp_id,
+                                      entry={'tags': list(tags)})
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
@@ -240,6 +249,12 @@ class Experiment:
         step = self._set_step(step)
         epoch = self._set_epoch(epoch)
 
+        # Fix nan values
+        for name, value in metrics.items():
+            if np.isnan(value):
+                _LOGGER.debug(f"Metric {name} has a nan value. Replacing with 'NAN'.")
+                metrics[name] = 'NAN'
+
         if show_in_summary == True:
             for name, value in metrics.items():
                 self.add_to_summary({'metrics': {name: value}})
@@ -317,10 +332,23 @@ class Experiment:
     def _add_finish_callback(self, callback):
         self.finish_callbacks.append(callback)
 
-    def _log_dataset_stats(self, dataset: DatamintDataset):
+    def log_dataset_stats(self, dataset: DatamintDataset,
+                          dataset_entry_name: str = 'default'):
+        """
+        Log the statistics of the dataset.
+
+        Args:
+            dataset (DatamintDataset): The dataset to log the statistics.
+            dataset_entry_name (str): The name of the dataset entry.
+                Used to distinguish between different datasets and dataset splits.
+        """
+
+        if dataset_entry_name is None:
+            dataset_entry_name = 'default'
+
         dataset_stats = {
             'num_samples': len(dataset),
-            'num_labels': len(dataset.num_labels),
+            'num_frame_labels': dataset.num_labels,
             'num_segmentation_labels': dataset.num_segmentation_labels,
             'frame_label_distribution': dataset.get_framelabel_distribution(normalize=True),
             'segmentation_label_distribution': dataset.get_segmentationlabel_distribution(normalize=True),
@@ -337,7 +365,7 @@ class Experiment:
         dataset_stats['dataset_params']['mask_transform'] = repr(dataset.mask_transform)
 
         self.apihandler.log_entry(exp_id=self.exp_id,
-                                  entry={'dataset_stats': dataset_stats})
+                                  entry={'dataset_stats': {dataset_entry_name: dataset_stats}})
 
     def get_dataset(self, split: str = 'all', **kwargs) -> DatamintDataset:
         if split not in ['all', 'train', 'test', 'val']:
@@ -352,6 +380,7 @@ class Experiment:
                                        **kwargs)
 
         if split == 'all':
+            self.log_dataset_stats(self.dataset, split)
             return self.dataset
 
         # FIXME: samples should be marked as train, test, val previously
@@ -374,7 +403,93 @@ class Experiment:
         elif split == 'val':
             indices_to_split = val_indices
 
-        return self.dataset.subset(indices_to_split)
+        dataset = self.dataset.subset(indices_to_split)
+        self.log_dataset_stats(dataset, split)
+        return dataset
+
+    def _detect_machine_learning_task(self, dataset: DatamintDataset) -> str:
+        # Detect machine learning task based on the dataset params
+        if dataset.return_as_semantic_segmentation:
+            return 'semantic segmentation'
+        elif dataset.return_seg_annotations:
+            return 'instance segmentation'
+
+        if len(dataset.num_labels) == 1:
+            return 'binary classification'
+        if len(dataset.num_labels) > 1:
+            return 'multilabel classification'
+
+        return 'unknown'
+
+    def log_predictions(self,
+                        predictions: List[Dict[str, Any]],
+                        dataset_split: Optional[str] = None,
+                        step: Optional[int] = None,
+                        epoch: Optional[int] = None):
+        """
+        Log the predictions of the model.
+
+        Args:
+            predictions (List[Dict[str, Any]]): The predictions to log. See example below.
+            step (Optional[int]): The step of the experiment.
+            epoch (Optional[int]): The epoch of the experiment.
+
+
+        Example:
+            >>> predictions = [
+            >>>            {
+            >>>                'resource_id': '123',
+            >>>                'frame_index': 0, # If not provided, it will be assumed predictions are for the whole resource.
+            >>>                'predicted': [
+            >>>                    {
+            >>>                        'identifier': 'has_fracture',
+            >>>                        'value': True, # Optional
+            >>>                        'confidence': 0.9,  # Optional
+            >>>                        'ground_truth': True  # Optional
+            >>>                    },
+            >>>                    {
+            >>>                        'identifier': 'tumor',
+            >>>                        'value': segmentation1,  # Optional. numpy array of shape (H, W)
+            >>>                        'confidence': 0.9  # Optional. Can be mask.max()
+            >>>                    }
+            >>>                ]
+            >>>            }]
+            >>> exp.log_predictions(predictions)
+        """
+
+        self._set_step(step)
+        self._set_epoch(epoch)
+
+        self.apihandler.log_entry(exp_id=self.exp_id,
+                                  entry={'type': 'prediction',
+                                         'predictions': predictions,
+                                         'dataset_split': dataset_split,
+                                         'step': step,
+                                         })
+
+    def log_classification_predictions(self,
+                                       predictions: np.ndarray,
+                                       label_names: List[str],
+                                       resource_ids: List[str],
+                                       dataset_split: Optional[str] = None,
+                                       frame_idxs: Optional[List[int]] = None,
+                                       step: Optional[int] = None,
+                                       epoch: Optional[int] = None):
+        """
+        Log the classification predictions of the model.
+        """
+
+        predictions = predictions.tolist()
+        predictions = [{'resource_id': resource_id,
+                        'predicted': [{'identifier': label_names[i],
+                                       'value': pred[i]}
+                                      for i in range(len(pred))]}
+                       for resource_id, pred in zip(resource_ids, predictions)]
+
+        if frame_idxs is not None:
+            for pred, frame_idx in zip(predictions, frame_idxs):
+                pred['frame_index'] = frame_idx
+        self.log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
 
     def finish(self):
         if self.is_finished:
@@ -383,10 +498,14 @@ class Experiment:
         _LOGGER.info("Finishing experiment")
         for callback in self.finish_callbacks:
             callback(self)
-        self.time_finished = datetime.now(datetime.timezone.utc)
+        self.time_finished = datetime.now(timezone.utc)
         time_spent_seconds = (self.time_finished - self.time_started).total_seconds()
         self.add_to_summary({'time_spent_seconds': time_spent_seconds})
         # self.apihandler.finish_experiment(self.exp_id)
+
+        task = self._detect_machine_learning_task(self.dataset)
+        self.add_to_summary({'detected_task': task})
+
         self.log_summary(result_summary=self.summary_log)
         if self.model is not None:
             self.log_model(model=self.model, hyper_params=self.model_hyper_params)
@@ -400,11 +519,11 @@ class LogHistory:
 
     def append(self, dt: datetime = None, **kwargs):
         if dt is None:
-            dt = datetime.now(datetime.timezone.utc)
+            dt = datetime.now(timezone.utc)
         else:
             if dt.tzinfo is None:
                 _LOGGER.warning("No timezone information provided. Assuming UTC.")
-                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                dt = dt.replace(tzinfo=timezone.utc)
 
         item = {
             # datetime in GMT+0
