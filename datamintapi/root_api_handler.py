@@ -302,8 +302,9 @@ class RootAPIHandler(BaseAPIHandler):
 
             try:
                 self._run_request(params)
-            except ResourceNotFoundError:
-                raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+            except ResourceNotFoundError as e:
+                e.set_params('resource', {'resource_id': resource_id})
+                raise e
             except HTTPError as e:
                 if project_name is None and BaseAPIHandler._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
                     _LOGGER.warning(f"Resource {resource_id} is not in inbox status. Skipping publishing")
@@ -354,8 +355,9 @@ class RootAPIHandler(BaseAPIHandler):
             return {'error': 'No project with specified name found',
                     'all_projects': [project['name'] for project in all_projects]}
 
-        except ResourceNotFoundError:
-            raise ResourceNotFoundError('project', {'project_name': project_name})
+        except ResourceNotFoundError as e:
+            e.set_params('project', {'project_name': project_name})
+            raise e
 
     @staticmethod
     def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Tuple[Sequence[str | IO], bool]:
@@ -413,8 +415,9 @@ class RootAPIHandler(BaseAPIHandler):
                 }
 
                 resources.append(self._run_request(request_params).json())
-        except ResourceNotFoundError:
-            raise ResourceNotFoundError('resource', {'resource_id': i})
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': i})
+            raise e
 
         return resources[0] if input_is_a_string else resources
 
@@ -596,8 +599,9 @@ class RootAPIHandler(BaseAPIHandler):
                     resource_file = response.content
             else:
                 resource_file = response.content
-        except ResourceNotFoundError:
-            raise ResourceNotFoundError('file', {'resource_id': resource_id})
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource_id})
+            raise e
 
         if save_path is not None:
             with open(save_path, 'wb') as f:
@@ -628,8 +632,9 @@ class RootAPIHandler(BaseAPIHandler):
                               }
             try:
                 self._run_request(request_params)
-            except ResourceNotFoundError:
-                raise ResourceNotFoundError('resource', {'resource_id': rid})
+            except ResourceNotFoundError as e:
+                e.set_params('resource', {'resource_id': rid})
+                raise e
 
     def get_datasetsinfo_by_name(self, dataset_name: str) -> List[Dict]:
         request_params = {
@@ -701,3 +706,19 @@ class RootAPIHandler(BaseAPIHandler):
         except HTTPError as e:
             _LOGGER.error(f"Error creating user: {e.response.text}")
             raise e
+
+    def get_projects(self) -> List[Dict]:
+        """
+        Get the list of projects.
+
+        Returns:
+            List[Dict]: The list of projects.
+
+        Example:
+            >>> api_handler.get_projects()
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects'
+        }
+        return self._run_request(request_params).json()['data']

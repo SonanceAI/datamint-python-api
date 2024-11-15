@@ -75,9 +75,16 @@ class ResourceNotFoundError(DatamintException):
             resource_type (str): A resource type.
             params (dict): Dict of params identifying the sought resource.
         """
-        super().__init__(f"Resource '{resource_type}' not found for parameters: {params}")
+        super().__init__()
         self.resource_type = resource_type
         self.params = params
+
+    def set_params(self, resource_type:str, params: dict):
+        self.resource_type = resource_type
+        self.params = params
+
+    def __str__(self):
+        return f"Resource '{self.resource_type}' not found for parameters: {self.params}"
 
 
 class BaseAPIHandler:
@@ -134,14 +141,16 @@ class BaseAPIHandler:
         try:
             response.raise_for_status()
         except HTTPError as e:
-            _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
-            if BaseAPIHandler._has_status_code(e, 404):
+            status_code = BaseAPIHandler.get_status_code(e)
+            if status_code >= 500 and status_code < 600:
+                _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
+            if status_code == 404:
                 try:
                     error_data = response.json()
                 except Exception as e2:
                     _LOGGER.error(f"Error parsing the response. {e2}")
                 else:
-                    if error_data['message'] == 'Not Found':
+                    if ' not found' in error_data['message'].lower():
                         # Will be caught by the caller and properly initialized:
                         raise ResourceNotFoundError('unknown', {})
 
@@ -205,8 +214,14 @@ class BaseAPIHandler:
             offset += _PAGE_LIMIT
 
     @staticmethod
+    def get_status_code(e) -> int:
+        if not hasattr(e, 'response') or e.response is None:
+            return -1
+        return e.response.status_code
+
+    @staticmethod
     def _has_status_code(e, status_code: int) -> bool:
-        return hasattr(e, 'response') and (e.response is not None) and e.response.status_code == status_code
+        return BaseAPIHandler.get_status_code(e) == status_code
 
     @staticmethod
     def convert_format(bytes_array: bytes,
@@ -233,11 +248,10 @@ class BaseAPIHandler:
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 
-
-    def create_project(self, 
+    def create_project(self,
                        name: str,
                        description: str,
-                       is_active_learning:bool=False) -> dict:
+                       is_active_learning: bool = False) -> dict:
         """
         Create a new project.
 
@@ -253,7 +267,7 @@ class BaseAPIHandler:
         request_args = {
             'url': self._get_endpoint_url('projects'),
             'method': 'POST',
-            'json': {'name': name, 
+            'json': {'name': name,
                      'is_active_learning': is_active_learning,
                      'description': description}
         }
