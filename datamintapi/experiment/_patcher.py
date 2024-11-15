@@ -313,6 +313,23 @@ class PytorchPatcher:
     def get_last_dataloader(self):
         return self.last_dataloader
 
+    def _rename_metric(self, metric_name: str, phase: str) -> str:
+        real_metric_name = metric_name.split('/', 1)[-1]
+        if real_metric_name.startswith('Binary') or real_metric_name.startswith('Multiclass') or real_metric_name.startswith('Multilabel'):
+            real_metric_name = real_metric_name.replace('Binary', '').replace(
+                'Multiclass', '').replace('Multilabel', '')
+
+        if real_metric_name == 'Recall':
+            real_metric_name = 'Sensitivity'
+
+        if real_metric_name == 'Precision':
+            real_metric_name = 'Positive Predictive Value'
+
+        if phase is not None:
+            return f"{phase}/{real_metric_name}"
+            
+        return metric_name.split('/', 1)[0] + real_metric_name
+
     def finish_callback(self, exp: Experiment):
         # Get the last dataloader with 1 iteration, and assume it is the test dataloader
         dataloader = None
@@ -342,9 +359,7 @@ class PytorchPatcher:
         dlinfo_metrics = dlinfo_metrics[dlinfo_metrics['epoch'] == dlinfo_metrics['epoch'].max()]
 
         for metric_name, value in dlinfo_metrics.groupby('name')['value'].mean().items():
-            if phase is not None:
-                metric_name = metric_name.split('/', 1)[-1]
-                metric_name = f"{phase}/{metric_name}"
+            metric_name = self._rename_metric(metric_name, phase)
             summary['metrics'][metric_name] = value
 
         exp.add_to_summary(summary)
@@ -441,7 +456,6 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
         }
         # TODO: Add callback for BCELoss and others losses
     ]
-    
 
     # explode the list of targets into individual targets
     new_params = []
