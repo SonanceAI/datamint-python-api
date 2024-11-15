@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 import torch.optim as optim
 import torch.nn as nn
 import torch
-from datamintapi.experiment.experiment import Experiment
+from datamintapi import Experiment
 import logging
 import os
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore

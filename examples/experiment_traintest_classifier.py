@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-from datamintapi.experiment.experiment import Experiment
+from datamintapi import Experiment
 import logging
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchmetrics
@@ -44,9 +44,9 @@ class Classifier(nn.Module):
 
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
-    exp = Experiment(name="Experiment6",
-                     dataset_name='project_test_dataset',
-                     dry_run=False  # Set dry_run=True to avoid uploading the results to the platform
+    exp = Experiment(name="Experiment10",
+                      dataset_name='project_test_dataset',
+                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
@@ -64,6 +64,7 @@ def main():
     ####################
 
     num_labels = train_dataset.num_labels
+    print(f"Number of labels: {num_labels}")
     task = "multilabel" if num_labels > 1 else "binary"
 
     cls_metrics_params = dict(

@@ -106,3 +106,28 @@ Alternative code, if you want to load all the data and metadata:
         metainfo = metainfo
 
         # (... do something with the batch)
+
+
+Experiments
+-----------
+
+You can also use the :py:class:`~datamintapi.Experiment` class to log your experiments to the server.
+It contains mechanisms to automatically log the model, the dataset, the hyperparameters,
+and the results of your experiments without any extra effort. Here is an example of how to use it:
+
+.. code-block:: python
+
+    from datamintapi import Experiment
+
+    # Create an instance of the Experiment class
+    exp = Experiment(name="Experiment10",
+                     project_name='projectname'
+                     )
+
+    (...)
+
+
+    # Finish the experiment
+    experiment.finish()
+
+Check an full functional example at `experiment_traintest_classifier.py <https://github.com/SonanceAI/datamint-python-api/blob/feat/experiment-class/examples/experiment_traintest_classifier.py>`_

@@ -37,6 +37,7 @@ Datamint
 
    datamint.apihandler
    datamint.dataset
+   datamint.experiment
 
 
 Indices and tables

@@ -372,6 +372,7 @@ class Experiment:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
 
         self.dataset = DatamintDataset(self.dataset_dir,
+                                       project_name=None,
                                        dataset_name=self.dataset_name,
                                        api_key=self.apihandler.api_key,
                                        server_url=self.apihandler.root_url,
