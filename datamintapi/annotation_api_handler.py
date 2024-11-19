@@ -125,8 +125,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
                             "type": 'segmentation',
                             'annotation_worklist_id': worklist_id
                         })
+                    # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
+                    if len(annotations) != len(set([a['identifier'] for a in annotations])):
+                        raise ValueError("Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
 
-                    _LOGGER.debug(f"Creating {len(annotations)} annotations for frame {fidx}")
+
                     annotids = await self._upload_annotations_async(resource_id, annotations)
 
                     ### Upload segmentation ###

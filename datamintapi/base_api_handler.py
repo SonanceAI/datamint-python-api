@@ -117,7 +117,7 @@ class BaseAPIHandler:
             async with aiohttp.ClientSession() as s:
                 return await self._run_request_async(request_args, s)
 
-        _LOGGER.info(f"Running request to {request_args['url']}")
+        _LOGGER.debug(f"Running request to {request_args['url']}")
         _LOGGER.debug(f"Request args: {request_args}")
 
         # add apikey to the headers
