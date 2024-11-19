@@ -35,7 +35,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             yield img_bytes
 
     @staticmethod
-    def _generate_segmentations_ios(file_path: Union[str, np.ndarray]) -> Tuple[int, Generator[IO, None, None]]:
+    def _generate_segmentations_ios(file_path: Union[str, np.ndarray],
+                                     transpose_segmentation:bool=False) -> Tuple[int, Generator[IO, None, None]]:
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
@@ -44,7 +45,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             segs_imgs = nib.load(file_path).get_fdata()
             if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
                 raise ValueError(f"Invalid segmentation shape: {segs_imgs.shape}")
-            segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
+            if not transpose_segmentation:
+                segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
 
             fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
@@ -78,7 +80,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
-                                          worklist_id: Optional[str] = None
+                                          worklist_id: Optional[str] = None,
+                                          transpose_segmentation: bool = False
                                           ) -> str:
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")

@@ -154,6 +154,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       modality: Optional[str] = None,
                                       publish: bool = False,
                                       segmentation_files: Optional[List[Dict]] = None,
+                                      transpose_segmentation: bool = False,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
@@ -185,7 +186,11 @@ class RootAPIHandler(BaseAPIHandler):
                         frame_indices = segfiles.get('frame_index', [None] * len(files_path))
                         for f, name, frame_index in zip(files_path, names, frame_indices):
                             if f is not None:
-                                await self._upload_segmentations_async(rid, file_path=f, name=name, frame_index=frame_index)
+                                await self._upload_segmentations_async(rid,
+                                                                       file_path=f,
+                                                                       name=name,
+                                                                       frame_index=frame_index,
+                                                                       transpose_segmentation=transpose_segmentation)
                     return rid
 
             tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
@@ -203,6 +208,7 @@ class RootAPIHandler(BaseAPIHandler):
                          publish: bool = False,
                          publish_to: Optional[str] = None,
                          segmentation_files: Optional[List[Union[List[str], Dict]]] = None,
+                         transpose_segmentation: bool = False,
                          ) -> list[str | Exception]:
         """
         Upload resources.
@@ -257,6 +263,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             channel=channel,
                                             publish=publish,
                                             segmentation_files=segmentation_files,
+                                            transpose_segmentation=transpose_segmentation,
                                             )
 
         resource_ids = loop.run_until_complete(task)

@@ -255,6 +255,8 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
                         ' The file may contain two keys: "segmentation_names" and "class_names".')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
+    parser.add_argument('--transpose-segmentation', action='store_true', default=False,
+                        help='Transpose the segmentation dimensions to match the image dimensions')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
@@ -419,6 +421,7 @@ def main():
                                            mung_filename=args.mungfilename,
                                            publish=args.publish,
                                            segmentation_files=segfiles,
+                                           transpose_segmentation=args.transpose_segmentation
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
