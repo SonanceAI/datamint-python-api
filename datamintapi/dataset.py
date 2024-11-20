@@ -477,30 +477,31 @@ class DatamintDataset:
         segmentations = [None] * img.shape[0]
         seg_labels = [None] * img.shape[0]
         # Load segmentation annotations
-        for ann in img_metainfo['annotations']:
-            if ann['type'] == 'segmentation':
-                if 'file' not in ann:
-                    _LOGGER.warning(f"Segmentation annotation without file in {img_metainfo['file']})")
-                    continue
-                segfilepath = ann['file']  # png file
-                segfilepath = os.path.join(self.dataset_dir, segfilepath)
-                # FIXME: avoid enforcing resizing the mask
-                seg = np.array(Image.open(segfilepath).convert('L').resize((img.shape[2], img.shape[1]), Image.NEAREST))
-                seg = torch.from_numpy(seg)
-                seg = seg == 255   # binary mask
-                # map the segmentation label to the code
-                seg_code = self.segmentation_label2code[ann['name']]
-                if self.return_frame_by_frame:
-                    frame_index = 0
-                else:
-                    frame_index = ann['index']
+        if self.return_seg_annotations:
+            for ann in img_metainfo['annotations']:
+                if ann['type'] == 'segmentation':
+                    if 'file' not in ann:
+                        _LOGGER.warning(f"Segmentation annotation without file in {img_metainfo['file']})")
+                        continue
+                    segfilepath = ann['file']  # png file
+                    segfilepath = os.path.join(self.dataset_dir, segfilepath)
+                    # FIXME: avoid enforcing resizing the mask
+                    seg = np.array(Image.open(segfilepath).convert('L').resize((img.shape[2], img.shape[1]), Image.NEAREST))
+                    seg = torch.from_numpy(seg)
+                    seg = seg == 255   # binary mask
+                    # map the segmentation label to the code
+                    seg_code = self.segmentation_label2code[ann['name']]
+                    if self.return_frame_by_frame:
+                        frame_index = 0
+                    else:
+                        frame_index = ann['index']
 
-                if segmentations[frame_index] is None:
-                    segmentations[frame_index] = []
-                    seg_labels[frame_index] = []
+                    if segmentations[frame_index] is None:
+                        segmentations[frame_index] = []
+                        seg_labels[frame_index] = []
 
-                segmentations[frame_index].append(seg)
-                seg_labels[frame_index].append(seg_code)
+                    segmentations[frame_index].append(seg)
+                    seg_labels[frame_index].append(seg_code)
 
         # convert to tensor
         for i in range(len(segmentations)):

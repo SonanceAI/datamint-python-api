@@ -44,17 +44,16 @@ class Classifier(nn.Module):
 
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
-    exp = Experiment(name="Experiment10",
-                    #   dataset_name='project_test_dataset',
-                    dataset_name='project_project3_dataset',
-                    #  project_name='project3',
-                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+    exp = Experiment(name="Experiment19",
+                     project_name='project3',
+                     #   dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
     dataset_params = dict(
         return_frame_by_frame=True,
-        image_transform=T.Resize((28, 28))
+        image_transform=T.Resize((28, 28)),
+        return_seg_annotations=False, # We just want frame labels for classification
     )
 
     train_dataset = exp.get_dataset("train", **dataset_params)
