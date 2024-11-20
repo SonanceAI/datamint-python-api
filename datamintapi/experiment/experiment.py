@@ -460,9 +460,9 @@ class Experiment:
         elif dataset.return_seg_annotations:
             return 'instance segmentation'
 
-        if len(dataset.num_labels) == 1:
+        if dataset.num_labels == 1:
             return 'binary classification'
-        if len(dataset.num_labels) > 1:
+        if dataset.num_labels > 1:
             return 'multilabel classification'
 
         return 'unknown'
