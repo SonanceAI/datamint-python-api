@@ -73,8 +73,7 @@ class Experiment:
     Args:
         name (str): Name of the experiment.
         project_name (str): Name of the project.
-        dataset_id (str): ID of the dataset.
-        dataset_name (str): Name of the dataset.
+        dataset_id (str): ID of the dataset. Either `project_name` or `dataset_id` must be provided.
         description (str): Description of the experiment.
         api_key (str): API key for the platform.
         root_url (str): Root URL of the platform.
@@ -92,7 +91,6 @@ class Experiment:
                  name: str,
                  project_name: Optional[str] = None,
                  dataset_id: Optional[str] = None,
-                 dataset_name: Optional[str] = None,
                  description: Optional[str] = None,
                  api_key: Optional[str] = None,
                  root_url: Optional[str] = None,
@@ -131,9 +129,10 @@ class Experiment:
             os.makedirs(dataset_dir)
         self.dataset_dir = dataset_dir
 
+        self.project_name = project_name
         dataset_info = Experiment._get_dataset_info(self.apihandler,
                                                     dataset_id,
-                                                    dataset_name)
+                                                    project_name=project_name)
         self.dataset_id = dataset_info['id']
         self.dataset_name = dataset_info['name']
         self.dataset_info = dataset_info
@@ -213,17 +212,13 @@ class Experiment:
     @staticmethod
     def _get_dataset_info(apihandler: APIHandler,
                           dataset_id,
-                          dataset_name) -> Dict:
-        if dataset_id is None:
-            if dataset_name is None:
-                raise ValueError("dataset_name or dataset_id must be provided.")
-            datasets_infos = apihandler.get_datasetsinfo_by_name(dataset_name)
-            if len(datasets_infos) == 0:
-                raise DatamintException(f"No dataset found with name {dataset_name}")
-            if len(datasets_infos) >= 2:
-                raise DatamintException(f"Multiple datasets found with name {dataset_name}. Please provide dataset_id.")
+                          project_name: str) -> Dict:
+        if project_name is not None:
+            project = apihandler.get_project_by_name(project_name)
+            dataset_id = project['dataset_id']
 
-            return datasets_infos[0]
+        if dataset_id is None:
+            raise ValueError("Either project_name or dataset_id must be provided.")
 
         return apihandler.get_dataset_by_id(dataset_id)
 
@@ -402,13 +397,17 @@ class Experiment:
         if split not in ['all', 'train', 'test', 'val']:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
 
+        if self.project_name is not None:
+            params = dict(project_name=self.project_name)
+        else:
+            params = dict(dataset_name=self.dataset_name)
+
         self.dataset = DatamintDataset(self.dataset_dir,
-                                       project_name=None,
-                                       dataset_name=self.dataset_name,
                                        api_key=self.apihandler.api_key,
                                        server_url=self.apihandler.root_url,
                                        return_metainfo=True,
                                        return_dicom=False,
+                                       **params,
                                        **kwargs)
 
         if split == 'all':
