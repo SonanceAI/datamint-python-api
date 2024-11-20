@@ -102,7 +102,7 @@ class DatamintDataset:
 
         local_dataset_exists = os.path.exists(os.path.join(self.dataset_dir, 'dataset.json'))
 
-        if project_name is not None and not (local_dataset_exists and auto_update==False):
+        if project_name is not None and not (local_dataset_exists and auto_update == False):
             self.project_info = self.get_info()
             self.dataset_id = self.project_info['dataset_id']
         else:
@@ -115,7 +115,6 @@ class DatamintDataset:
                             f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
                             "using datamint-config command line tool."
                             )
-
 
         # Download/Updates the dataset, if necessary.
         if local_dataset_exists:
@@ -439,6 +438,10 @@ class DatamintDataset:
             for l in flabel['label']:
                 label_code = self.label2code[l]
                 labels_onehot_i[label_code] = 1
+
+        # if no frame labels found, return zeros
+        if len(frame_labels_byuser) == 0:
+            return torch.zeros(size=labels_ret_size, dtype=torch.int32)
 
         # merge all user labels using max value
         labels_onehot_merged = torch.stack(list(frame_labels_byuser.values())).max(dim=0)[0]

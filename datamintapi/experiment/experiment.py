@@ -9,8 +9,33 @@ from io import BytesIO
 from datamintapi import Dataset as DatamintDataset
 import os
 import numpy as np
+import heapq
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class TopN:
+    def __init__(self, N, key=lambda x: x, reverse=False):
+        self.N = N
+        self.reverse = reverse
+        self.key = key
+        self.heap = []
+
+    def add(self, item):
+        item_key = self.key(item)
+        if self.reverse:
+            item_key = -item_key  # Invert the key to keep the lowest ones
+        if len(self.heap) < self.N:
+            heapq.heappush(self.heap, (item_key, item))
+        else:
+            heapq.heappushpop(self.heap, (item_key, item))
+
+    def __len__(self):
+        return len(self.heap)
+
+    def get_top(self) -> list:
+        sorted_items = sorted(self.heap, key=lambda x: x[0], reverse=True)
+        return [item for _, item in sorted_items]
 
 
 class _DryRunExperimentAPIHandler(APIHandler):
@@ -32,6 +57,9 @@ class _DryRunExperimentAPIHandler(APIHandler):
         pass
 
     def log_model(self, exp_id: str, model: Union[torch.nn.Module, str, BytesIO], hyper_params: Optional[Dict] = None, torch_save_kwargs: Dict = {}):
+        pass
+
+    def log_predictions(self, *args, **kwargs):
         pass
 
     def finish_experiment(self, exp_id: str):
@@ -131,6 +159,9 @@ class Experiment:
         if tags is not None:
             self.apihandler.log_entry(exp_id=self.exp_id,
                                       entry={'tags': list(tags)})
+
+        self.highest_predictions = TopN(5, key=lambda x: x['confidence'], reverse=False)
+        self.lowest_predictions = TopN(5, key=lambda x: x['confidence'], reverse=True)
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
@@ -440,7 +471,8 @@ class Experiment:
             >>> predictions = [
             >>>            {
             >>>                'resource_id': '123',
-            >>>                'frame_index': 0, # If not provided, it will be assumed predictions are for the whole resource.
+            # If not provided, it will be assumed predictions are for the whole resource.
+            >>>                'frame_index': 0,
             >>>                'predicted': [
             >>>                    {
             >>>                        'identifier': 'has_fracture',
@@ -461,15 +493,24 @@ class Experiment:
         self._set_step(step)
         self._set_epoch(epoch)
 
+        entry = {'type': 'prediction',
+                 'predictions': predictions,
+                 'dataset_split': dataset_split,
+                 'step': step,
+                 }
+
+        if dataset_split == 'test':
+            for pred in predictions:
+                for p in pred['predicted']:
+                    if 'confidence' in p:
+                        self.highest_predictions.add(p)
+                        self.lowest_predictions.add(p)
+
         self.apihandler.log_entry(exp_id=self.exp_id,
-                                  entry={'type': 'prediction',
-                                         'predictions': predictions,
-                                         'dataset_split': dataset_split,
-                                         'step': step,
-                                         })
+                                  entry=entry)
 
     def log_classification_predictions(self,
-                                       predictions: np.ndarray,
+                                       predictions_conf: np.ndarray,
                                        label_names: List[str],
                                        resource_ids: List[str],
                                        dataset_split: Optional[str] = None,
@@ -479,13 +520,13 @@ class Experiment:
         """
         Log the classification predictions of the model.
         """
-
-        predictions = predictions.tolist()
+        predictions_conf = predictions_conf.tolist()
         predictions = [{'resource_id': resource_id,
+                        'prediction_type': 'category',
                         'predicted': [{'identifier': label_names[i],
-                                       'value': pred[i]}
+                                      'confidence': pred[i]}
                                       for i in range(len(pred))]}
-                       for resource_id, pred in zip(resource_ids, predictions)]
+                       for resource_id, pred in zip(resource_ids, predictions_conf)]
 
         if frame_idxs is not None:
             for pred, frame_idx in zip(predictions, frame_idxs):
@@ -501,12 +542,19 @@ class Experiment:
             callback(self)
         self.time_finished = datetime.now(timezone.utc)
         time_spent_seconds = (self.time_finished - self.time_started).total_seconds()
-        self.add_to_summary({'time_spent_seconds': time_spent_seconds})
-        # self.apihandler.finish_experiment(self.exp_id)
 
+        ### produce finishing summary ###
+        # time spent
+        self.add_to_summary({'time_spent_seconds': time_spent_seconds})
+        # infer task
         task = self._detect_machine_learning_task(self.dataset)
         self.add_to_summary({'detected_task': task})
+        # add the most interesting predictions
+        if len(self.highest_predictions) > 0:
+            self.add_to_summary({'highest_predictions': self.highest_predictions.get_top()})
+            self.add_to_summary({'lowest_predictions': self.lowest_predictions.get_top()})
 
+        # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
         if self.model is not None:
             self.log_model(model=self.model, hyper_params=self.model_hyper_params)
@@ -515,6 +563,10 @@ class Experiment:
 
 
 class LogHistory:
+    """
+    TODO: integrate this with the Experiment class.
+    """
+
     def __init__(self):
         self.history = []
 

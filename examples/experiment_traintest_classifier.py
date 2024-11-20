@@ -45,7 +45,9 @@ class Classifier(nn.Module):
 def main():
     # Initialize the experiment. This will create a new experiment on the platform.
     exp = Experiment(name="Experiment10",
-                      dataset_name='project_test_dataset',
+                    #   dataset_name='project_test_dataset',
+                    dataset_name='project_project3_dataset',
+                    #  project_name='project3',
                     #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
@@ -90,7 +92,7 @@ def main():
     # Evaluate the model on the test data
     results = test_loop(model, criterion, testloader, metrics)
 
-    exp.log_classification_predictions(predictions=results['predictions'],
+    exp.log_classification_predictions(predictions_conf=results['predictions'],
                                        label_names=test_dataset.labels_set,
                                        resource_ids=results['resource_ids'],
                                        dataset_split="test",
@@ -178,5 +180,6 @@ def test_loop(model, criterion, testloader,
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
+    logging.getLogger('datamintapi').setLevel(logging.INFO)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()
