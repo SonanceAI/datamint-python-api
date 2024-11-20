@@ -2,7 +2,7 @@ import logging
 from datamintapi.api_handler import APIHandler
 from datamintapi.base_api_handler import DatamintException
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Union, Any
+from typing import List, Dict, Optional, Union, Any, Tuple
 from collections import defaultdict
 import torch
 from io import BytesIO
@@ -15,6 +15,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class TopN:
+    class _Item:
+        def __init__(self, key, item):
+            self.key = key
+            self.item = item
+
+        def __lt__(self, other):
+            return self.key < other.key
+
+        def __eq__(self, other):
+            return self.key == other
+
     def __init__(self, N, key=lambda x: x, reverse=False):
         self.N = N
         self.reverse = reverse
@@ -22,20 +33,20 @@ class TopN:
         self.heap = []
 
     def add(self, item):
-        item_key = self.key(item)
+        item_key = float(self.key(item))
         if self.reverse:
             item_key = -item_key  # Invert the key to keep the lowest ones
         if len(self.heap) < self.N:
-            heapq.heappush(self.heap, (item_key, item))
+            heapq.heappush(self.heap, TopN._Item(item_key, item))
         else:
-            heapq.heappushpop(self.heap, (item_key, item))
+            heapq.heappushpop(self.heap, TopN._Item(item_key, item))
 
     def __len__(self):
         return len(self.heap)
 
     def get_top(self) -> list:
-        sorted_items = sorted(self.heap, key=lambda x: x[0], reverse=True)
-        return [item for _, item in sorted_items]
+        sorted_items = sorted(self.heap, key=lambda x: x.key, reverse=True)
+        return [item.item for item in sorted_items]
 
 
 class _DryRunExperimentAPIHandler(APIHandler):
@@ -64,6 +75,10 @@ class _DryRunExperimentAPIHandler(APIHandler):
 
     def finish_experiment(self, exp_id: str):
         pass
+
+
+def _get_confidence_callback(pred) -> float:
+    return pred['predicted'][0]['confidence']
 
 
 class Experiment:
@@ -159,8 +174,8 @@ class Experiment:
             self.apihandler.log_entry(exp_id=self.exp_id,
                                       entry={'tags': list(tags)})
 
-        self.highest_predictions = TopN(5, key=lambda x: x['confidence'], reverse=False)
-        self.lowest_predictions = TopN(5, key=lambda x: x['confidence'], reverse=True)
+        self.highest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=False))
+        self.lowest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=True))
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
@@ -452,11 +467,11 @@ class Experiment:
 
         return 'unknown'
 
-    def log_predictions(self,
-                        predictions: List[Dict[str, Any]],
-                        dataset_split: Optional[str] = None,
-                        step: Optional[int] = None,
-                        epoch: Optional[int] = None):
+    def _log_predictions(self,
+                         predictions: List[Dict[str, Any]],
+                         dataset_split: Optional[str] = None,
+                         step: Optional[int] = None,
+                         epoch: Optional[int] = None):
         """
         Log the predictions of the model.
 
@@ -500,10 +515,12 @@ class Experiment:
 
         if dataset_split == 'test':
             for pred in predictions:
-                for p in pred['predicted']:
-                    if 'confidence' in p:
-                        self.highest_predictions.add(p)
-                        self.lowest_predictions.add(p)
+                # if prediction is categorical
+                if pred['prediction_type'] == 'category':
+                    for p in pred['predicted']:
+                        if 'confidence' in p:
+                            self.highest_predictions[p['identifier']].add(pred)
+                            self.lowest_predictions[p['identifier']].add(pred)
 
         self.apihandler.log_entry(exp_id=self.exp_id,
                                   entry=entry)
@@ -519,20 +536,33 @@ class Experiment:
         """
         Log the classification predictions of the model.
         """
+        resources = self.apihandler.get_resources_by_ids(resource_ids)
         predictions_conf = predictions_conf.tolist()
-        predictions = [{'resource_id': resource_id,
+        predictions = [{'resource_id': res['id'],
+                        'resource_filename': res['filename'],
                         'prediction_type': 'category',
                         'predicted': [{'identifier': label_names[i],
                                       'confidence': pred[i]}
                                       for i in range(len(pred))]}
-                       for resource_id, pred in zip(resource_ids, predictions_conf)]
+                       for res, pred in zip(resources, predictions_conf)]
 
         if frame_idxs is not None:
             for pred, frame_idx in zip(predictions, frame_idxs):
                 pred['frame_index'] = frame_idx
-        self.log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
+        self._log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
 
     def finish(self):
+        def _process_toppredictions(top_predictions: Dict[str, TopN], rev: bool) -> Tuple[TopN, Dict]:
+            preds_per_label = {key: values.get_top()
+                               for key, values in top_predictions.items()}
+            # get the highest prediction over all labels
+            preds_combined = TopN(5, key=_get_confidence_callback, reverse=rev)
+            for label_preds in preds_per_label.values():
+                for pred in label_preds:
+                    preds_combined.add(pred)
+
+            return preds_combined, preds_per_label
+
         if self.is_finished:
             _LOGGER.debug("Experiment is already finished.")
             return
@@ -550,8 +580,20 @@ class Experiment:
         self.add_to_summary({'detected_task': task})
         # add the most interesting predictions
         if len(self.highest_predictions) > 0:
-            self.add_to_summary({'highest_predictions': self.highest_predictions.get_top()})
-            self.add_to_summary({'lowest_predictions': self.lowest_predictions.get_top()})
+            highest_preds_combined, highest_preds_per_label = _process_toppredictions(self.highest_predictions, False)
+            lowest_preds_combined, lowest_preds_per_label = _process_toppredictions(self.lowest_predictions, True)
+
+            self.add_to_summary({'highest_predictions': {'combined': highest_preds_combined.get_top(),
+                                                         'per_label': highest_preds_per_label
+                                                         }
+                                 }
+                                )
+
+            self.add_to_summary({'lowest_predictions': {'combined': lowest_preds_combined.get_top(),
+                                                        'per_label': lowest_preds_per_label
+                                                        }
+                                 }
+                                )
 
         # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
