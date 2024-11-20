@@ -36,9 +36,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     @staticmethod
     def _generate_segmentations_ios(file_path: Union[str, np.ndarray],
-                                     transpose_segmentation:bool=False) -> Tuple[int, Generator[IO, None, None]]:
+                                    transpose_segmentation: bool = False) -> Tuple[int, Generator[IO, None, None]]:
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path
+            if transpose_segmentation:
+                segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
             fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
         elif file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
@@ -46,12 +48,18 @@ class AnnotationAPIHandler(BaseAPIHandler):
             if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
                 raise ValueError(f"Invalid segmentation shape: {segs_imgs.shape}")
             if not transpose_segmentation:
+                # The if is correct. The image is already in a different shape than nifty images.
                 segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
 
             fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
         elif file_path.endswith('.png'):
-            fios = (open(file_path, 'rb') for _ in range(1))
+            if transpose_segmentation:
+                with Image.open(file_path) as img:
+                    segs_imgs = np.array(img).transpose(1, 0)
+                fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
+            else:
+                fios = (open(file_path, 'rb') for _ in range(1))
             nframes = 1
         else:
             raise ValueError(f"Unsupported file format of '{file_path}'")
@@ -130,8 +138,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         })
                     # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
                     if len(annotations) != len(set([a['identifier'] for a in annotations])):
-                        raise ValueError("Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
-
+                        raise ValueError(
+                            "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
 
                     annotids = await self._upload_annotations_async(resource_id, annotations)
 
