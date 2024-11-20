@@ -437,3 +437,12 @@ class AnnotationAPIHandler(BaseAPIHandler):
             Image.fromarray(img_v*255).convert('RGB').save(f, format='PNG')
             f.seek(0)
             yield f
+
+    def delete_annotation(self, annotation_id: str):
+        request_params = {
+            'method': 'DELETE',
+            'url': f'{self.root_url}/annotations/{annotation_id}',
+        }
+
+        resp = self._run_request(request_params)
+        self._check_errors_response_json(resp)
