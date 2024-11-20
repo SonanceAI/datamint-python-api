@@ -230,6 +230,8 @@ class Experiment:
                           project_name: str) -> Dict:
         if project_name is not None:
             project = apihandler.get_project_by_name(project_name)
+            if 'error' in project:
+                raise ValueError(str(project))
             dataset_id = project['dataset_id']
 
         if dataset_id is None:
