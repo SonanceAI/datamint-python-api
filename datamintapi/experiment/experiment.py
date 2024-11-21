@@ -70,9 +70,6 @@ class _DryRunExperimentAPIHandler(APIHandler):
     def log_model(self, exp_id: str, model: Union[torch.nn.Module, str, BytesIO], hyper_params: Optional[Dict] = None, torch_save_kwargs: Dict = {}):
         pass
 
-    def log_predictions(self, *args, **kwargs):
-        pass
-
     def finish_experiment(self, exp_id: str):
         pass
 
@@ -118,6 +115,7 @@ class Experiment:
         from ._patcher import initialize_automatic_logging
         if auto_log:
             initialize_automatic_logging()
+        self.auto_log = auto_log
         self.name = name
         self.dry_run = dry_run
         if dry_run:
@@ -151,9 +149,6 @@ class Experiment:
         self.dataset_id = dataset_info['id']
         self.dataset_name = dataset_info['name']
         self.dataset_info = dataset_info
-
-        self.dataset = None
-        # self.loghandler = LogRequestHandler()
 
         # Check if experiment already exists with the same name
         experiments = self.apihandler.get_experiments()
@@ -220,7 +215,16 @@ class Experiment:
 
         return env
 
-    def set_model(self, model, hyper_params=None):
+    def set_model(self,
+                  model: torch.nn.Module,
+                  hyper_params: Optional[Dict] = None):
+        """
+        Set the model and hyper-parameters of the experiment.
+
+        Args:
+            model (torch.nn.Module): The model to log.
+            hyper_params (Optional[Dict]): The hyper-parameters of the model.
+        """
         self.model = model
         self.model_hyper_params = hyper_params
 
@@ -241,18 +245,18 @@ class Experiment:
 
     @staticmethod
     def get_singleton_experiment() -> 'Experiment':
-        global EXPERIMENT
-        return EXPERIMENT
+        global _EXPERIMENT
+        return _EXPERIMENT
 
     @staticmethod
     def _set_singleton_experiment(experiment: 'Experiment'):
-        global EXPERIMENT
-        if EXPERIMENT is not None:
+        global _EXPERIMENT
+        if _EXPERIMENT is not None:
             _LOGGER.warning(
                 "There is already an active Experiment. Setting a new Experiment will overwrite the existing one."
             )
 
-        EXPERIMENT = experiment
+        _EXPERIMENT = experiment
 
     def _set_step(self, step: Optional[int]) -> int:
         """
@@ -278,7 +282,23 @@ class Experiment:
                    value: float,
                    step: int = None,
                    epoch: int = None,
-                   show_in_summary: Optional[bool] = None) -> None:
+                   show_in_summary: bool = False) -> None:
+        """
+        Log a metric to the platform.
+
+        Args:
+            name (str): Arbritary name of the metric.
+            value (float): Value of the metric.
+            step (int): The step of the experiment.
+            epoch (int): The epoch of the experiment.
+            show_in_summary (bool): Show the metric in the summary. Use this to show only important metrics in the summary.
+
+        Example:
+            >>> exp.log_metric('test/sensitivity', 0.9, show_in_summary=True)
+
+        See Also:
+            :py:meth:`~log_metrics`
+        """
         self.log_metrics({name: value},
                          step=step,
                          epoch=epoch,
@@ -288,7 +308,22 @@ class Experiment:
                     metrics: Dict[str, float],
                     step=None,
                     epoch=None,
-                    show_in_summary: Optional[bool] = None) -> None:
+                    show_in_summary: bool = False) -> None:
+        """
+        Log multiple metrics to the platform. Handy for logging multiple metrics at once.
+
+        Args:
+            metrics (Dict[str, float]): A dictionary of metrics to log.
+            step (int): The step of the experiment.
+            epoch (int): The epoch of the experiment.
+            show_in_summary (bool): Show the metric in the summary. Use this to show only important metrics in the summary
+
+        Example:
+            >>> exp.log_metrics({'test/loss': 0.1, 'test/accuracy': 0.9}, show_in_summary=True)
+
+        See Also:
+            :py:meth:`~log_metric`
+        """
         step = self._set_step(step)
         epoch = self._set_epoch(epoch)
 
@@ -335,6 +370,23 @@ class Experiment:
 
     def log_summary(self,
                     result_summary: Dict) -> None:
+        """
+        Log the summary of the experiment. This is what will be shown in the platform summary.
+
+        Args:
+            result_summary (Dict): The summary of the experiment.
+
+        Example:
+            .. code-block:: python
+
+                exp.log_summary({"metrics": {
+                                    "test/F1Score": 0.85,
+                                    "test/Accuracy": 0.9,
+                                    "test/Sensitivity": 0.92,
+                                    "test/Positive Predictive Value": 0.79,
+                                    }
+                                })
+        """
         _LOGGER.debug(f"Logging summary: {result_summary}")
         self.apihandler.log_summary(exp_id=self.exp_id,
                                     result_summary=result_summary)
@@ -344,6 +396,21 @@ class Experiment:
                   hyper_params: Optional[Dict] = None,
                   log_model_attributes: bool = True,
                   torch_save_kwargs: Dict = {}):
+        """
+        Log the model to the platform.
+
+        Args:
+            model (Union[torch.nn.Module, str, BytesIO]): The model to log. Can be a torch model, a path to a .pt or .pth file, or a BytesIO object.
+            hyper_params (Optional[Dict]): The hyper-parameters of the model. Arbitrary key-value pairs.
+            log_model_attributes (bool): Adds the attributes of the model to the hyper-parameters.
+            torch_save_kwargs (Dict): Additional arguments to pass to `torch.save`.
+
+        Example:
+            .. code-block:: python
+
+                    exp.log_model(model, hyper_params={"num_layers": 3, "pretrained": True})
+
+        """
         if self.model is None:
             self.model = model
             self.model_hyper_params = hyper_params
@@ -384,6 +451,12 @@ class Experiment:
             dataset (DatamintDataset): The dataset to log the statistics.
             dataset_entry_name (str): The name of the dataset entry.
                 Used to distinguish between different datasets and dataset splits.
+
+        Example:
+            .. code-block:: python
+
+                dataset = exp.get_dataset(split='train')
+                exp.log_dataset_stats(dataset, dataset_entry_name='train')
         """
 
         if dataset_entry_name is None:
@@ -411,6 +484,17 @@ class Experiment:
                                   entry={'dataset_stats': {dataset_entry_name: dataset_stats}})
 
     def get_dataset(self, split: str = 'all', **kwargs) -> DatamintDataset:
+        """
+        Get the dataset associated with the experiment's project. 
+        The dataset will be downloaded to the directory specified in the constructor (`self.dataset_dir`).
+
+        Args:
+            split (str): The split of the dataset to get. Can be one of ['all', 'train', 'test', 'val'].
+            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.DatamintDataset` class.
+
+        Returns:
+            DatamintDataset: The dataset object.
+        """
         if split not in ['all', 'train', 'test', 'val']:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
 
@@ -419,27 +503,30 @@ class Experiment:
         else:
             params = dict(dataset_name=self.dataset_name)
 
-        self.dataset = DatamintDataset(self.dataset_dir,
-                                       api_key=self.apihandler.api_key,
-                                       server_url=self.apihandler.root_url,
-                                       return_metainfo=True,
-                                       return_dicom=False,
-                                       **params,
-                                       **kwargs)
+        dataset = DatamintDataset(self.dataset_dir,
+                                  api_key=self.apihandler.api_key,
+                                  server_url=self.apihandler.root_url,
+                                  **params,
+                                  **kwargs)
+
+        # infer task
+        if not hasattr(dataset, 'detected_task') and self.auto_log:
+            self.detected_task = self._detect_machine_learning_task(dataset)
+            self.add_to_summary({'detected_task': self.detected_task})
 
         if split == 'all':
-            self.log_dataset_stats(self.dataset, split)
-            return self.dataset
+            self.log_dataset_stats(dataset, split)
+            return dataset
 
         # FIXME: samples should be marked as train, test, val previously
 
         train_split_val = 0.8
         test_split_val = 0.1
-        indices = list(range(len(self.dataset)))
+        indices = list(range(len(dataset)))
         rs = np.random.RandomState(42)
         rs.shuffle(indices)
-        train_split_idx = int(train_split_val * len(self.dataset))
-        test_split_idx = int(np.ceil(test_split_val * len(self.dataset))) + train_split_idx
+        train_split_idx = int(train_split_val * len(dataset))
+        test_split_idx = int(np.ceil(test_split_val * len(dataset))) + train_split_idx
         train_indices = indices[:train_split_idx]
         test_indices = indices[train_split_idx:test_split_idx]
         val_indices = indices[test_split_idx:]
@@ -451,7 +538,7 @@ class Experiment:
         elif split == 'val':
             indices_to_split = val_indices
 
-        dataset = self.dataset.subset(indices_to_split)
+        dataset = dataset.subset(indices_to_split)
         self.log_dataset_stats(dataset, split)
         return dataset
 
@@ -537,6 +624,23 @@ class Experiment:
                                        epoch: Optional[int] = None):
         """
         Log the classification predictions of the model.
+
+        Args:
+            predictions_conf (np.ndarray): The predictions of the model. Shape (N, C) where N is the number of samples and C is the number of classes.
+            label_names (List[str]): The names of the classes.
+            resource_ids (List[str]): The resource IDs of the samples.
+            dataset_split (Optional[str]): The dataset split of the predictions.
+            frame_idxs (Optional[List[int]]): The frame indexes of the predictions.
+            step (Optional[int]): The step of the experiment.
+            epoch (Optional[int]): The epoch of the experiment.
+
+        Example:
+            .. code-block:: python
+
+                    predictions_conf = np.array([[0.9, 0.1], [0.2, 0.8]])
+                    label_names = ['cat', 'dog']
+                    resource_ids = ['123', '456']
+                    exp.log_classification_predictions(predictions_conf, label_names, resource_ids, dataset_split='test')
         """
         resources = self.apihandler.get_resources_by_ids(resource_ids)
         predictions_conf = predictions_conf.tolist()
@@ -554,6 +658,10 @@ class Experiment:
         self._log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
 
     def finish(self):
+        """
+        Finish the experiment.
+        This will log the summary and finish the experiment.
+        """
         def _process_toppredictions(top_predictions: Dict[str, TopN], rev: bool) -> Tuple[TopN, Dict]:
             preds_per_label = {key: values.get_top()
                                for key, values in top_predictions.items()}
@@ -577,9 +685,7 @@ class Experiment:
         ### produce finishing summary ###
         # time spent
         self.add_to_summary({'time_spent_seconds': time_spent_seconds})
-        # infer task
-        task = self._detect_machine_learning_task(self.dataset)
-        self.add_to_summary({'detected_task': task})
+
         # add the most interesting predictions
         if len(self.highest_predictions) > 0:
             highest_preds_combined, highest_preds_per_label = _process_toppredictions(self.highest_predictions, False)
@@ -605,7 +711,7 @@ class Experiment:
         self.is_finished = True
 
 
-class LogHistory:
+class _LogHistory:
     """
     TODO: integrate this with the Experiment class.
     """
@@ -632,4 +738,4 @@ class LogHistory:
         return self.history
 
 
-EXPERIMENT: Experiment = None
+_EXPERIMENT: Experiment = None
