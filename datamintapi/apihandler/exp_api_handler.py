@@ -58,7 +58,7 @@ class ExperimentAPIHandler(BaseAPIHandler):
         response = self._run_request(request_params)
 
         return response.json()
-
+    
     def log_summary(self,
                     exp_id: str,
                     result_summary: Dict,

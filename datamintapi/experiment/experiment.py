@@ -85,7 +85,6 @@ class Experiment:
     Args:
         name (str): Name of the experiment.
         project_name (str): Name of the project.
-        dataset_id (str): ID of the dataset. Either `project_name` or `dataset_id` must be provided.
         description (str): Description of the experiment.
         api_key (str): API key for the platform.
         root_url (str): Root URL of the platform.
@@ -102,7 +101,6 @@ class Experiment:
     def __init__(self,
                  name: str,
                  project_name: Optional[str] = None,
-                 dataset_id: Optional[str] = None,
                  description: Optional[str] = None,
                  api_key: Optional[str] = None,
                  root_url: Optional[str] = None,
@@ -110,7 +108,8 @@ class Experiment:
                  log_enviroment: bool = True,
                  dry_run: bool = False,
                  auto_log=True,
-                 tags: Optional[List[str]] = None
+                 tags: Optional[List[str]] = None,
+                 allow_existing: bool = False
                  ) -> None:
         from ._patcher import initialize_automatic_logging
         if auto_log:
@@ -142,35 +141,68 @@ class Experiment:
             os.makedirs(dataset_dir)
         self.dataset_dir = dataset_dir
 
-        self.project_name = project_name
-        dataset_info = Experiment._get_dataset_info(self.apihandler,
-                                                    dataset_id,
-                                                    project_name=project_name)
+        project = self.apihandler.get_project_by_name(project_name)
+        if 'error' in project:
+            raise DatamintException(str(project))
+        exp_info = Experiment.get_experiment_by_name(name, project)
+
+        self.project_name = project['name']
+        dataset_info = self.apihandler.get_dataset_by_id(project['dataset_id'])
         self.dataset_id = dataset_info['id']
-        self.dataset_name = dataset_info['name']
         self.dataset_info = dataset_info
 
-        # Check if experiment already exists with the same name
-        experiments = self.apihandler.get_experiments()
-        for exp in experiments:
-            if exp['name'] == name:
-                raise DatamintException(f"Experiment with name '{name}' already exists.")
+        if exp_info is None:
+            self._initialize_new_exp(project_name, name, description, tags, log_enviroment)
+        else:
+            if not allow_existing:
+                raise DatamintException(f"Experiment with name '{name}' already exists for project '{project_name}'.")
+            self._init_from_existing_experiment(project=project, exp=exp_info)
+
+        self.time_finished = None
+
+        self.highest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=False))
+        self.lowest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=True))
 
         Experiment._set_singleton_experiment(self)
 
+    def _initialize_new_exp(self,
+                            project: Dict,
+                            name: str,
+                            description: str,
+                            tags: Optional[List[str]] = None,
+                            log_enviroment: bool = True):
         env_info = Experiment.get_enviroment_info() if log_enviroment else {}
         self.exp_id = self.apihandler.create_experiment(dataset_id=self.dataset_id,
                                                         name=name,
                                                         description=description,
                                                         environment=env_info)
-        self.time_started = datetime.now(timezone.utc)
-        self.time_finished = None
+        self.time_started = datetime.now(timezone.utc)  # FIXME: use created_at field from response
         if tags is not None:
             self.apihandler.log_entry(exp_id=self.exp_id,
                                       entry={'tags': list(tags)})
 
-        self.highest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=False))
-        self.lowest_predictions = defaultdict(lambda: TopN(5, key=_get_confidence_callback, reverse=True))
+    def _init_from_existing_experiment(self, project: Dict, exp: Dict):
+        self.exp_id = exp['id']
+        # example of `exp['created_at']`: 2024-11-01T19:26:12.239Z
+        # example 2: 2024-11-14T17:47:22.363452-03:00
+        self.time_started = datetime.fromisoformat(exp['created_at'].replace('Z', '+00:00'))
+
+    @staticmethod
+    def get_experiment_by_name(name: str, project: Dict) -> Optional[Dict]:
+        """
+        Get the experiment by name of the project.
+
+        Args:
+            name (str): Name of the experiment.
+            project (Dict): The project to search for the experiment.
+
+        Returns:
+            Optional[Dict]: The experiment if found, otherwise None.
+        """
+        for exp in project['experiments']:
+            if exp['name'] == name:
+                return exp
+        return None
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
