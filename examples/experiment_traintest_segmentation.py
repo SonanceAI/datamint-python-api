@@ -193,7 +193,6 @@ def test_loop(model, criterion,
             segmentations = batch["segmentations"]
             # yhat.shape = (batch_size, #classes, H, W). Not normalized (-inf, +inf)
             yhat = model(images)['out']
-            print(yhat.shape, testloader.dataset.segmentation_labels)
             loss = criterion(yhat, segmentations)
             for metric in metrics:
                 metric.update(yhat > 0.0, segmentations.bool())

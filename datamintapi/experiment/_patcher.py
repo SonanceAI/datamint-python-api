@@ -5,7 +5,7 @@ import logging
 from .experiment import Experiment
 from torch.utils.data import DataLoader
 import torch
-import numpy as np
+import sys
 import pandas as pd
 import atexit
 from collections import OrderedDict
@@ -184,6 +184,7 @@ class PytorchPatcher:
         self.dataloaders_info: Dict[Any, PytorchPatcher.DataLoaderInfo] = OrderedDict()
         self.metrics_association = {}  # Associate metrics with dataloaders
         self.last_dataloader = None
+        self.exit_with_error = False
 
     def _dataloader_created(self,
                             original_obj, func_args, func_kwargs,
@@ -327,7 +328,7 @@ class PytorchPatcher:
 
         if phase is not None:
             return f"{phase}/{real_metric_name}"
-            
+
         return metric_name.split('/', 1)[0] + real_metric_name
 
     def finish_callback(self, exp: Experiment):
@@ -386,7 +387,15 @@ class PytorchPatcher:
             exp.set_model(model)
             _LOGGER.debug(f'Found user model {model.__class__.__name__}')
 
+    def custom_excepthook(self, exc_type, exc_value, traceback):
+        ORIGINAL_EXCEPTHOOK
+        self.exit_with_error = True
+        # Call the original exception hook
+        ORIGINAL_EXCEPTHOOK(exc_type, exc_value, traceback)
+
     def at_exit_cb(self):
+        if self.exit_with_error:
+            return
         exp = Experiment.get_singleton_experiment()
         if exp is not None and (exp.cur_step is not None or exp.cur_epoch is not None):
             exp.finish()
@@ -397,7 +406,7 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
     This function initializes the automatic logging of Pytorch loss using patching.
     """
     from rich.logging import RichHandler
-    global IS_INITIALIZED
+    global IS_INITIALIZED, ORIGINAL_EXCEPTHOOK
 
     if IS_INITIALIZED == True:
         return
@@ -474,6 +483,9 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
             _LOGGER.debug(f"Error while patching {p['target']}: {e}")
 
     try:
+        # Set the custom exception hook
+        ORIGINAL_EXCEPTHOOK = sys.excepthook
+        sys.excepthook = pytorch_patcher.custom_excepthook
         atexit.register(pytorch_patcher.at_exit_cb)
     except Exception:
         _LOGGER.warning("Failed to use atexit.register")
