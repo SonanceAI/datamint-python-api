@@ -183,6 +183,11 @@ class Experiment:
 
     def _init_from_existing_experiment(self, project: Dict, exp: Dict):
         self.exp_id = exp['id']
+
+        # raise error if the experiment is already finished
+        if exp['completed_at'] is not None:
+            raise DatamintException(f"Experiment '{self.name}' from project '{project["name"]}' is already finished.")
+
         # example of `exp['created_at']`: 2024-11-01T19:26:12.239Z
         # example 2: 2024-11-14T17:47:22.363452-03:00
         self.time_started = datetime.fromisoformat(exp['created_at'].replace('Z', '+00:00'))
@@ -542,7 +547,7 @@ class Experiment:
                                   **kwargs)
 
         # infer task
-        if not hasattr(dataset, 'detected_task') and self.auto_log:
+        if not hasattr(self, 'detected_task') and self.auto_log:
             self.detected_task = self._detect_machine_learning_task(dataset)
             self.add_to_summary({'detected_task': self.detected_task})
 
@@ -603,26 +608,28 @@ class Experiment:
 
 
         Example:
-            >>> predictions = [
-            >>>            {
-            >>>                'resource_id': '123',
-            # If not provided, it will be assumed predictions are for the whole resource.
-            >>>                'frame_index': 0,
-            >>>                'predicted': [
-            >>>                    {
-            >>>                        'identifier': 'has_fracture',
-            >>>                        'value': True, # Optional
-            >>>                        'confidence': 0.9,  # Optional
-            >>>                        'ground_truth': True  # Optional
-            >>>                    },
-            >>>                    {
-            >>>                        'identifier': 'tumor',
-            >>>                        'value': segmentation1,  # Optional. numpy array of shape (H, W)
-            >>>                        'confidence': 0.9  # Optional. Can be mask.max()
-            >>>                    }
-            >>>                ]
-            >>>            }]
-            >>> exp.log_predictions(predictions)
+            .. code-block:: python
+
+                predictions = [
+                            {
+                                'resource_id': '123',
+                # If not provided, it will be assumed predictions are for the whole resource.
+                                'frame_index': 0,
+                                'predicted': [
+                                    {
+                                        'identifier': 'has_fracture',
+                                        'value': True, # Optional
+                                        'confidence': 0.9,  # Optional
+                                        'ground_truth': True  # Optional
+                                    },
+                                    {
+                                        'identifier': 'tumor',
+                                        'value': segmentation1,  # Optional. numpy array of shape (H, W)
+                                        'confidence': 0.9  # Optional. Can be mask.max()
+                                    }
+                                ]
+                            }]
+                exp.log_predictions(predictions)
         """
 
         self._set_step(step)
@@ -648,46 +655,133 @@ class Experiment:
 
     def log_classification_predictions(self,
                                        predictions_conf: np.ndarray,
-                                       label_names: List[str],
                                        resource_ids: List[str],
+                                       label_names: List[str],
                                        dataset_split: Optional[str] = None,
                                        frame_idxs: Optional[List[int]] = None,
                                        step: Optional[int] = None,
-                                       epoch: Optional[int] = None):
+                                       epoch: Optional[int] = None,
+                                       add_info: Optional[Dict] = None
+                                       ):
         """
         Log the classification predictions of the model.
 
         Args:
-            predictions_conf (np.ndarray): The predictions of the model. Shape (N, C) where N is the number of samples and C is the number of classes.
-            label_names (List[str]): The names of the classes.
+            predictions_conf (np.ndarray): The predictions of the model. Can have two shapes:
+
+                - Shape (N, C) where N is the number of samples and C is the number of classes.
+                  Does not need to sum to 1 (i.e., can be multilabel).
+                - Shape (N,) where N is the number of samples.
+                  In this case, `label_names` should have the same length as the predictions.
+
+            label_names (List[str]): The names of the classes. 
+            If the predictions are shape (N,), this should have the same length as the predictions.
             resource_ids (List[str]): The resource IDs of the samples.
             dataset_split (Optional[str]): The dataset split of the predictions.
             frame_idxs (Optional[List[int]]): The frame indexes of the predictions.
             step (Optional[int]): The step of the experiment.
             epoch (Optional[int]): The epoch of the experiment.
+            add_info (Optional[Dict]): Additional information to add to each prediction.
 
         Example:
             .. code-block:: python
 
-                    predictions_conf = np.array([[0.9, 0.1], [0.2, 0.8]])
-                    label_names = ['cat', 'dog']
-                    resource_ids = ['123', '456']
-                    exp.log_classification_predictions(predictions_conf, label_names, resource_ids, dataset_split='test')
+                predictions_conf = np.array([[0.9, 0.1], [0.2, 0.8]])
+                label_names = ['cat', 'dog']
+                resource_ids = ['123', '456']
+                exp.log_classification_predictions(predictions_conf, label_names, resource_ids, dataset_split='test')
         """
+
+        # check predictions shape and lengths
+        if len(predictions_conf) != len(resource_ids):
+            raise ValueError("Length of predictions and resource_ids must be the same.")
+
+        if predictions_conf.ndim == 2:
+            if predictions_conf.shape[1] != len(label_names):
+                raise ValueError("Number of classes must match the number of columns in predictions_conf.")
+        elif predictions_conf.ndim == 1:
+            if len(label_names) != len(predictions_conf):
+                raise ValueError("Number of classes must match the length of predictions when predictions are 1D.")
+        else:
+            raise ValueError("Predictions must be 1D or 2D.")
+
         resources = self.apihandler.get_resources_by_ids(resource_ids)
-        predictions_conf = predictions_conf.tolist()
-        predictions = [{'resource_id': res['id'],
+
+        predictions = []
+        if predictions_conf.ndim == 2:
+            for res, pred in zip(resources, predictions_conf):
+                data = {'resource_id': res['id'],
                         'resource_filename': res['filename'],
                         'prediction_type': 'category',
                         'predicted': [{'identifier': label_names[i],
-                                      'confidence': pred[i]}
+                                       'confidence': float(pred[i])}
                                       for i in range(len(pred))]}
-                       for res, pred in zip(resources, predictions_conf)]
+                if add_info is not None:
+                    data.update(add_info)
+                predictions.append(data)
+        else:
+            # if predictions are 1D, label_names have the same length
+            for res, pred, label_i in zip(resources, predictions_conf, label_names):
+                data = {'resource_id': res['id'],
+                        'resource_filename': res['filename'],
+                        'prediction_type': 'category',
+                        'predicted': [{'identifier': label_i,
+                                       'confidence': float(pred)}
+                                      ]}
+                if add_info is not None:
+                    data.update(add_info)
+                predictions.append(data)
 
         if frame_idxs is not None:
             for pred, frame_idx in zip(predictions, frame_idxs):
                 pred['frame_index'] = frame_idx
         self._log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
+
+    def log_semantic_seg_predictions(self,
+                                     predictions: np.ndarray,
+                                     resource_ids: List[str],
+                                     label_names: List[str],
+                                     dataset_split: Optional[str] = None,
+                                     frame_idxs: Optional[List[int]] = None,
+                                     step: Optional[int] = None,
+                                     epoch: Optional[int] = None):
+        """
+        Log the semantic segmentation predictions of the model.
+
+        Args:
+            predictions (np.ndarray): The predictions of the model. A list of numpy arrays of shape (N, C, H, W).
+            label_names (List[str]): The names of the classes. List of strings of size C.
+            resource_ids (List[str]): The resource IDs of the samples.
+            dataset_split (Optional[str]): The dataset split of the predictions.
+            frame_idxs (Optional[List[int]]): The frame indexes of the predictions.
+            step (Optional[int]): The step of the experiment.
+            epoch (Optional[int]): The epoch of the experiment.
+        """
+
+        if predictions.ndim != 4:
+            raise ValueError("Predictions must be of shape (N, C, H, W).")
+
+        # check lengths
+        if len(predictions) != len(resource_ids):
+            raise ValueError("Length of predictions and resource_ids must be the same.")
+
+        if frame_idxs is not None and len(predictions) != len(frame_idxs):
+            raise ValueError("Length of predictions and frame_idxs must be the same.")
+
+        if len(label_names) != predictions.shape[1]:
+            raise ValueError("Number of classes must match the number of columns in predictions.")
+
+        predictions_conf = predictions.max(axis=(2, 3))  # final shape: (N, C)
+
+        # log it as classification predictions
+        self.log_classification_predictions(predictions_conf=predictions_conf,
+                                            label_names=label_names,
+                                            resource_ids=resource_ids,
+                                            dataset_split=dataset_split,
+                                            frame_idxs=frame_idxs,
+                                            step=step,
+                                            epoch=epoch,
+                                            add_info={'origin': 'semantic segmentation'})
 
     def finish(self):
         """
@@ -741,6 +835,8 @@ class Experiment:
             self.log_model(model=self.model, hyper_params=self.model_hyper_params)
         self.apihandler.finish_experiment(self.exp_id)
         self.is_finished = True
+
+        _LOGGER.info("Experiment finished and uploaded to the platform.")
 
 
 class _LogHistory:

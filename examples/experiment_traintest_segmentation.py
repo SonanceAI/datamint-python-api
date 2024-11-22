@@ -76,10 +76,11 @@ def initialize_model(num_classes: int, weights):
 
 
 def main():
-    # Initialize the experiment. This will create a new experiment on the platform.
-    exp = Experiment(name='My First Experiment2',
-                     dataset_name='project_test_dataset',
-                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+    # Initialize the experiment. Creates a new experiment on the platform.
+    exp = Experiment(name='experiment7',
+                     project_name='project3',
+                     allow_existing=True,
+                     #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
@@ -136,7 +137,7 @@ def main():
     training_loop(model, criterion, trainloader, metrics)
 
     # Evaluate the model on the test data
-    test_loop(model, criterion, testloader, metrics)
+    test_loop(model, criterion, testloader, metrics, exp)
 
 
 def training_loop(model, criterion, trainloader,
@@ -154,7 +155,7 @@ def training_loop(model, criterion, trainloader,
                 # segmentations is a tensor of shape (batch_size, #classes, H, W)
                 segmentations = batch["segmentations"]
 
-                yhat = model(images)['out']
+                yhat = model(images)['out']  # yhat.shape = (batch_size, #classes, H, W)
 
                 loss = criterion(yhat, segmentations)
 
@@ -163,7 +164,7 @@ def training_loop(model, criterion, trainloader,
                 optimizer.step()
 
                 for metric in metrics:
-                    metric.update(yhat > 0.5, segmentations.bool())
+                    metric.update(yhat > 0.0, segmentations.bool())
 
                 running_loss += loss.item()
             epoch_loss = running_loss / len(trainloader)
@@ -178,19 +179,34 @@ def training_loop(model, criterion, trainloader,
     LOGGER.info("Finished training")
 
 
-def test_loop(model, criterion, testloader, metrics: Sequence[torchmetrics.Metric]):
+def test_loop(model, criterion,
+              testloader: torch.utils.data.DataLoader,
+              metrics: Sequence[torchmetrics.Metric],
+              exp: Experiment):
     model.eval()
     eval_loss = 0
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
             images = batch["image"]
+            # segmentations is a tensor of shape (batch_size, #classes, H, W)
             segmentations = batch["segmentations"]
+            # yhat.shape = (batch_size, #classes, H, W). Not normalized (-inf, +inf)
             yhat = model(images)['out']
+            print(yhat.shape, testloader.dataset.segmentation_labels)
             loss = criterion(yhat, segmentations)
             for metric in metrics:
-                metric.update(yhat > 0.5, segmentations.bool())
+                metric.update(yhat > 0.0, segmentations.bool())
             eval_loss += loss.item()
+
+            # remove background
+            yhat = yhat[:, 1:]
+            exp.log_semantic_seg_predictions(predictions=torch.sigmoid(yhat).cpu().numpy(),
+                                             resource_ids=[b['id'] for b in batch['metainfo']],
+                                             label_names=testloader.dataset.segmentation_labels,
+                                             dataset_split="test",
+                                             frame_idxs=[b['frame_index'] for b in batch['metainfo']]
+                                             )
 
     eval_loss /= len(testloader)
 
