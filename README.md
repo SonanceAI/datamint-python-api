@@ -12,9 +12,12 @@ dependencies using pip
 pip install git+https://github.com/SonanceAI/datamint-python-api
 ```
 
-Soon we will be releasing the package on PyPi. We strongly recommend
-that you install Datamint in a dedicated virtualenv, to avoid
-conflicting with your system packages.
+Soon we will be releasing the package on PyPi. We recommend
+that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages. Create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
+- `source datamint-env/bin/activate` (Linux/MAC)
+- `datamint-env\Scripts\activate.bat` (Windows CMD)
+- `datamint-env\Scripts\Activate.ps1` (Windows PowerShell)
+
 
 Setup API key
 -------------
@@ -54,7 +57,7 @@ and example scripts in [examples](examples) folder:
 - [Running an experiment for classification](examples/experiment_traintest_classifier.py)
 - [Running an experiment for segmentation](examples/experiment_traintest_segmentation.py)
 
-Other functionalities
+Full documentation
 ---------------------
 
-See the full documentation at https://sonanceai.github.io/datamint-python-api/
+See all functionalities in the full documentation at https://sonanceai.github.io/datamint-python-api/
