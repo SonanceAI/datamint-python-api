@@ -8,10 +8,14 @@ from datamintapi import Experiment
 import logging
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchmetrics
-from torchvision import transforms as T
+from torchvision.transforms import v2 as T
+from torchvision.models import resnet18, ResNet18_Weights
 from typing import Sequence, Dict
 
 LOGGER = logging.getLogger(__name__)
+
+NUM_EPOCHS = 2
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 ## Set API Key ##
 # run `datamint-config` in the terminal to set the API key OR set it here:
@@ -20,40 +24,34 @@ LOGGER = logging.getLogger(__name__)
 
 # Define the network architecture:
 
-
-class Classifier(nn.Module):
+class MyModel(nn.Module):
     def __init__(self, num_labels):
         super().__init__()
         self.num_labels = num_labels
-        self.fc1 = nn.Linear(784, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc3 = nn.Linear(128, 64)
-        self.fc4 = nn.Linear(64, num_labels)
+        self.resnet = resnet18(weights=ResNet18_Weights.DEFAULT)
+        # Freeze all layers except the last one
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+        self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_labels)
 
     def forward(self, x):
-        # make sure input tensor is flattened
-        x = x.view(x.shape[0], -1)
-
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        x = F.softmax(self.fc4(x), dim=1)
-
-        return x
+        return F.softmax(self.resnet(x), dim=1)
 
 
 def main():
     # Initialize the experiment. Creates a new experiment on the platform.
     exp = Experiment(name="My First Experiment",
-                     project_name='project3',
-                     allow_existing=True,  # If an experiment with the same name exists, allow_existing=True will return the existing experiment
-                    #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+                     project_name='Lucas test project',
+                     allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
+                     #  dry_run=True  # Set True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
     dataset_params = dict(
         return_frame_by_frame=True,
-        image_transform=T.Resize((28, 28)),
+        image_transform=T.Compose([T.RGB(),  # Resnet18 expects 3 channels
+                                   ResNet18_Weights.DEFAULT.transforms()]
+                                  ),
         return_seg_annotations=False,  # We just want frame labels for classification
     )
 
@@ -66,6 +64,8 @@ def main():
     ####################
 
     num_labels = train_dataset.num_labels
+    if num_labels == 0:
+        raise ValueError("The dataset does not have any frame labels!")
     print(f"Number of labels: {num_labels}")
     task = "multilabel" if num_labels > 1 else "binary"
 
@@ -76,7 +76,7 @@ def main():
     )
 
     ### Define the model, loss function, and metrics ###
-    model = Classifier(num_labels=num_labels)
+    model = MyModel(num_labels=num_labels)
     metrics = [Recall(**cls_metrics_params),
                Precision(**cls_metrics_params),
                Specificity(**cls_metrics_params),
@@ -103,16 +103,21 @@ def main():
 def training_loop(model, criterion, trainloader,
                   metrics: Sequence[torchmetrics.Metric],
                   lr=0.003):
+    # To device
+    model.to(DEVICE)
+    model.train()
+    for metric in metrics:
+        metric.to(DEVICE)
+
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    epochs = 2
-    with tqdm(total=epochs) as pbar:
-        for e in range(epochs):
+    with tqdm(total=NUM_EPOCHS) as pbar:
+        for e in range(NUM_EPOCHS):
             pbar.set_description(f"Epoch {e}")
             running_loss = 0
             for batch in trainloader:
                 # batch is a dictionary with keys "images", "labels"
-                images = batch["image"]
-                labels = batch["labels"]  # labels is a tensor of shape (batch_size, num_labels)
+                images = batch["image"].to(DEVICE)
+                labels = batch["labels"].to(DEVICE)  # labels is a tensor of shape (batch_size, num_labels)
                 yhat = model(images)
                 loss = criterion(yhat, labels.float())
 
@@ -138,7 +143,12 @@ def training_loop(model, criterion, trainloader,
 
 def test_loop(model, criterion, testloader,
               metrics: Sequence[torchmetrics.Metric]) -> Dict:
+    # To device
+    model.to(DEVICE)
     model.eval()
+    for metric in metrics:
+        metric.to(DEVICE)
+
     eval_loss = 0
 
     predictions = []
@@ -148,8 +158,8 @@ def test_loop(model, criterion, testloader,
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
-            images = batch["image"]
-            labels = batch["labels"]  # labels is a tensor of shape (batch_size, num_labels)
+            images = batch["image"].to(DEVICE)
+            labels = batch["labels"].to(DEVICE)  # labels is a tensor of shape (batch_size, num_labels)
             resourse_ids_i = [b['id'] for b in batch['metainfo']]
             frame_idxs_i = [b['frame_index'] for b in batch['metainfo']]
 
