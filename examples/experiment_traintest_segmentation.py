@@ -31,7 +31,7 @@ from typing import Sequence
 from torchvision.transforms import v2
 
 LOGGER = logging.getLogger(__name__)
-
+DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
 ## Set API Key ##
 # run `datamint-config` in the terminal to set the API key OR set it here:
@@ -39,6 +39,12 @@ LOGGER = logging.getLogger(__name__)
 
 
 class ClsMetricForSegmentation(torchmetrics.Metric):
+    """
+    This class is used to convert the segmentation output to a classification output.
+    The segmentation output is a tensor of shape (batch_size, num_classes, H, W).
+    We convert it to a tensor of shape (batch_size, num_classes) by taking the maximum value along the height and width
+    """
+
     def __init__(self, num_labels: int, metrics, **kwargs):
         super().__init__(**kwargs)
         self.num_labels = num_labels
@@ -56,6 +62,10 @@ class ClsMetricForSegmentation(torchmetrics.Metric):
     def reset(self):
         for metric in self.metrics:
             metric.reset()
+
+    def to(self, device):
+        for metric in self.metrics:
+            metric.to(device)
 
 
 def initialize_model(num_classes: int, weights):
@@ -78,8 +88,8 @@ def initialize_model(num_classes: int, weights):
 def main():
     # Initialize the experiment. Creates a new experiment on the platform.
     exp = Experiment(name='experiment7',
-                     project_name='project3',
-                     allow_existing=True,
+                     project_name='Lucas test project',
+                     allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
                      #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
@@ -89,7 +99,6 @@ def main():
     dataset_params = dict(
         return_frame_by_frame=True,
         image_transform=T.Compose([T.Resize((520, 520)),
-                                   #    T.Lambda(lambda x: torch.cat([x, x, x], dim=0)), # Convert to 3-channel image
                                    v2.RGB(),
                                    weights.transforms()
                                    ]),
@@ -143,6 +152,13 @@ def main():
 def training_loop(model, criterion, trainloader,
                   metrics: Sequence[torchmetrics.Metric],
                   lr=0.003):
+    # To device
+    model.to(DEVICE)
+    model.train()
+    for metric in metrics:
+        metric.to(DEVICE)
+    criterion.to(DEVICE)
+
     optimizer = optim.Adam(model.parameters(), lr=lr)
     epochs = 2
     with tqdm(total=epochs) as pbar:
@@ -151,9 +167,9 @@ def training_loop(model, criterion, trainloader,
             running_loss = 0
             for batch in trainloader:
                 # batch is a dictionary with keys "images", "labels"
-                images = batch["image"]
+                images = batch["image"].to(DEVICE)
                 # segmentations is a tensor of shape (batch_size, #classes, H, W)
-                segmentations = batch["segmentations"]
+                segmentations = batch["segmentations"].to(DEVICE)
 
                 yhat = model(images)['out']  # yhat.shape = (batch_size, #classes, H, W)
 
@@ -183,14 +199,20 @@ def test_loop(model, criterion,
               testloader: torch.utils.data.DataLoader,
               metrics: Sequence[torchmetrics.Metric],
               exp: Experiment):
+    # To device
+    model.to(DEVICE)
     model.eval()
+    for metric in metrics:
+        metric.to(DEVICE)
+    criterion.to(DEVICE)
+
     eval_loss = 0
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
-            images = batch["image"]
+            images = batch["image"].to(DEVICE)
             # segmentations is a tensor of shape (batch_size, #classes, H, W)
-            segmentations = batch["segmentations"]
+            segmentations = batch["segmentations"].to(DEVICE)
             # yhat.shape = (batch_size, #classes, H, W). Not normalized (-inf, +inf)
             yhat = model(images)['out']
             loss = criterion(yhat, segmentations)

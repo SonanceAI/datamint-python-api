@@ -43,7 +43,7 @@ def main():
     exp = Experiment(name="My First Experiment",
                      project_name='Lucas test project',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
-                     #  dry_run=True  # Set True to avoid uploading the results to the platform
+                     #   dry_run=True  # Set True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
@@ -108,6 +108,7 @@ def training_loop(model, criterion, trainloader,
     model.train()
     for metric in metrics:
         metric.to(DEVICE)
+    criterion.to(DEVICE)
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     with tqdm(total=NUM_EPOCHS) as pbar:
@@ -148,6 +149,7 @@ def test_loop(model, criterion, testloader,
     model.eval()
     for metric in metrics:
         metric.to(DEVICE)
+    criterion.to(DEVICE)
 
     eval_loss = 0
 
