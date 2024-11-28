@@ -1,8 +1,8 @@
 .. _pytorch_integration:
 
+
 Pytorch integration
 ===================
-
 Before continuing, you may want to check the :ref:`setup_api_key` section to easily set up your API key, if you haven't done so yet.
 
 Dataset
@@ -106,3 +106,62 @@ Alternative code, if you want to load all the data and metadata:
         metainfo = metainfo
 
         # (... do something with the batch)
+
+
+Experiments
+-----------
+
+The :py:class:`~datamintapi.experiment.experiment.Experiment` class allows you to log your experiments to the server.
+It contains mechanisms to automatically log the model, the dataset, the hyperparameters,
+and the results of your experiments without any extra effort.
+Here is an example of how to use it:
+
+.. code-block:: python
+    
+    from datamintapi import Experiment
+
+    # Create an instance of the Experiment class
+    exp = Experiment(name="Experiment",
+                     project_name='projectname'
+                     )
+    #(...)
+    # Finish the experiment
+    experiment.finish()
+
+
+.. list-table:: Experiment Logging
+   :header-rows: 1
+
+   * - Automatically Logged
+     - Method to Log Manually
+     - Frequency (when automatically logged)
+   * - Model
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_model`
+     - Once
+   * - Dataset
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_dataset_stats`
+     - Once
+   * - Hyperparameters
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_parameters`
+     - Once
+   * - Metrics
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_metrics` and :py:meth:`~datamintapi.experiment.experiment.Experiment.log_metric`
+     - Per epoch and per dataloader
+   * - Predictions
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_predictions`
+     - Per evaluation and per dataloader
+   * - Summary
+     - :py:meth:`~datamintapi.experiment.experiment.Experiment.log_summary`
+     - Once
+
+Check an full functional example at `experiment_traintest_classifier.py <https://github.com/SonanceAI/datamint-python-api/blob/feat/experiment-class/examples/experiment_traintest_classifier.py>`_
+You can disable the automatic logging by setting the parameter `auto_log=False` when creating the Experiment object.
+
+
+Best Practices
+--------------
+- When logging metrics, use '/' to separate different levels of metrics. For example, 'train/loss' and 'test/loss'.
+- Use :py:meth:`~datamintapi.experiment.experiment.Experiment.get_dataset` to get the dataset object, instead of directly using |DatamintDatasetClass|. This ensures that all relevant metadata and configurations are correctly applied and that the dataset stats are logged (when `auto_log=True`).
+- Regularly log metrics and other relevant information to keep track of the experiment's progress. Don't forget to provide epoch/step when possible.
+- Use meaningful names for your experiments, datasets, to make it easier to identify and compare different runs.
+- Use the `dry_run` parameter of |ExperimentClass| for testing/debugging purposes. It will not log anything to the server.

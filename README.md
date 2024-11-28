@@ -49,6 +49,11 @@ You can find example notebooks in the `notebooks` folder:
 
 - [Uploading your resources](notebooks/upload_data.ipynb)
 
+and example scripts in [examples](examples) folder:
+
+- [Running an experiment for classification](examples/experiment_traintest_classifier.py)
+- [Running an experiment for segmentation](examples/experiment_traintest_segmentation.py)
+
 Other functionalities
 ---------------------
 

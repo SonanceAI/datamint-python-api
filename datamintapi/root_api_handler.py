@@ -643,6 +643,27 @@ class RootAPIHandler(BaseAPIHandler):
                 e.set_params('resource', {'resource_id': rid})
                 raise e
 
+    def get_datasetsinfo_by_name(self, dataset_name: str) -> List[Dict]:
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/datasets',
+        }
+        # FIXME: inefficient to get all datasets and then filter by name
+        resp = self._run_request(request_params).json()
+        datasets = [d for d in resp['data'] if d['name'] == dataset_name]
+        return datasets
+
+    def get_dataset_by_id(self, dataset_id: str) -> Dict:
+        try:
+            request_params = {
+                'method': 'GET',
+                'url': f'{self.root_url}/datasets/{dataset_id}',
+            }
+            return self._run_request(request_params).json()
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
+            raise e
     def get_users(self) -> list[dict]:
         """
         Get all users.

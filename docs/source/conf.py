@@ -24,14 +24,22 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinx.ext.autosummary",
     'sphinx_tabs.tabs',
-    'myst_parser'
+    'myst_parser',
+    'sphinx_substitution_extensions'
 ]
+
+rst_prolog = """
+.. |ExperimentClass| replace:: :py:class:`~datamintapi.experiment.experiment.Experiment`
+.. |DatamintDatasetClass| replace:: :py:class:`~datamintapi.dataset.dataset.DatamintDataset`
+"""
 
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
 napoleon_include_init_with_doc = False
 napoleon_include_private_with_doc = False
 napoleon_include_special_with_doc = False
+
+autosummary_imported_members = True # Also documents imports in __init__.py
 
 templates_path = ['_templates']
 exclude_patterns = []
