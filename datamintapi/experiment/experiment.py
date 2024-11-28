@@ -186,7 +186,8 @@ class Experiment:
 
         # raise error if the experiment is already finished
         if exp['completed_at'] is not None:
-            raise DatamintException(f"Experiment '{self.name}' from project '{project["name"]}' is already finished.")
+            project_name = project["name"]
+            raise DatamintException(f"Experiment '{self.name}' from project '{project_name}' is already finished.")
 
         # example of `exp['created_at']`: 2024-11-01T19:26:12.239Z
         # example 2: 2024-11-14T17:47:22.363452-03:00

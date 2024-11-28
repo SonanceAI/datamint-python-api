@@ -30,7 +30,7 @@ extensions = [
 
 rst_prolog = """
 .. |ExperimentClass| replace:: :py:class:`~datamintapi.experiment.experiment.Experiment`
-.. |DatamintDatasetClass| replace:: :py:class:`~datamintapi.dataset.dataset.DatamintDataset`
+.. |DatamintDatasetClass| replace:: :py:class:`~datamintapi.dataset.DatamintDataset`
 """
 
 napoleon_google_docstring = True
