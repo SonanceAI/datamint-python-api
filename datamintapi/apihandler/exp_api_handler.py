@@ -4,9 +4,6 @@ import json
 import logging
 import torch
 from io import BytesIO
-import asyncio
-import aiohttp
-import os
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,7 +55,7 @@ class ExperimentAPIHandler(BaseAPIHandler):
         response = self._run_request(request_params)
 
         return response.json()
-    
+
     def log_summary(self,
                     exp_id: str,
                     result_summary: Dict,
@@ -160,3 +157,29 @@ class ExperimentAPIHandler(BaseAPIHandler):
             task = self._run_request(request_params)
         finally:
             f.close()
+
+    def get_experiment_by_name(self, name: str, project: Dict) -> Optional[Dict]:
+        """
+        Get the experiment by name of the project.
+
+        Args:
+            name (str): Name of the experiment.
+            project (Dict): The project to search for the experiment.
+
+        Returns:
+            Optional[Dict]: The experiment if found, otherwise None.
+        """
+        # uses GET /projects/{project_id}/experiments
+
+        project_id = project['id']
+        request_params = {
+            'method': 'GET',
+            'url': f"{self.root_url}/projects/{project_id}/experiments"
+        }
+
+        response = self._run_request(request_params)
+        experiments = response.json()
+        for exp in experiments:
+            if exp['name'] == name:
+                return exp
+        return None

@@ -144,7 +144,7 @@ class Experiment:
         project = self.apihandler.get_project_by_name(project_name)
         if 'error' in project:
             raise DatamintException(str(project))
-        exp_info = Experiment.get_experiment_by_name(name, project)
+        exp_info = self.apihandler.get_experiment_by_name(name, project)
 
         self.project_name = project['name']
         dataset_info = self.apihandler.get_dataset_by_id(project['dataset_id'])
@@ -192,23 +192,6 @@ class Experiment:
         # example of `exp['created_at']`: 2024-11-01T19:26:12.239Z
         # example 2: 2024-11-14T17:47:22.363452-03:00
         self.time_started = datetime.fromisoformat(exp['created_at'].replace('Z', '+00:00'))
-
-    @staticmethod
-    def get_experiment_by_name(name: str, project: Dict) -> Optional[Dict]:
-        """
-        Get the experiment by name of the project.
-
-        Args:
-            name (str): Name of the experiment.
-            project (Dict): The project to search for the experiment.
-
-        Returns:
-            Optional[Dict]: The experiment if found, otherwise None.
-        """
-        for exp in project['experiments']:
-            if exp['name'] == name:
-                return exp
-        return None
 
     @staticmethod
     def get_enviroment_info() -> Dict[str, Any]:
