@@ -35,7 +35,7 @@ class MyModel(nn.Module):
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_labels)
 
     def forward(self, x):
-        return F.softmax(self.resnet(x), dim=1)
+        return nn.functional.sigmoid(self.resnet(x))
 
 
 def main():
@@ -43,7 +43,7 @@ def main():
     exp = Experiment(name="My First Experiment",
                      project_name='Lucas test project',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
-                     dry_run=True  # Set True to avoid uploading the results to the platform
+                     #  dry_run=True  # Set True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
@@ -84,7 +84,7 @@ def main():
                Accuracy(**cls_metrics_params),
                MatthewsCorrCoef(task=task, num_labels=num_labels)
                ]
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.BCELoss()
     ####################
 
     training_loop(model, criterion, trainloader, metrics)
