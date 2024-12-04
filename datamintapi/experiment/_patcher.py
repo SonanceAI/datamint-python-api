@@ -8,7 +8,8 @@ import torch
 import sys
 import pandas as pd
 import atexit
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+import numpy as np
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class Wrapper:
     class IteratorWrapper:
         def __init__(self, iterator,
                      cb_before_first_next,
+                     cb_next_return,
                      cb_after_iter_return,
                      original_func,
                      cb_args,
@@ -36,6 +38,7 @@ class Wrapper:
             self.cb_kwargs = cb_kwargs
             self.original_func = original_func
             self.cb_before_first_next = cb_before_first_next
+            self.cb_next_return = cb_next_return
             self.cb_after_iter_return = cb_after_iter_return
             self.first_next = True
 
@@ -49,7 +52,10 @@ class Wrapper:
                     cb(self.original_func, self.cb_args, self.cb_kwargs, original_iter=self.iterator)
                 self.first_next = False
             try:
-                return next(self.iterator)
+                return_value = next(self.iterator)
+                for cb in self.cb_next_return:
+                    cb(self.original_func, self.cb_args, self.cb_kwargs, return_value)
+                return return_value
             except StopIteration as e:
                 for cb in self.cb_after_iter_return:
                     cb(self.original_func, self.cb_args, self.cb_kwargs, original_iter=self.iterator)
@@ -69,12 +75,14 @@ class Wrapper:
                  cb_before: Sequence[callable] | callable = None,
                  cb_after: Sequence[callable] | callable = None,
                  cb_before_first_next: Sequence[callable] | callable = None,
+                 cb_next_return: Sequence[callable] | callable = None,
                  cb_after_iter_return: Sequence[callable] | callable = None,
                  ) -> None:
         self.cb_before = cb_before if cb_before is not None else []
         self.cb_after = cb_after if cb_after is not None else []
         self.cb_after_iter_return = cb_after_iter_return if cb_after_iter_return is not None else []
         self.cb_before_first_next = cb_before_first_next if cb_before_first_next is not None else []
+        self.cb_next_return = cb_next_return if cb_next_return is not None else []
         if not _is_iterable(self.cb_before):
             self.cb_before = [self.cb_before]
         if not _is_iterable(self.cb_after):
@@ -83,6 +91,8 @@ class Wrapper:
             self.cb_after_iter_return = [self.cb_after_iter_return]
         if not _is_iterable(self.cb_before_first_next):
             self.cb_before_first_next = [self.cb_before_first_next]
+        if not _is_iterable(self.cb_next_return):
+            self.cb_next_return = [self.cb_next_return]
         self.target = target
         self._patch()
 
@@ -124,8 +134,9 @@ class Wrapper:
 
     def _wrap_iterator(self, iterator, original_func, args, kwargs):
         return Wrapper.IteratorWrapper(iterator,
-                                       self.cb_before_first_next,
-                                       self.cb_after_iter_return,
+                                       cb_before_first_next=self.cb_before_first_next,
+                                       cb_next_return=self.cb_next_return,
+                                       cb_after_iter_return=self.cb_after_iter_return,
                                        original_func=original_func,
                                        cb_args=args,
                                        cb_kwargs=kwargs)
@@ -161,6 +172,8 @@ class PytorchPatcher:
             self.is_iterating = False
             self.metrics = []
             self.iteration_idx = None
+            self.predictions = defaultdict(list)  # TODO: save to disk
+            self.cur_batch = None
 
             for obj in [dataloader, dataloader.batch_sampler]:
                 if hasattr(obj, 'batch_size'):
@@ -218,7 +231,6 @@ class PytorchPatcher:
 
     def clf_loss_computed(self,
                           original_obj, func_args, func_kwargs, return_value):
-        exp = Experiment.get_singleton_experiment()
         loss = return_value.detach().cpu()
         # if is not a 0-d tensor, do not log
         if len(loss.shape) != 0:
@@ -233,6 +245,47 @@ class PytorchPatcher:
 
         if cur_step % PytorchPatcher.AUTO_LOSS_LOG_INTERVAL == 0:
             self._log_metric(loss_name, loss, dataloader=dataloader)
+
+    def _classification_loss_computed(self, preds, targets):
+        dataloader = self.get_last_dataloader()
+        if dataloader is not None and self.dataloaders_info[dataloader].is_iterating:
+            dinfo = self.dataloaders_info[dataloader]
+            if not isinstance(dinfo.cur_batch, dict) or 'metainfo' not in dinfo.cur_batch:
+                _LOGGER.debug(f"No metainfo in batch")
+                return
+            batch_metainfo = dinfo.cur_batch['metainfo']
+            if 'id' not in batch_metainfo[0]:
+                _LOGGER.debug("No id in batch metainfo")
+                return
+            resources_ids = [b['id'] for b in batch_metainfo]
+
+            if len(resources_ids) != len(preds):
+                _LOGGER.debug(f"Number of predictions ({len(preds)}) and targets ({len(targets)}) do not match")
+                return
+
+            dinfo.predictions['predictions'].extend(preds)
+            dinfo.predictions['id'].extend(resources_ids)
+            dinfo.predictions['frame_index'].extend([b['frame_index'] for b in batch_metainfo])
+        else:
+            _LOGGER.warning("No dataloader found")
+
+    def bce_with_logits_computed(self,
+                                 original_obj, func_args, func_kwargs, return_value):
+        self.clf_loss_computed(original_obj, func_args, func_kwargs, return_value)
+        preds = func_kwargs['input'] if 'input' in func_kwargs else func_args[0]
+        targets = func_kwargs['target'] if 'target' in func_kwargs else func_args[1]
+        preds = torch.nn.functional.sigmoid(preds).detach().cpu()
+        targets = targets.detach().cpu()
+        self._classification_loss_computed(preds, targets)
+
+    def ce_computed(self,
+                    original_obj, func_args, func_kwargs, return_value):
+        self.clf_loss_computed(original_obj, func_args, func_kwargs, return_value)
+        preds = func_kwargs['input'] if 'input' in func_kwargs else func_args[0]
+        targets = func_kwargs['target'] if 'target' in func_kwargs else func_args[1]
+        preds = preds.detach().cpu()
+        targets = targets.detach().cpu()
+        self._classification_loss_computed(preds, targets)
 
     def _dataloader_start_iterating_cb(self,
                                        original_obj, func_args, func_kwargs, original_iter):
@@ -249,10 +302,18 @@ class PytorchPatcher:
 
         _LOGGER.debug(f'Dataloader is iterating: {dataloader_info}')
 
+    def _dataloader_next(self,
+                         original_obj, func_args, func_kwargs, return_value):
+        dataloader = func_args[0]
+        dataloder_info = self.dataloaders_info[dataloader]
+        dataloder_info.cur_batch = return_value
+
     def _dataloader_stop_iterating_cb(self,
                                       original_obj, func_args, func_kwargs, original_iter):
         dataloader = func_args[0]
-        self.dataloaders_info[dataloader].is_iterating = False
+        dinfo = self.dataloaders_info[dataloader]
+        dinfo.is_iterating = False
+        dinfo.cur_batch = None
         # find the dataloader that is still iterating # FIXME: For 3 dataloaders being iterating
         for dloader, dlinfo in self.dataloaders_info.items():
             if dlinfo.is_iterating:
@@ -353,6 +414,16 @@ class PytorchPatcher:
             return
 
         dlinfo = self.dataloaders_info[dataloader]
+
+        # log predictions
+        if len(dlinfo.predictions) > 0:
+            if hasattr(dataloader.dataset, 'labels_set'):
+                exp.log_classification_predictions(predictions_conf=np.array(dlinfo.predictions['predictions']),
+                                                   label_names=dataloader.dataset.labels_set,
+                                                   resource_ids=dlinfo.predictions['id'],
+                                                   dataset_split=phase,
+                                                   frame_idxs=dlinfo.predictions['frame_index'])
+
         dlinfo_metrics = pd.DataFrame(dlinfo.metrics,
                                       columns=['name', 'value', 'step', 'epoch'])
         summary = {'metrics': {}}
@@ -441,14 +512,15 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
         {
             'target': 'torch.utils.data.DataLoader.__iter__',
             'cb_before_first_next': pytorch_patcher._dataloader_start_iterating_cb,
-            'cb_after_iter_return': pytorch_patcher._dataloader_stop_iterating_cb
+            'cb_after_iter_return': pytorch_patcher._dataloader_stop_iterating_cb,
+            'cb_next_return': pytorch_patcher._dataloader_next,
         },
         {
             'target': 'torch.utils.data.DataLoader.__init__',
             'cb_after': pytorch_patcher._dataloader_created
         },
         {
-            'target': ['torch.nn.functional.cross_entropy', 'torch.nn.functional.nll_loss'],
+            'target': 'torch.nn.functional.nll_loss',
             'cb_after': pytorch_patcher.clf_loss_computed
         },
         {
@@ -462,8 +534,15 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
         {
             'target': 'torch.nn.modules.module.Module.__init__',
             'cb_after': pytorch_patcher.module_constructed_cb
+        },
+        {
+            'target': 'torch.nn.functional.binary_cross_entropy_with_logits',
+            'cb_after': pytorch_patcher.bce_with_logits_computed
+        },
+        {
+            'target': ['torch.nn.functional.binary_cross_entropy', 'torch.nn.functional.cross_entropy'],
+            'cb_after': pytorch_patcher.ce_computed
         }
-        # TODO: Add callback for BCELoss and others losses
     ]
 
     # explode the list of targets into individual targets

@@ -10,7 +10,7 @@ from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, Matt
 import torchmetrics
 from torchvision.transforms import v2 as T
 from torchvision.models import resnet18, ResNet18_Weights
-from typing import Sequence, Dict
+from typing import Sequence
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def main():
     exp = Experiment(name="My First Experiment",
                      project_name='Lucas test project',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
-                     #   dry_run=True  # Set True to avoid uploading the results to the platform
+                     dry_run=True  # Set True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
@@ -58,8 +58,8 @@ def main():
     train_dataset = exp.get_dataset("train", **dataset_params)
     test_dataset = exp.get_dataset("test", **dataset_params)
 
-    trainloader = train_dataset.get_dataloader(batch_size=4)
-    testloader = test_dataset.get_dataloader(batch_size=4)
+    trainloader = train_dataset.get_dataloader(batch_size=8)
+    testloader = test_dataset.get_dataloader(batch_size=8)
 
     ####################
 
@@ -84,20 +84,13 @@ def main():
                Accuracy(**cls_metrics_params),
                MatthewsCorrCoef(task=task, num_labels=num_labels)
                ]
-    criterion = nn.BCELoss()
+    criterion = nn.BCEWithLogitsLoss()
     ####################
 
     training_loop(model, criterion, trainloader, metrics)
 
     # Evaluate the model on the test data
-    results = test_loop(model, criterion, testloader, metrics)
-
-    exp.log_classification_predictions(predictions_conf=results['predictions'],
-                                       label_names=test_dataset.labels_set,
-                                       resource_ids=results['resource_ids'],
-                                       dataset_split="test",
-                                       frame_idxs=results['frame_idxs']
-                                       )
+    test_loop(model, criterion, testloader, metrics)
 
 
 def training_loop(model, criterion, trainloader,
@@ -143,7 +136,7 @@ def training_loop(model, criterion, trainloader,
 
 
 def test_loop(model, criterion, testloader,
-              metrics: Sequence[torchmetrics.Metric]) -> Dict:
+              metrics: Sequence[torchmetrics.Metric]):
     # To device
     model.to(DEVICE)
     model.eval()
@@ -153,28 +146,17 @@ def test_loop(model, criterion, testloader,
 
     eval_loss = 0
 
-    predictions = []
-    resourse_ids = []
-    frame_idxs = []
-
     with torch.no_grad():
         for batch in tqdm(testloader):
             # batch is a dictionary with keys "images", "labels"
             images = batch["image"].to(DEVICE)
             labels = batch["labels"].to(DEVICE)  # labels is a tensor of shape (batch_size, num_labels)
-            resourse_ids_i = [b['id'] for b in batch['metainfo']]
-            frame_idxs_i = [b['frame_index'] for b in batch['metainfo']]
 
             pred = model(images)
             loss = criterion(pred, labels.float())
             for metric in metrics:
                 metric.update(pred, labels)
             eval_loss += loss.item()
-
-            # For logging
-            predictions.append(pred)
-            resourse_ids.extend(resourse_ids_i)
-            frame_idxs.extend(frame_idxs_i)
 
     eval_loss /= len(testloader)
 
@@ -183,10 +165,6 @@ def test_loop(model, criterion, testloader,
     for metric in metrics:
         LOGGER.info(f"\t{metric.__class__.__name__}: {metric.compute()}")
         metric.reset()
-
-    return {'predictions': torch.cat(predictions),
-            'resource_ids': resourse_ids,
-            'frame_idxs': frame_idxs}
 
 
 if __name__ == "__main__":
