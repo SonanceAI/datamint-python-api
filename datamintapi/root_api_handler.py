@@ -209,6 +209,7 @@ class RootAPIHandler(BaseAPIHandler):
                          publish_to: Optional[str] = None,
                          segmentation_files: Optional[List[Union[List[str], Dict]]] = None,
                          transpose_segmentation: bool = False,
+                         modality: Optional[str] = None
                          ) -> list[str | Exception]:
         """
         Upload resources.
@@ -264,6 +265,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             publish=publish,
                                             segmentation_files=segmentation_files,
                                             transpose_segmentation=transpose_segmentation,
+                                            modality=modality
                                             )
 
         resource_ids = loop.run_until_complete(task)
