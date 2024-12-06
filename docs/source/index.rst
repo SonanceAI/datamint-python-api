@@ -22,18 +22,19 @@ Datamint
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
    getting_started
    setup_api_key
    command_line_tools
    client_api
+   running_experiments
    pytorch_integration
 
 
 .. toctree::
    :maxdepth: 1
-   :caption: Python API
+   :caption: Python Modules Reference
 
    datamint.apihandler
    datamint.dataset

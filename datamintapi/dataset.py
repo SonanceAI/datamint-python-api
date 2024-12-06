@@ -16,7 +16,6 @@ from torchvision.transforms.functional import to_tensor
 from pydicom.pixels import pixel_array
 from .api_handler import APIHandler
 from .base_api_handler import DatamintException
-from deprecated.sphinx import deprecated
 from collections import defaultdict
 from PIL import Image
 
@@ -162,6 +161,9 @@ class DatamintDataset:
         self.num_labels = len(self.labels_set)
         self.num_segmentation_labels = len(self.segmentation_labels)
 
+    def get_resources_ids(self) -> List[str]:
+        return [self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id'] for i in range(len(self))]
+
     def get_labels_set(self) -> Tuple[List[str], Dict[str, int], List[str], Dict[str, int]]:
         """
         Returns the set of labels and a dictionary that maps labels to integers.
@@ -288,19 +290,24 @@ class DatamintDataset:
             'method': 'GET',
             'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
             'headers': {'apikey': self.api_key},
-            # 'params': {'version': self.version},
             'stream': True
         }
         response = self._run_request(session, request_params)
         progress_bar = None
         number_processed_images = 0
 
+        # check if the response is a stream of data and everything is ok
+        if response.status_code != 200:
+            msg = f"Getting jwt token failed with status code={response.status_code}: {response.text}"
+            raise DatamintDatasetException(msg)
+
         try:
             response_iterator = response.iter_lines(decode_unicode=True)
             for line in response_iterator:
                 line = line.strip()
                 if 'event: error' in line:
-                    error_msg = '\n'.join(response_iterator)
+                    error_msg = line+'\n'
+                    error_msg += '\n'.join(response_iterator)
                     raise DatamintDatasetException(f"Getting jwt token failed:\n{error_msg}")
                 if not line.startswith('data:'):
                     continue
@@ -448,7 +455,7 @@ class DatamintDataset:
 
         return labels_onehot_merged
 
-    def __getitem_internal(self, index: int) -> Dict[str, Any]:
+    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
         if self.return_frame_by_frame:
             # Find the correct filepath and index
             for i, num_frames in enumerate(self.num_frames_per_dicom):
@@ -469,6 +476,10 @@ class DatamintDataset:
 
         if self.return_seg_annotations == False:
             img_metainfo.pop('annotations', None)
+
+        if only_load_metainfo:
+            return {'metainfo': img_metainfo}
+
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
@@ -486,7 +497,8 @@ class DatamintDataset:
                     segfilepath = ann['file']  # png file
                     segfilepath = os.path.join(self.dataset_dir, segfilepath)
                     # FIXME: avoid enforcing resizing the mask
-                    seg = np.array(Image.open(segfilepath).convert('L').resize((img.shape[2], img.shape[1]), Image.NEAREST))
+                    seg = np.array(Image.open(segfilepath).convert('L').resize(
+                        (img.shape[2], img.shape[1]), Image.NEAREST))
                     seg = torch.from_numpy(seg)
                     seg = seg == 255   # binary mask
                     # map the segmentation label to the code
