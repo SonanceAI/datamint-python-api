@@ -14,6 +14,14 @@ import heapq
 _LOGGER = logging.getLogger(__name__)
 
 
+IMPORTANT_METRICS = ['Accuracy', 'Precision', 'Recall', 'F1score', 'Positive Predictive Value', 'Sensitivity']
+IMPORTANT_METRICS = ['test/'+m.lower() for m in IMPORTANT_METRICS]
+METRIC_RENAMER = {
+    'precision': 'Positive Predictive Value',
+    'recall': 'Sensitivity',
+}
+
+
 class TopN:
     class _Item:
         def __init__(self, key, item):
@@ -354,8 +362,12 @@ class Experiment:
                 _LOGGER.debug(f"Metric {name} has a nan value. Replacing with 'NAN'.")
                 metrics[name] = 'NAN'
 
-        if show_in_summary == True:
-            for name, value in metrics.items():
+        for name, value in metrics.items():
+            base_name = name.lower().split('test/', maxsplit=1)[-1]
+            if base_name in METRIC_RENAMER:
+                name = METRIC_RENAMER[base_name]
+                
+            if show_in_summary or name.lower() in IMPORTANT_METRICS:
                 self.add_to_summary({'metrics': {name: value}})
 
         entry = [{'type': 'metric',
@@ -813,7 +825,6 @@ class Experiment:
                                  }
                                 )
 
-        # self.apihandler.finish_experiment(self.exp_id)
         self.log_summary(result_summary=self.summary_log)
         if self.model is not None:
             self.log_model(model=self.model, hyper_params=self.model_hyper_params)
