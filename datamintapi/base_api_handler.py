@@ -164,6 +164,8 @@ class BaseAPIHandler:
         if isinstance(response_json, list):
             for r in response_json:
                 if isinstance(r, dict) and 'error' in r:
+                    if hasattr(response, 'text'):
+                        _LOGGER.error(f"Error response: {response.text}")
                     raise DatamintException(r['error'])
 
     def _run_request(self,

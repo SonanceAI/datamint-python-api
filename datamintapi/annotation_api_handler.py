@@ -9,6 +9,7 @@ import nibabel as nib
 import os
 import asyncio
 import aiohttp
+from requests.exceptions import HTTPError
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -346,38 +347,38 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         yield from self._run_pagination_request(request_params, return_field='data')
 
-    def get_annotation_worklist_by_project(self,
-                                           project_id: str) -> Dict:
+    def get_annotation_worklist_by_id(self,
+                                      id: str) -> Dict:
+        """
+        Get the annotation worklist.
+
+        Args:
+            id (str): The annotation worklist unique id.
+
+        Returns:
+            Dict: A dictionary with the annotations information.
+        """
 
         request_params = {
             'method': 'GET',
-            'url': f'{self.root_url}/projects/{project_id}',
+            'url': f'{self.root_url}/annotationsets/{id}',
         }
 
-        resp = self._run_request(request_params).json()
-        worklist_id = resp['worklist_id']
+        try:
+            resp = self._run_request(request_params).json()
+            return resp
+        except HTTPError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError('annotation worklist', {'id': id})
+            raise e
 
-        # Not working:
-        # request_params = {
-        #     'method': 'GET',
-        #     'url': f'{self.root_url}/annotationsets/{worklist_id}',
-        # }
-
-        # resp = self._run_request(request_params).json()
-
-        for annwl in self.get_annotation_worklist():
-            if annwl['id'] == worklist_id:
-                return annwl
-
-        raise ResourceNotFoundError('annotation worklist', {'worklist_id': worklist_id})
-
-    # use PATCH /annotationsets/{id}
     def update_annotation_worklist(self,
                                    worklist_id: str,
                                    frame_labels: List[str] = None,
                                    image_labels: List[str] = None,
                                    annotations: List[Dict] = None,
-                                   status: Literal['new', 'updating', 'active', 'completed'] = None
+                                   status: Literal['new', 'updating', 'active', 'completed'] = None,
+                                   name:str = None,
                                    ):
         """
         Update the status of an annotation worklist.
@@ -400,6 +401,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
             payload['image_labels'] = image_labels
         if annotations is not None:
             payload['annotations'] = annotations
+        if name is not None:
+            payload['name'] = name
+  
 
         request_params = {
             'method': 'PATCH',
