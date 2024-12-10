@@ -19,7 +19,7 @@ You should see this in the first line:
 There are two command-line tools available:
 
 - ``datamint-config``: To configure the Datamint API key and URL.
-- ``datamint-upload``: To upload DICOM files to the Datamint server.
+- ``datamint-upload``: To upload DICOM/mp4/png/jpeg files to the Datamint server.
 
 .. _configuring_datamint_settings:
 

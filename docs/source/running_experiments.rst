@@ -59,6 +59,7 @@ Manual Summary logging
 ++++++++++++++++++++++
 Here is a complete example that logs manually everything required by the summary UI tab:
 
+.. _experiment_example_code_1:
 .. code-block:: python
 
     from datamintapi import Experiment
@@ -78,8 +79,8 @@ Here is a complete example that logs manually everything required by the summary
 
     # Logs predictions.
     predictions_conf = np.array([[0.5, 0.2], [0.1, 0.4]])
-    label_names = ['fracture', 'tumor']
     resource_ids = exp.get_dataset('test').get_resources_ids()[:2]
+    label_names = ['fracture', 'tumor'] # or `exp.get_dataset('test').labels_set`
     exp.log_classification_predictions(predictions_conf,
                                         label_names=label_names,
                                         resource_ids=resource_ids,
@@ -101,7 +102,8 @@ There are multiple detailed info that can be logged during the training of a mod
 - **Metrics along epochs/steps** such as loss, accuracy and sensitivity. For this, use :py:meth:`~datamintapi.experiment.experiment.Experiment.log_metric` with ``epoch=i`` and ``name="train/{METRIC_NAME}"`` or ``name="val/{METRIC_NAME}"``.
 - **Predictions:** The model's predictions on the validation/test set. Useful to build curves such as ROC and Precision-Recall. For this, use :py:meth:`~datamintapi.experiment.experiment.Experiment.log_classification_predictions`.
 - **Hyperparameters:** the hyperparameters used to train the model. For this, use the ``hyper_params`` parameter of :py:meth:`~datamintapi.experiment.experiment.Experiment.log_model`. Some hyperparameters are automatically logged by default, such as the number of layers, number of parameters, and the model attributes.
-- **Enviroment:** The environment used to train the model. This is automatically collected by default. Disable it by ``log_enviroment=False``` when creating the |ExperimentClass| object.
+- **Environment:** The environment used to train the model. This is automatically collected by default. Disable it by ``log_enviroment=False``` when creating the |ExperimentClass| object.
+- **Model:** The model itself. For this, use :py:meth:`~datamintapi.experiment.experiment.Experiment.log_model`.
 
 Here is an example of how to log the metrics along epochs during the training of a model:
 
@@ -122,6 +124,49 @@ Here is an example of how to log the metrics along epochs during the training of
     exp.log_metric('val/Sensitivity', 0.45, epoch=cur_epoch)
     exp.log_metric('val/loss', 1.0, epoch=cur_epoch)
     # (...)
+
+To log you model, you can use the following code:
+
+.. code-block:: python
+
+    # definition of a custom model
+    class MyModel(nn.Module):
+        def __init__(self, hidden_size=32):
+            super().__init__()
+            self.hidden_size = hidden_size
+            self.fc = nn.Sequential(
+                nn.Linear(64, self.hidden_size),
+                nn.ReLU(),
+                nn.Linear(self.hidden_size, 1)
+            )
+
+        def forward(self, x):
+            return self.fc(x)
+
+    model = MyModel(hidden_size=32) 
+    hyper_params = {'learning_rate': 0.001, 'batch_size': 32}
+    exp.log_model(model, hyper_params=hyper_params) # `hidden_size`` will be automatically logged
+    # use `log_model_attributes=False` to avoid logging the model attributes
+
+It is possible to pass the file path of the model to be logged as well:
+
+.. code-block:: python
+
+    # (...)
+    exp.log_model('model.pth')
+
+To log predictions at a given step/epoch, you can use the same :ref:`example code <experiment_example_code_1>` from Section `Manual Summary logging`_,
+but with the ``epoch`` or ``step`` parameter set to the desired value:
+
+.. code-block:: python
+
+    # (...)
+    exp.log_classification_predictions(predictions_conf,
+                                        label_names=label_names,
+                                        resource_ids=resource_ids,
+                                        dataset_split='test',
+                                        epoch=0)
+
 
 
 
