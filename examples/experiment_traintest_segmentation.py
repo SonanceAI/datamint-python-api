@@ -118,7 +118,7 @@ def main():
 
     ####################
 
-    num_segmentation_classes = train_dataset.num_segmentation_labels+1  # +1 for the background class
+    num_segmentation_classes = len(train_dataset.segmentation_labels_set)+1  # +1 for the background class
 
     ### Define the model, loss function, and metrics ###
     model = initialize_model(num_segmentation_classes, weights)

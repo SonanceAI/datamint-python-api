@@ -366,7 +366,7 @@ class Experiment:
             base_name = name.lower().split('test/', maxsplit=1)[-1]
             if base_name in METRIC_RENAMER:
                 name = METRIC_RENAMER[base_name]
-                
+
             if show_in_summary or name.lower() in IMPORTANT_METRICS:
                 self.add_to_summary({'metrics': {name: value}})
 
@@ -497,8 +497,8 @@ class Experiment:
 
         dataset_stats = {
             'num_samples': len(dataset),
-            'num_frame_labels': dataset.num_labels,
-            'num_segmentation_labels': dataset.num_segmentation_labels,
+            'num_frame_labels': len(dataset.frame_labels_set),
+            'num_segmentation_labels': len(dataset.segmentation_labels_set),
             'frame_label_distribution': dataset.get_framelabel_distribution(normalize=True),
             'segmentation_label_distribution': dataset.get_segmentationlabel_distribution(normalize=True),
         }
@@ -577,15 +577,24 @@ class Experiment:
 
     def _detect_machine_learning_task(self, dataset: DatamintDataset) -> str:
         # Detect machine learning task based on the dataset params
-        if dataset.return_as_semantic_segmentation:
+        if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
             return 'semantic segmentation'
-        elif dataset.return_seg_annotations:
+        elif dataset.return_seg_annotations and len(dataset.segmentation_labels_set) > 0:
             return 'instance segmentation'
 
-        if dataset.num_labels == 1:
-            return 'binary classification'
-        if dataset.num_labels > 1:
-            return 'multilabel classification'
+        num_labels = len(dataset.frame_labels_set) # FIXME: when not frame by frame
+        num_categories = len(dataset.segmentation_labels_set)
+        if num_categories == 0:
+            if dataset.num_labels == 1:
+                return 'binary classification'
+            elif dataset.num_labels > 1:
+                return 'multilabel classification'
+        elif num_categories == 1:
+            if num_labels == 0:
+                return 'multiclass classification'
+            return 'multi-task classification'
+        else:
+            return 'multi-task classification'
 
         return 'unknown'
 

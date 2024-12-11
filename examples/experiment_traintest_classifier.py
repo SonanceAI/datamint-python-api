@@ -41,7 +41,7 @@ class MyModel(nn.Module):
 def main():
     # Initialize the experiment. Creates a new experiment on the platform.
     exp = Experiment(name="My First Experiment",
-                     project_name='Lucas test project',
+                     project_name='testproject',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
                      #  dry_run=True  # Set True to avoid uploading the results to the platform
                      )
@@ -63,7 +63,7 @@ def main():
 
     ####################
 
-    num_labels = train_dataset.num_labels
+    num_labels = len(train_dataset.frame_labels_set)
     if num_labels == 0:
         raise ValueError("The dataset does not have any frame labels!")
     print(f"Number of labels: {num_labels}")
@@ -170,6 +170,6 @@ def test_loop(model, criterion, testloader,
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
-    logging.getLogger('datamintapi').setLevel(logging.INFO)
+    logging.getLogger('datamintapi').setLevel(logging.DEBUG)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()
