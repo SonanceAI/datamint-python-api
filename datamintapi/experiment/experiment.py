@@ -1,6 +1,7 @@
 import logging
 from datamintapi.api_handler import APIHandler
 from datamintapi.base_api_handler import DatamintException
+from datamintapi.apihandler.buffered_api_handler import BufferedAPIHandler
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union, Any, Tuple
 from collections import defaultdict
@@ -130,6 +131,7 @@ class Experiment:
             _LOGGER.warning("Running in dry-run mode. No data will be uploaded to the platform.")
         else:
             self.apihandler = APIHandler(api_key=api_key, root_url=root_url)
+            self.apihandler = BufferedAPIHandler(self.apihandler)
         self.cur_step = None
         self.cur_epoch = None
         self.summary_log = defaultdict(dict)
