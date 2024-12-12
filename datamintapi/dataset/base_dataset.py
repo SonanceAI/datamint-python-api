@@ -143,6 +143,7 @@ class DatamintBaseDataset:
         self.subset_indices = list(range(self.dataset_length))
         # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
+        self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
 
     @property
     def frame_labels_set(self) -> List[str]:
@@ -159,6 +160,22 @@ class DatamintBaseDataset:
         This is more related to multi-class tasks.
         """
         return self.frame_lsets['multiclass']
+    
+    @property
+    def image_labels_set(self) -> List[str]:
+        """
+        Returns the set of independent labels in the dataset.
+        This is more related to multi-label tasks.
+        """
+        return self.image_lsets['multilabel']
+    
+    @property
+    def image_categories_set(self) -> List[Tuple[str, str]]:
+        """
+        Returns the set of categories in the dataset.
+        This is more related to multi-class tasks.
+        """
+        return self.image_lsets['multiclass']
 
     @property
     def segmentation_labels_set(self) -> List[str]:

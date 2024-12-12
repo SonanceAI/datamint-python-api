@@ -1,6 +1,7 @@
 from .base_dataset import DatamintBaseDataset
-from typing import Tuple, List, Optional, Callable, Any, Dict
+from typing import Tuple, List, Optional, Callable, Any, Dict, Literal
 import torch
+from torch import Tensor
 import os
 import numpy as np
 import logging
@@ -28,6 +29,7 @@ class DatamintDataset(DatamintBaseDataset):
                  return_as_semantic_segmentation: bool = False,
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
+                 semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  ):
         super().__init__(root=root,
                          project_name=project_name,
@@ -45,6 +47,7 @@ class DatamintDataset(DatamintBaseDataset):
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.image_transform = image_transform
         self.mask_transform = mask_transform
+        self.semantic_seg_merge_strategy = semantic_seg_merge_strategy
 
         if return_segmentations == False and return_as_semantic_segmentation == True:
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
@@ -108,21 +111,67 @@ class DatamintDataset(DatamintBaseDataset):
         return segmentations, seg_labels
 
     def _instanceseg2semanticseg(self,
-                                 segmentations: torch.Tensor,
-                                 seg_labels: torch.Tensor) -> torch.Tensor:
+                                 segmentations: List[Tensor],
+                                 seg_labels: List[Tensor]) -> Tensor:
+        """
+        Convert instance segmentation to semantic segmentation.
+
+        Args:
+            segmentations: list of `n` tensors of shape (num_instances, H, W), where `n` is the number of frames.
+            seg_labels: list of `n` tensors of shape (num_instances,), where `n` is the number of frames.
+
+        Returns:
+            Tensor: tensor of shape (n, num_labels, H, W), where `n` is the number of frames.
+        """
         if segmentations is not None:
+            if len(segmentations) != len(seg_labels):
+                raise ValueError("segmentations and seg_labels must have the same length")
+
+            h, w = segmentations[0].shape[1:]
             new_shape = (len(segmentations),
-                         len(self.segmentation_labels_set)+1,
-                         segmentations.shape[1], segmentations.shape[2])
+                         len(self.segmentation_labels_set)+1,  # +1 for background
+                         h, w)
             new_segmentations = torch.zeros(new_shape, dtype=torch.uint8)
+            # for each frame
             for i in range(len(segmentations)):
-                # for each frame
-                new_segmentations[i, seg_labels[i]] += segmentations[i]
+                # for each instance
+                for j in range(len(segmentations[i])):
+                    new_segmentations[i, seg_labels[i][j]] += segmentations[i][j]
             new_segmentations = new_segmentations > 0
             # pixels that are not in any segmentation are labeled as background
             new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
             segmentations = new_segmentations.float()
         return segmentations
+
+    def apply_semantic_seg_merge_strategy(self, segmentations: Dict[str, Tensor]):
+        if self.semantic_seg_merge_strategy is None:
+            return segmentations
+        if self.semantic_seg_merge_strategy == 'union':
+            return self._apply_semantic_seg_merge_strategy_union(segmentations)
+        if self.semantic_seg_merge_strategy == 'intersection':
+            return self._apply_semantic_seg_merge_strategy_intersection(segmentations)
+        if self.semantic_seg_merge_strategy == 'mode':
+            return self._apply_semantic_seg_merge_strategy_mode(segmentations)
+        raise ValueError(f"Unknown semantic_seg_merge_strategy: {self.semantic_seg_merge_strategy}")
+
+    def _apply_semantic_seg_merge_strategy_union(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+        new_segmentations = torch.zeros_like(list(segmentations.values())[0])
+        for seg in segmentations.values():
+            new_segmentations += seg
+        return new_segmentations.bool()
+
+    def _apply_semantic_seg_merge_strategy_intersection(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+        new_segmentations = torch.ones_like(list(segmentations.values())[0])
+        for seg in segmentations.values():
+            new_segmentations += seg
+        return new_segmentations.bool()
+
+    def _apply_semantic_seg_merge_strategy_mode(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+        new_segmentations = torch.zeros_like(list(segmentations.values())[0])
+        for seg in segmentations.values():
+            new_segmentations += seg
+        new_segmentations = new_segmentations >= len(segmentations) / 2
+        return new_segmentations
 
     def __getitem__(self, index) -> Dict[str, Any]:
         item = super().__getitem__(index)
@@ -143,7 +192,13 @@ class DatamintDataset(DatamintBaseDataset):
         if self.return_segmentations:
             segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
             if self.return_as_semantic_segmentation:
-                segmentations = self._instanceseg2semanticseg(segmentations, seg_labels)
+                sem_segmentations: Dict[str, torch.Tensor] = {}
+                for author in segmentations.keys():
+                    sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author], seg_labels[author])
+                    segmentations[author] = None  # free memory
+                sem_segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations)
+                segmentations = sem_segmentations
+
             if self.mask_transform is not None:
                 for i in range(len(segmentations)):
                     if segmentations[i] is not None:
@@ -155,14 +210,23 @@ class DatamintDataset(DatamintBaseDataset):
             new_item['seg_labels'] = seg_labels
 
         framelabel_annotations = self._get_annotations_internal(annotations, type='label', scope='frame')
-        framelabels = self._convert_framelabels_annotations(framelabel_annotations, num_frames=img.shape[0])
+        framelabels = self._convert_labels_annotations(framelabel_annotations, num_frames=img.shape[0])
+        # framelabels.shape: (num_frames, num_labels)
+
+        imagelabel_annotations = self._get_annotations_internal(annotations, type='label', scope='image')
+        imagelabels = self._convert_labels_annotations(imagelabel_annotations)
+        # imagelabels.shape: (num_labels,)
+
         new_item['frame_labels'] = framelabels
+        new_item['image_labels'] = imagelabels
 
         # FIXME: deal with multiple annotators
 
         return new_item
 
-    def _convert_framelabels_annotations(self, annotations: List[Dict], num_frames: int) -> Dict[str, torch.Tensor]:
+    def _convert_labels_annotations(self,
+                                    annotations: List[Dict],
+                                    num_frames: int = None) -> Dict[str, torch.Tensor]:
         """
         Converts the annotations, of the same type and scope, to tensor of shape (num_frames, num_labels)
         for each annotator.
@@ -174,20 +238,27 @@ class DatamintDataset(DatamintBaseDataset):
         Returns:
             Dict[torch.Tensor]: dictionary of annotator_id -> tensor of shape (num_frames, num_labels)
         """
-        labels_ret_size = (num_frames, len(self.frame_labels_set))
+        if num_frames is None:
+            labels_ret_size = (len(self.image_labels_set),)
+            label2code = self.image_lcodes['multilabel']
+        else:
+            labels_ret_size = (num_frames, len(self.frame_labels_set))
+            label2code = self.frame_lcodes['multilabel']
 
         if len(annotations) == 0:
             return torch.zeros(size=labels_ret_size, dtype=torch.int32)
 
-        label2code = self.frame_lcodes['multilabel']
         frame_labels_byuser = defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
         for ann in annotations:
             user_id = ann['added_by']
-            frame_idx = ann['index']
+            frame_idx = ann.get('index', None)
 
             labels_onehot_i = frame_labels_byuser[user_id]
             code = label2code[ann['name']]
-            labels_onehot_i[frame_idx, code] = 1
+            if frame_idx is None:
+                labels_onehot_i[code] = 1
+            else:
+                labels_onehot_i[frame_idx, code] = 1
 
         return dict(frame_labels_byuser)
 
