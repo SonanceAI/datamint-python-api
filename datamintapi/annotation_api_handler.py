@@ -78,7 +78,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         resp = await self._run_request_async(request_params)
         for r in resp:
             if 'error' in r:
-                raise DatamintException(resp['error'])
+                raise DatamintException(r['error'])
         return resp
 
     async def _upload_segmentations_async(self,
@@ -90,6 +90,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
                                           worklist_id: Optional[str] = None,
+                                          model_id: Optional[str] = None,
                                           transpose_segmentation: bool = False
                                           ) -> str:
         if isinstance(file_path, str) and not os.path.exists(file_path):
@@ -128,7 +129,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                     segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, f)
                     annotations = []
                     for segname in segnames:
-                        annotations.append({
+                        ann = {
                             "identifier": segname,
                             "scope": 'frame',
                             "frame_index": fidx,
@@ -136,7 +137,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
                             'import_author': author_email,
                             "type": 'segmentation',
                             'annotation_worklist_id': worklist_id
-                        })
+                        }
+                        if model_id is not None:
+                            ann['model_id'] = model_id
+                            ann['is_model'] = True
+                        annotations.append(ann)
                     # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
                     if len(annotations) != len(set([a['identifier'] for a in annotations])):
                         raise ValueError(
@@ -177,7 +182,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
                              discard_empty_segmentations: bool = True,
-                             worklist_id: Optional[str] = None
+                             worklist_id: Optional[str] = None,
+                             model_id: Optional[str] = None
                              ) -> str:
         """
         Upload segmentations to a resource.
@@ -185,6 +191,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Args:
             resource_id (str): The resource unique id.
             file_path (str|np.ndarray): The path to the segmentation file.
+                If a numpy array is provided, it must have the shape (height, width, #frames) or (height, width).
             name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
                 example: {1: 'Femur', 2: 'Tibia'}.
             frame_index (int): The frame index of the segmentation.
@@ -207,7 +214,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                                 imported_from=imported_from,
                                                 author_email=author_email,
                                                 discard_empty_segmentations=discard_empty_segmentations,
-                                                worklist_id=worklist_id)
+                                                worklist_id=worklist_id,
+                                                model_id=model_id)
         ret = loop.run_until_complete(task)
         return ret
 
@@ -274,6 +282,66 @@ class AnnotationAPIHandler(BaseAPIHandler):
             'imported_from': imported_from,
             'import_author': author_email,
             'type': 'category'} for i in frame_index]
+
+        request_params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/annotations/{resource_id}/annotations',
+            'json': json_data
+        }
+
+        resp = self._run_request(request_params)
+        self._check_errors_response_json(resp)
+
+    def add_annotations(self,
+                        resource_id: str,
+                        identifier: str,
+                        frame_index: Optional[Union[int, Tuple[int, int]]] = None,
+                        value: Optional[str] = None,
+                        worklist_id: Optional[str] = None,
+                        imported_from: Optional[str] = None,
+                        author_email: Optional[str] = None,
+                        model_id: Optional[str] = None,
+                        ):
+        """
+        Add annotations to a resource.
+
+        Args:
+            resource_id (str): The resource unique id.
+            identifier (str): The annotation identifier.
+            frame_index (Optional[Union[int, Tuple[int, int]]]): The frame index or a tuple with the range of frame indexes.
+                If a tuple is provided, the annotation will be added to all frames in the range (Inclusive on both ends).
+            value (Optional[str]): The annotation value.
+            worklist_id (Optional[str]): The annotation worklist unique id.
+            imported_from (Optional[str]): The imported from value.
+            author_email (Optional[str]): The author email. If None, use the customer of the api key.
+                Requires admin permissions to set a different customer.
+            model_id (Optional[str]): The model unique id.
+        """
+
+        if isinstance(frame_index, tuple):
+            frame_index = list(range(frame_index[0], frame_index[1]+1))
+        elif isinstance(frame_index, int):
+            frame_index = [frame_index]
+
+        scope = 'frame' if frame_index is not None else 'image'
+
+        params = {
+            'identifier': identifier,
+            'value': value,
+            'scope': scope,
+            'annotation_worklist_id': worklist_id,
+            'imported_from': imported_from,
+            'import_author': author_email,
+            'type': 'category',
+        }
+        if model_id is not None:
+            params['model_id'] = model_id
+            params['is_model'] = True
+
+        if frame_index is not None:
+            json_data = [dict(params, frame_index=i) for i in frame_index]
+        else:
+            json_data = [params]
 
         request_params = {
             'method': 'POST',
@@ -378,7 +446,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                    image_labels: List[str] = None,
                                    annotations: List[Dict] = None,
                                    status: Literal['new', 'updating', 'active', 'completed'] = None,
-                                   name:str = None,
+                                   name: str = None,
                                    ):
         """
         Update the status of an annotation worklist.
@@ -403,7 +471,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
             payload['annotations'] = annotations
         if name is not None:
             payload['name'] = name
-  
 
         request_params = {
             'method': 'PATCH',
@@ -421,6 +488,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
         if names is None:
             names = 'seg'
         if isinstance(names, str):
+            if len(uniq_vals) == 1:
+                return [names]
             return [f'{names}_{v}' for v in uniq_vals]
         if isinstance(names, dict):
             return [names.get(v, names.get('default', '')+'_'+str(v)) for v in uniq_vals]

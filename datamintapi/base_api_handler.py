@@ -144,8 +144,9 @@ class BaseAPIHandler:
             status_code = BaseAPIHandler.get_status_code(e)
             if status_code >= 500 and status_code < 600:
                 _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
-            if status_code == 404:
+            if status_code >= 400 and status_code < 500:
                 try:
+                    _LOGGER.error(f"Error response: {response.text}")
                     error_data = response.json()
                 except Exception as e2:
                     _LOGGER.error(f"Error parsing the response. {e2}")
