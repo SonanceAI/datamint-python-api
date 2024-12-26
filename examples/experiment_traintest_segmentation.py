@@ -219,14 +219,13 @@ def test_loop(model, criterion,
             # yhat.shape = (batch_size, #classes, H, W). Not normalized (-inf, +inf)
             yhat = model(images)['out']
             # remove background
-            yhat = yhat[:, 1:]
             loss = criterion(yhat, segmentations)
             for metric in metrics:
                 metric.update(yhat > 0.0, segmentations.bool())
             eval_loss += loss.item()
             
+            yhat = yhat[:, 1:]
             yhat = torch.sigmoid(yhat)
-            LOGGER.info(f'yhat.mean(): {yhat.mean()}')
             exp.log_semantic_seg_predictions(yhat.cpu().numpy(),
                                              resource_ids=[b['id'] for b in batch['metainfo']],
                                              label_names=testloader.dataset.segmentation_labels_set,

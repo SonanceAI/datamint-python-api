@@ -527,12 +527,11 @@ class DatamintBaseDataset:
     def __find_index(self, index: int) -> Tuple[int, int]:
         frame_index = index
         for i, num_frames in enumerate(self.num_frames_per_resource):
-            if index < num_frames:
+            if frame_index < num_frames:
                 break
             frame_index -= num_frames
-        
-        if frame_index < 0:
-            raise ValueError(f"Invalid index: {index}")
+        else:
+            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
 
         return i, frame_index
 
