@@ -75,8 +75,8 @@ class _DryRunExperimentAPIHandler(APIHandler):
     def log_summary(self, exp_id: str, result_summary: Dict):
         pass
 
-    def log_model(self, exp_id: str, model: Union[torch.nn.Module, str, BytesIO], hyper_params: Optional[Dict] = None, torch_save_kwargs: Dict = {}):
-        pass
+    def log_model(self, exp_id: str, *args, **kwargs):
+        return {'id': 'dry_run'}
 
     def finish_experiment(self, exp_id: str):
         pass
@@ -528,7 +528,7 @@ class Experiment:
 
         Args:
             split (str): The split of the dataset to get. Can be one of ['all', 'train', 'test', 'val'].
-            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.DatamintDataset` class.
+            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.dataset.DatamintDataset` class.
 
         Returns:
             DatamintDataset: The dataset object.
@@ -780,8 +780,12 @@ class Experiment:
         if len(predictions) != len(resource_ids):
             raise ValueError("Length of predictions and resource_ids must be the same.")
 
-        if frame_idxs is not None and len(predictions) != len(frame_idxs):
-            raise ValueError("Length of predictions and frame_idxs must be the same.")
+        if frame_idxs is not None:
+            if len(predictions) != len(frame_idxs):
+                raise ValueError("Length of predictions and frame_idxs must be the same.")
+            # non negative frame indexes
+            if any(fidx < 0 for fidx in frame_idxs):
+                raise ValueError("Frame indexes must be non-negative.")
 
         if len(label_names) != predictions.shape[1]:
             raise ValueError("Number of classes must match the number of columns in predictions.")
@@ -799,6 +803,7 @@ class Experiment:
                                             add_info={'origin': 'semantic segmentation'})
 
         if self.model_id is not None:
+            _LOGGER.info("Uploading segmentation masks to the platform.")
             # For each frame
             predictions = predictions > threshold
             for fidx, res_id, pred in zip(frame_idxs, resource_ids, predictions):
@@ -813,8 +818,10 @@ class Experiment:
                         name=name,
                         frame_index=fidx,
                         model_id=self.model_id,
-                        worklist_id=self.project['worklist_id']
+                        worklist_id=self.project['worklist_id'],
                     )
+        else:
+            _LOGGER.warning("Model is not logged. Skipping uploading segmentation masks.")
 
     def finish(self):
         """

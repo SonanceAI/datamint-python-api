@@ -1,5 +1,5 @@
 from .base_dataset import DatamintBaseDataset
-from typing import Tuple, List, Optional, Callable, Any, Dict, Literal
+from typing import Tuple, List, Optional, Callable, Any, Dict, Literal, Union
 import torch
 from torch import Tensor
 import os
@@ -53,10 +53,29 @@ class DatamintDataset(DatamintBaseDataset):
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
 
     def _load_segmentations(self, annotations: List[Dict], img_shape) -> Tuple[Dict[str, List], Dict[str, List]]:
+        """
+        Load segmentations from annotations.
+
+        Args:
+            annotations: list of annotations. Each annotation is a dictionary with keys 'type', 'file', 'added_by', 'name', 'index'.
+            img_shape: shape of the image (#frames, C, H, W)
+
+        Returns:
+            Tuple[Dict[str, List], Dict[str, List]]: a tuple of two dictionaries.
+                The first dictionary is author -> list of segmentations (tensors) of shape (#frames, H, W).
+                The second dictionary is author -> list of segmentation labels (tensors).
+        """
         segmentations = {}
-        # segmentations = [None] * img_shape[0]
-        # seg_labels = [None] * img_shape[0]
         seg_labels = {}
+
+        if self.return_frame_by_frame:
+            assert len(img_shape) == 3, f"img_shape must have 3 dimensions, got {img_shape}"
+            _, h, w = img_shape
+            nframes = 1
+        else:
+            assert len(img_shape) == 3, f"img_shape must have 3 dimensions, got {img_shape}"
+            nframes, _, h, w = img_shape
+
         # Load segmentation annotations
         for ann in annotations:
             if ann['type'] != 'segmentation':
@@ -70,7 +89,7 @@ class DatamintDataset(DatamintBaseDataset):
             # FIXME: avoid enforcing resizing the mask
             seg = (Image.open(segfilepath)
                    .convert('L')
-                   .resize((img_shape[2], img_shape[1]), Image.NEAREST)
+                   .resize((h, w), Image.NEAREST)
                    )
             seg = np.array(seg)
 
@@ -84,8 +103,8 @@ class DatamintDataset(DatamintBaseDataset):
                 frame_index = ann['index']
 
             if author not in segmentations.keys():
-                segmentations[author] = [None] * img_shape[0]
-                seg_labels[author] = [None] * img_shape[0]
+                segmentations[author] = [None] * nframes
+                seg_labels[author] = [None] * nframes
             author_segs = segmentations[author]
             author_labels = seg_labels[author]
 
@@ -105,7 +124,7 @@ class DatamintDataset(DatamintBaseDataset):
                     author_segs[i] = torch.stack(author_segs[i])
                     author_labels[i] = torch.tensor(author_labels[i], dtype=torch.int32)
                 else:
-                    author_segs[i] = torch.zeros((0, img_shape[1], img_shape[2]), dtype=torch.bool)
+                    author_segs[i] = torch.zeros((0, h, w), dtype=torch.bool)
                     author_labels[i] = torch.zeros(0, dtype=torch.int32)
 
         return segmentations, seg_labels
@@ -143,8 +162,13 @@ class DatamintDataset(DatamintBaseDataset):
             segmentations = new_segmentations.float()
         return segmentations
 
-    def apply_semantic_seg_merge_strategy(self, segmentations: Dict[str, Tensor]):
+    def apply_semantic_seg_merge_strategy(self, segmentations: Dict[str, Tensor], nframes, h, w) -> Union[Tensor, Dict]:
         if self.semantic_seg_merge_strategy is None:
+            return segmentations
+        if len(segmentations) == 0:
+            segmentations = torch.zeros((nframes, len(self.segmentation_labels_set)+1, h, w),
+                                        dtype=torch.get_default_dtype())
+            segmentations[:, 0, :, :] = 1  # background
             return segmentations
         if self.semantic_seg_merge_strategy == 'union':
             return self._apply_semantic_seg_merge_strategy_union(segmentations)
@@ -179,38 +203,55 @@ class DatamintDataset(DatamintBaseDataset):
         metainfo = item['metainfo']
         annotations = item['annotations']
 
-        new_item = {
-            'image': img,
-            'metainfo': metainfo,
-        }
-
         if self.image_transform is not None:
             img = self.image_transform(img)
         if isinstance(img, np.ndarray):
             img = torch.from_numpy(img)
 
+        if img.ndim == 3:
+            _, h, w = img.shape
+            nframes = 1
+        else:
+            nframes, _, h, w = img.shape
+
+        new_item = {
+            'image': img,
+            'metainfo': metainfo,
+        }
+
         if self.return_segmentations:
             segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
+            # apply mask transform
+            if self.mask_transform is not None:
+                for seglist in segmentations.values():
+                    for i, seg in enumerate(seglist):
+                        if seg is not None:
+                            seglist[i] = self.mask_transform(seg)
+
             if self.return_as_semantic_segmentation:
                 sem_segmentations: Dict[str, torch.Tensor] = {}
                 for author in segmentations.keys():
-                    sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author], seg_labels[author])
+                    sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author],
+                                                                              seg_labels[author])
                     segmentations[author] = None  # free memory
-                sem_segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations)
-                segmentations = sem_segmentations
+                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations, nframes, h, w).to(torch.float32)
+                seg_labels = None
 
-            if self.mask_transform is not None:
-                for i in range(len(segmentations)):
-                    if segmentations[i] is not None:
-                        segmentations[i] = self.mask_transform(segmentations[i])
             if self.return_frame_by_frame:
-                segmentations = segmentations[0]
-                seg_labels = seg_labels[0]
-            new_item['segmentations'] = segmentations
-            new_item['seg_labels'] = seg_labels
+                if isinstance(segmentations, dict):  # author->segmentations format
+                    segmentations = {k: v[0] for k, v in segmentations.items()}
+                    seg_labels = {k: v[0] for k, v in seg_labels.items()}
+                else:
+                    # segmentations is a tensor
+                    segmentations = segmentations[0]
+                    if seg_labels is not None and len(seg_labels) > 0:
+                        seg_labels = seg_labels[0]
+
+        new_item['segmentations'] = segmentations
+        new_item['seg_labels'] = seg_labels
 
         framelabel_annotations = self._get_annotations_internal(annotations, type='label', scope='frame')
-        framelabels = self._convert_labels_annotations(framelabel_annotations, num_frames=img.shape[0])
+        framelabels = self._convert_labels_annotations(framelabel_annotations, num_frames=nframes)
         # framelabels.shape: (num_frames, num_labels)
 
         imagelabel_annotations = self._get_annotations_internal(annotations, type='label', scope='image')
@@ -245,10 +286,12 @@ class DatamintDataset(DatamintBaseDataset):
             labels_ret_size = (num_frames, len(self.frame_labels_set))
             label2code = self.frame_lcodes['multilabel']
 
-        if len(annotations) == 0:
-            return torch.zeros(size=labels_ret_size, dtype=torch.int32)
+        if num_frames is not None and num_frames > 1 and self.return_frame_by_frame:
+            raise ValueError("num_frames must be 1 if return_frame_by_frame is True")
 
         frame_labels_byuser = defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
+        if len(annotations) == 0:
+            return frame_labels_byuser
         for ann in annotations:
             user_id = ann['added_by']
             frame_idx = ann.get('index', None)
@@ -258,8 +301,14 @@ class DatamintDataset(DatamintBaseDataset):
             if frame_idx is None:
                 labels_onehot_i[code] = 1
             else:
-                labels_onehot_i[frame_idx, code] = 1
+                if self.return_frame_by_frame:
+                    labels_onehot_i[0, code] = 1
+                else:
+                    labels_onehot_i[frame_idx, code] = 1
 
+        if self.return_frame_by_frame:
+            for user_id, labels_onehot_i in frame_labels_byuser.items():
+                frame_labels_byuser[user_id] = labels_onehot_i[0]
         return dict(frame_labels_byuser)
 
     def __repr__(self) -> str:

@@ -12,13 +12,11 @@ import numpy as np
 from datamintapi import configs
 from torch.utils.data import DataLoader
 import torch
-from torchvision.transforms.functional import to_tensor
-from pydicom.pixels import pixel_array
 from datamintapi.api_handler import APIHandler
 from datamintapi.base_api_handler import DatamintException
-from collections import defaultdict
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
+from datamintapi.utils.dicom_utils import load_image_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -140,10 +138,19 @@ class DatamintBaseDataset:
         else:
             self.dataset_length = len(self.images_metainfo)
 
+        self.num_frames_per_resource = self.__compute_num_frames_per_resource()
+
         self.subset_indices = list(range(self.dataset_length))
         # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
+
+    def __compute_num_frames_per_resource(self) -> List[int]:
+        num_frames_per_dicom = []
+        for imginfo in self.images_metainfo:
+            filepath = os.path.join(self.dataset_dir, imginfo['file'])
+            num_frames_per_dicom.append(self.read_number_of_frames(filepath))
+        return num_frames_per_dicom
 
     @property
     def frame_labels_set(self) -> List[str]:
@@ -160,7 +167,7 @@ class DatamintBaseDataset:
         This is more related to multi-class tasks.
         """
         return self.frame_lsets['multiclass']
-    
+
     @property
     def image_labels_set(self) -> List[str]:
         """
@@ -168,7 +175,7 @@ class DatamintBaseDataset:
         This is more related to multi-label tasks.
         """
         return self.image_lsets['multilabel']
-    
+
     @property
     def image_categories_set(self) -> List[Tuple[str, str]]:
         """
@@ -218,8 +225,7 @@ class DatamintBaseDataset:
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
-        index = self.subset_indices[index]
-        imginfo = self.images_metainfo[index]
+        imginfo = self._get_image_metainfo(index)
         return self._get_annotations_internal(imginfo['annotations'], type=type, scope=scope)
 
     @staticmethod
@@ -308,7 +314,7 @@ class DatamintBaseDataset:
         Returns:
             Dict[str, int]: The distribution of segmentation labels in the dataset.
         """
-        label_distribution = {label: 0 for label in self.segmentation_labels}
+        label_distribution = {label: 0 for label in self.segmentation_labels_set}
         for imginfo in self.images_metainfo:
             if 'annotations' in imginfo and imginfo['annotations'] is not None:
                 for ann in imginfo['annotations']:
@@ -481,9 +487,10 @@ class DatamintBaseDataset:
         ds = pydicom.dcmread(filepath)
 
         if self.return_frame_by_frame:
-            img = pixel_array(ds, index=index)
+            img = load_image_normalized(ds, index=index)
+            img = img[0]
         else:
-            img = ds.pixel_array
+            img = load_image_normalized(ds)
         # Free up memory
         if hasattr(ds, '_pixel_array'):
             ds._pixel_array = None
@@ -494,32 +501,44 @@ class DatamintBaseDataset:
             # Pytorch doesn't support uint16
             img = (img//256).astype(np.uint8)
 
-        if len(img.shape) == 3:
-            # from (C, H, W) to (H, W, C) because ToTensor() expects the last dimension to be the channel, although it outputs (C, H, W).
-            img = img.transpose(1, 2, 0)
-        if len(img.shape) == 2:
-            img = img[..., np.newaxis]
-
-        img = to_tensor(img)  # Converts to torch.Tensor, normalizes to [0, 1] and changes the shape to (C, H, W)
+        img = torch.from_numpy(img).contiguous()
+        if isinstance(img, torch.ByteTensor):
+            img = img.to(dtype=torch.get_default_dtype()).div(255)
 
         return img, ds
 
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
+    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> Dict[str, Any]:
+        if bypass_subset_indices == False:
+            index = self.subset_indices[index]
         if self.return_frame_by_frame:
             # Find the correct filepath and index
-            for i, num_frames in enumerate(self.num_frames_per_dicom):
-                if index < num_frames:
-                    img_metainfo = self.images_metainfo[i]
-                    break
-                index -= num_frames
+            resource_id, frame_index = self.__find_index(index)
 
+            img_metainfo = self.images_metainfo[resource_id]
             img_metainfo = dict(img_metainfo)  # copy
             # insert frame index
-            img_metainfo['frame_index'] = index
+            img_metainfo['frame_index'] = frame_index
             img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations']
-                                           if ann['index'] is None or ann['index'] == index]
+                                           if ann['index'] is None or ann['index'] == frame_index]
         else:
             img_metainfo = self.images_metainfo[index]
+        return img_metainfo
+
+    def __find_index(self, index: int) -> Tuple[int, int]:
+        frame_index = index
+        for i, num_frames in enumerate(self.num_frames_per_resource):
+            if index < num_frames:
+                break
+            frame_index -= num_frames
+        
+        if frame_index < 0:
+            raise ValueError(f"Invalid index: {index}")
+
+        return i, frame_index
+
+    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
+        resource_index, _ = self.__find_index(index)
+        img_metainfo = self._get_image_metainfo(index, bypass_subset_indices=True)
 
         if only_load_metainfo:
             return {'metainfo': img_metainfo}
@@ -527,7 +546,7 @@ class DatamintBaseDataset:
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
-        img, ds = self._load_image(filepath, index)
+        img, ds = self._load_image(filepath, resource_index)
 
         ret = {'image': img}
 

@@ -34,7 +34,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 10
+_PAGE_LIMIT = 50
 
 
 def validate_call(func, *args, **kwargs):
@@ -193,7 +193,7 @@ class BaseAPIHandler:
                                 return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
-        params = request_params['params']
+        params = request_params.get('params', {})
         while True:
             params['offset'] = offset
             params['limit'] = _PAGE_LIMIT

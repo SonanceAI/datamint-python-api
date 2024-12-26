@@ -442,7 +442,7 @@ class RootAPIHandler(BaseAPIHandler):
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
                       channel: Optional[str] = None
-                      ) -> Generator[dict, None, None]:
+                      ) -> Generator[Dict, None, None]:
         """
         Iterates over resources with the specified filters.
         Filters can be combined to narrow down the search.
@@ -731,3 +731,22 @@ class RootAPIHandler(BaseAPIHandler):
             'url': f'{self.root_url}/projects'
         }
         return self._run_request(request_params).json()['data']
+
+    def get_resources_by_project(self, project_id:str) -> Generator[Dict, None, None]:
+        """
+        Get the resources by project.
+
+        Args:
+            project_id (str): The project id.
+
+        Returns:
+            List[Dict]: The list of resources.
+
+        Example:
+            >>> api_handler.get_resources_by_project('project_id')
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects/{project_id}/resources'
+        }
+        return self._run_pagination_request(request_params)
