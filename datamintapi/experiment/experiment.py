@@ -75,8 +75,8 @@ class _DryRunExperimentAPIHandler(APIHandler):
     def log_summary(self, exp_id: str, result_summary: Dict):
         pass
 
-    def log_model(self, exp_id: str, model: Union[torch.nn.Module, str, BytesIO], hyper_params: Optional[Dict] = None, torch_save_kwargs: Dict = {}):
-        pass
+    def log_model(self, exp_id: str, *args, **kwargs):
+        return {'id': 'dry_run'}
 
     def finish_experiment(self, exp_id: str):
         pass
@@ -135,6 +135,7 @@ class Experiment:
         self.summary_log = defaultdict(dict)
         self.finish_callbacks = []
         self.model: torch.nn.Module = None
+        self.model_id = None
         self.model_hyper_params = None
         self.is_finished = False
         self.log_enviroment = log_enviroment
@@ -149,13 +150,13 @@ class Experiment:
             os.makedirs(dataset_dir)
         self.dataset_dir = dataset_dir
 
-        project = self.apihandler.get_project_by_name(project_name)
-        if 'error' in project:
-            raise DatamintException(str(project))
-        exp_info = self.apihandler.get_experiment_by_name(name, project)
+        self.project = self.apihandler.get_project_by_name(project_name)
+        if 'error' in self.project:
+            raise DatamintException(str(self.project))
+        exp_info = self.apihandler.get_experiment_by_name(name, self.project)
 
-        self.project_name = project['name']
-        dataset_info = self.apihandler.get_dataset_by_id(project['dataset_id'])
+        self.project_name = self.project['name']
+        dataset_info = self.apihandler.get_dataset_by_id(self.project['dataset_id'])
         self.dataset_id = dataset_info['id']
         self.dataset_info = dataset_info
 
@@ -164,7 +165,7 @@ class Experiment:
         else:
             if not allow_existing:
                 raise DatamintException(f"Experiment with name '{name}' already exists for project '{project_name}'.")
-            self._init_from_existing_experiment(project=project, exp=exp_info)
+            self._init_from_existing_experiment(project=self.project, exp=exp_info)
 
         self.time_finished = None
 
@@ -366,7 +367,7 @@ class Experiment:
             base_name = name.lower().split('test/', maxsplit=1)[-1]
             if base_name in METRIC_RENAMER:
                 name = METRIC_RENAMER[base_name]
-                
+
             if show_in_summary or name.lower() in IMPORTANT_METRICS:
                 self.add_to_summary({'metrics': {name: value}})
 
@@ -444,11 +445,14 @@ class Experiment:
                     exp.log_model(model, hyper_params={"num_layers": 3, "pretrained": True})
 
         """
+        if self.model_id is not None:
+            raise Exception("Model is already logged. Updating the model is not supported.")
+
         if self.model is None:
             self.model = model
             self.model_hyper_params = hyper_params
 
-        if log_model_attributes:
+        if log_model_attributes and isinstance(model, torch.nn.Module):
             if hyper_params is None:
                 hyper_params = {}
             hyper_params['__model_classname'] = model.__class__.__name__
@@ -462,15 +466,16 @@ class Experiment:
                     hyper_params[attr_name] = attr_value
 
         # Add additional useful information
-        hyper_params.update({
-            '__num_layers': len(list(model.children())),
-            '__num_parameters': sum(p.numel() for p in model.parameters()),
-        })
+        if isinstance(model, torch.nn.Module):
+            hyper_params.update({
+                '__num_layers': len(list(model.children())),
+                '__num_parameters': sum(p.numel() for p in model.parameters()),
+            })
 
-        self.apihandler.log_model(exp_id=self.exp_id,
-                                  model=model,
-                                  hyper_params=hyper_params,
-                                  torch_save_kwargs=torch_save_kwargs)
+        self.model_id = self.apihandler.log_model(exp_id=self.exp_id,
+                                                  model=model,
+                                                  hyper_params=hyper_params,
+                                                  torch_save_kwargs=torch_save_kwargs)['id']
 
     def _add_finish_callback(self, callback):
         self.finish_callbacks.append(callback)
@@ -497,8 +502,8 @@ class Experiment:
 
         dataset_stats = {
             'num_samples': len(dataset),
-            'num_frame_labels': dataset.num_labels,
-            'num_segmentation_labels': dataset.num_segmentation_labels,
+            'num_frame_labels': len(dataset.frame_labels_set),
+            'num_segmentation_labels': len(dataset.segmentation_labels_set),
             'frame_label_distribution': dataset.get_framelabel_distribution(normalize=True),
             'segmentation_label_distribution': dataset.get_segmentationlabel_distribution(normalize=True),
         }
@@ -523,7 +528,7 @@ class Experiment:
 
         Args:
             split (str): The split of the dataset to get. Can be one of ['all', 'train', 'test', 'val'].
-            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.DatamintDataset` class.
+            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.dataset.DatamintDataset` class.
 
         Returns:
             DatamintDataset: The dataset object.
@@ -577,15 +582,24 @@ class Experiment:
 
     def _detect_machine_learning_task(self, dataset: DatamintDataset) -> str:
         # Detect machine learning task based on the dataset params
-        if dataset.return_as_semantic_segmentation:
+        if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
             return 'semantic segmentation'
-        elif dataset.return_seg_annotations:
+        elif dataset.return_seg_annotations and len(dataset.segmentation_labels_set) > 0:
             return 'instance segmentation'
 
-        if dataset.num_labels == 1:
-            return 'binary classification'
-        if dataset.num_labels > 1:
-            return 'multilabel classification'
+        num_labels = len(dataset.frame_labels_set)  # FIXME: when not frame by frame
+        num_categories = len(dataset.segmentation_labels_set)
+        if num_categories == 0:
+            if dataset.num_labels == 1:
+                return 'binary classification'
+            elif dataset.num_labels > 1:
+                return 'multilabel classification'
+        elif num_categories == 1:
+            if num_labels == 0:
+                return 'multiclass classification'
+            return 'multi-task classification'
+        else:
+            return 'multi-task classification'
 
         return 'unknown'
 
@@ -735,12 +749,14 @@ class Experiment:
 
     def log_semantic_seg_predictions(self,
                                      predictions: np.ndarray,
-                                     resource_ids: List[str],
+                                     resource_ids: Union[List[str], str],
                                      label_names: List[str],
                                      dataset_split: Optional[str] = None,
                                      frame_idxs: Optional[List[int]] = None,
                                      step: Optional[int] = None,
-                                     epoch: Optional[int] = None):
+                                     epoch: Optional[int] = None,
+                                     threshold: float = 0.5
+                                     ):
         """
         Log the semantic segmentation predictions of the model.
 
@@ -754,6 +770,9 @@ class Experiment:
             epoch (Optional[int]): The epoch of the experiment.
         """
 
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids] * len(predictions)
+
         if predictions.ndim != 4:
             raise ValueError("Predictions must be of shape (N, C, H, W).")
 
@@ -761,8 +780,12 @@ class Experiment:
         if len(predictions) != len(resource_ids):
             raise ValueError("Length of predictions and resource_ids must be the same.")
 
-        if frame_idxs is not None and len(predictions) != len(frame_idxs):
-            raise ValueError("Length of predictions and frame_idxs must be the same.")
+        if frame_idxs is not None:
+            if len(predictions) != len(frame_idxs):
+                raise ValueError("Length of predictions and frame_idxs must be the same.")
+            # non negative frame indexes
+            if any(fidx < 0 for fidx in frame_idxs):
+                raise ValueError("Frame indexes must be non-negative.")
 
         if len(label_names) != predictions.shape[1]:
             raise ValueError("Number of classes must match the number of columns in predictions.")
@@ -778,6 +801,27 @@ class Experiment:
                                             step=step,
                                             epoch=epoch,
                                             add_info={'origin': 'semantic segmentation'})
+
+        if self.model_id is not None:
+            _LOGGER.info("Uploading segmentation masks to the platform.")
+            # For each frame
+            predictions = predictions > threshold
+            for fidx, res_id, pred in zip(frame_idxs, resource_ids, predictions):
+                # for each class
+                for i in range(pred.shape[0]):
+                    pred_i = pred[i]
+                    name = label_names[i]
+                    # pred_i is a mask of shape (H, W)
+                    new_ann_id = self.apihandler.upload_segmentations(
+                        resource_id=res_id,
+                        file_path=pred_i,
+                        name=name,
+                        frame_index=fidx,
+                        model_id=self.model_id,
+                        worklist_id=self.project['worklist_id'],
+                    )
+        else:
+            _LOGGER.warning("Model is not logged. Skipping uploading segmentation masks.")
 
     def finish(self):
         """
@@ -826,7 +870,8 @@ class Experiment:
                                 )
 
         self.log_summary(result_summary=self.summary_log)
-        if self.model is not None:
+        # if the model is not already logged, log it
+        if self.model is not None and self.model_id is None:
             self.log_model(model=self.model, hyper_params=self.model_hyper_params)
         self.apihandler.finish_experiment(self.exp_id)
         self.is_finished = True

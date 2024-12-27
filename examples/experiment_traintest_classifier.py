@@ -35,15 +35,15 @@ class MyModel(nn.Module):
         self.resnet.fc = nn.Linear(self.resnet.fc.in_features, num_labels)
 
     def forward(self, x):
-        return nn.functional.sigmoid(self.resnet(x))
+        return F.sigmoid(self.resnet(x))
 
 
 def main():
     # Initialize the experiment. Creates a new experiment on the platform.
-    exp = Experiment(name="My First Experiment",
-                     project_name='Lucas test project',
+    exp = Experiment(name="Test Experiment1",
+                     project_name='testproject',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
-                     #  dry_run=True  # Set True to avoid uploading the results to the platform
+                      dry_run=True  # Set True to avoid uploading the results to the platform
                      )
 
     ### Load dataset ###
@@ -52,7 +52,7 @@ def main():
         image_transform=T.Compose([T.RGB(),  # Resnet18 expects 3 channels
                                    ResNet18_Weights.DEFAULT.transforms()]
                                   ),
-        return_seg_annotations=False,  # We just want frame labels for classification
+        return_segmentations=False,  # We just want frame labels for classification
     )
 
     train_dataset = exp.get_dataset("train", **dataset_params)
@@ -63,7 +63,7 @@ def main():
 
     ####################
 
-    num_labels = train_dataset.num_labels
+    num_labels = len(train_dataset.frame_labels_set)
     if num_labels == 0:
         raise ValueError("The dataset does not have any frame labels!")
     print(f"Number of labels: {num_labels}")
@@ -170,6 +170,6 @@ def test_loop(model, criterion, testloader,
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
-    logging.getLogger('datamintapi').setLevel(logging.INFO)
+    logging.getLogger('datamintapi').setLevel(logging.DEBUG)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()

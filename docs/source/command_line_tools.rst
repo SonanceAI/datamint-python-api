@@ -76,11 +76,17 @@ In that case, use the ``--channel`` flag:
 
     datamint-upload --path /path/to/video.mp4 --channel "CT scans"
 
-To upload resources, associating them with a label, and associating them to a batch named "my_upload", run:
+To upload resources, associating them with a tag, run:
 
 .. code-block:: bash
 
-    datamint-upload --path /path/to/dicom_files -l "my_label" --name "my_upload"
+    datamint-upload --path /path/to/dicom_files --tag "my_tag"
+
+You can specify multiple tags by repeating the ``--tag`` flag:
+
+.. code-block:: bash
+
+    datamint-upload --path /path/to/dicom_files --tag "tag1" --tag "tag2"
 
 You can bypass the inbox/review and directly publish your resources with the ``--publish`` flag:
 
@@ -158,14 +164,14 @@ See all available options by running ``datamint-upload --help``:
                           Recurse folders looking for dicoms. If a number is passed, recurse that number of levels.
 
     --exclude EXCLUDE     Exclude folders that match the specified pattern. Example: "\*_not_to_upload" will exclude folders ending with "_not_to_upload
-    --name NAME           Name of the upload batch
-    --channel CHANNEL     Channel name (arbritary) to upload the resources to. Useful for organizing the resources in the platform.
+    --name CHANNEL, --channel CHANNEL
+                          Channel name (arbritary) to upload the resources to. Useful for organizing the resources in the platform.
     --retain-pii          Do not anonymize DICOMs
     --retain-attribute RETAIN_ATTRIBUTE
                             Retain the value of a single attribute code specified as hexidecimal integers. Example: (0x0008, 0x0050) or just (0008, 0050)
-    -l LABEL, --label LABEL
-                            A label name to be applied to all files
-                            --publish             Publish the uploaded resources, giving them the status "published" instead of "inbox"
+    --tag TAG
+                            A tag name to be applied to all files
+    --publish               Publish the uploaded resources, giving them the status "published" instead of "inbox"
     --mungfilename MUNGFILENAME
                             Change the filename in the upload parameters. If set to "all", the filename becomes the folder names joined together with "_". If one or more integers are passed (comma-separated), append that
                             depth of folder name to the filename.

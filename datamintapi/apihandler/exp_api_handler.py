@@ -132,14 +132,16 @@ class ExperimentAPIHandler(BaseAPIHandler):
                   exp_id: str,
                   model: Union[torch.nn.Module, str, BytesIO],
                   hyper_params: Optional[Dict] = None,
-                  torch_save_kwargs: Dict = {}) -> None:
+                  torch_save_kwargs: Dict = {}) -> Dict:
         if isinstance(model, torch.nn.Module):
             f = BytesIO()
             torch.save(model, f, **torch_save_kwargs)
             f.seek(0)
             f.name = None
         elif isinstance(model, str):
-            f = open(model, 'rb')
+            with open(model, 'rb') as f1:
+                f = BytesIO(f1.read())
+                f.name = None
         elif isinstance(model, BytesIO):
             f = model
         else:
@@ -154,7 +156,8 @@ class ExperimentAPIHandler(BaseAPIHandler):
                 'files': [(None, f)]
             }
 
-            task = self._run_request(request_params)
+            resp = self._run_request(request_params).json()
+            return resp[0]
         finally:
             f.close()
 

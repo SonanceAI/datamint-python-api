@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any, Tuple, List, Dict
+from typing import Optional, Callable, Any, Tuple, List, Dict, Literal
 import logging
 import shutil
 import json
@@ -12,12 +12,11 @@ import numpy as np
 from datamintapi import configs
 from torch.utils.data import DataLoader
 import torch
-from torchvision.transforms.functional import to_tensor
-from pydicom.pixels import pixel_array
-from .api_handler import APIHandler
-from .base_api_handler import DatamintException
-from collections import defaultdict
-from PIL import Image
+from datamintapi.api_handler import APIHandler
+from datamintapi.base_api_handler import DatamintException
+from datamintapi.utils.dicom_utils import is_dicom
+import cv2
+from datamintapi.utils.dicom_utils import load_image_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ class DatamintDatasetException(DatamintException):
     pass
 
 
-class DatamintDataset:
+class DatamintBaseDataset:
     """
     Class to download and load datasets from the Datamint API.
 
@@ -41,9 +40,6 @@ class DatamintDataset:
         api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
             environment variable 'DATAMINT_API_KEY'. Not necessary if
             you don't want to download/update the dataset.
-        transform (callable, optional): A function/transform that takes in an image (or a series of images)
-            and returns a transformed version.
-        target_transform (callable, optional): A function/transform that takes in the dataset metadata and transforms it.
     """
 
     def __init__(self,
@@ -53,14 +49,11 @@ class DatamintDataset:
                  version=None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
-                 image_transform: Callable[[torch.Tensor], Any] = None,
-                 mask_transform: Callable[[torch.Tensor], Any] = None,
                  server_url: Optional[str] = None,
                  return_dicom: bool = False,
                  return_metainfo: bool = True,
-                 return_seg_annotations: bool = True,
+                 return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
-                 return_as_semantic_segmentation: bool = False,
                  ):
         self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
         self.server_url = self.api_handler.root_url
@@ -71,18 +64,10 @@ class DatamintDataset:
 
         self.root = root
 
-        self.image_transform = image_transform
-        self.mask_transform = mask_transform
-
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
-        self.return_seg_annotations = return_seg_annotations
         self.return_frame_by_frame = return_frame_by_frame
-        self.return_as_semantic_segmentation = return_as_semantic_segmentation
-
-        if version is not None:
-            _LOGGER.warning("The 'version' argument is deprecated and will be removed in future versions. " +
-                            "See the 'auto_update' argument instead.")
+        self.return_annotations = return_annotations
 
         if version is not None:
             _LOGGER.warning("The 'version' argument is deprecated and will be removed in future versions. " +
@@ -135,61 +120,172 @@ class DatamintDataset:
         self._check_integrity()
 
         # fix images_metainfo labels
-        for imginfo in self.images_metainfo:
-            if imginfo['frame_labels'] is not None:
-                for flabels in imginfo['frame_labels']:
-                    if flabels['label'] is None:
-                        flabels['label'] = []
-                    elif isinstance(flabels['label'], str):
-                        flabels['label'] = flabels['label'].split(',')
+        # TODO: check tags
+        # for imginfo in self.images_metainfo:
+        #     if imginfo['frame_labels'] is not None:
+        #         for flabels in imginfo['frame_labels']:
+        #             if flabels['label'] is None:
+        #                 flabels['label'] = []
+        #             elif isinstance(flabels['label'], str):
+        #                 flabels['label'] = flabels['label'].split(',')
 
         if self.return_frame_by_frame:
-            _LOGGER.debug("Loading frame-by-frame metadata...")
-            self.num_frames_per_dicom = []
+            _LOGGER.debug(f"Loading frame-by-frame metadata of {len(self.images_metainfo)} resources...")
+            self.dataset_length = 0
             for imginfo in self.images_metainfo:
                 filepath = os.path.join(self.dataset_dir, imginfo['file'])
-                # loads the dicom file
-                ds = pydicom.dcmread(filepath)
-                self.num_frames_per_dicom.append(ds.NumberOfFrames if hasattr(ds, 'NumberOfFrames') else 1)
-            self.dataset_length = sum(self.num_frames_per_dicom)
+                self.dataset_length += self.read_number_of_frames(filepath)
         else:
             self.dataset_length = len(self.images_metainfo)
 
+        self.num_frames_per_resource = self.__compute_num_frames_per_resource()
+
         self.subset_indices = list(range(self.dataset_length))
-        self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
-        self.code2label = {v: k for k, v in self.label2code.items()}
-        self.num_labels = len(self.labels_set)
-        self.num_segmentation_labels = len(self.segmentation_labels)
+        # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
+        self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
+        self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
+
+    def __compute_num_frames_per_resource(self) -> List[int]:
+        num_frames_per_dicom = []
+        for imginfo in self.images_metainfo:
+            filepath = os.path.join(self.dataset_dir, imginfo['file'])
+            num_frames_per_dicom.append(self.read_number_of_frames(filepath))
+        return num_frames_per_dicom
+
+    @property
+    def frame_labels_set(self) -> List[str]:
+        """
+        Returns the set of independent labels in the dataset.
+        This is more related to multi-label tasks.
+        """
+        return self.frame_lsets['multilabel']
+
+    @property
+    def frame_categories_set(self) -> List[Tuple[str, str]]:
+        """
+        Returns the set of categories in the dataset.
+        This is more related to multi-class tasks.
+        """
+        return self.frame_lsets['multiclass']
+
+    @property
+    def image_labels_set(self) -> List[str]:
+        """
+        Returns the set of independent labels in the dataset.
+        This is more related to multi-label tasks.
+        """
+        return self.image_lsets['multilabel']
+
+    @property
+    def image_categories_set(self) -> List[Tuple[str, str]]:
+        """
+        Returns the set of categories in the dataset.
+        This is more related to multi-class tasks.
+        """
+        return self.image_lsets['multiclass']
+
+    @property
+    def segmentation_labels_set(self) -> List[str]:
+        """
+        Returns the set of segmentation labels in the dataset.
+        """
+        return self.frame_lsets['segmentation']
+
+    def _get_annotations_internal(self,
+                                  annotations: List[Dict],
+                                  type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
+                                  scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+        # check parameters
+        if type not in ['label', 'category', 'segmentation', 'all']:
+            raise ValueError(f"Invalid value for 'type': {type}")
+        if scope not in ['frame', 'image', 'all']:
+            raise ValueError(f"Invalid value for 'scope': {scope}")
+
+        annots = []
+        for ann in annotations:
+            ann_scope = 'image' if ann.get('index', None) is None else 'frame'
+            if (type == 'all' or ann['type'] == type) and (scope == 'all' or scope == ann_scope):
+                annots.append(ann)
+        return annots
+
+    def get_annotations(self,
+                        index: int,
+                        type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
+                        scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+        """
+        Returns the annotations of the image at the given index.
+
+        Args:
+            index (int): Index of the image.
+            type (str): The type of the annotations. It can be 'label', 'category', 'segmentation' or 'all'.
+            scope (str): The scope of the annotations. It can be 'frame', 'image' or 'all'.
+
+        Returns:
+            List[Dict]: The annotations of the image.
+        """
+        if index >= len(self):
+            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
+        imginfo = self._get_image_metainfo(index)
+        return self._get_annotations_internal(imginfo['annotations'], type=type, scope=scope)
+
+    @staticmethod
+    def read_number_of_frames(filepath: str) -> int:
+        # if is dicom
+        if is_dicom(filepath):
+            ds = pydicom.dcmread(filepath)
+            return ds.NumberOfFrames if hasattr(ds, 'NumberOfFrames') else 1
+        # if is a video
+        elif filepath.endswith('.mp4') or filepath.endswith('.avi'):
+            cap = cv2.VideoCapture(filepath)
+            return int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        # if is a image
+        elif filepath.endswith('.png') or filepath.endswith('.jpg') or filepath.endswith('.jpeg'):
+            return 1
+        else:
+            raise ValueError(f"Unsupported file type: {filepath}")
 
     def get_resources_ids(self) -> List[str]:
-        return [self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id'] for i in range(len(self))]
+        return [self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id'] for i in self.subset_indices]
 
-    def get_labels_set(self) -> Tuple[List[str], Dict[str, int], List[str], Dict[str, int]]:
+    def _get_labels_set(self, framed: bool) -> Tuple[Dict, Dict[str, Dict[str, int]]]:
         """
         Returns the set of labels and a dictionary that maps labels to integers.
 
         Returns:
             Tuple[List[str], Dict[str, int]]: The set of labels and the dictionary that maps labels to integers
         """
-        if hasattr(self, 'labels_set'):
-            return self.labels_set, self.label2code
 
-        all_labels = set()
+        scope = 'frame' if framed else 'image'
+
+        multilabel_set = set()
         segmentation_labels = set()
-        for imginfo in self.images_metainfo:
-            if 'frame_labels' in imginfo and imginfo['frame_labels'] is not None:
-                labels = [l for flabels in imginfo['frame_labels'] for l in flabels['label']]
-                all_labels.update(labels)
-            if 'annotations' in imginfo and imginfo['annotations'] is not None:
-                for ann in imginfo['annotations']:
-                    if ann['type'] == 'segmentation':
-                        segmentation_labels.update([ann['name']])
+        multiclass_set = set()
 
-        all_labels = sorted(list(all_labels))
-        label2code = {label: idx for idx, label in enumerate(all_labels)}
+        for i in range(len(self)):
+            anns = self.get_annotations(i, type='label', scope=scope)
+            multilabel_set.update([ann['name'] for ann in anns])
+
+            anns = self.get_annotations(i, type='segmentation', scope=scope)
+            segmentation_labels.update([ann['name'] for ann in anns])
+
+            anns = self.get_annotations(i, type='category', scope=scope)
+            multiclass_set.update([(ann['name'], ann['value']) for ann in anns])
+
+        multilabel_set = sorted(list(multilabel_set))
+        multiclass_set = sorted(list(multiclass_set))
         segmentation_labels = sorted(list(segmentation_labels))
+
+        multilabel2code = {label: idx for idx, label in enumerate(multilabel_set)}
         segmentation_label2code = {label: idx+1 for idx, label in enumerate(segmentation_labels)}
-        return all_labels, label2code, segmentation_labels, segmentation_label2code
+        multiclass2code = {label: idx for idx, label in enumerate(multiclass_set)}
+
+        sets = {'multilabel': multilabel_set,
+                'segmentation': segmentation_labels,
+                'multiclass': multiclass_set}
+        codes_map = {'multilabel': multilabel2code,
+                     'segmentation': segmentation_label2code,
+                     'multiclass': multiclass2code}
+        return sets, codes_map
 
     def get_framelabel_distribution(self, normalize=False) -> Dict[str, float]:
         """
@@ -198,12 +294,11 @@ class DatamintDataset:
         Returns:
             Dict[str, int]: The distribution of labels in the dataset.
         """
-        label_distribution = {label: 0 for label in self.labels_set}
+        label_distribution = {label: 0 for label in self.frame_labels_set}
         for imginfo in self.images_metainfo:
-            if 'frame_labels' in imginfo and imginfo['frame_labels'] is not None:
-                for flabels in imginfo['frame_labels']:
-                    for l in flabels['label']:
-                        label_distribution[l] += 1
+            for ann in imginfo['annotations']:
+                if ann['type'] == 'label' and ann['index'] is not None:
+                    label_distribution[ann['name']] += 1
 
         if normalize:
             total = sum(label_distribution.values())
@@ -219,7 +314,7 @@ class DatamintDataset:
         Returns:
             Dict[str, int]: The distribution of segmentation labels in the dataset.
         """
-        label_distribution = {label: 0 for label in self.segmentation_labels}
+        label_distribution = {label: 0 for label in self.segmentation_labels_set}
         for imginfo in self.images_metainfo:
             if 'annotations' in imginfo and imginfo['annotations'] is not None:
                 for ann in imginfo['annotations']:
@@ -268,15 +363,13 @@ class DatamintDataset:
         )
 
     def get_info(self) -> Dict:
-        all_projects = self.api_handler.get_projects()
-        for project in all_projects:
-            if project['name'] == self.project_name:
-                return project
-
-        available_projects = [p['name'] for p in all_projects]
-        raise DatamintDatasetException(
-            f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
-        )
+        project = self.api_handler.get_project_by_name(self.project_name)
+        if 'error' in project:
+            available_projects = project['all_projects']
+            raise DatamintDatasetException(
+                f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
+            )
+        return project
 
     def _run_request(self, session, request_args) -> requests.Response:
         response = session.request(**request_args)
@@ -337,10 +430,6 @@ class DatamintDataset:
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
             body.append(f"Root location: {self.root}")
-        if self.image_transform is not None:
-            body += [repr(self.image_transform)]
-        if self.mask_transform is not None:
-            body += [repr(self.mask_transform)]
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
@@ -396,9 +485,10 @@ class DatamintDataset:
         ds = pydicom.dcmread(filepath)
 
         if self.return_frame_by_frame:
-            img = pixel_array(ds, index=index)
+            img = load_image_normalized(ds, index=index)
+            img = img[0]
         else:
-            img = ds.pixel_array
+            img = load_image_normalized(ds)
         # Free up memory
         if hasattr(ds, '_pixel_array'):
             ds._pixel_array = None
@@ -409,73 +499,43 @@ class DatamintDataset:
             # Pytorch doesn't support uint16
             img = (img//256).astype(np.uint8)
 
-        if len(img.shape) == 3:
-            # from (C, H, W) to (H, W, C) because ToTensor() expects the last dimension to be the channel, although it outputs (C, H, W).
-            img = img.transpose(1, 2, 0)
-        if len(img.shape) == 2:
-            img = img[..., np.newaxis]
-
-        img = to_tensor(img)  # Converts to torch.Tensor, normalizes to [0, 1] and changes the shape to (C, H, W)
+        img = torch.from_numpy(img).contiguous()
+        if isinstance(img, torch.ByteTensor):
+            img = img.to(dtype=torch.get_default_dtype()).div(255)
 
         return img, ds
 
-    def _process_frame_labels(self, frame_labels: List[dict], img_frame_idx: int, num_frames: int) -> torch.Tensor:
-        # Convert frame_labels into a dictionary of int tensors, where the key is the user_id
-        # and the value is a tensor of size (num_frames, num_labels)
-        # If return_frame_by_frame is True, the size is (num_labels, )
-        if self.return_frame_by_frame:
-            labels_ret_size = (len(self.labels_set),)
-        else:
-            labels_ret_size = (num_frames, len(self.labels_set))
-
-        if frame_labels is None:
-            return torch.zeros(size=labels_ret_size, dtype=torch.int32)
-
-        frame_labels_byuser = defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
-        for flabel in frame_labels:
-            user_id = flabel['created_by']
-            frame_idx = flabel['frame']
-            if self.return_frame_by_frame:
-                if frame_idx != img_frame_idx:
-                    continue
-                labels_onehot_i = frame_labels_byuser[user_id]
-            else:
-                labels_onehot_i = frame_labels_byuser[user_id][frame_idx]
-
-            for l in flabel['label']:
-                label_code = self.label2code[l]
-                labels_onehot_i[label_code] = 1
-
-        # if no frame labels found, return zeros
-        if len(frame_labels_byuser) == 0:
-            return torch.zeros(size=labels_ret_size, dtype=torch.int32)
-
-        # merge all user labels using max value
-        labels_onehot_merged = torch.stack(list(frame_labels_byuser.values())).max(dim=0)[0]
-
-        return labels_onehot_merged
-
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
+    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> Dict[str, Any]:
+        if bypass_subset_indices == False:
+            index = self.subset_indices[index]
         if self.return_frame_by_frame:
             # Find the correct filepath and index
-            for i, num_frames in enumerate(self.num_frames_per_dicom):
-                if index < num_frames:
-                    img_metainfo = self.images_metainfo[i]
-                    break
-                index -= num_frames
+            resource_id, frame_index = self.__find_index(index)
 
+            img_metainfo = self.images_metainfo[resource_id]
             img_metainfo = dict(img_metainfo)  # copy
             # insert frame index
-            img_metainfo['frame_index'] = index
-            if self.return_metainfo and self.return_seg_annotations:
-                img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations'] if ann['index'] == index]
+            img_metainfo['frame_index'] = frame_index
+            img_metainfo['annotations'] = [ann for ann in img_metainfo['annotations']
+                                           if ann['index'] is None or ann['index'] == frame_index]
         else:
             img_metainfo = self.images_metainfo[index]
+        return img_metainfo
 
-        # FIXME: deal with multiple annotators
+    def __find_index(self, index: int) -> Tuple[int, int]:
+        frame_index = index
+        for i, num_frames in enumerate(self.num_frames_per_resource):
+            if frame_index < num_frames:
+                break
+            frame_index -= num_frames
+        else:
+            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
 
-        if self.return_seg_annotations == False:
-            img_metainfo.pop('annotations', None)
+        return i, frame_index
+
+    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
+        resource_index, _ = self.__find_index(index)
+        img_metainfo = self._get_image_metainfo(index, bypass_subset_indices=True)
 
         if only_load_metainfo:
             return {'metainfo': img_metainfo}
@@ -483,89 +543,16 @@ class DatamintDataset:
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
-        img, ds = self._load_image(filepath, index)
-
-        segmentations = [None] * img.shape[0]
-        seg_labels = [None] * img.shape[0]
-        # Load segmentation annotations
-        if self.return_seg_annotations:
-            for ann in img_metainfo['annotations']:
-                if ann['type'] == 'segmentation':
-                    if 'file' not in ann:
-                        _LOGGER.warning(f"Segmentation annotation without file in {img_metainfo['file']})")
-                        continue
-                    segfilepath = ann['file']  # png file
-                    segfilepath = os.path.join(self.dataset_dir, segfilepath)
-                    # FIXME: avoid enforcing resizing the mask
-                    seg = np.array(Image.open(segfilepath).convert('L').resize(
-                        (img.shape[2], img.shape[1]), Image.NEAREST))
-                    seg = torch.from_numpy(seg)
-                    seg = seg == 255   # binary mask
-                    # map the segmentation label to the code
-                    seg_code = self.segmentation_label2code[ann['name']]
-                    if self.return_frame_by_frame:
-                        frame_index = 0
-                    else:
-                        frame_index = ann['index']
-
-                    if segmentations[frame_index] is None:
-                        segmentations[frame_index] = []
-                        seg_labels[frame_index] = []
-
-                    segmentations[frame_index].append(seg)
-                    seg_labels[frame_index].append(seg_code)
-
-        # convert to tensor
-        for i in range(len(segmentations)):
-            if segmentations[i] is not None:
-                segmentations[i] = torch.stack(segmentations[i])
-                seg_labels[i] = torch.tensor(seg_labels[i], dtype=torch.int32)
-            else:
-                segmentations[i] = torch.zeros((1, img.shape[1], img.shape[2]), dtype=torch.bool)
-                seg_labels[i] = torch.zeros(1, dtype=torch.int32)
-
-        # process frame_labels
-        frame_labels = img_metainfo['frame_labels']
-        labels_onehot = self._process_frame_labels(frame_labels, index, img.shape[0])
-        # labels_onehot has shape (num_frames, num_labels) or (num_labels, ) if return_frame_by_frame is True
-
-        if self.image_transform is not None:
-            img = self.image_transform(img)
-        if self.mask_transform is not None and segmentations is not None:
-            for i in range(len(segmentations)):
-                if segmentations[i] is not None:
-                    segmentations[i] = self.mask_transform(segmentations[i])
-
-        if self.return_as_semantic_segmentation:
-            if segmentations is not None:
-                new_segmentations = torch.zeros((len(segmentations), len(self.segmentation_labels)+1, img.shape[1], img.shape[2]),
-                                                dtype=torch.uint8)
-                for i in range(len(segmentations)):
-                    # for each frame
-                    new_segmentations[i, seg_labels[i]] += segmentations[i]
-                new_segmentations = new_segmentations > 0
-                # pixels that are not in any segmentation are labeled as background
-                new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
-                segmentations = new_segmentations.float()
-
-        if isinstance(img, np.ndarray):
-            img = torch.from_numpy(img)
-
-        if self.return_frame_by_frame:
-            segmentations = segmentations[0]
+        img, ds = self._load_image(filepath, resource_index)
 
         ret = {'image': img}
 
         if self.return_dicom:
             ret['dicom'] = ds
         if self.return_metainfo:
-            ret['metainfo'] = img_metainfo
-        if self.return_seg_annotations:
+            ret['metainfo'] = {k: v for k, v in img_metainfo.items() if k != 'annotations'}
+        if self.return_annotations:
             ret['annotations'] = img_metainfo['annotations']
-            ret['segmentations'] = segmentations
-            ret['seg_labels'] = seg_labels
-
-        ret['labels'] = labels_onehot
 
         return ret
 
@@ -575,10 +562,9 @@ class DatamintDataset:
             index (int): Index
 
         Returns:
-            tuple: (image, dicom_metadata, metadata) Transformed image, dicom_metadata, and transformed metadata.
-                If no transformation is given, the image is a tensor of shape (C, H, W).
+            Dict: A dictionary containing three keys: 'image', 'metainfo' and 'annotations'.
         """
-        if index < 0 or index >= len(self):
+        if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
 
         return self.__getitem_internal(self.subset_indices[index])

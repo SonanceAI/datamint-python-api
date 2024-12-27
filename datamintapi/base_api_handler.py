@@ -34,7 +34,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 10
+_PAGE_LIMIT = 50
 
 
 def validate_call(func, *args, **kwargs):
@@ -144,8 +144,9 @@ class BaseAPIHandler:
             status_code = BaseAPIHandler.get_status_code(e)
             if status_code >= 500 and status_code < 600:
                 _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
-            if status_code == 404:
+            if status_code >= 400 and status_code < 500:
                 try:
+                    _LOGGER.error(f"Error response: {response.text}")
                     error_data = response.json()
                 except Exception as e2:
                     _LOGGER.error(f"Error parsing the response. {e2}")
@@ -192,7 +193,7 @@ class BaseAPIHandler:
                                 return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
-        params = request_params['params']
+        params = request_params.get('params', {})
         while True:
             params['offset'] = offset
             params['limit'] = _PAGE_LIMIT
