@@ -363,15 +363,13 @@ class DatamintBaseDataset:
         )
 
     def get_info(self) -> Dict:
-        all_projects = self.api_handler.get_projects()
-        for project in all_projects:
-            if project['name'] == self.project_name:
-                return project
-
-        available_projects = [p['name'] for p in all_projects]
-        raise DatamintDatasetException(
-            f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
-        )
+        project = self.api_handler.get_project_by_name(self.project_name)
+        if 'error' in project:
+            available_projects = project['all_projects']
+            raise DatamintDatasetException(
+                f"Project with name '{self.project_name}' not found. Available projects: {available_projects}"
+            )
+        return project
 
     def _run_request(self, session, request_args) -> requests.Response:
         response = session.request(**request_args)
