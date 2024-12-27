@@ -47,7 +47,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            labels: list[str] = None,
+                                            tags: List[str] = None,
                                             mung_filename: Sequence[int] | Literal['all'] = None,
                                             channel: Optional[str] = None,
                                             session=None,
@@ -117,10 +117,10 @@ class RootAPIHandler(BaseAPIHandler):
             if modality is not None:
                 form.add_field('modality', modality)
             # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
-            if labels is not None and len(labels) > 0:
-                # comma separated list of labels
-                labels = ','.join([l.strip() for l in labels])
-                form.add_field('labels', labels)
+            if tags is not None and len(tags) > 0:
+                # comma separated list of tags
+                tags = ','.join([l.strip() for l in tags])
+                form.add_field('tags', tags)
 
             request_params = {
                 'method': 'POST',
@@ -148,7 +148,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
                                       on_error: Literal['raise', 'skip'] = 'raise',
-                                      labels=None,
+                                      tags=None,
                                       mung_filename: Sequence[int] | Literal['all'] = None,
                                       channel: Optional[str] = None,
                                       modality: Optional[str] = None,
@@ -171,7 +171,7 @@ class RootAPIHandler(BaseAPIHandler):
                         mimetype=mimetype,
                         anonymize=anonymize,
                         anonymize_retain_codes=anonymize_retain_codes,
-                        labels=labels,
+                        tags=tags,
                         session=session,
                         mung_filename=mung_filename,
                         channel=channel,
@@ -202,7 +202,8 @@ class RootAPIHandler(BaseAPIHandler):
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels: Optional[Sequence[str]] = None,
+                         labels = None,
+                         tags: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
                          publish: bool = False,
@@ -220,7 +221,10 @@ class RootAPIHandler(BaseAPIHandler):
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels (Sequence[str]): The labels to assign to the resources.
+            labels: 
+                .. deprecated:: 0.11.0
+                    Use `tags` instead.
+            tags (Optional[Sequence[str]]): The tags to add to the resources.
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the resource file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
@@ -228,7 +232,9 @@ class RootAPIHandler(BaseAPIHandler):
             publish_to (Optional[str]): The project name or id to publish the resources to.
                 They will have the 'published' status and will be added to the dataset.
                 If this is set, `publish` parameter is ignored.
-            segmentation_files (Optional[List]): The segmentation files to upload.
+            segmentation_files (Optional[List[Union[List[str], Dict]]]): The segmentation files to upload.
+            transpose_segmentation (bool): Whether to transpose the segmentation files or not.
+            modality (Optional[str]): The modality of the resources.
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
@@ -239,6 +245,8 @@ class RootAPIHandler(BaseAPIHandler):
 
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
+        if labels is not None and tags is None:
+            tags = labels
 
         files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
         if segmentation_files is not None:
@@ -259,7 +267,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
-                                            labels=labels,
+                                            tags=tags,
                                             mung_filename=mung_filename,
                                             channel=channel,
                                             publish=publish,
@@ -435,7 +443,8 @@ class RootAPIHandler(BaseAPIHandler):
                       status: ResourceStatus,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels: Optional[Sequence[str]] = None,
+                      labels = None,
+                      tags: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
                       return_ids_only: bool = False,
@@ -452,7 +461,10 @@ class RootAPIHandler(BaseAPIHandler):
             status (ResourceStatus): The resource status. Possible values: 'inbox', 'published' or 'archived'.
             from_date (Optional[date]): The start date.
             to_date (Optional[date]): The end date.
-            labels (Optional[list[str]]): The labels to filter the resources.
+            labels: 
+                .. deprecated:: 0.11.0
+                    Use `tags` instead.
+            tags (Optional[list[str]]): The tags to filter the resources.
             modality (Optional[str]): The modality of the resources.
             mimetype (Optional[str]): The mimetype of the resources.
             return_ids_only (bool): Whether to return only the ids of the resources.
@@ -466,7 +478,8 @@ class RootAPIHandler(BaseAPIHandler):
             >>> for resource in api_handler.get_resources(status='inbox'):
             >>>     print(resource)
         """
-        # check if status is valid
+        if labels is not None and tags is None:
+            tags = labels
 
         # Convert datetime objects to ISO format
         if from_date:
@@ -487,9 +500,9 @@ class RootAPIHandler(BaseAPIHandler):
             "channel_name": channel
         }
 
-        if labels is not None:
-            for i, label in enumerate(labels):
-                payload[f'labels[{i}]'] = label
+        if tags is not None:
+            for i, tag in enumerate(tags):
+                payload[f'tags[{i}]'] = tag
 
         # Remove None values from the payload.
         # Maybe it is not necessary.
@@ -537,15 +550,15 @@ class RootAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params,
                                                 return_field='data')
 
-    def set_resource_labels(self, resource_id: str,
-                            labels: Sequence[str] = None,
+    def set_resource_tags(self, resource_id: str,
+                            tags: Sequence[str] = None,
                             frame_labels: Sequence[Dict] = None
                             ):
-        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/labels"
+        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/tags"
         data = {}
 
-        if labels is not None:
-            data['labels'] = labels
+        if tags is not None:
+            data['tags'] = tags
         if frame_labels is not None:
             data['frame_labels'] = frame_labels
 
