@@ -57,7 +57,7 @@ To disable automatic logging, set ``auto_log=False`` when creating the |Experime
 
 Manual Summary logging
 ++++++++++++++++++++++
-Here is a complete example that logs manually everything required by the summary UI tab:
+Here is a complete example that manually logs everything required by the summary UI tab:
 
 .. code-block:: python
 
@@ -101,7 +101,7 @@ There are multiple detailed info that can be logged during the training of a mod
 - **Metrics along epochs/steps** such as loss, accuracy and sensitivity. For this, use :py:meth:`~datamintapi.experiment.experiment.Experiment.log_metric` with ``epoch=i`` and ``name="train/{METRIC_NAME}"`` or ``name="val/{METRIC_NAME}"``.
 - **Predictions:** The model's predictions on the validation/test set. Useful to build curves such as ROC and Precision-Recall. For this, use :py:meth:`~datamintapi.experiment.experiment.Experiment.log_classification_predictions`.
 - **Hyperparameters:** the hyperparameters used to train the model. For this, use the ``hyper_params`` parameter of :py:meth:`~datamintapi.experiment.experiment.Experiment.log_model`. Some hyperparameters are automatically logged by default, such as the number of layers, number of parameters, and the model attributes.
-- **Enviroment:** The environment used to train the model. This is automatically collected by default. Disable it by ``log_enviroment=False``` when creating the |ExperimentClass| object.
+- **Enviroment:** The environment used to train the model. This is automatically collected by default. Disable it by ``log_enviroment=False`` when creating the |ExperimentClass| object.
 
 Here is an example of how to log the metrics along epochs during the training of a model:
 

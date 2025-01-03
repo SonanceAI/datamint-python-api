@@ -15,6 +15,7 @@ import cv2
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamintapi import configs
 from .base_api_handler import BaseAPIHandler, DatamintException, validate_call, ResourceNotFoundError, ResourceFields, ResourceStatus
+from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -202,7 +203,7 @@ class RootAPIHandler(BaseAPIHandler):
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels = None,
+                         labels=None,
                          tags: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
@@ -440,17 +441,19 @@ class RootAPIHandler(BaseAPIHandler):
 
     @validate_call
     def get_resources(self,
-                      status: ResourceStatus,
+                      status: Optional[ResourceStatus] = None,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels = None,
+                      labels=None,
                       tags: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
                       return_ids_only: bool = False,
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
-                      channel: Optional[str] = None
+                      channel: Optional[str] = None,
+                      project_id: Optional[str] = None,
+                      filename: Optional[str] = None
                       ) -> Generator[Dict, None, None]:
         """
         Iterates over resources with the specified filters.
@@ -458,7 +461,7 @@ class RootAPIHandler(BaseAPIHandler):
         It returns full information of the resources by default, but it can be configured to return only the ids with parameter `return_ids_only`.
 
         Args:
-            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published' or 'archived'.
+            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
             from_date (Optional[date]): The start date.
             to_date (Optional[date]): The end date.
             labels: 
@@ -491,13 +494,15 @@ class RootAPIHandler(BaseAPIHandler):
         payload = {
             "from": from_date,
             "to": to_date,
+            "status": status if status is not None else "",
             "modality": modality,
-            "status": status,
             "mimetype": mimetype,
             "ids": return_ids_only,
             "order_field": order_field,
             "order_by_asc": order_ascending,
-            "channel_name": channel
+            "channel_name": channel,
+            "projectId": project_id,
+            "filename": filename
         }
 
         if tags is not None:
@@ -551,9 +556,9 @@ class RootAPIHandler(BaseAPIHandler):
                                                 return_field='data')
 
     def set_resource_tags(self, resource_id: str,
-                            tags: Sequence[str] = None,
-                            frame_labels: Sequence[Dict] = None
-                            ):
+                          tags: Sequence[str] = None,
+                          frame_labels: Sequence[Dict] = None
+                          ):
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/tags"
         data = {}
 
@@ -679,6 +684,7 @@ class RootAPIHandler(BaseAPIHandler):
             if e.response is not None and e.response.status_code == 500:
                 raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
             raise e
+
     def get_users(self) -> list[dict]:
         """
         Get all users.
@@ -745,7 +751,8 @@ class RootAPIHandler(BaseAPIHandler):
         }
         return self._run_request(request_params).json()['data']
 
-    def get_resources_by_project(self, project_id:str) -> Generator[Dict, None, None]:
+    @deprecated(version='0.12.0', reason="Use :meth:`~get_resources` with project_id parameter instead.")
+    def get_resources_by_project(self, project_id: str) -> Generator[Dict, None, None]:
         """
         Get the resources by project.
 
