@@ -34,7 +34,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 50
+_PAGE_LIMIT = 5000
 
 
 def validate_call(func, *args, **kwargs):

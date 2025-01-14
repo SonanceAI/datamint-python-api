@@ -376,7 +376,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         payload = {
             'resource_id': resource_id,
             'annotation_type': annotation_type,
-            'annotator_email': annotator_email,
+            'annotatorEmail': annotator_email,
             'from': date_from,
             'to': date_to
         }
@@ -519,3 +519,13 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
+
+
+    def get_segmentation_file(self, resource_id: str, annotation_id: str) -> bytes:
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/annotations/{resource_id}/annotations/{annotation_id}/file',
+        }
+
+        resp = self._run_request(request_params)
+        return resp.content
