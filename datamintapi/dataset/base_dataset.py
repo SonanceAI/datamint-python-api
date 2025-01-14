@@ -12,8 +12,8 @@ import numpy as np
 from datamintapi import configs
 from torch.utils.data import DataLoader
 import torch
-from datamintapi.api_handler import APIHandler
-from datamintapi.base_api_handler import DatamintException
+from datamintapi.apihandler.api_handler import APIHandler
+from datamintapi.apihandler.base_api_handler import DatamintException
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
 from datamintapi.utils.dicom_utils import load_image_normalized

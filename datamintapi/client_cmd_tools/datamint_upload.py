@@ -1,5 +1,5 @@
 import argparse
-from datamintapi.api_handler import APIHandler
+from datamintapi.apihandler.api_handler import APIHandler
 import os
 from humanize import naturalsize
 import logging

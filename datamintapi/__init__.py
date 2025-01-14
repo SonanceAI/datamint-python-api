@@ -5,7 +5,7 @@ TODO...
 """
 
 from .dataset.dataset import DatamintDataset as Dataset
-from .api_handler import APIHandler
+from .apihandler.api_handler import APIHandler
 from .experiment import Experiment
 import importlib.metadata
 

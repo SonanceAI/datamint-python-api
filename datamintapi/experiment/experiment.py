@@ -1,6 +1,6 @@
 import logging
-from datamintapi.api_handler import APIHandler
-from datamintapi.base_api_handler import DatamintException
+from datamintapi.apihandler.api_handler import APIHandler
+from datamintapi.apihandler.base_api_handler import DatamintException
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union, Any, Tuple
 from collections import defaultdict
