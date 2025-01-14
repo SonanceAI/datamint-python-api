@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, mock_open
-from datamintapi.api_handler import APIHandler
+from datamintapi.apihandler.api_handler import APIHandler
 import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
