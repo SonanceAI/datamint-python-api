@@ -36,12 +36,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
             yield img_bytes
 
     @staticmethod
-    def _generate_segmentations_ios(file_path: Union[str, np.ndarray],
-                                    transpose_segmentation: bool = False) -> Tuple[int, Generator[IO, None, None]]:
+    def _generate_segmentations_ios(file_path: str | np.ndarray,
+                                    transpose_segmentation: bool = False) -> tuple[int, Generator[IO, None, None]]:
+        _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path  # (#frames, height, width) or (height, width)
-            if segs_imgs.ndim == 3:
-                segs_imgs = segs_imgs.transpose(1, 2, 0)  # from (#frames, height, width) to (height, width, #frames)
             if transpose_segmentation:
                 segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
@@ -221,6 +220,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         if frame_index is None:
             frame_index = list(range(nframes))
         elif len(frame_index) != nframes:
+            print(f"{len(frame_index)}!={nframes}")
             raise ValueError("Do not provide frame_index for images of multiple frames.")
         #######
 
