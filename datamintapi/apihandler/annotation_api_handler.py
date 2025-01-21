@@ -40,7 +40,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                     transpose_segmentation: bool = False) -> tuple[int, Generator[IO, None, None]]:
         _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
         if isinstance(file_path, np.ndarray):
-            segs_imgs = file_path
+            segs_imgs = file_path  # (#frames, height, width) or (height, width)
             if transpose_segmentation:
                 segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
             nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
@@ -84,95 +84,90 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_segmentations_async(self,
                                           resource_id: str,
-                                          file_path: Union[str, np.ndarray],
+                                          frame_index: int,
+                                          file_path: str | None = None,
+                                          fio: IO = None,
                                           name: Optional[Union[str, Dict[int, str]]] = None,
-                                          frame_index: int | list[int] = None,
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
                                           worklist_id: Optional[str] = None,
                                           model_id: Optional[str] = None,
                                           transpose_segmentation: bool = False
-                                          ) -> str:
-        if isinstance(file_path, str) and not os.path.exists(file_path):
-            raise FileNotFoundError(f"File {file_path} not found.")
-
-        if isinstance(frame_index, int):
-            frame_index = [frame_index]
-
-        # Generate IOs for the segmentations.
-        nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path)
-        #######
-
-        if frame_index is None:
-            frame_index = list(range(nframes))
-        elif len(frame_index) != nframes:
-            _LOGGER.debug(f"Number of frames in `file_path` ({nframes})" +
-                          f" does not match the number of frame indexes ({len(frame_index)})")
-            raise ValueError("Do not provide frame_index for images of multiple frames.")
-
-        try:
-            # For each frame, create the annotations and upload the segmentations.
+                                          ) -> None:
+        if file_path is not None:
+            nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path,
+                                                                             transpose_segmentation=transpose_segmentation)
+            if frame_index is None:
+                frame_index = list(range(nframes))
             for fidx, f in zip(frame_index, fios):
-                try:
-                    img = np.array(Image.open(f))
-                    ### Check that frame is not empty ###
-                    uniq_vals = np.unique(img)
-                    if discard_empty_segmentations:
-                        if len(uniq_vals) == 1 and uniq_vals[0] == 0:
-                            msg = f"Discarding empty segmentation for frame {fidx}"
-                            _LOGGER.debug(msg)
-                            _USER_LOGGER.debug(msg)
-                            continue
-                        f.seek(0)
-                        # TODO: Optimize this. It is not necessary to open the image twice.
+                await self._upload_segmentations_async(resource_id,
+                                                       fio=f,
+                                                       name=name,
+                                                       frame_index=fidx,
+                                                       imported_from=imported_from,
+                                                       author_email=author_email,
+                                                       discard_empty_segmentations=discard_empty_segmentations,
+                                                       worklist_id=worklist_id,
+                                                       model_id=model_id)
+            return
+        try:
+            try:
+                img = np.array(Image.open(fio))
+                ### Check that frame is not empty ###
+                uniq_vals = np.unique(img)
+                if discard_empty_segmentations:
+                    if len(uniq_vals) == 1 and uniq_vals[0] == 0:
+                        msg = f"Discarding empty segmentation for frame {frame_index}"
+                        _LOGGER.debug(msg)
+                        _USER_LOGGER.debug(msg)
+                        return
+                    fio.seek(0)
+                    # TODO: Optimize this. It is not necessary to open the image twice.
 
-                    segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
-                    segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, f)
-                    annotations = []
-                    for segname in segnames:
-                        ann = {
-                            "identifier": segname,
-                            "scope": 'frame',
-                            "frame_index": fidx,
-                            'imported_from': imported_from,
-                            'import_author': author_email,
-                            "type": 'segmentation',
-                            'annotation_worklist_id': worklist_id
-                        }
-                        if model_id is not None:
-                            ann['model_id'] = model_id
-                            ann['is_model'] = True
-                        annotations.append(ann)
-                    # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
-                    if len(annotations) != len(set([a['identifier'] for a in annotations])):
-                        raise ValueError(
-                            "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
+                segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
+                segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
+                annotations = []
+                for segname in segnames:
+                    ann = {
+                        "identifier": segname,
+                        "scope": 'frame',
+                        "frame_index": frame_index,
+                        'imported_from': imported_from,
+                        'import_author': author_email,
+                        "type": 'segmentation',
+                        'annotation_worklist_id': worklist_id
+                    }
+                    if model_id is not None:
+                        ann['model_id'] = model_id
+                        ann['is_model'] = True
+                    annotations.append(ann)
+                # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
+                if len(annotations) != len(set([a['identifier'] for a in annotations])):
+                    raise ValueError(
+                        "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
 
-                    annotids = await self._upload_annotations_async(resource_id, annotations)
+                annotids = await self._upload_annotations_async(resource_id, annotations)
 
-                    ### Upload segmentation ###
-                    if len(annotids) != len(segnames):
-                        _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
-                                        f" does not match the number of annotations ({len(segnames)})")
-                    for annotid, segname, f in zip(annotids, segnames, segs_generator):
-                        form = aiohttp.FormData()
-                        form.add_field('file', f, filename=segname, content_type='image/png')
-                        request_params = dict(
-                            method='POST',
-                            url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
-                            data=form,
-                        )
-                        resp = await self._run_request_async(request_params)
-                        if 'error' in resp:
-                            raise DatamintException(resp['error'])
-                    #######
-                finally:
-                    f.close()
-            if isinstance(file_path, str):
-                _USER_LOGGER.info(f'Segmentations "{os.path.basename(file_path)}" uploaded for resource {resource_id}')
-            else:
-                _USER_LOGGER.info(f'Segmentations uploaded for resource {resource_id}')
+                ### Upload segmentation ###
+                if len(annotids) != len(segnames):
+                    _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
+                                    f" does not match the number of annotations ({len(segnames)})")
+                for annotid, segname, fio in zip(annotids, segnames, segs_generator):
+                    form = aiohttp.FormData()
+                    form.add_field('file', fio, filename=segname, content_type='image/png')
+                    request_params = dict(
+                        method='POST',
+                        url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
+                        data=form,
+                    )
+                    resp = await self._run_request_async(request_params)
+                    if 'error' in resp:
+                        raise DatamintException(resp['error'])
+                #######
+            finally:
+                fio.close()
+            _USER_LOGGER.info(f'Segmentations uploaded for resource {resource_id}')
         except ResourceNotFoundError:
             raise ResourceNotFoundError('resource', {'resource_id': resource_id})
 
@@ -185,7 +180,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                              author_email: Optional[str] = None,
                              discard_empty_segmentations: bool = True,
                              worklist_id: Optional[str] = None,
-                             model_id: Optional[str] = None
+                             model_id: Optional[str] = None,
+                             transpose_segmentation: bool = False
                              ) -> str:
         """
         Upload segmentations to a resource.
@@ -196,7 +192,10 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 If a numpy array is provided, it must have the shape (height, width, #frames) or (height, width).
             name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
                 example: {1: 'Femur', 2: 'Tibia'}.
-            frame_index (int): The frame index of the segmentation.
+            frame_index (int | list[int]): The frame index of the segmentation. 
+                If a list, it must have the same length as the number of frames in the segmentation.
+                If None, it is assumed that the segmentations are in sequential order starting from 0.
+
             discard_empty_segmentations (bool): Whether to discard empty segmentations or not.
 
         Returns:
@@ -208,17 +207,37 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Example:
             >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
         """
+        if isinstance(file_path, str) and not os.path.exists(file_path):
+            raise FileNotFoundError(f"File {file_path} not found.")
+        if isinstance(frame_index, int):
+            frame_index = [frame_index]
+
         loop = asyncio.get_event_loop()
-        task = self._upload_segmentations_async(resource_id,
-                                                file_path=file_path,
-                                                name=name,
-                                                frame_index=frame_index,
-                                                imported_from=imported_from,
-                                                author_email=author_email,
-                                                discard_empty_segmentations=discard_empty_segmentations,
-                                                worklist_id=worklist_id,
-                                                model_id=model_id)
-        ret = loop.run_until_complete(task)
+        to_run = []
+        # Generate IOs for the segmentations.
+        nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path,
+                                                                         transpose_segmentation=transpose_segmentation)
+        if frame_index is None:
+            frame_index = list(range(nframes))
+        elif len(frame_index) != nframes:
+            print(f"{len(frame_index)}!={nframes}")
+            raise ValueError("Do not provide frame_index for images of multiple frames.")
+        #######
+
+        # For each frame, create the annotations and upload the segmentations.
+        for fidx, f in zip(frame_index, fios):
+            task = self._upload_segmentations_async(resource_id,
+                                                    fio=f,
+                                                    name=name,
+                                                    frame_index=fidx,
+                                                    imported_from=imported_from,
+                                                    author_email=author_email,
+                                                    discard_empty_segmentations=discard_empty_segmentations,
+                                                    worklist_id=worklist_id,
+                                                    model_id=model_id)
+            to_run.append(task)
+
+        ret = loop.run_until_complete(asyncio.gather(*to_run))
         return ret
 
     def add_image_category_annotation(self,

@@ -128,6 +128,10 @@ def _find_segmentation_files(segmentation_root_path: str,
 
     if segmentation_root_path is None:
         return None
+    
+    if len(images_files) == 1 and os.path.isfile(images_files[0]) and os.path.isfile(segmentation_root_path):
+        return [{'files': [segmentation_root_path]}]
+        
 
     segmentation_files = []
     acceptable_extensions = ['.nii.gz', '.nii', '.png']
