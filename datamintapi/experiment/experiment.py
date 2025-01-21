@@ -2,10 +2,9 @@ import logging
 from datamintapi.apihandler.api_handler import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Union, Any, Tuple
+from typing import List, Dict, Optional, Union, Any, Tuple, IO
 from collections import defaultdict
 import torch
-from io import BytesIO
 from datamintapi import Dataset as DatamintDataset
 import os
 import numpy as np
@@ -427,7 +426,7 @@ class Experiment:
                                     result_summary=result_summary)
 
     def log_model(self,
-                  model: Union[torch.nn.Module, str, BytesIO],
+                  model: torch.nn.Module | str | IO[bytes],
                   hyper_params: Optional[Dict] = None,
                   log_model_attributes: bool = True,
                   torch_save_kwargs: Dict = {}):
@@ -435,7 +434,7 @@ class Experiment:
         Log the model to the platform.
 
         Args:
-            model (Union[torch.nn.Module, str, BytesIO]): The model to log. Can be a torch model, a path to a .pt or .pth file, or a BytesIO object.
+            model (torch.nn.Module | str | IO[bytes]): The model to log. Can be a torch model, a path to a .pt or .pth file, or a BytesIO object.
             hyper_params (Optional[Dict]): The hyper-parameters of the model. Arbitrary key-value pairs.
             log_model_attributes (bool): Adds the attributes of the model to the hyper-parameters.
             torch_save_kwargs (Dict): Additional arguments to pass to `torch.save`.
@@ -686,7 +685,7 @@ class Experiment:
                   In this case, `label_names` should have the same length as the predictions.
 
             label_names (List[str]): The names of the classes. 
-            If the predictions are shape (N,), this should have the same length as the predictions.
+                If the predictions are shape (N,), this should have the same length as the predictions.
             resource_ids (List[str]): The resource IDs of the samples.
             dataset_split (Optional[str]): The dataset split of the predictions.
             frame_idxs (Optional[List[int]]): The frame indexes of the predictions.

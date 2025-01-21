@@ -1,5 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict, Tuple, Union, List
-import os
+from typing import Optional, Literal, Generator, TypeAlias, Dict, Union, List
 import pydicom.dataset
 from requests import Session
 from requests.exceptions import HTTPError
@@ -7,21 +6,16 @@ import logging
 import asyncio
 import aiohttp
 import nest_asyncio  # For running asyncio in jupyter notebooks
-from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
 import pydicom
-from pathlib import Path
-from datetime import date
-import mimetypes
 import json
 from PIL import Image
 from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
-from deprecated.sphinx import deprecated
 import pydantic
 from datamintapi import configs
-import numpy as np
+from functools import wraps
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -43,6 +37,7 @@ def validate_call(func, *args, **kwargs):
     """
     new_func = pydantic.validate_call(func, *args, **kwargs)
 
+    @wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return new_func(*args, **kwargs)

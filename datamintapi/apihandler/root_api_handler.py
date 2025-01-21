@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict, Tuple, Union, List
+from typing import Optional, IO, Sequence, Literal, Generator, Dict, Union, List
 import os
 import pydicom.data
 import pydicom.dataset
@@ -478,7 +478,7 @@ class RootAPIHandler(BaseAPIHandler):
             modality (Optional[str]): The modality of the resources.
             mimetype (Optional[str]): The mimetype of the resources.
             return_ids_only (bool): Whether to return only the ids of the resources.
-            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~ResourceFields`.
+            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~.base_api_handler.ResourceFields`.
             order_ascending (Optional[bool]): Whether to order the resources in ascending order.
 
         Returns:

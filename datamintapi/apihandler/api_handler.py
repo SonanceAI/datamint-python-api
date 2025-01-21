@@ -4,4 +4,12 @@ from .exp_api_handler import ExperimentAPIHandler
 
 
 class APIHandler(RootAPIHandler, ExperimentAPIHandler, AnnotationAPIHandler):
+    """
+    Import using this code:
+
+    .. code-block:: python
+    
+        from datamintapi import APIHandler
+        api = APIHandler()
+    """
     pass
