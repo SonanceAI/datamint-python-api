@@ -187,6 +187,7 @@ class RootAPIHandler(BaseAPIHandler):
                         if isinstance(names, dict):
                             names = [names]*len(files_path)
                         frame_indices = segfiles.get('frame_index', [None] * len(files_path))
+                        _LOGGER.debug(f"Segmentation files: {files_path}")
                         for f, name, frame_index in zip(files_path, names, frame_indices):
                             if f is not None:
                                 await self._upload_segmentations_async(rid,
@@ -233,7 +234,7 @@ class RootAPIHandler(BaseAPIHandler):
             channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
             publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
             publish_to (Optional[str]): The project name or id to publish the resources to.
-                They will have the 'published' status and will be added to the dataset.
+                They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
             segmentation_files (Optional[List[Union[List[str], Dict]]]): The segmentation files to upload.
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
@@ -458,6 +459,7 @@ class RootAPIHandler(BaseAPIHandler):
                       order_ascending: Optional[bool] = None,
                       channel: Optional[str] = None,
                       project_id: Optional[str] = None,
+                      project_name: Optional[str] = None,
                       filename: Optional[str] = None
                       ) -> Generator[Dict, None, None]:
         """
@@ -489,6 +491,9 @@ class RootAPIHandler(BaseAPIHandler):
         if labels is not None and tags is None:
             tags = labels
 
+        if project_id is not None and project_name is not None:
+            _LOGGER.warning("Both project_id and project_name were provided.")
+
         # Convert datetime objects to ISO format
         if from_date:
             from_date = from_date.isoformat()
@@ -507,8 +512,10 @@ class RootAPIHandler(BaseAPIHandler):
             "order_by_asc": order_ascending,
             "channel_name": channel,
             "projectId": project_id,
-            "filename": filename
+            "filename": filename,
         }
+        if project_name is not None:
+            payload["project"] = json.dumps({'items': [project_name], 'filterType': 'union'})
 
         if tags is not None:
             if isinstance(tags, str):
