@@ -147,13 +147,17 @@ class ExperimentAPIHandler(BaseAPIHandler):
         else:
             raise ValueError(f"Invalid type for model: {type(model)}")
 
+        name = None
+        f.name = name
+
         try:
             json_data = hyper_params
+            json_data['model_name'] = name
             request_params = {
                 'method': 'POST',
                 'url': f"{self.exp_url}/{exp_id}/model",
                 'data': json_data,
-                'files': [(None, f)]
+                'files': [(None, f)],
             }
 
             resp = self._run_request(request_params).json()

@@ -36,8 +36,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
             yield img_bytes
 
     @staticmethod
-    def _generate_segmentations_ios(file_path: Union[str, np.ndarray],
-                                    transpose_segmentation: bool = False) -> Tuple[int, Generator[IO, None, None]]:
+    def _generate_segmentations_ios(file_path: str | np.ndarray,
+                                    transpose_segmentation: bool = False) -> tuple[int, Generator[IO, None, None]]:
+        _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path
             if transpose_segmentation:
@@ -85,7 +86,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                           resource_id: str,
                                           file_path: Union[str, np.ndarray],
                                           name: Optional[Union[str, Dict[int, str]]] = None,
-                                          frame_index: int = None,
+                                          frame_index: int | list[int] = None,
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
@@ -101,12 +102,13 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         # Generate IOs for the segmentations.
         nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path)
-        _LOGGER.debug(f"Number of frames in `file_path`: {nframes}")
         #######
 
         if frame_index is None:
             frame_index = list(range(nframes))
         elif len(frame_index) != nframes:
+            _LOGGER.debug(f"Number of frames in `file_path` ({nframes})" +
+                          f" does not match the number of frame indexes ({len(frame_index)})")
             raise ValueError("Do not provide frame_index for images of multiple frames.")
 
         try:
@@ -178,7 +180,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                              resource_id: str,
                              file_path: Union[str, np.ndarray],
                              name: Optional[Union[str, Dict[int, str]]] = None,
-                             frame_index: int = None,
+                             frame_index: int | list[int] = None,
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
                              discard_empty_segmentations: bool = True,
@@ -519,7 +521,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
-
 
     def get_segmentation_file(self, resource_id: str, annotation_id: str) -> bytes:
         request_params = {

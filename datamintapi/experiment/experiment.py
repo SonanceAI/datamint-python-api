@@ -10,6 +10,7 @@ from datamintapi import Dataset as DatamintDataset
 import os
 import numpy as np
 import heapq
+from datamintapi.utils import io_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -747,6 +748,66 @@ class Experiment:
                 pred['frame_index'] = frame_idx
         self._log_predictions(predictions, step=step, epoch=epoch, dataset_split=dataset_split)
 
+    def log_segmentation_predictions(self,
+                                     resource_id: str | dict,
+                                     predictions: np.ndarray | str,
+                                     label_name: str | dict[int, str],
+                                     frame_index: int | list[int] | None = None,
+                                     threshold: float = 0.5,
+                                     ):
+        """
+        Log the segmentation prediction of the model for a single frame
+
+        Args:
+            resource_id (str): The resource ID of the sample.
+            predictions (np.ndarray): The predictions of the model. A numpy array of shape (H, W) or (N,H,W).
+            label_name (str | dict): The name of the class or a dictionary mapping pixel values to names.
+                Example: ``{1: 'Femur', 2: 'Tibia'}`` means that pixel value 1 is 'Femur' and pixel value 2 is 'Tibia'.
+            frame_index (int | list[int]): The frame index of the prediction or a list of frame indexes.
+                If a list, must have the same length as the predictions.
+                If None, 
+            threshold (float): The threshold to apply to the predictions.
+        """
+
+        if isinstance(resource_id, dict):
+            resource_id = resource_id['id']
+
+        if self.model_id is None:
+            raise ValueError("Model is not logged. Cannot log segmentation predictions. see `log_model` method.")
+
+        if isinstance(predictions, str):
+            predictions = io_utils.read_array_normalized(predictions)
+
+        is_2d_prediction = predictions.ndim == 2
+
+        if predictions.ndim == 4 and predictions.shape[1] == 1:
+            predictions = predictions[:, 0]
+        elif predictions.ndim == 2:
+            predictions = predictions[np.newaxis]
+        elif predictions.ndim != 3:
+            raise ValueError(f"Prediction with shape {predictions.shape} is different than (H, W) and (N,H,W).")
+
+        if frame_index is None:
+            if is_2d_prediction:
+                raise ValueError("frame_index must be provided when predictions is 2D.")
+            frame_index = list(range(predictions.shape[0]))
+        elif isinstance(frame_index, int):
+            frame_index = [frame_index]
+        else:
+            if len(frame_index) != predictions.shape[0]:
+                raise ValueError("Length of frame_index must match the first dimension of predictions.")
+
+        # For each frame
+        predictions = predictions > threshold
+        new_ann_id = self.apihandler.upload_segmentations(
+            resource_id=resource_id,
+            file_path=predictions.transpose(1, 2, 0),
+            name=label_name,
+            frame_index=frame_index,
+            model_id=self.model_id,
+            worklist_id=self.project['worklist_id'],
+        )
+
     def log_semantic_seg_predictions(self,
                                      predictions: np.ndarray,
                                      resource_ids: Union[List[str], str],
@@ -769,7 +830,6 @@ class Experiment:
             step (Optional[int]): The step of the experiment.
             epoch (Optional[int]): The epoch of the experiment.
         """
-
         if isinstance(resource_ids, str):
             resource_ids = [resource_ids] * len(predictions)
 
@@ -806,17 +866,21 @@ class Experiment:
             _LOGGER.info("Uploading segmentation masks to the platform.")
             # For each frame
             predictions = predictions > threshold
+            grouped_predictions = defaultdict(list)
             for fidx, res_id, pred in zip(frame_idxs, resource_ids, predictions):
-                # for each class
-                for i in range(pred.shape[0]):
-                    pred_i = pred[i]
-                    name = label_names[i]
-                    # pred_i is a mask of shape (H, W)
+                grouped_predictions[res_id].append((fidx, pred))
+
+            for res_id, list_preds in grouped_predictions.items():
+                frame_idxs = [fidx for fidx, _ in list_preds]
+                preds = np.stack([pred for _, pred in list_preds])
+                for i in range(len(label_names)):
+                    preds_i = preds[:, i]  # get the i-th class predictions
+                    # preds_i.shape: (N, H, W)
                     new_ann_id = self.apihandler.upload_segmentations(
                         resource_id=res_id,
-                        file_path=pred_i,
-                        name=name,
-                        frame_index=fidx,
+                        file_path=preds_i,
+                        name=label_names[i],
+                        frame_index=frame_idxs,
                         model_id=self.model_id,
                         worklist_id=self.project['worklist_id'],
                     )
