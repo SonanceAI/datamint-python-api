@@ -55,6 +55,16 @@ class ExperimentAPIHandler(BaseAPIHandler):
         response = self._run_request(request_params)
 
         return response.json()
+    
+    def get_experiment_logs(self, exp_id: str) -> List[Dict]:
+        request_params = {
+            'method': 'GET',
+            'url': f"{self.exp_url}/{exp_id}/log"
+        }
+
+        response = self._run_request(request_params)
+
+        return response.json()
 
     def log_summary(self,
                     exp_id: str,
