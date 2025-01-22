@@ -57,7 +57,7 @@ class ClsMetricForSegmentation(torchmetrics.Metric):
             metric.update(yhat_cls, y_cls)
 
     def compute(self):
-        return {metric.__class__.__name__: metric.compute() for metric in self.metrics}
+        return {metric.__class__.__name__: metric.compute().item() for metric in self.metrics}
 
     def reset(self):
         for metric in self.metrics:
@@ -87,10 +87,10 @@ def initialize_model(num_classes: int, weights):
 
 def main():
     # Initialize the experiment. Creates a new experiment on the platform.
-    exp = Experiment(name='experiment7',
-                     project_name='Lucas test project',
+    exp = Experiment(name='experiment16',
+                     project_name='testproject',
                      allow_existing=True,  # If an experiment with the same name exists, allow_existing=True returns the existing experiment
-                     #  dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
+                     dry_run=True  # Set dry_run=True to avoid uploading the results to the platform
                      )
 
     weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
@@ -103,8 +103,10 @@ def main():
                                    weights.transforms()
                                    ]),
         mask_transform=T.Resize((520, 520), antialias=False, interpolation=T.InterpolationMode.NEAREST),
+        return_segmentations=True,
         # This will return the mask as a semantic segmentation tensor (#classes, H, W)
         return_as_semantic_segmentation=True,
+        semantic_seg_merge_strategy='union',
     )
 
     # Load the train and test datasets. This returns a subclass of PyTorch dataset object.
@@ -113,12 +115,12 @@ def main():
 
     # Create dataloaders for the train and test datasets.
     # This method has the convinience of automatically dealing with collate_fn.
-    trainloader = train_dataset.get_dataloader(batch_size=4, drop_last=True)
-    testloader = test_dataset.get_dataloader(batch_size=4, drop_last=True)
+    trainloader = train_dataset.get_dataloader(batch_size=2, drop_last=True)
+    testloader = test_dataset.get_dataloader(batch_size=2, drop_last=True)
 
     ####################
 
-    num_segmentation_classes = train_dataset.num_segmentation_labels+1  # +1 for the background class
+    num_segmentation_classes = len(train_dataset.segmentation_labels_set)+1  # +1 for the background class
 
     ### Define the model, loss function, and metrics ###
     model = initialize_model(num_segmentation_classes, weights)
@@ -144,6 +146,7 @@ def main():
     ####################
 
     training_loop(model, criterion, trainloader, metrics)
+    exp.log_model(model)
 
     # Evaluate the model on the test data
     test_loop(model, criterion, testloader, metrics, exp)
@@ -215,18 +218,19 @@ def test_loop(model, criterion,
             segmentations = batch["segmentations"].to(DEVICE)
             # yhat.shape = (batch_size, #classes, H, W). Not normalized (-inf, +inf)
             yhat = model(images)['out']
+            # remove background
             loss = criterion(yhat, segmentations)
             for metric in metrics:
                 metric.update(yhat > 0.0, segmentations.bool())
             eval_loss += loss.item()
-
-            # remove background
+            
             yhat = yhat[:, 1:]
-            exp.log_semantic_seg_predictions(predictions=torch.sigmoid(yhat).cpu().numpy(),
+            yhat = torch.sigmoid(yhat)
+            exp.log_semantic_seg_predictions(yhat.cpu().numpy(),
                                              resource_ids=[b['id'] for b in batch['metainfo']],
-                                             label_names=testloader.dataset.segmentation_labels,
-                                             dataset_split="test",
-                                             frame_idxs=[b['frame_index'] for b in batch['metainfo']]
+                                             label_names=testloader.dataset.segmentation_labels_set,
+                                             frame_idxs=[b['frame_index'] for b in batch['metainfo']],
+                                             threshold=0.5
                                              )
 
     eval_loss /= len(testloader)

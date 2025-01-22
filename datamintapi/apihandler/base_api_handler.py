@@ -1,5 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict, Tuple, Union, List
-import os
+from typing import Optional, Literal, Generator, TypeAlias, Dict, Union, List
 import pydicom.dataset
 from requests import Session
 from requests.exceptions import HTTPError
@@ -7,21 +6,16 @@ import logging
 import asyncio
 import aiohttp
 import nest_asyncio  # For running asyncio in jupyter notebooks
-from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
 import pydicom
-from pathlib import Path
-from datetime import date
-import mimetypes
 import json
 from PIL import Image
 from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
-from deprecated.sphinx import deprecated
 import pydantic
 from datamintapi import configs
-import numpy as np
+from functools import wraps
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -34,7 +28,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
 """
 
-_PAGE_LIMIT = 10
+_PAGE_LIMIT = 5000
 
 
 def validate_call(func, *args, **kwargs):
@@ -43,6 +37,7 @@ def validate_call(func, *args, **kwargs):
     """
     new_func = pydantic.validate_call(func, *args, **kwargs)
 
+    @wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return new_func(*args, **kwargs)
@@ -144,13 +139,14 @@ class BaseAPIHandler:
             status_code = BaseAPIHandler.get_status_code(e)
             if status_code >= 500 and status_code < 600:
                 _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
-            if status_code == 404:
+            if status_code >= 400 and status_code < 500:
                 try:
+                    _LOGGER.error(f"Error response: {response.text}")
                     error_data = response.json()
                 except Exception as e2:
                     _LOGGER.error(f"Error parsing the response. {e2}")
                 else:
-                    if ' not found' in error_data['message'].lower():
+                    if isinstance(error_data['message'], str) and ' not found' in error_data['message'].lower():
                         # Will be caught by the caller and properly initialized:
                         raise ResourceNotFoundError('unknown', {})
 
@@ -192,7 +188,7 @@ class BaseAPIHandler:
                                 return_field: Optional[Union[str, List]] = None
                                 ) -> Generator[Dict, None, None]:
         offset = 0
-        params = request_params['params']
+        params = request_params.get('params', {})
         while True:
             params['offset'] = offset
             params['limit'] = _PAGE_LIMIT
@@ -249,30 +245,3 @@ class BaseAPIHandler:
             return nib.load(file_path)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
-
-    def create_project(self,
-                       name: str,
-                       description: str,
-                       is_active_learning: bool = False) -> dict:
-        """
-        Create a new project.
-
-        Args:
-            name (str): The name of the project.
-
-        Returns:
-            dict: The created project.
-
-        Raises:
-            DatamintException: If the project could not be created.
-        """
-        request_args = {
-            'url': self._get_endpoint_url('projects'),
-            'method': 'POST',
-            'json': {'name': name,
-                     'is_active_learning': is_active_learning,
-                     'description': description}
-        }
-        response = self._run_request(request_args)
-        self._check_errors_response_json(response)
-        return response.json()

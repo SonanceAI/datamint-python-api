@@ -57,7 +57,7 @@ To disable automatic logging, set ``auto_log=False`` when creating the |Experime
 
 Manual Summary logging
 ++++++++++++++++++++++
-Here is a complete example that logs manually everything required by the summary UI tab:
+Here is a complete example that manually logs everything required by the summary UI tab:
 
 .. _experiment_example_code_1:
 .. code-block:: python

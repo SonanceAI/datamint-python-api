@@ -19,7 +19,7 @@ There are three options to specify the API key:
 
         os.environ["DATAMINT_API_KEY"] = "my_api_key"
     
-3. Specify API key in the :py:class:`APIHandler <datamintapi.api_handler.APIHandler>` constructor:
+1. Specify API key in the |APIHandlerClass| constructor:
 
 .. code-block:: python
 

@@ -1,5 +1,5 @@
 import argparse
-from datamintapi.api_handler import APIHandler
+from datamintapi.apihandler.api_handler import APIHandler
 import os
 from humanize import naturalsize
 import logging
@@ -128,6 +128,10 @@ def _find_segmentation_files(segmentation_root_path: str,
 
     if segmentation_root_path is None:
         return None
+    
+    if len(images_files) == 1 and os.path.isfile(images_files[0]) and os.path.isfile(segmentation_root_path):
+        return [{'files': [segmentation_root_path]}]
+        
 
     segmentation_files = []
     acceptable_extensions = ['.nii.gz', '.nii', '.png']
@@ -232,7 +236,8 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
                         default=[],
                         help='Retain the value of a single attribute code specified as hexidecimal integers. \
                             Example: (0x0008, 0x0050) or just (0008, 0050)')
-    parser.add_argument('-l', '--label', type=str, action='append', help='A label name to be applied to all files')
+    parser.add_argument('-l', '--label', type=str, action='append', help='Deprecated. Use --tag instead.')
+    parser.add_argument('--tag', type=str, action='append', help='A tag name to be applied to all files')
     parser.add_argument('--publish', action='store_true',
                         help='Publish the uploaded resources, giving them the status "published" instead of "inbox"')
     parser.add_argument('--mungfilename', type=_mungfilename_type,
@@ -310,6 +315,10 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
             _USER_LOGGER.error("API key not provided. Aborting.")
             sys.exit(1)
         os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
+
+        if args.tag is not None and args.label is not None:
+            raise ValueError("Cannot use both --tag and --label. Use --tag instead. --label is deprecated.")
+        args.tag = args.tag if args.tag is not None else args.label
 
         return args, file_path, segmentation_files
 
@@ -414,7 +423,7 @@ def main():
     api_handler = APIHandler()
     results = api_handler.upload_resources(channel=args.channel,
                                            files_path=files_path,
-                                           labels=args.label,
+                                           tags=args.label,
                                            on_error='skip',
                                            anonymize=args.retain_pii == False and has_a_dicom_file,
                                            anonymize_retain_codes=args.retain_attribute,
