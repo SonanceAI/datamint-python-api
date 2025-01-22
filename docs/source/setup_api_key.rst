@@ -5,7 +5,7 @@ Setup API key
 
 There are three options to specify the API key:
 
-1. **Recommended:** Run ``datamint-config`` and follow the instructions. See :ref:`configuring_datamint_settings` for more details.
+1. **Recommended:** Run ``datamint-config`` in the terminal and follow the instructions. Run ``datamint-config --help`` for more optional information.
 2. Specify API key as an environment variable:
 
 .. tabs:: 
@@ -19,10 +19,10 @@ There are three options to specify the API key:
 
         os.environ["DATAMINT_API_KEY"] = "my_api_key"
     
-1. Specify API key in the |APIHandlerClass| constructor:
+3. Specify API key in the |APIHandlerClass| constructor:
 
 .. code-block:: python
 
    from datamintapi import APIHandler
 
-   api_handler = APIHandler(api_key='my_api_key')
+   api = APIHandler(api_key='my_api_key')

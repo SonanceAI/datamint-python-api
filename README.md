@@ -12,8 +12,9 @@ dependencies using pip
 pip install git+https://github.com/SonanceAI/datamint-python-api
 ```
 
-Soon we will be releasing the package on PyPi. We recommend
-that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages. Create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
+Soon we will be releasing the package on PyPi.
+We recommend that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages.
+Create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
 - `source datamint-env/bin/activate` (Linux/MAC)
 - `datamint-env\Scripts\activate.bat` (Windows CMD)
 - `datamint-env\Scripts\Activate.ps1` (Windows PowerShell)
@@ -51,6 +52,7 @@ Tutorials
 You can find example notebooks in the `notebooks` folder:
 
 - [Uploading your resources](notebooks/upload_data.ipynb)
+- [Uploading model segmentations](notebooks/upload_model_segmentations.ipynb)
 
 and example scripts in [examples](examples) folder:
 
