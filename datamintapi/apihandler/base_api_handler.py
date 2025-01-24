@@ -96,6 +96,7 @@ class BaseAPIHandler:
         self.root_url = root_url if root_url is not None else configs.get_value(configs.APIURL_KEY)
         if self.root_url is None:
             self.root_url = BaseAPIHandler.DEFAULT_ROOT_URL
+        self.root_url.rstrip('/')
 
         self.api_key = api_key if api_key is not None else configs.get_value(configs.APIKEY_KEY)
         if self.api_key is None:

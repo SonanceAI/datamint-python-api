@@ -5,8 +5,8 @@ See the full documentation at https://sonanceai.github.io/datamint-python-api/
 Installation
 ------------
 
-Datamint requires Python 3.8+. You can install Datamint and its
-dependencies using pip
+Datamint requires Python 3.8+.
+You can install Datamint and its dependencies using pip
 
 ```bash
 pip install git+https://github.com/SonanceAI/datamint-python-api

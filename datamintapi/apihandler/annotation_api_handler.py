@@ -10,6 +10,7 @@ import os
 import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
+from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -220,7 +221,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
         if frame_index is None:
             frame_index = list(range(nframes))
         elif len(frame_index) != nframes:
-            print(f"{len(frame_index)}!={nframes}")
             raise ValueError("Do not provide frame_index for images of multiple frames.")
         #######
 
@@ -373,17 +373,31 @@ class AnnotationAPIHandler(BaseAPIHandler):
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
 
+    @deprecated(version='0.12.1', reason='Use :meth:`~get_annotations` instead with `resource_id` parameter.')
     def get_resource_annotations(self,
                                  resource_id: str,
                                  annotation_type: Optional[str] = None,
                                  annotator_email: Optional[str] = None,
                                  date_from: Optional[date] = None,
                                  date_to: Optional[date] = None) -> Generator[dict, None, None]:
+
+        return self.get_annotations(resource_id=resource_id,
+                                    annotation_type=annotation_type,
+                                    annotator_email=annotator_email,
+                                    date_from=date_from,
+                                    date_to=date_to)
+
+    def get_annotations(self,
+                        resource_id: Optional[str] = None,
+                        annotation_type: Optional[str] = None,
+                        annotator_email: Optional[str] = None,
+                        date_from: Optional[date] = None,
+                        date_to: Optional[date] = None) -> Generator[dict, None, None]:
         """
         Get annotations for a resource.
 
         Args:
-            resource_id (str): The resource unique id.
+            resource_id (Optional[str]): The resource unique id.
             annotation_type (Optional[str]): The annotation type.
             annotator_email (Optional[str]): The annotator email.
             date_from (Optional[date]): The start date.
@@ -398,8 +412,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             'resource_id': resource_id,
             'annotation_type': annotation_type,
             'annotatorEmail': annotator_email,
-            'from': date_from,
-            'to': date_to
+            'from': date_from.isoformat() if date_from is not None else None,
+            'to': date_to.isoformat() if date_to is not None else None
         }
 
         request_params = {

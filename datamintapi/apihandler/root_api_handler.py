@@ -43,7 +43,6 @@ class RootAPIHandler(BaseAPIHandler):
     DATAMINT_API_VENV_NAME = configs.ENV_VARS[configs.APIKEY_KEY]
     ENDPOINT_RESOURCES = 'resources'
     ENDPOINT_CHANNELS = f'{ENDPOINT_RESOURCES}/channels'
-    DEFAULT_ROOT_URL = 'https://api.datamint.io'
 
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
