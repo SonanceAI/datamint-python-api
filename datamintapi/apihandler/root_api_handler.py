@@ -362,13 +362,8 @@ class RootAPIHandler(BaseAPIHandler):
         Raises:
             ResourceNotFoundError: If the project does not exists.
         """
-        request_params = {
-            'method': 'GET',
-            'url': f'{self.root_url}/projects',
-        }
-
         try:
-            all_projects = self._run_request(request_params).json()['data']
+            all_projects = self.get_projects()
             for project in all_projects:
                 if project['name'] == project_name or project['id'] == project_name:
                     return project

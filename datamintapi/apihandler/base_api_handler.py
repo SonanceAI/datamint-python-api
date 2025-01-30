@@ -74,7 +74,7 @@ class ResourceNotFoundError(DatamintException):
         self.resource_type = resource_type
         self.params = params
 
-    def set_params(self, resource_type:str, params: dict):
+    def set_params(self, resource_type: str, params: dict):
         self.resource_type = resource_type
         self.params = params
 
@@ -91,7 +91,8 @@ class BaseAPIHandler:
 
     def __init__(self,
                  root_url: Optional[str] = None,
-                 api_key: Optional[str] = None):
+                 api_key: Optional[str] = None,
+                 check_connection: bool = True):
         nest_asyncio.apply()  # For running asyncio in jupyter notebooks
         self.root_url = root_url if root_url is not None else configs.get_value(configs.APIURL_KEY)
         if self.root_url is None:
@@ -104,6 +105,16 @@ class BaseAPIHandler:
                 f"{BaseAPIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise DatamintException(msg)
         self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
+
+        if check_connection:
+            self.check_connection()
+
+    def check_connection(self):
+        try:
+            self.get_projects()
+        except Exception as e:
+            raise DatamintException("Error connecting to the Datamint API." +
+                                    f" Please check your api_key and/or other configurations. {e}")
 
     async def _run_request_async(self,
                                  request_args: dict,

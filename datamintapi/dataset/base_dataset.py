@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any, Tuple, List, Dict, Literal
+from typing import Optional, Callable, Any, Literal
 import logging
 import shutil
 import json
@@ -145,7 +145,7 @@ class DatamintBaseDataset:
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
 
-    def __compute_num_frames_per_resource(self) -> List[int]:
+    def __compute_num_frames_per_resource(self) -> list[int]:
         num_frames_per_dicom = []
         for imginfo in self.images_metainfo:
             filepath = os.path.join(self.dataset_dir, imginfo['file'])
@@ -153,7 +153,7 @@ class DatamintBaseDataset:
         return num_frames_per_dicom
 
     @property
-    def frame_labels_set(self) -> List[str]:
+    def frame_labels_set(self) -> list[str]:
         """
         Returns the set of independent labels in the dataset.
         This is more related to multi-label tasks.
@@ -161,7 +161,7 @@ class DatamintBaseDataset:
         return self.frame_lsets['multilabel']
 
     @property
-    def frame_categories_set(self) -> List[Tuple[str, str]]:
+    def frame_categories_set(self) -> list[tuple[str, str]]:
         """
         Returns the set of categories in the dataset.
         This is more related to multi-class tasks.
@@ -169,7 +169,7 @@ class DatamintBaseDataset:
         return self.frame_lsets['multiclass']
 
     @property
-    def image_labels_set(self) -> List[str]:
+    def image_labels_set(self) -> list[str]:
         """
         Returns the set of independent labels in the dataset.
         This is more related to multi-label tasks.
@@ -177,7 +177,7 @@ class DatamintBaseDataset:
         return self.image_lsets['multilabel']
 
     @property
-    def image_categories_set(self) -> List[Tuple[str, str]]:
+    def image_categories_set(self) -> list[tuple[str, str]]:
         """
         Returns the set of categories in the dataset.
         This is more related to multi-class tasks.
@@ -185,16 +185,16 @@ class DatamintBaseDataset:
         return self.image_lsets['multiclass']
 
     @property
-    def segmentation_labels_set(self) -> List[str]:
+    def segmentation_labels_set(self) -> list[str]:
         """
         Returns the set of segmentation labels in the dataset.
         """
         return self.frame_lsets['segmentation']
 
     def _get_annotations_internal(self,
-                                  annotations: List[Dict],
+                                  annotations: list[dict],
                                   type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
-                                  scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+                                  scope: Literal['frame', 'image', 'all'] = 'all') -> list[dict]:
         # check parameters
         if type not in ['label', 'category', 'segmentation', 'all']:
             raise ValueError(f"Invalid value for 'type': {type}")
@@ -211,7 +211,7 @@ class DatamintBaseDataset:
     def get_annotations(self,
                         index: int,
                         type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
-                        scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+                        scope: Literal['frame', 'image', 'all'] = 'all') -> list[dict]:
         """
         Returns the annotations of the image at the given index.
 
@@ -244,10 +244,10 @@ class DatamintBaseDataset:
         else:
             raise ValueError(f"Unsupported file type: {filepath}")
 
-    def get_resources_ids(self) -> List[str]:
+    def get_resources_ids(self) -> list[str]:
         return [self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id'] for i in self.subset_indices]
 
-    def _get_labels_set(self, framed: bool) -> Tuple[Dict, Dict[str, Dict[str, int]]]:
+    def _get_labels_set(self, framed: bool) -> tuple[dict, dict[str, dict[str, int]]]:
         """
         Returns the set of labels and a dictionary that maps labels to integers.
 
@@ -287,7 +287,7 @@ class DatamintBaseDataset:
                      'multiclass': multiclass2code}
         return sets, codes_map
 
-    def get_framelabel_distribution(self, normalize=False) -> Dict[str, float]:
+    def get_framelabel_distribution(self, normalize=False) -> dict[str, float]:
         """
         Returns the distribution of labels in the dataset.
 
@@ -307,7 +307,7 @@ class DatamintBaseDataset:
             label_distribution = {k: v/total for k, v in label_distribution.items()}
         return label_distribution
 
-    def get_segmentationlabel_distribution(self, normalize=False) -> Dict[str, float]:
+    def get_segmentationlabel_distribution(self, normalize=False) -> dict[str, float]:
         """
         Returns the distribution of segmentation labels in the dataset.
 
@@ -333,7 +333,7 @@ class DatamintBaseDataset:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
                 raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
-    def _get_datasetinfo(self) -> Dict:
+    def _get_datasetinfo(self) -> dict:
         # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
 
         request_params = {
@@ -362,7 +362,7 @@ class DatamintBaseDataset:
             f" Available datasets: {available_datasets}"
         )
 
-    def get_info(self) -> Dict:
+    def get_info(self) -> dict:
         project = self.api_handler.get_project_by_name(self.project_name)
         if 'error' in project:
             available_projects = project['all_projects']
@@ -481,7 +481,7 @@ class DatamintBaseDataset:
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
             json.dump(self.metainfo, file)
 
-    def _load_image(self, filepath: str, index: int = None) -> Tuple[torch.Tensor, pydicom.FileDataset]:
+    def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
         ds = pydicom.dcmread(filepath)
 
         if self.return_frame_by_frame:
@@ -505,7 +505,7 @@ class DatamintBaseDataset:
 
         return img, ds
 
-    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> Dict[str, Any]:
+    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> dict[str, Any]:
         if bypass_subset_indices == False:
             index = self.subset_indices[index]
         if self.return_frame_by_frame:
@@ -522,7 +522,7 @@ class DatamintBaseDataset:
             img_metainfo = self.images_metainfo[index]
         return img_metainfo
 
-    def __find_index(self, index: int) -> Tuple[int, int]:
+    def __find_index(self, index: int) -> tuple[int, int]:
         frame_index = index
         for i, num_frames in enumerate(self.num_frames_per_resource):
             if frame_index < num_frames:
@@ -533,7 +533,7 @@ class DatamintBaseDataset:
 
         return i, frame_index
 
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
+    def __getitem_internal(self, index: int, only_load_metainfo=False) -> dict[str, Any]:
         resource_index, _ = self.__find_index(index)
         img_metainfo = self._get_image_metainfo(index, bypass_subset_indices=True)
 
@@ -556,7 +556,7 @@ class DatamintBaseDataset:
 
         return ret
 
-    def __getitem__(self, index: int) -> Dict[str, Any]:
+    def __getitem__(self, index: int) -> dict[str, Any]:
         """
         Args:
             index (int): Index
@@ -612,7 +612,7 @@ class DatamintBaseDataset:
                           **kwargs)
 
     def get_collate_fn(self) -> Callable:
-        def collate_fn(batch: Dict) -> Dict:
+        def collate_fn(batch: dict) -> dict:
             keys = batch[0].keys()
             collated_batch = {}
             for key in keys:
@@ -629,7 +629,7 @@ class DatamintBaseDataset:
 
         return collate_fn
 
-    def subset(self, indices: List[int]) -> 'DatamintDataset':
+    def subset(self, indices: list[int]) -> 'DatamintBaseDataset':
         if len(self.subset_indices) > self.dataset_length:
             raise ValueError(f"Subset indices must be less than the dataset length: {self.dataset_length}")
 
