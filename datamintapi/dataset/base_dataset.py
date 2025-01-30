@@ -16,7 +16,7 @@ from datamintapi.apihandler.api_handler import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
-from datamintapi.utils.dicom_utils import load_image_normalized
+from datamintapi.utils.io_utils import read_array_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -482,18 +482,13 @@ class DatamintBaseDataset:
             json.dump(self.metainfo, file)
 
     def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
-        ds = pydicom.dcmread(filepath)
+        if os.path.isdir(filepath):
+            raise NotImplementedError("Loading a image from a directory is not supported yet.")
 
         if self.return_frame_by_frame:
-            img = load_image_normalized(ds, index=index)
-            img = img[0]
+            img, ds = read_array_normalized(filepath, return_metainfo=True, index=index)
         else:
-            img = load_image_normalized(ds)
-        # Free up memory
-        if hasattr(ds, '_pixel_array'):
-            ds._pixel_array = None
-        if hasattr(ds, 'PixelData'):
-            ds.PixelData = None
+            img, ds = read_array_normalized(filepath, return_metainfo=True)
 
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16

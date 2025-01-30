@@ -94,7 +94,8 @@ def is_dicom(f: str | Path | BytesIO) -> bool:
     if os.path.isdir(f):
         return False
 
-    if f.endswith('.dcm') or f.endswith('.dicom'):
+    fname = f.lower()
+    if fname.endswith('.dcm') or fname.endswith('.dicom'):
         return True
 
     # Check if the file has an extension
@@ -130,7 +131,7 @@ def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarr
     Returns:
         A numpy array of shape (n, c, y, x)=(#slices, #channels, height, width).
     """
-    n = dicom.get('NumberOfFrames')
+    n = dicom.get('NumberOfFrames', 1)
     if index is None:
         images = dicom.pixel_array
     else:
