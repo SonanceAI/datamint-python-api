@@ -64,7 +64,7 @@ class _DryRunExperimentAPIHandler(APIHandler):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, check_connection=False, **kwargs)
 
     def create_experiment(self, dataset_id: str, name: str, description: str, environment: Dict) -> str:
         return "dry_run"
@@ -80,6 +80,9 @@ class _DryRunExperimentAPIHandler(APIHandler):
 
     def finish_experiment(self, exp_id: str):
         pass
+
+    def upload_segmentations(self, *args, **kwargs) -> str:
+        return "dry_run"
 
 
 def _get_confidence_callback(pred) -> float:
@@ -512,7 +515,7 @@ class Experiment:
         dataset_stats.update({k: v for k, v in dataset.metainfo.items() if k in keys_to_get})
 
         self.add_to_summary({'dataset_stats': dataset_stats})
-        dataset_params_names = ['return_dicom', 'return_metainfo', 'return_seg_annotations'
+        dataset_params_names = ['return_dicom', 'return_metainfo', 'return_segmentations'
                                 'return_frame_by_frame', 'return_as_semantic_segmentation']
         dataset_stats['dataset_params'] = {k: getattr(dataset, k) for k in dataset_params_names if hasattr(dataset, k)}
         dataset_stats['dataset_params']['image_transform'] = repr(dataset.image_transform)
@@ -581,25 +584,28 @@ class Experiment:
         return dataset
 
     def _detect_machine_learning_task(self, dataset: DatamintDataset) -> str:
-        # Detect machine learning task based on the dataset params
-        if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
-            return 'semantic segmentation'
-        elif dataset.return_seg_annotations and len(dataset.segmentation_labels_set) > 0:
-            return 'instance segmentation'
+        try:
+            # Detect machine learning task based on the dataset params
+            if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
+                return 'semantic segmentation'
+            elif dataset.return_segmentations and len(dataset.segmentation_labels_set) > 0:
+                return 'instance segmentation'
 
-        num_labels = len(dataset.frame_labels_set)  # FIXME: when not frame by frame
-        num_categories = len(dataset.segmentation_labels_set)
-        if num_categories == 0:
-            if dataset.num_labels == 1:
-                return 'binary classification'
-            elif dataset.num_labels > 1:
-                return 'multilabel classification'
-        elif num_categories == 1:
-            if num_labels == 0:
-                return 'multiclass classification'
-            return 'multi-task classification'
-        else:
-            return 'multi-task classification'
+            num_labels = len(dataset.frame_labels_set)  # FIXME: when not frame by frame
+            num_categories = len(dataset.segmentation_labels_set)
+            if num_categories == 0:
+                if num_labels == 1:
+                    return 'binary classification'
+                elif num_labels > 1:
+                    return 'multilabel classification'
+            elif num_categories == 1:
+                if num_labels == 0:
+                    return 'multiclass classification'
+                return 'multi-task classification'
+            else:
+                return 'multi-task classification'
+        except Exception as e:
+            _LOGGER.warning(f"Could not detect machine learning task: {e}")
 
         return 'unknown'
 

@@ -11,8 +11,9 @@ _LOGGER = logging.getLogger(__name__)
 class ExperimentAPIHandler(BaseAPIHandler):
     def __init__(self,
                  root_url: Optional[str] = None,
-                 api_key: Optional[str] = None):
-        super().__init__(root_url=root_url, api_key=api_key)
+                 api_key: Optional[str] = None,
+                 **kwargs):
+        super().__init__(root_url=root_url, api_key=api_key, **kwargs)
         self.exp_url = f"{self.root_url}/experiments"
 
     def create_experiment(self,
