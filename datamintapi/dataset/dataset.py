@@ -52,7 +52,7 @@ class DatamintDataset(DatamintBaseDataset):
         if return_segmentations == False and return_as_semantic_segmentation == True:
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
 
-    def _load_segmentations(self, annotations: List[Dict], img_shape) -> Tuple[Dict[str, List], Dict[str, List]]:
+    def _load_segmentations(self, annotations: list[dict], img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
         Load segmentations from annotations.
 
@@ -73,7 +73,7 @@ class DatamintDataset(DatamintBaseDataset):
             _, h, w = img_shape
             nframes = 1
         else:
-            assert len(img_shape) == 3, f"img_shape must have 3 dimensions, got {img_shape}"
+            assert len(img_shape) == 4, f"img_shape must have 4 dimensions, got {img_shape}"
             nframes, _, h, w = img_shape
 
         # Load segmentation annotations
@@ -211,8 +211,10 @@ class DatamintDataset(DatamintBaseDataset):
         if img.ndim == 3:
             _, h, w = img.shape
             nframes = 1
-        else:
+        elif img.ndim == 4:
             nframes, _, h, w = img.shape
+        else:
+            raise ValueError(f"Image must have 3 or 4 dimensions, got {img.shape}")
 
         new_item = {
             'image': img,
@@ -234,7 +236,9 @@ class DatamintDataset(DatamintBaseDataset):
                     sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author],
                                                                               seg_labels[author])
                     segmentations[author] = None  # free memory
-                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations, nframes, h, w).to(torch.float32)
+                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations,
+                                                                       nframes,
+                                                                       h, w).to(torch.float32)
                 seg_labels = None
 
             if self.return_frame_by_frame:
