@@ -26,31 +26,12 @@ def read_array_normalized(file_path: str,
 
     metainfo = None
 
-    if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
-        imgs = nib.load(file_path).get_fdata()  # shape: (W, H, #frame) or (W, H)
-        if imgs.ndim == 2:
-            imgs = imgs.transpose(1, 0)
-            imgs = imgs[np.newaxis, np.newaxis]
-        elif imgs.ndim == 3:
-            imgs = imgs.transpose(2, 1, 0)
-            imgs = imgs[:, np.newaxis]
-        else:
-            raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
-    elif file_path.endswith('.png') or file_path.endswith('.jpg') or file_path.endswith('.jpeg'):
-        with Image.open(file_path) as pilimg:
-            imgs = np.array(pilimg)
-        if imgs.ndim == 2:  # (H, W)
-            imgs = imgs[np.newaxis, np.newaxis]
-        elif imgs.ndim == 3:  # (H, W, C)
-            imgs = imgs.transpose(2, 0, 1)[np.newaxis]  # (H, W, C) -> (1, C, H, W)
-    elif file_path.endswith('.npy'):
-        imgs = np.load(file_path)
-        if imgs.ndim != 4:
-            raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
-
-    elif is_dicom(file_path):
+    if is_dicom(file_path):
         ds = pydicom.dcmread(file_path)
-        imgs = load_image_normalized(metainfo, index=index)
+        if index is not None:
+            imgs = load_image_normalized(ds, index=index)[0]
+        else:
+            imgs = load_image_normalized(ds)
         # Free up memory
         if hasattr(ds, '_pixel_array'):
             ds._pixel_array = None
@@ -58,10 +39,32 @@ def read_array_normalized(file_path: str,
             ds.PixelData = None
         metainfo = ds
     else:
-        raise ValueError(f"Unsupported file format: {file_path}")
+        if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
+            imgs = nib.load(file_path).get_fdata()  # shape: (W, H, #frame) or (W, H)
+            if imgs.ndim == 2:
+                imgs = imgs.transpose(1, 0)
+                imgs = imgs[np.newaxis, np.newaxis]
+            elif imgs.ndim == 3:
+                imgs = imgs.transpose(2, 1, 0)
+                imgs = imgs[:, np.newaxis]
+            else:
+                raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
+        elif file_path.endswith('.png') or file_path.endswith('.jpg') or file_path.endswith('.jpeg'):
+            with Image.open(file_path) as pilimg:
+                imgs = np.array(pilimg)
+            if imgs.ndim == 2:  # (H, W)
+                imgs = imgs[np.newaxis, np.newaxis]
+            elif imgs.ndim == 3:  # (H, W, C)
+                imgs = imgs.transpose(2, 0, 1)[np.newaxis]  # (H, W, C) -> (1, C, H, W)
+        elif file_path.endswith('.npy'):
+            imgs = np.load(file_path)
+            if imgs.ndim != 4:
+                raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
+        else:
+            raise ValueError(f"Unsupported file format: {file_path}")
 
-    if index is not None:
-        imgs = imgs[index]
+        if index is not None:
+            imgs = imgs[index]
 
     if return_metainfo:
         return imgs, metainfo
