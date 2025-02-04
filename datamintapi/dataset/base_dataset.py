@@ -438,7 +438,7 @@ class DatamintBaseDataset:
         Downloads the dataset from the Sonance API into the root directory `self.root`.
 
         Raises:
-            SonanceDatasetException: If the download fails.
+            DatamintDatasetException: If the download fails.
         """
         from torchvision.datasets.utils import extract_archive
 
