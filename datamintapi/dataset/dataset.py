@@ -92,7 +92,7 @@ class DatamintDataset(DatamintBaseDataset):
             # FIXME: avoid enforcing resizing the mask
             seg = (Image.open(segfilepath)
                    .convert('L')
-                   .resize((h, w), Image.NEAREST)
+                   .resize((w, h), Image.NEAREST)
                    )
             seg = np.array(seg)
 
