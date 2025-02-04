@@ -130,7 +130,6 @@ class DatamintBaseDataset:
         #                 flabels['label'] = flabels['label'].split(',')
 
         if self.return_frame_by_frame:
-            _LOGGER.debug(f"Loading frame-by-frame metadata of {len(self.images_metainfo)} resources...")
             self.dataset_length = 0
             for imginfo in self.images_metainfo:
                 filepath = os.path.join(self.dataset_dir, imginfo['file'])
@@ -529,7 +528,11 @@ class DatamintBaseDataset:
         return i, frame_index
 
     def __getitem_internal(self, index: int, only_load_metainfo=False) -> dict[str, Any]:
-        resource_index, _ = self.__find_index(index)
+        if self.return_frame_by_frame:
+            resource_index, frame_idx = self.__find_index(index)
+        else:
+            resource_index = index
+            frame_idx = None
         img_metainfo = self._get_image_metainfo(index, bypass_subset_indices=True)
 
         if only_load_metainfo:
@@ -538,7 +541,7 @@ class DatamintBaseDataset:
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
-        img, ds = self._load_image(filepath, resource_index)
+        img, ds = self._load_image(filepath, frame_idx)
 
         ret = {'image': img}
 

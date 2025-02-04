@@ -157,3 +157,9 @@ def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarr
             # (y, x, c)
             images = images.transpose(2, 0, 1)
             return images.reshape(1, *images.shape)
+    elif images.ndim == 4:
+        if shape[3] == c or shape[3] in (1, 3, 4) or (c is not None and c > 1):
+            # (n, y, x, c) -> (n, c, y, x)
+            return images.transpose(0, 3, 1, 2)
+
+    raise ValueError(f"Unsupported DICOM normalization with shape: {shape}, SamplesPerPixel: {c}, NumberOfFrames: {n}")

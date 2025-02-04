@@ -5,6 +5,9 @@ from .dicom_utils import load_image_normalized, is_dicom
 import pydicom
 import os
 from typing import Any
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def read_array_normalized(file_path: str,
@@ -64,6 +67,11 @@ def read_array_normalized(file_path: str,
             raise ValueError(f"Unsupported file format: {file_path}")
 
         if index is not None:
+            if len(imgs) > 1:
+                _LOGGER.warning(f"It is inefficient to load all frames from '{file_path}' to access a single frame." +
+                                " Consider converting the file to a format that supports random access (DICOM), or" +
+                                " convert to png/jpeg files or" +
+                                " manually handle all frames at once instead of loading a specific frame.")
             imgs = imgs[index]
 
     if return_metainfo:
