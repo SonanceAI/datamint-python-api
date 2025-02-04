@@ -215,9 +215,12 @@ class DatamintDataset(DatamintBaseDataset):
             dict[str, Any]: A dictionary with the following keys:
 
             * 'image' (Tensor): Tensor of shape (C, H, W) or (N, C, H, W), depending on `self.return_frame_by_frame`.
+              If `self.return_as_semantic_segmentation` is True, the image is a tensor of shape (N, L, H, W) or (L, H, W),
+              where `L` is the number of segmentation labels + 1 (background): ``L=len(self.segmentation_labels_set)+1``.
             * 'metainfo' (dict): Dictionary with metadata information.
-            * 'segmentations' (dict[str, list[Tensor]] or list[Tensor]): Segmentations data.
-            * 'seg_labels' (dict[str, list[Tensor]] or Tensor): Segmentation labels.
+            * 'segmentations' (dict[str, list[Tensor]] or dict[str,Tensor] or Tensor): Segmentation masks,
+              depending on the configuration of parameters `self.return_segmentations`, `self.return_as_semantic_segmentation`, `self.return_frame_by_frame`, `self.semantic_seg_merge_strategy`.
+            * 'seg_labels' (dict[str, list[Tensor]] or Tensor): Segmentation labels with the same length as `segmentations`.
             * 'frame_labels' (dict[str, Tensor]): Frame-level labels.
             * 'image_labels' (dict[str, Tensor]): Image-level labels.
         """
@@ -288,7 +291,7 @@ class DatamintDataset(DatamintBaseDataset):
         new_item['frame_labels'] = framelabels
         new_item['image_labels'] = imagelabels
 
-        # FIXME: deal with multiple annotators
+        # FIXME: deal with multiple annotators in instance segmentation
 
         return new_item
 

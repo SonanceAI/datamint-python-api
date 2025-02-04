@@ -557,7 +557,7 @@ class DatamintBaseDataset:
             index (int): Index
 
         Returns:
-            Dict: A dictionary containing three keys: 'image', 'metainfo' and 'annotations'.
+            dict: A dictionary containing three keys: 'image', 'metainfo' and 'annotations'.
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
