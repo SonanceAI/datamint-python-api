@@ -28,6 +28,7 @@ class DatamintDataset(DatamintBaseDataset):
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
+                 discard_without_annotations: bool = False,
                  ):
         super().__init__(root=root,
                          project_name=project_name,
@@ -38,6 +39,7 @@ class DatamintDataset(DatamintBaseDataset):
                          return_metainfo=return_metainfo,
                          return_frame_by_frame=return_frame_by_frame,
                          return_annotations=return_annotations,
+                         discard_without_annotations=discard_without_annotations,
                          )
         self.return_segmentations = return_segmentations
         self.return_as_semantic_segmentation = return_as_semantic_segmentation

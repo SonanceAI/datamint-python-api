@@ -115,6 +115,13 @@ class DatamintBaseDataset:
             with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
                 self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
+        
+        # filter out images with no annotations.
+        if self.discard_without_annotations:
+            original_count = len(self.images_metainfo)
+            self.images_metainfo = [img for img in self.images_metainfo if len(img.get('annotations', []))]
+            _LOGGER.info(f"Discarded {original_count - len(self.images_metainfo)} images without annotations.")
+
         self._check_integrity()
 
         # fix images_metainfo labels
