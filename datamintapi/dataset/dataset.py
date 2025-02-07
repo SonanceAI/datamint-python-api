@@ -15,8 +15,6 @@ class DatamintDataset(DatamintBaseDataset):
     def __init__(self,
                  root: str,
                  project_name: str,
-                 dataset_name: str = None,
-                 version=None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,
@@ -33,8 +31,6 @@ class DatamintDataset(DatamintBaseDataset):
                  ):
         super().__init__(root=root,
                          project_name=project_name,
-                         dataset_name=dataset_name,
-                         version=version,
                          auto_update=auto_update,
                          api_key=api_key,
                          server_url=server_url,

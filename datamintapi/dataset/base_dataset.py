@@ -32,21 +32,22 @@ class DatamintBaseDataset:
     Args:
         root (str): Root directory of dataset where data already exists or will be downloaded.
         project_name (str): Name of the project to download.
-        dataset_name (str): Name of the dataset to download. Deprecated, use 'project_name' instead.
-        version (int | str): Version of the dataset to download.
-            If 'latest', the latest version will be downloaded. Default: 'latest'.
-            .. deprecated:: 0.7.0
+        dataset_name (str): Deprecated, use 'project_name' instead.
         auto_update (bool): If True, the dataset will be checked for updates and downloaded if necessary.
         api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
             environment variable 'DATAMINT_API_KEY'. Not necessary if
             you don't want to download/update the dataset.
+        return_dicom (bool): If True, the DICOM object will be returned, if the image is a DICOM file.
+        return_metainfo (bool): If True, the metainfo of the image will be returned.
+        return_annotations (bool): If True, the annotations of the image will be returned.
+        return_frame_by_frame (bool): If True, each frame of a video/DICOM/3d-image will be returned separately.
+        discard_without_annotations (bool): If True, images without annotations will be discarded.
+
     """
 
     def __init__(self,
                  root: str,
                  project_name: str,
-                 dataset_name: str = None,
-                 version=None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,
@@ -54,7 +55,11 @@ class DatamintBaseDataset:
                  return_metainfo: bool = True,
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
+                 discard_without_annotations: bool = False,
                  ):
+        if project_name is None:
+            raise ValueError("project_name is required.")
+
         self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
         self.server_url = self.api_handler.root_url
         if isinstance(root, str):
@@ -68,35 +73,28 @@ class DatamintBaseDataset:
         self.return_metainfo = return_metainfo
         self.return_frame_by_frame = return_frame_by_frame
         self.return_annotations = return_annotations
+        self.discard_without_annotations = discard_without_annotations
 
-        if version is not None:
-            _LOGGER.warning("The 'version' argument is deprecated and will be removed in future versions. " +
-                            "See the 'auto_update' argument instead.")
-
-        if dataset_name is not None and project_name is not None:
-            raise ValueError("Either 'dataset_name' or 'project_name' must be provided, not both.")
-
-        self.dataset_name = dataset_name
         self.project_name = project_name
-        if project_name is not None:
-            dataset_name = project_name
+        dataset_name = project_name
 
         self.dataset_dir = os.path.join(root, dataset_name)
         self.dataset_zippath = os.path.join(root, f'{dataset_name}.zip')
 
         local_dataset_exists = os.path.exists(os.path.join(self.dataset_dir, 'dataset.json'))
 
-        if project_name is not None and not (local_dataset_exists and auto_update == False):
+        if local_dataset_exists and auto_update == False:
+            # In this case, we don't need to check the API, so we don't need the id.
+            self.dataset_id = None
+        else:
             self.project_info = self.get_info()
             self.dataset_id = self.project_info['dataset_id']
-        else:
-            self.dataset_id = None
 
         self.api_key = self.api_handler.api_key
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
-                            f"eifther by passing it as an argument," +
-                            f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
+                            f"either by passing it as an argument," +
+                            f"setting environment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
                             "using datamint-config command line tool."
                             )
 
@@ -344,12 +342,8 @@ class DatamintBaseDataset:
             response = self._run_request(session, request_params)
             resp = response.json()
 
-        if self.dataset_id is not None:
-            value_to_search = self.dataset_id
-            field_to_search = 'id'
-        else:
-            value_to_search = self.dataset_name
-            field_to_search = 'name'
+        value_to_search = self.dataset_id
+        field_to_search = 'id'
 
         for d in resp['data']:
             if d[field_to_search] == value_to_search:
@@ -380,7 +374,7 @@ class DatamintBaseDataset:
             raise ValueError("Dataset ID is required to download the dataset.")
         request_params = {
             'method': 'GET',
-            'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
+            'url': f'{self.server_url}/datasets/{dataset_id}/download/png',
             'headers': {'apikey': self.api_key},
             'stream': True
         }
@@ -587,8 +581,10 @@ class DatamintBaseDataset:
             external_metadata_info = self._get_datasetinfo()
             server_updated_at = external_metadata_info['updated_at']
         except Exception as e:
-            _LOGGER.warning(f"Failed to check for updates in {self.dataset_name}: {e}")
+            _LOGGER.warning(f"Failed to check for updates in {self.project_name}: {e}")
             return
+
+        _LOGGER.debug(f"Local updated at: {local_updated_at}, Server updated at: {server_updated_at}")
 
         if local_updated_at is None or local_updated_at != server_updated_at:
             _LOGGER.info(

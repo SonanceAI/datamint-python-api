@@ -539,10 +539,7 @@ class Experiment:
         if split not in ['all', 'train', 'test', 'val']:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
 
-        if self.project_name is not None:
-            params = dict(project_name=self.project_name)
-        else:
-            params = dict(dataset_name=self.dataset_name)
+        params = dict(project_name=self.project_name)
 
         dataset = DatamintDataset(self.dataset_dir,
                                   api_key=self.apihandler.api_key,
