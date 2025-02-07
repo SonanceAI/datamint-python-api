@@ -367,9 +367,9 @@ class Experiment:
                 metrics[name] = 'NAN'
 
         for name, value in metrics.items():
-            base_name = name.lower().split('test/', maxsplit=1)[-1]
-            if base_name in METRIC_RENAMER:
-                name = METRIC_RENAMER[base_name]
+            spl_name = name.lower().split('test/', maxsplit=1)
+            if spl_name[-1] in METRIC_RENAMER:
+                name = spl_name[0] + 'test/' + METRIC_RENAMER[spl_name[-1]]
 
             if show_in_summary or name.lower() in IMPORTANT_METRICS:
                 self.add_to_summary({'metrics': {name: value}})
@@ -404,6 +404,43 @@ class Experiment:
             else:
                 _LOGGER.warning(f"Key {key} already exists in summary. Overwriting value.")
                 self.summary_log[key] = value
+
+    def update_summary_metrics(self,
+                               phase: str | None,
+                               f1score: float | None,
+                               accuracy: float | None,
+                               sensitivity: float | None,
+                               ppv: float | None,
+                               ):
+        """
+        Handy method to update the summary with the most common classification metrics.
+
+        Args:
+            phase (str): The phase of the experiment. Can be 'train', 'val', 'test', '', or None.
+            f1score (float): The F1 score.
+            accuracy (float): The accuracy.
+            sensitivity (float): The sensitivity (a.k.a recall).
+            specificity (float): The specificity.
+            ppv (float): The positive predictive value (a.k.a precision).
+        """
+
+        if phase is None:
+            phase = ""
+
+        if phase not in ['train', 'val', 'test', '']:
+            raise ValueError(f"Invalid phase: '{phase}'. Must be one of ['train', 'val', 'test', '']")
+
+        metrics = {}
+        if f1score is not None:
+            metrics[f'{phase}/F1Score'] = f1score
+        if accuracy is not None:
+            metrics[f'{phase}/Accuracy'] = accuracy
+        if sensitivity is not None:
+            metrics[f'{phase}/Sensitivity'] = sensitivity
+        if ppv is not None:
+            metrics[f'{phase}/Positive Predictive Value'] = ppv
+
+        self.add_to_summary({'metrics': metrics})
 
     def log_summary(self,
                     result_summary: Dict) -> None:
