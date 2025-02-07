@@ -23,7 +23,6 @@ import logging
 import os
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
 import torchmetrics
-from torchvision import transforms as T
 from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLabV3_MobileNet_V3_Large_Weights
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchvision
@@ -98,11 +97,11 @@ def main():
     ### Load dataset ###
     dataset_params = dict(
         return_frame_by_frame=True,
-        image_transform=T.Compose([T.Resize((520, 520)),
+        image_transform=v2.Compose([v2.Resize((520, 520)),
                                    v2.RGB(),
                                    weights.transforms()
-                                   ]),
-        mask_transform=T.Resize((520, 520), antialias=False, interpolation=T.InterpolationMode.NEAREST),
+                                    ]),
+        mask_transform=v2.Resize((520, 520), antialias=False, interpolation=v2.InterpolationMode.NEAREST),
         return_segmentations=True,
         # This will return the mask as a semantic segmentation tensor (#classes, H, W)
         return_as_semantic_segmentation=True,
@@ -223,7 +222,7 @@ def test_loop(model, criterion,
             for metric in metrics:
                 metric.update(yhat > 0.0, segmentations.bool())
             eval_loss += loss.item()
-            
+
             yhat = yhat[:, 1:]
             yhat = torch.sigmoid(yhat)
             exp.log_semantic_seg_predictions(yhat.cpu().numpy(),
