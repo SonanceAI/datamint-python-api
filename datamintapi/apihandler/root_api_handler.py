@@ -7,6 +7,7 @@ import logging
 import asyncio
 import aiohttp
 from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
+from datamintapi.utils import dicom_utils
 import pydicom
 from pathlib import Path
 from datetime import date
@@ -28,6 +29,11 @@ def _is_io_object(obj):
     Check if an object is a file-like object.
     """
     return callable(getattr(obj, "read", None))
+
+
+def _infinite_gen(x):
+    while True:
+        yield x
 
 
 def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
@@ -162,7 +168,7 @@ class RootAPIHandler(BaseAPIHandler):
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         if segmentation_files is None:
-            segmentation_files = [None] * len(files_path)
+            segmentation_files = _infinite_gen(None)
 
         async with aiohttp.ClientSession() as session:
             async def __upload_single_resource(file_path, segfiles: Dict):
@@ -181,13 +187,13 @@ class RootAPIHandler(BaseAPIHandler):
                         publish=publish,
                     )
                     if segfiles is not None:
-                        files_path = segfiles['files']
-                        names = segfiles.get('names', [None] * len(files_path))
+                        fpaths = segfiles['files']
+                        names = segfiles.get('names', _infinite_gen(None))
                         if isinstance(names, dict):
-                            names = [names]*len(files_path)
-                        frame_indices = segfiles.get('frame_index', [None] * len(files_path))
-                        _LOGGER.debug(f"Segmentation files: {files_path}")
-                        for f, name, frame_index in zip(files_path, names, frame_indices):
+                            names = _infinite_gen(names)
+                        frame_indices = segfiles.get('frame_index', _infinite_gen(None))
+                        _LOGGER.debug(f"Segmentation files: {fpaths}")
+                        for f, name, frame_index in zip(fpaths, names, frame_indices):
                             if f is not None:
                                 await self._upload_segmentations_async(rid,
                                                                        file_path=f,
@@ -211,9 +217,10 @@ class RootAPIHandler(BaseAPIHandler):
                          channel: Optional[str] = None,
                          publish: bool = False,
                          publish_to: Optional[str] = None,
-                         segmentation_files: Optional[List[Union[List[str], Dict]]] = None,
+                         segmentation_files: Optional[list[Union[List[str], dict]]] = None,
                          transpose_segmentation: bool = False,
-                         modality: Optional[str] = None
+                         modality: Optional[str] = None,
+                         assemble_dicoms: bool = True
                          ) -> list[str | Exception]:
         """
         Upload resources.
@@ -238,6 +245,7 @@ class RootAPIHandler(BaseAPIHandler):
             segmentation_files (Optional[List[Union[List[str], Dict]]]): The segmentation files to upload.
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
+            assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
@@ -252,7 +260,18 @@ class RootAPIHandler(BaseAPIHandler):
             tags = labels
 
         files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
+        orig_len = len(files_path)
+        if assemble_dicoms:
+            new_files_path = dicom_utils.assemble_dicoms(files_path, return_as_IO=True)
+            new_len = len(new_files_path)
+            if new_len != orig_len:
+                _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
+                files_path = new_files_path
+            else:
+                assemble_dicoms = False
         if segmentation_files is not None:
+            if assemble_dicoms:
+                raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
             if is_list:
                 if len(segmentation_files) != len(files_path):
                     raise ValueError("The number of segmentation files must match the number of resources.")
@@ -276,7 +295,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             publish=publish,
                                             segmentation_files=segmentation_files,
                                             transpose_segmentation=transpose_segmentation,
-                                            modality=modality
+                                            modality=modality,
                                             )
 
         resource_ids = loop.run_until_complete(task)
@@ -400,7 +419,6 @@ class RootAPIHandler(BaseAPIHandler):
         else:
             is_list = True
 
-        _LOGGER.debug(f'Processed file path: {file_path}')
         return file_path, is_list
 
     def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
