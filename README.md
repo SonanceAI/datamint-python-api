@@ -1,5 +1,7 @@
 # Datamint python API
 
+![Build Status](https://github.com/SonanceAI/datamint-python-api/actions/workflows/run_test.yaml/badge.svg)
+
 See the full documentation at https://sonanceai.github.io/datamint-python-api/
 
 Installation
