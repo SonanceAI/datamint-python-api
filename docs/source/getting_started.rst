@@ -1,7 +1,7 @@
 Installation
 ===================================
 
-Datamint requires Python 3.8+.
+Datamint requires Python 3.10+.
 Install Datamint and its dependencies using pip
 
 .. code-block:: bash

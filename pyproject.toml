@@ -9,7 +9,7 @@ include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
-python = "^3.9"
+python = "^3.10"
 numpy = "*"
 # exclude version 2.3.0 due to a bug in the library
 torch = ">=1.2.0, !=2.3.0"
