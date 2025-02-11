@@ -2,27 +2,35 @@
 
 Setup API key
 =============
+To use the Datamint API, you need to setup your API key (ask your administrator if you don't have one).
+Use one of the following methods to setup your API key:
 
-There are three options to specify the API key:
+Method 1: Command-line tool (recommended)
+-------------------------------------------
+Run ``datamint-config`` in the terminal and follow the instructions. See :doc:`command_line_tools` for more details.
 
-1. **Recommended:** Run ``datamint-config`` in the terminal and follow the instructions. Run ``datamint-config --help`` for more optional information.
-2. Specify API key as an environment variable:
+Method 2: Environment variable
+------------------------------
+Specify the API key as an environment variable.
 
-.. tabs:: 
+.. tabs::
 
     .. code-tab:: bash
 
         export DATAMINT_API_KEY="my_api_key"
-        python my_script.py
+        # run your commands (e.g., `datamint-upload`, `python script.py`)
 
     .. code-tab:: python
 
+        import os
         os.environ["DATAMINT_API_KEY"] = "my_api_key"
-    
-3. Specify API key in the |APIHandlerClass| constructor:
+
+Method 3: APIHandler constructor
+---------------------------------
+Specify API key in the |APIHandlerClass| constructor:
 
 .. code-block:: python
 
-   from datamintapi import APIHandler
+    from datamintapi import APIHandler
 
-   api = APIHandler(api_key='my_api_key')
+    api = APIHandler(api_key='my_api_key')
