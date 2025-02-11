@@ -187,7 +187,7 @@ class TestAPIHandler:
             mock_aioresp.post(
                 f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                 callback=_callback1,
-                repeat=1
+                repeat=2
             )
 
             api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
@@ -293,7 +293,7 @@ class TestAPIHandler:
                 f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                 status=201,
                 payload={"id": "new_res_id"},
-                repeat=1
+                repeat=2
             )
 
             new_res_ids = api_handler.upload_resources(files_path=[to_bytesio(sample_dicom1, 'sample_dicom1'),
@@ -311,7 +311,7 @@ class TestAPIHandler:
                 f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
                 status=201,
                 payload={"id": "new_res_id"},
-                repeat=2
+                repeat=3
             )
 
             new_res_ids = api_handler.upload_resources(files_path=[to_bytesio(sample_dicom1, 'sample_dicom1'),
