@@ -358,12 +358,10 @@ def _generate_merged_dicoms(dicoms_map: dict[str, list],
             merged_dicom = _create_multiframe_attributes(merged_dicom, all_dicoms)
 
         # Remove tags of single frame dicoms
-        del merged_dicom.ImagePositionPatient
-        del merged_dicom.SliceLocation
-        del merged_dicom.ImageOrientationPatient
-        del merged_dicom.PixelSpacing
-        del merged_dicom.SpacingBetweenSlices
-        del merged_dicom.InstanceNumber
+        for attr in ['ImagePositionPatient', 'SliceLocation', 'ImageOrientationPatient',
+                     'PixelSpacing', 'SpacingBetweenSlices', 'InstanceNumber']:
+            if hasattr(merged_dicom, attr):
+                delattr(merged_dicom, attr)
 
         if return_as_IO:
             name = _generate_dicom_name(merged_dicom)
