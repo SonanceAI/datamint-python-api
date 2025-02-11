@@ -175,7 +175,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     def upload_segmentations(self,
                              resource_id: str,
                              file_path: Union[str, np.ndarray],
-                             name: Optional[Union[str, Dict[int, str]]] = None,
+                             name: Optional[Union[str, dict[int, str]]] = None,
                              frame_index: int | list[int] = None,
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
@@ -189,7 +189,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         Args:
             resource_id (str): The resource unique id.
-            file_path (str|np.ndarray): The path to the segmentation file.
+            file_path (str|np.ndarray): The path to the segmentation file or a numpy array.
                 If a numpy array is provided, it must have the shape (height, width, #frames) or (height, width).
             name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
                 example: {1: 'Femur', 2: 'Tibia'}.

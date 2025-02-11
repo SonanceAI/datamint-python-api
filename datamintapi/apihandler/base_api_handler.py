@@ -18,7 +18,6 @@ from datamintapi import configs
 from functools import wraps
 
 _LOGGER = logging.getLogger(__name__)
-_USER_LOGGER = logging.getLogger('user_logger')
 
 
 ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']

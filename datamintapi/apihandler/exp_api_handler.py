@@ -12,8 +12,9 @@ class ExperimentAPIHandler(BaseAPIHandler):
     def __init__(self,
                  root_url: Optional[str] = None,
                  api_key: Optional[str] = None,
+                 check_connection: bool = True,
                  **kwargs):
-        super().__init__(root_url=root_url, api_key=api_key, **kwargs)
+        super().__init__(root_url=root_url, api_key=api_key, check_connection=check_connection, **kwargs)
         self.exp_url = f"{self.root_url}/experiments"
 
     def create_experiment(self,

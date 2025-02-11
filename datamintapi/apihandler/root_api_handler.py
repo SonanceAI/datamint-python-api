@@ -19,6 +19,7 @@ from datamintapi import configs
 from .base_api_handler import BaseAPIHandler, DatamintException, validate_call, ResourceNotFoundError, ResourceFields, ResourceStatus
 from deprecated.sphinx import deprecated
 import json
+import itertools
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -221,7 +222,7 @@ class RootAPIHandler(BaseAPIHandler):
                          transpose_segmentation: bool = False,
                          modality: Optional[str] = None,
                          assemble_dicoms: bool = True
-                         ) -> list[str | Exception]:
+                         ) -> list[str | Exception] | str | Exception:
         """
         Upload resources.
 
@@ -260,13 +261,21 @@ class RootAPIHandler(BaseAPIHandler):
             tags = labels
 
         files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
-        orig_len = len(files_path)
         if assemble_dicoms:
-            new_files_path = dicom_utils.assemble_dicoms(files_path, return_as_IO=True)
-            new_len = len(new_files_path)
+            dicoms_files_path = []
+            other_files_path = []
+            for f in files_path:
+                if is_dicom(f):
+                    dicoms_files_path.append(f)
+                else:
+                    other_files_path.append(f)
+
+            orig_len = len(dicoms_files_path)
+            dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
+            new_len = len(dicoms_files_path)
             if new_len != orig_len:
                 _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
-                files_path = new_files_path
+                files_path = itertools.chain(dicoms_files_path, other_files_path)
             else:
                 assemble_dicoms = False
         if segmentation_files is not None:
@@ -566,7 +575,7 @@ class RootAPIHandler(BaseAPIHandler):
                 'resource_data': [{'created_by': 'datamint-dev@mail.com',
                                     'customer_id': '79113ed1-0535-4f53-9359-7fe3fa9f28a8',
                                     'resource_id': 'a05fe46d-2f66-46fc-b7ef-666464ad3a28',
-                                    'resource_file_name': '_%2Fdocs%2Fimages%2Flogo.png',
+                                    'resource_file_name': 'image.png',
                                     'resource_mimetype': 'image/png'}],
                 'deleted': False,
                 'created_at': '2024-06-04T12:38:12.976Z',
