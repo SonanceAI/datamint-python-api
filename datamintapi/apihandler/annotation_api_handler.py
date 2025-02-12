@@ -1,4 +1,4 @@
-from typing import Union, Tuple, Optional, Generator, Literal, List, Dict, IO
+from typing import Optional, Generator, Literal, IO, BinaryIO
 from .base_api_handler import BaseAPIHandler, ResourceNotFoundError, DatamintException
 from datetime import date
 import logging
@@ -18,7 +18,7 @@ _USER_LOGGER = logging.getLogger('user_logger')
 
 class AnnotationAPIHandler(BaseAPIHandler):
     @staticmethod
-    def _numpy_to_bytesio_png(seg_imgs: np.ndarray) -> Generator[BytesIO, None, None]:
+    def _numpy_to_bytesio_png(seg_imgs: np.ndarray) -> Generator[BinaryIO, None, None]:
         """
         Args:
             seg_img (np.ndarray): The segmentation image with dimensions (height, width, #frames).
@@ -38,7 +38,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     @staticmethod
     def _generate_segmentations_ios(file_path: str | np.ndarray,
-                                    transpose_segmentation: bool = False) -> tuple[int, Generator[IO, None, None]]:
+                                    transpose_segmentation: bool = False) -> tuple[int, Generator[BinaryIO, None, None]]:
         _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path  # (#frames, height, width) or (height, width)
@@ -71,7 +71,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_annotations_async(self,
                                         resource_id: str,
-                                        annotations: List[Dict]) -> List[str]:
+                                        annotations: list[dict]) -> list[str]:
         request_params = dict(
             method='POST',
             url=f'{self.root_url}/annotations/{resource_id}/annotations',
@@ -88,7 +88,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                           frame_index: int,
                                           file_path: str | None = None,
                                           fio: IO = None,
-                                          name: Optional[Union[str, Dict[int, str]]] = None,
+                                          name: Optional[str | dict[int, str]] = None,
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
@@ -174,8 +174,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     def upload_segmentations(self,
                              resource_id: str,
-                             file_path: Union[str, np.ndarray],
-                             name: Optional[Union[str, dict[int, str]]] = None,
+                             file_path: str | np.ndarray,
+                             name: Optional[str | dict[int, str]] = None,
                              frame_index: int | list[int] = None,
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
@@ -268,7 +268,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     def add_frame_category_annotation(self,
                                       resource_id: str,
-                                      frame_index: Union[int, Tuple[int, int]],
+                                      frame_index: int | tuple[int, int],
                                       identifier: str,
                                       value: str,
                                       worklist_id: Optional[str] = None,
@@ -316,7 +316,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     def add_annotations(self,
                         resource_id: str,
                         identifier: str,
-                        frame_index: Optional[Union[int, Tuple[int, int]]] = None,
+                        frame_index: int | tuple[int, int] | None = None,
                         value: Optional[str] = None,
                         worklist_id: Optional[str] = None,
                         imported_from: Optional[str] = None,
@@ -327,20 +327,23 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Add annotations to a resource.
 
         Args:
-            resource_id (str): The resource unique id.
-            identifier (str): The annotation identifier.
-            frame_index (Optional[Union[int, Tuple[int, int]]]): The frame index or a tuple with the range of frame indexes.
+            resource_id: The resource unique id.
+            identifier: The annotation identifier.
+            frame_index: The frame index or a tuple with the range of frame indexes.
                 If a tuple is provided, the annotation will be added to all frames in the range (Inclusive on both ends).
-            value (Optional[str]): The annotation value.
-            worklist_id (Optional[str]): The annotation worklist unique id.
-            imported_from (Optional[str]): The imported from value.
-            author_email (Optional[str]): The author email. If None, use the customer of the api key.
+            value: The annotation value.
+            worklist_id: The annotation worklist unique id.
+            imported_from: The imported from value.
+            author_email: The author email. If None, use the customer of the api key.
                 Requires admin permissions to set a different customer.
-            model_id (Optional[str]): The model unique id.
+            model_id: The model unique id.
         """
 
         if isinstance(frame_index, tuple):
-            frame_index = list(range(frame_index[0], frame_index[1]+1))
+            begin, end = frame_index
+            if begin > end:
+                raise ValueError('The first element of the tuple must be less than the second element.')
+            frame_index = list(range(begin, end+1))
         elif isinstance(frame_index, int):
             frame_index = [frame_index]
 
@@ -451,12 +454,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params, return_field='data')
 
     def get_annotation_worklist_by_id(self,
-                                      id: str) -> Dict:
-        """
-        Get the annotation worklist.
+                                      id: str) -> dict:
+        """Get the annotation worklist.
 
         Args:
-            id (str): The annotation worklist unique id.
+            id: The annotation worklist unique id.
 
         Returns:
             Dict: A dictionary with the annotations information.
@@ -477,9 +479,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     def update_annotation_worklist(self,
                                    worklist_id: str,
-                                   frame_labels: List[str] = None,
-                                   image_labels: List[str] = None,
-                                   annotations: List[Dict] = None,
+                                   frame_labels: list[str] = None,
+                                   image_labels: list[str] = None,
+                                   annotations: list[dict] = None,
                                    status: Literal['new', 'updating', 'active', 'completed'] = None,
                                    name: str = None,
                                    ):
@@ -517,8 +519,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     @staticmethod
     def _get_segmentation_names(uniq_vals: np.ndarray,
-                                names: Optional[Union[str, Dict[int, str]]] = None
-                                ) -> List[str]:
+                                names: Optional[str | dict[int, str]] = None
+                                ) -> list[str]:
         uniq_vals = uniq_vals[uniq_vals != 0]
         if names is None:
             names = 'seg'
