@@ -12,6 +12,9 @@ import os
 import numpy as np
 from collections import defaultdict
 import uuid
+import hashlib
+
+import pydicom.uid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,33 +47,50 @@ class GeneratorWithLength(Generic[T]):
         return self.generator.send(*args)
 
 
+class TokenMapper:
+    def __init__(self, seed: int = 42):
+        self.seed = seed
+
+    def get_token(self, tag: tuple, value: str, simple_id=False) -> str:
+        """Get a consistent token for a given tag and value pair."""
+        if value is None or value == CLEARED_STR:
+            return CLEARED_STR
+
+        # Use a hash function to generate a consistent token
+        token = hashlib.md5(f"{tag}{value}{self.seed}".encode()).hexdigest()
+        if simple_id:
+            return token
+        return generate_uid(entropy_srcs=['DATAMINT', token])
+
+
+_TOKEN_MAPPER = TokenMapper()
+
+
 def anonymize_dicom(ds: pydicom.Dataset,
                     retain_codes: Sequence[tuple] = [],
                     copy=False,
-                    ) -> pydicom.Dataset:
+                    token_mapper: TokenMapper = None) -> pydicom.Dataset:
     """
     Anonymize a DICOM file by clearing all the specified DICOM tags
     according to the DICOM standard https://www.dicomstandard.org/News-dir/ftsup/docs/sups/sup55.pdf.
     This function will generate a new UID for the new DICOM file and clear the specified DICOM tags
-    by replacing their values with "CLEARED_BY_DATAMINT".
+    with consistent tokens for related identifiers.
 
     Args:
         ds: pydicom Dataset object.
         retain_codes: A list of DICOM tag codes to retain the value of.
         copy: If True, the function will return a copy of the input Dataset object.
-            If False, the function will modify the input Dataset object in place.
+        token_mapper: TokenMapper instance to maintain consistent tokens across calls.
+            If None, uses a global instance.
 
     Returns:
         pydicom Dataset object with specified DICOM tags cleared
     """
-
     if copy:
         ds = deepcopy(ds)
 
-    # Generate a new UID for the new DICOM file
-    ds.SOPInstanceUID = generate_uid()
-    if hasattr(ds, 'file_meta'):
-        ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
+    if token_mapper is None:
+        token_mapper = _TOKEN_MAPPER
 
     # https://www.dicomstandard.org/News-dir/ftsup/docs/sups/sup55.pdf
     tags_to_clear = [
@@ -81,10 +101,15 @@ def anonymize_dicom(ds: pydicom.Dataset,
         (0x0010, 0x0030), (0x0010, 0x0032), (0x0010, 0x0040), (0x0010, 0x1000), (0x0010, 0x1001),
         (0x0010, 0x1010), (0x0010, 0x1020), (0x0010, 0x1030), (0x0010, 0x1090), (0x0010, 0x2160),
         (0x0010, 0x2180), (0x0010, 0x21B0), (0x0010, 0x4000), (0x0018, 0x1000), (0x0018, 0x1030),
-        # (0x0020, 0x000D), (0x0020, 0x000E) StudyInstanceUID  and SeriesInstanceUID are retained
-        (0x0020, 0x0010), (0x0020, 0x0052), (0x0020, 0x0200), (0x0020, 0x4000),
+        (0x0020, 0x000D), (0x0020, 0x000E),  # StudyInstanceUID  and SeriesInstanceUID
+        (0x0020, 0x0010), (0x0020, 0x0052), (0x0020, 0x0200), (0x0020, 0x4000), (0x0008, 0x0018),
         (0x0040, 0x0275), (0x0040, 0xA730), (0x0088, 0x0140), (0x3006, 0x0024), (0x3006, 0x00C2)
     ]
+
+    # Frame of Reference UID, Series Instance UID, Concatenation UID, and Instance UID, and StudyInstanceUID are converted to new UIDs
+    uid_tags = [(0x0020, 0x0052), (0x0020, 0x000E), (0x0020, 0x9161),
+                (0x0010, 0x0020), (0x0008, 0x0018), (0x0020, 0x000D)]
+    simple_id_tags = [(0x0010, 0x0020)]  # Patient ID
 
     for code in retain_codes:
         if code in tags_to_clear:
@@ -103,10 +128,18 @@ def anonymize_dicom(ds: pydicom.Dataset,
                 elif ds[tag].VR == 'SQ':
                     del ds[tag]
                 else:
-                    try:
+                    if tag in uid_tags:
+                        try:
+                            # Use consistent token mapping for identifiers
+                            original_value = ds[tag].value
+                            ds[tag].value = token_mapper.get_token(tag, original_value, simple_id=tag in simple_id_tags)
+                            tag_name = pydicom.datadict.keyword_for_tag(tag)
+                        except ValueError as e:
+                            ds[tag].value = CLEARED_STR
+                    else:
                         ds[tag].value = CLEARED_STR
-                    except ValueError as e:
-                        ds[tag].value = 0
+    if hasattr(ds, 'file_meta') and hasattr(ds, 'SOPInstanceUID'):
+        ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
     return ds
 
 
