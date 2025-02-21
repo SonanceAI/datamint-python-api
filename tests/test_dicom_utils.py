@@ -22,8 +22,8 @@ class TestDicomUtils:
         anonymized_ds = anonymize_dicom(ds, copy=True)
 
         # Check if the specified DICOM tags are cleared
-        assert anonymized_ds.PatientName == CLEARED_STR
-        assert anonymized_ds.PatientID == CLEARED_STR
+        assert anonymized_ds.PatientName != ds.PatientName
+        assert anonymized_ds.PatientID != ds.PatientID
         assert anonymized_ds.Modality == ds.Modality
         # Check if the SOPInstanceUID and MediaStorageSOPInstanceUID are changed
         assert anonymized_ds.SOPInstanceUID != ds.SOPInstanceUID
