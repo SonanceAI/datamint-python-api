@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 from datamintapi.utils.dicom_utils import is_dicom
 import fnmatch
-from typing import Sequence, List, Generator, Dict, Tuple, Optional, Any
+from typing import Sequence, Generator, Optional, Any
 from collections import defaultdict
 from datamintapi import __version__ as datamintapi_version
 from datamintapi import configs
@@ -60,11 +60,40 @@ def _mungfilename_type(arg):
             "Invalid value for --mungfilename. Expected 'all' or comma-separated positive integers.")
 
 
+def _is_system_file(path: Path) -> bool:
+    """
+    Check if a file is a system file that should be ignored
+    """
+    # Common system files and folders to ignore
+    ignored_patterns = [
+        '.DS_Store',
+        'Thumbs.db',
+        '.git',
+        '__pycache__',
+        '*.pyc',
+        '.svn',
+        '.tmp',
+        '~*',  # Temporary files created by some editors
+        '._*'  # macOS resource fork files
+    ]
+
+    # Check if path is inside a system folder
+    system_folders = ['__MACOSX', '$RECYCLE.BIN', 'System Volume Information']
+    if any(folder in path.parts for folder in system_folders):
+        return True
+
+    # Check if filename matches any ignored pattern
+    return any(fnmatch.fnmatch(path.name, pattern) for pattern in ignored_patterns)
+
+
 def walk_to_depth(path: str,
                   depth: int,
                   exclude_pattern: str = None) -> Generator[Path, None, None]:
     path = Path(path)
     for child in path.iterdir():
+        if _is_system_file(child):
+            continue
+
         if child.is_dir():
             if depth != 0:
                 if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
@@ -77,13 +106,13 @@ def walk_to_depth(path: str,
 
 def filter_files(files_path: Sequence[Path],
                  include_extensions,
-                 exclude_extensions) -> List[Path]:
+                 exclude_extensions) -> list[Path]:
     def fix_extension(ext: str) -> str:
         if ext == "" or ext[0] == '.':
             return ext
         return '.' + ext
 
-    def normalize_extensions(exts_list: Sequence[str]) -> List[str]:
+    def normalize_extensions(exts_list: Sequence[str]) -> list[str]:
         # explodes the extensions if they are separated by commas
         exts_list = [ext.split(',') for ext in exts_list]
         exts_list = [item for sublist in exts_list for item in sublist]
@@ -119,9 +148,9 @@ def handle_api_key() -> str:
 
 
 def _find_segmentation_files(segmentation_root_path: str,
-                             images_files: List[str],
-                             segmentation_metainfo: Dict = None
-                             ) -> Optional[List[Dict]]:
+                             images_files: list[str],
+                             segmentation_metainfo: dict = None
+                             ) -> Optional[list[dict]]:
     """
     Find the segmentation files that match the images files based on the same folder structure
     """
@@ -220,7 +249,7 @@ def _find_segmentation_files(segmentation_root_path: str,
     return segmentation_files
 
 
-def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
+def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
     parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
@@ -332,9 +361,9 @@ def _parse_args() -> Tuple[Any, List, Optional[List[Dict]]]:
         raise e
 
 
-def print_input_summary(files_path: List[str],
+def print_input_summary(files_path: list[str],
                         args,
-                        segfiles: Optional[List[Dict]],
+                        segfiles: Optional[list[dict]],
                         include_extensions=None):
     ### Create a summary of the upload ###
     total_files = len(files_path)
@@ -384,8 +413,8 @@ def print_input_summary(files_path: List[str],
                 _USER_LOGGER.info(msg)
 
 
-def print_results_summary(files_path: List[str],
-                          results: List[str | Exception]):
+def print_results_summary(files_path: list[str],
+                          results: list[str | Exception]):
     # Check for failed uploads
     failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
     _USER_LOGGER.info(f"\nUpload summary:")

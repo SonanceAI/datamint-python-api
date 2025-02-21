@@ -173,7 +173,6 @@ class RootAPIHandler(BaseAPIHandler):
 
         async with aiohttp.ClientSession() as session:
             async def __upload_single_resource(file_path, segfiles: Dict):
-                _LOGGER.debug(f"Current semaphore value: {self.semaphore._value}")
                 async with self.semaphore:
                     rid = await self._upload_single_resource_async(
                         file_path=file_path,
