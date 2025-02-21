@@ -122,6 +122,13 @@ def filter_files(files_path: Sequence[Path],
 
         return [fix_extension(ext) for ext in exts_list]
 
+    files_path = list(files_path)
+    # Filter out files less than 4 bytes
+    files_path2 = [f for f in files_path if f.stat().st_size >= 4]
+    if len(files_path) != len(files_path2):
+        _USER_LOGGER.info(f"Filtered out {len(files_path) - len(files_path2)} empty files")
+    files_path = files_path2
+
     if include_extensions is not None:
         include_extensions = normalize_extensions(include_extensions)
         files_path = [f for f in files_path if f.suffix in include_extensions]
