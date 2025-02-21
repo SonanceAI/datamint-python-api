@@ -1,7 +1,8 @@
 import pytest
 import pydicom
-from datamintapi.utils.dicom_utils import anonymize_dicom, CLEARED_STR
-
+from datamintapi.utils.dicom_utils import anonymize_dicom, CLEARED_STR, is_dicom
+import pydicom.data
+from io import BytesIO
 
 class TestDicomUtils:
     @pytest.fixture
@@ -41,3 +42,15 @@ class TestDicomUtils:
         assert anonymized_ds.PatientName == CLEARED_STR
         assert anonymized_ds.PatientID == '12345'
         assert anonymized_ds.Modality == 'CT'
+
+    def test_isdicom(self):
+        dcmpaths = pydicom.data.get_testdata_files('**/*')
+
+        for dcmpath in dcmpaths:
+            if dcmpath.endswith('.dcm'):
+                assert is_dicom(dcmpath) == True
+
+        assert is_dicom('tests/test_dicom_utils.py') == False
+
+        ## test empty data ##
+        assert is_dicom(BytesIO()) == False

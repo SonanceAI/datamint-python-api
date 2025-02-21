@@ -1,7 +1,7 @@
 from pydicom.pixels import pixel_array
 import pydicom
 from pydicom.uid import generate_uid
-from typing import Sequence
+from typing import Sequence, Generator, IO, TypeVar, Generic
 import warnings
 from copy import deepcopy
 import logging
@@ -10,10 +10,38 @@ from pydicom.misc import is_dicom as pydicom_is_dicom
 from io import BytesIO
 import os
 import numpy as np
+from collections import defaultdict
+import uuid
 
 _LOGGER = logging.getLogger(__name__)
 
 CLEARED_STR = "CLEARED_BY_DATAMINT"
+
+T = TypeVar('T')
+
+
+class GeneratorWithLength(Generic[T]):
+    def __init__(self, generator: Generator[T, None, None], length: int):
+        self.generator = generator
+        self.length = length
+
+    def __len__(self):
+        return self.length
+
+    def __iter__(self):
+        return self.generator
+
+    def __next__(self) -> T:
+        return next(self.generator)
+
+    def close(self):
+        self.generator.close()
+
+    def throw(self, *args):
+        return self.generator.throw(*args)
+
+    def send(self, *args):
+        return self.generator.send(*args)
 
 
 def anonymize_dicom(ds: pydicom.Dataset,
@@ -94,7 +122,8 @@ def is_dicom(f: str | Path | BytesIO) -> bool:
     if os.path.isdir(f):
         return False
 
-    if f.endswith('.dcm') or f.endswith('.dicom'):
+    fname = f.lower()
+    if fname.endswith('.dcm') or fname.endswith('.dicom'):
         return True
 
     # Check if the file has an extension
@@ -130,7 +159,7 @@ def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarr
     Returns:
         A numpy array of shape (n, c, y, x)=(#slices, #channels, height, width).
     """
-    n = dicom.get('NumberOfFrames')
+    n = dicom.get('NumberOfFrames', 1)
     if index is None:
         images = dicom.pixel_array
     else:
@@ -156,3 +185,186 @@ def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarr
             # (y, x, c)
             images = images.transpose(2, 0, 1)
             return images.reshape(1, *images.shape)
+    elif images.ndim == 4:
+        if shape[3] == c or shape[3] in (1, 3, 4) or (c is not None and c > 1):
+            # (n, y, x, c) -> (n, c, y, x)
+            return images.transpose(0, 3, 1, 2)
+
+    raise ValueError(f"Unsupported DICOM normalization with shape: {shape}, SamplesPerPixel: {c}, NumberOfFrames: {n}")
+
+
+def assemble_dicoms(files_path: list[str | IO] | list[list[str]],
+                    return_as_IO: bool = False) -> GeneratorWithLength[pydicom.Dataset | IO]:
+    """
+    Assemble multiple DICOM files into a single multi-frame DICOM file.
+    This function will merge the pixel data of the DICOM files and generate a new DICOM file with the combined pixel data.
+
+    Args:
+        files_path: A list of file paths to the DICOM files to be merged.
+
+    Returns:
+        A generator that yields the merged DICOM files.
+    """
+    dicoms_map = defaultdict(list)
+    for file_path in files_path:
+        dicom = pydicom.dcmread(file_path,
+                                specific_tags=['FrameOfReferenceUID', 'InstanceNumber'])
+        fr_uid = dicom.get('FrameOfReferenceUID', None)
+        if fr_uid is None:
+            # genereate a random uid
+            fr_uid = pydicom.uid.generate_uid()
+        instance_number = dicom.get('InstanceNumber', 0)
+        dicoms_map[fr_uid].append((instance_number, file_path))
+        if hasattr(file_path, "seek"):
+            file_path.seek(0)
+
+    gen = _generate_merged_dicoms(dicoms_map, return_as_IO=return_as_IO)
+    return GeneratorWithLength(gen, len(dicoms_map))
+
+
+def _create_multiframe_attributes(merged_ds: pydicom.Dataset,
+                                  all_dicoms: list[pydicom.Dataset]) -> pydicom.Dataset:
+    ### Shared Functional Groups Sequence ###
+    shared_seq_dataset = pydicom.dataset.Dataset()
+
+    # check if pixel spacing or spacing between slices are equal for all dicoms
+    pixel_spacing = merged_ds.get('PixelSpacing', None)
+    all_pixel_spacing_equal = all(ds.get('PixelSpacing', None) == pixel_spacing
+                                  for ds in all_dicoms)
+    spacing_between_slices = merged_ds.get('SpacingBetweenSlices', None)
+    all_spacing_b_slices_equal = all(ds.get('SpacingBetweenSlices', None) == spacing_between_slices
+                                     for ds in all_dicoms)
+
+    # if they are equal, add them to the shared functional groups sequence
+    if (pixel_spacing is not None and all_pixel_spacing_equal) or (spacing_between_slices is not None and all_spacing_b_slices_equal):
+        pixel_measure = pydicom.dataset.Dataset()
+        if pixel_spacing is not None:
+            pixel_measure.PixelSpacing = pixel_spacing
+        if spacing_between_slices is not None:
+            pixel_measure.SpacingBetweenSlices = spacing_between_slices
+        pixel_measures_seq = pydicom.Sequence([pixel_measure])
+        shared_seq_dataset.PixelMeasuresSequence = pixel_measures_seq
+
+    if len(shared_seq_dataset) > 0:
+        shared_seq = pydicom.Sequence([shared_seq_dataset])
+        merged_ds.SharedFunctionalGroupsSequence = shared_seq
+    #######
+
+    ### Per-Frame Functional Groups Sequence ###
+    perframe_seq_list = []
+    for ds in all_dicoms:
+        per_frame_dataset = pydicom.dataset.Dataset()  # root dataset for each frame
+        pos_dataset = pydicom.dataset.Dataset()
+        orient_dataset = pydicom.dataset.Dataset()
+        pixel_measure = pydicom.dataset.Dataset()
+        framenumber_dataset = pydicom.dataset.Dataset()
+
+        if 'ImagePositionPatient' in ds:
+            pos_dataset.ImagePositionPatient = ds.ImagePositionPatient
+        if 'ImageOrientationPatient' in ds:
+            orient_dataset.ImageOrientationPatient = ds.ImageOrientationPatient
+        if 'PixelSpacing' in ds and all_pixel_spacing_equal == False:
+            pixel_measure.PixelSpacing = ds.PixelSpacing
+        if 'SpacingBetweenSlices' in ds and all_spacing_b_slices_equal == False:
+            pixel_measure.SpacingBetweenSlices = ds.SpacingBetweenSlices
+
+        # Add datasets to the per-frame dataset
+        per_frame_dataset.PlanePositionSequence = pydicom.Sequence([pos_dataset])
+        per_frame_dataset.PlaneOrientationSequence = pydicom.Sequence([orient_dataset])
+        per_frame_dataset.PixelMeasuresSequence = pydicom.Sequence([pixel_measure])
+        per_frame_dataset.FrameContentSequence = pydicom.Sequence([framenumber_dataset])
+
+        perframe_seq_list.append(per_frame_dataset)
+    if len(perframe_seq_list[0]) > 0:
+        perframe_seq = pydicom.Sequence(perframe_seq_list)
+        merged_ds.PerFrameFunctionalGroupsSequence = perframe_seq
+        merged_ds.FrameIncrementPointer = (0x5200, 0x9230)
+
+    return merged_ds
+
+
+def _generate_dicom_name(ds: pydicom.Dataset) -> str:
+    """
+    Generate a meaningful name for a DICOM dataset using its attributes.
+
+    Args:
+        ds: pydicom Dataset object
+
+    Returns:
+        A string containing a descriptive name with .dcm extension
+    """
+    components = []
+
+    # if hasattr(ds, 'filename'):
+    #     components.append(os.path.basename(ds.filename))
+    if hasattr(ds, 'SeriesDescription'):
+        components.append(ds.SeriesDescription)
+    if hasattr(ds, 'SeriesNumber'):
+        components.append(f"ser{ds.SeriesNumber}")
+    if hasattr(ds, 'StudyDescription'):
+        components.append(ds.StudyDescription)
+    if hasattr(ds, 'StudyID'):
+        components.append(ds.StudyID)
+
+    # Join components and add extension
+    if len(components) > 0:
+        description = "_".join(str(x) for x in components) + ".dcm"
+        # Clean description - remove special chars and spaces
+        description = "".join(c if c.isalnum() else "_" for c in description)
+        if len(description) > 0:
+            return description
+
+    if hasattr(ds, 'FrameOfReferenceUID'):
+        return ds.FrameOfReferenceUID + ".dcm"
+
+    # Fallback to generic name if no attributes found
+    return ds.filename if hasattr(ds, 'filename') else f"merged_dicom_{uuid.uuid4()}.dcm"
+
+
+def _generate_merged_dicoms(dicoms_map: dict[str, list],
+                            return_as_IO: bool = False) -> Generator[pydicom.Dataset, None, None]:
+    for _, dicoms in dicoms_map.items():
+        dicoms.sort(key=lambda x: x[0])
+        files_path = [file_path for _, file_path in dicoms]
+
+        all_dicoms = [pydicom.dcmread(file_path) for file_path in files_path]
+
+        # Use the first dicom as a template
+        merged_dicom = all_dicoms[0]
+
+        # Combine pixel data
+        pixel_arrays = np.stack([ds.pixel_array for ds in all_dicoms], axis=0)
+
+        # Update the merged dicom
+        merged_dicom.PixelData = pixel_arrays.tobytes()
+        merged_dicom.NumberOfFrames = len(pixel_arrays)  # Set number of frames
+        merged_dicom.SOPInstanceUID = pydicom.uid.generate_uid()  # Generate new SOP Instance UID
+        # Removed deprecated attributes and set Transfer Syntax UID instead:
+        merged_dicom.file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian
+
+        # Free up memory
+        for ds in all_dicoms[1:]:
+            del ds.PixelData
+
+        # create multi-frame attributes
+        # check if FramTime is equal for all dicoms
+        frame_time = merged_dicom.get('FrameTime', None)
+        all_frame_time_equal = all(ds.get('FrameTime', None) == frame_time for ds in all_dicoms)
+        if frame_time is not None and all_frame_time_equal:
+            merged_dicom.FrameTime = frame_time  # (0x0018,0x1063)
+            merged_dicom.FrameIncrementPointer = (0x0018, 0x1063)  # points to 'FrameTime'
+        else:
+            # TODO: Sometimes FrameTime is present but not equal for all dicoms. In this case, check out 'FrameTimeVector'.
+            merged_dicom = _create_multiframe_attributes(merged_dicom, all_dicoms)
+
+        # Remove tags of single frame dicoms
+        for attr in ['ImagePositionPatient', 'SliceLocation', 'ImageOrientationPatient',
+                     'PixelSpacing', 'SpacingBetweenSlices', 'InstanceNumber']:
+            if hasattr(merged_dicom, attr):
+                delattr(merged_dicom, attr)
+
+        if return_as_IO:
+            name = _generate_dicom_name(merged_dicom)
+            yield to_bytesio(merged_dicom, name=name)
+        else:
+            yield merged_dicom

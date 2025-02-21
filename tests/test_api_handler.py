@@ -1,22 +1,32 @@
 import pytest
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 from datamintapi.apihandler.api_handler import APIHandler
+import datamintapi
 import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
-from pydicom.dataset import FileMetaDataset
+from pydicom.data import get_testdata_files
+import datamintapi.configs
 from datamintapi.utils.dicom_utils import to_bytesio
+from datamintapi.apihandler.base_api_handler import DatamintException
 import json
 from aiohttp import FormData
-from typing import Tuple
-from io import BytesIO
+from typing import IO
 import requests
 import os
+import numpy as np
+from copy import deepcopy
+import logging
+
+# pytest tests --log-cli-level=INFO
 
 _TEST_URL = 'https://test_url.com'
 
 
-def _get_request_data(request_data) -> Tuple[BytesIO, str]:
+def _get_request_data(request_data: dict | FormData) -> tuple[IO, str]:
+    """
+    Extracts the dicom bytes and the data from the request data.
+    """
     if isinstance(request_data, FormData):
         for field in request_data._fields:
             if hasattr(field[-1], 'read'):
@@ -39,26 +49,9 @@ MP4_TEST_FILE = 'tests/data/test1.mp4'
 
 class TestAPIHandler:
     @pytest.fixture
-    def sample_dicom1(self):
-        ds = pydicom.Dataset()
-        ds.preamble = b"\0" * 128
-        ds.PatientName = "John Doe"
-        ds.PatientID = "12345"
-        ds.PatientWeight = 70
-        ds.Modality = "CT"
-        ds.SOPInstanceUID = pydicom.uid.generate_uid()
-        ds.is_little_endian = True
-        ds.is_implicit_VR = False
-        ds.file_meta = FileMetaDataset()
-        ds.file_meta.TransferSyntaxUID = pydicom.uid.ExplicitVRLittleEndian
-        ds.file_meta.MediaStorageSOPInstanceUID = ds.SOPInstanceUID
-        ds.file_meta.MediaStorageSOPClassUID = "1"
-        ds.file_meta.ImplementationClassUID = "1.1"
-        ds.file_meta.ImplementationVersionName = "1.1"
-        ds.file_meta.FileMetaInformationGroupLength = 196
-        ds.file_meta.FileMetaInformationVersion = b'\x00\x01'
-
-        return ds
+    def sample_dicom1(self) -> pydicom.Dataset:
+        filepath = get_testdata_files("MR_small.dcm")[0]
+        return pydicom.dcmread(filepath)
 
     @pytest.fixture
     def get_channels_sample(self) -> dict:
@@ -89,11 +82,97 @@ class TestAPIHandler:
                           'resource_count': '1'}],
                 'totalCount': '1'}
 
+    @pytest.fixture
+    def get_projects_sample(self) -> dict:
+        return {
+            'data': [{'id': '1c212cb4-5160-4d02-9ce9-b3dc624461f9',
+                      'name': 'TestProject',
+                      'description': 'Description of the project',
+                      'created_at': '2025-01-28T16:55:35.379Z',
+                      'created_by': 'datamint-dev@mail.com',
+                      'dataset_id': 'e338b469-fa80-40cd-beb2-1e1b945a89d1',
+                      'worklist_id': 'ab63f112-acf1-415d-9b54-c0f0a512553d',
+                      'ai_model_id': None,
+                      'viewable_ai_segs': None,
+                      'editable_ai_segs': None,
+                      'resource_count': '36',
+                      'annotated_resource_count': '3',
+                      'most_recent_experiment': None,
+                      'closed_resources_count': '3',
+                      'resources_to_annotate_count': 33}
+                     ]
+        }
+
+    @pytest.fixture
+    def get_resources_sample(self) -> dict:
+        res = {'id': 'f0fea905-6823-48c3-838a-b0c62c5a0466',
+               'resource_uri': '/resources/f0fea905-6823-48c3-838a-b0c62c5a0466/file',
+               'storage': 'ImageResource',
+               'location': 'resources/f5a18308-ab64-4c1e-8a1f-db4bccd77f4a/f0fea905-6823-48c3-838a-b0c62c5a0466',
+               'upload_channel': 'Unknown',
+               'filename': 'IMG0002121.jpg',
+               'modality': 'DX',
+               'mimetype': 'image/jpeg',
+               'size': 15662,
+               'upload_mechanism': 'api',
+               'customer_id': 'f5a18308-ab64-4c1e-8a1f-db4bccd77f4a',
+               'status': 'published',
+               'created_at': '2025-02-05T14:32:30.378Z',
+               'created_by': 'datamint-dev@mail.com',
+               'published': False,
+               'published_on': '2025-02-05T14:47:47.942Z',
+               'published_by': 'datamint-dev@mail.com',
+               'publish_transforms': None,
+               'deleted': False,
+               'deleted_at': None,
+               'deleted_by': None,
+               'metadata': {},
+               'source_filepath': 'images/IMG0002121.jpg',
+               'tags': ['non_fractured', 'leg'],
+               'segmentations': None,
+               'measurements': None,
+               'categories': None,
+               'labels': [],
+               'user_info': {'firstname': 'data', 'lastname': 'mint'},
+               'projects': []}
+
+        return {'data': [{'resources': [res]}]}
+
+    @pytest.fixture
+    def sample_2dmask1(self) -> np.ndarray:
+        """
+        Creates a 32x32 mask with random values
+        """
+        # Use fixed seed to ensure reproducibility
+        rng = np.random.RandomState(42)
+        return rng.randint(0, 2, (32, 32), dtype=np.uint8)
+
+    @responses.activate
     @patch('os.getenv')
-    def test_api_handler_init(self, mock_getenv):
-        mock_getenv.return_value = 'test_api_key'
-        api_handler = APIHandler('test_url')
+    def test_api_handler_init(self, mock_getenv, get_projects_sample: dict):
+        def mock_getenv_side_effect(key):
+            if key == datamintapi.configs.get_env_var_name(datamintapi.configs.APIKEY_KEY):
+                return 'test_api_key'
+            if key == datamintapi.configs.get_env_var_name(datamintapi.configs.APIURL_KEY):
+                return _TEST_URL
+            return None
+
+        mock_getenv.side_effect = mock_getenv_side_effect
+        api_handler = APIHandler(check_connection=False)
         assert api_handler.api_key == 'test_api_key'
+        assert api_handler.root_url == _TEST_URL
+
+        responses.get(
+            f"{_TEST_URL}/projects",
+            status=200,
+            json=get_projects_sample
+        )
+
+        api_handler = APIHandler(check_connection=True)
+
+        ### Test wrong url ###
+        with pytest.raises(DatamintException):
+            api_handler = APIHandler('wrong', check_connection=True)
 
     def test_upload_dicoms_resources(self, sample_dicom1):
         def _callback1(url, data, **kwargs):
@@ -107,14 +186,22 @@ class TestAPIHandler:
             # check that post request has data 'batch_id'
             mock_aioresp.post(
                 f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
-                callback=_callback1
+                callback=_callback1,
+                repeat=2
             )
 
-            api_handler = APIHandler(_TEST_URL, 'test_api_key')
+            api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
             new_dicoms_id = api_handler.upload_resources(files_path=to_bytesio(sample_dicom1, 'sample_dicom1'),
                                                          channel='mychannel',
                                                          anonymize=False)
+            assert new_dicoms_id == 'newdicomid'
+
+            ### Same thing, but in a list ###
+            new_dicoms_id = api_handler.upload_resources(files_path=[to_bytesio(sample_dicom1, 'sample_dicom1')],
+                                                         channel='mychannel',
+                                                         anonymize=False)
             assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+            ######
 
     def test_upload_dicoms_mungfilename(self, sample_dicom1):
         from builtins import open
@@ -142,7 +229,7 @@ class TestAPIHandler:
             assert 'me_data_test_dicom.dcm' in data
             return CallbackResult(status=201, payload={"id": "newdicomid"})
 
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
 
         with patch('builtins.open', new=my_open_mock):
             with aioresponses() as mock_aioresp:
@@ -153,7 +240,7 @@ class TestAPIHandler:
                 new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('..', 'data', 'test_dicom.dcm'),
                                                              anonymize=False,
                                                              mung_filename='all')
-                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+                assert new_dicoms_id == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
                 mock_aioresp.post(
@@ -163,7 +250,7 @@ class TestAPIHandler:
                 new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('data', 'test_dicom.dcm'),
                                                              anonymize=False,
                                                              mung_filename=None)
-                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
+                assert new_dicoms_id == 'newdicomid'
 
             with aioresponses() as mock_aioresp:
                 mock_aioresp.post(
@@ -173,60 +260,7 @@ class TestAPIHandler:
                 new_dicoms_id = api_handler.upload_resources(files_path=os.path.join('home', 'me', 'data', 'test_dicom.dcm'),
                                                              anonymize=False,
                                                              mung_filename=[2, 3])
-                assert len(new_dicoms_id) == 1 and new_dicoms_id[0] == 'newdicomid'
-
-    @responses.activate
-    def test_get_batches(self):
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
-
-        batches_data = [
-            {"id": "batch1", "description": "Batch 1"},
-            {"id": "batch2", "description": "Batch 2"},
-            {"id": "batch3", "description": "Batch 3"}
-        ]
-        responses.get(
-            f"{_TEST_URL}/upload-batches",
-            json={"data": batches_data},
-            status=200,
-        )
-
-        batches = list(api_handler.get_batches())
-        assert len(batches) == 3
-
-    @responses.activate
-    def test_get_batches_no_batch(self):
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
-
-        responses.get(
-            f"{_TEST_URL}/upload-batches",
-            json={"data": []},
-            status=200,
-        )
-
-        batches = list(api_handler.get_batches())
-        assert len(batches) == 0
-
-    @responses.activate
-    def test_upload_segmentation(self, sample_dicom1):
-        from builtins import open
-
-        def my_open_mock(file, *args, **kwargs):
-            if file == 'test_segmentation_file.nifti':
-                return to_bytesio(sample_dicom1, file)
-            return open(file, *args, **kwargs)
-        # Mocking the response from the server
-        responses.post(
-            f"{_TEST_URL}/segmentations",
-            json={"id": "test_segmentation_id"},
-            status=201,
-        )
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
-        dicom_id = 'test_dicom_id'
-        segmentation_name = 'test_segmentation_name'
-        file_path = 'test_segmentation_file.nifti'
-        with patch('builtins.open', new=my_open_mock):
-            segmentation_id = api_handler.upload_segmentation(dicom_id, file_path, segmentation_name)
-        assert segmentation_id == 'test_segmentation_id'
+                assert new_dicoms_id == 'newdicomid'
 
     @responses.activate
     def test_upload_resources_video(self):
@@ -236,46 +270,58 @@ class TestAPIHandler:
             return CallbackResult(status=201, payload={"id": "new_resource_id"})
 
         with aioresponses() as mock_aioresp:
-            # check that post request has data 'batch_id'
-            api_handler = APIHandler(_TEST_URL, 'test_api_key')
+            api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
             mock_aioresp.post(
                 api_handler._get_endpoint_url(APIHandler.ENDPOINT_RESOURCES),
                 callback=_callback
             )
 
             new_resources_id = api_handler.upload_resources(files_path=MP4_TEST_FILE,
-                                                            labels=['label1', 'label2'],
+                                                            tags=['label1', 'label2'],
                                                             channel='mychannel',
                                                             anonymize=False)
-            assert len(new_resources_id) == 1 and new_resources_id[0] == 'new_resource_id'
+            new_resources_id == 'new_resource_id'
 
-    @responses.activate
-    def test_wrong_url(self, get_channels_sample: dict):
-        def _request_callback(request):
-            if 'wrong_url' in request.url:
-                return (404, "", "404 Client Error: Not Found for url:")
-            return (200, "", json.dumps(get_channels_sample))
+    def test_upload_resources_assembling_dicoms(self, sample_dicom1: pydicom.Dataset):
+        sample_dicom2 = deepcopy(sample_dicom1)
+        sample_dicom2.InstanceNumber = 2
+        sample_dicom2.SOPInstanceUID = pydicom.uid.generate_uid()
+        api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
 
-        # Mocking the response from the server
-        responses.add_callback(
-            responses.GET,
-            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}/channels",
-            content_type='application/json',
-            callback=_request_callback
-        )
-        responses.add_callback(
-            responses.GET,
-            f"https://wrong_url/{APIHandler.ENDPOINT_RESOURCES}/channels",
-            content_type='application/json',
-            callback=_request_callback
-        )
+        with aioresponses() as mock_aioresp:
+            mock_aioresp.post(
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+                status=201,
+                payload={"id": "new_res_id"},
+                repeat=2
+            )
 
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
-        list(api_handler.get_channels())
+            new_res_ids = api_handler.upload_resources(files_path=[to_bytesio(sample_dicom1, 'sample_dicom1'),
+                                                                   to_bytesio(sample_dicom2, 'sample_dicom2'),
+                                                                   MP4_TEST_FILE,
+                                                                   ],
+                                                       channel='mychannel',
+                                                       assemble_dicoms=True,
+                                                       anonymize=False)
+            assert len(new_res_ids) == 2
 
-        with pytest.raises(requests.exceptions.HTTPError):
-            api_handler = APIHandler('https://wrong_url', 'test_api_key')
-            list(api_handler.get_channels())
+        ### Same thing, but assemble_dicoms=False ###
+        with aioresponses() as mock_aioresp:
+            mock_aioresp.post(
+                f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+                status=201,
+                payload={"id": "new_res_id"},
+                repeat=3
+            )
+
+            new_res_ids = api_handler.upload_resources(files_path=[to_bytesio(sample_dicom1, 'sample_dicom1'),
+                                                                   to_bytesio(sample_dicom2, 'sample_dicom2'),
+                                                                   MP4_TEST_FILE,
+                                                                   ],
+                                                       channel='mychannel',
+                                                       assemble_dicoms=False,
+                                                       anonymize=False)
+            assert len(new_res_ids) == 3
 
     @responses.activate
     def test_get_channels(self, get_channels_sample: dict):
@@ -290,6 +336,25 @@ class TestAPIHandler:
             callback=_request_callback
         )
 
-        api_handler = APIHandler(_TEST_URL, 'test_api_key')
+        api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
         channels_info = list(api_handler.get_channels())
         assert len(channels_info) == 2  # two channels
+
+    @responses.activate
+    def test_get_resources(self, get_resources_sample: dict):
+        def _request_callback(request):
+            return (200, "", json.dumps(get_resources_sample))
+
+        # Mocking the response from the server
+        responses.add_callback(
+            responses.GET,
+            f"{_TEST_URL}/{APIHandler.ENDPOINT_RESOURCES}",
+            content_type='application/json',
+            callback=_request_callback
+        )
+
+        api_handler = APIHandler(_TEST_URL, 'test_api_key', check_connection=False)
+        resources = list(api_handler.get_resources())
+        assert len(resources) == 1
+        r = resources[0]
+        assert r['id'] == 'f0fea905-6823-48c3-838a-b0c62c5a0466'

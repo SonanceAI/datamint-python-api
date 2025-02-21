@@ -128,19 +128,20 @@ def _find_segmentation_files(segmentation_root_path: str,
 
     if segmentation_root_path is None:
         return None
-    
+
     if len(images_files) == 1 and os.path.isfile(images_files[0]) and os.path.isfile(segmentation_root_path):
         return [{'files': [segmentation_root_path]}]
-        
 
     segmentation_files = []
     acceptable_extensions = ['.nii.gz', '.nii', '.png']
 
     if segmentation_metainfo is not None:
-        segnames = sorted(segmentation_metainfo['segmentation_names'],
-                          key=lambda x: len(x))
+        if 'segmentation_names' in segmentation_metainfo:
+            segnames = sorted(segmentation_metainfo['segmentation_names'],
+                              key=lambda x: len(x))
+        else:
+            segnames = None
         classnames = segmentation_metainfo.get('class_names', None)
-        _LOGGER.debug(f"Number of segmentation names: {len(segnames)}")
         if classnames is not None:
             _LOGGER.debug(f"Number of class names: {len(classnames)}")
 
@@ -195,18 +196,21 @@ def _find_segmentation_files(segmentation_root_path: str,
             if segmentation_metainfo is not None:
                 snames_associated = []
                 for segfile in seg_files:
-                    for segname in segnames:
-                        if segname in str(segfile):
-                            if classnames is not None:
-                                new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
-                                new_segname.update({'default': segname})
-                            else:
-                                new_segname = segname
-                            snames_associated.append(new_segname)
-                            break
+                    if segnames is None:
+                        snames_associated.append(classnames)
                     else:
-                        _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
-                        snames_associated.append(None)
+                        for segname in segnames:
+                            if segname in str(segfile):
+                                if classnames is not None:
+                                    new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
+                                    new_segname.update({'default': segname})
+                                else:
+                                    new_segname = segname
+                                snames_associated.append(new_segname)
+                                break
+                        else:
+                            _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
+                            snames_associated.append(None)
                 seginfo['names'] = snames_associated
 
             segmentation_files.append(seginfo)

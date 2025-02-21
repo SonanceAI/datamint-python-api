@@ -2,7 +2,7 @@ import os
 import requests
 from tqdm import tqdm
 from requests import Session
-from typing import Optional, Callable, Any, Tuple, List, Dict, Literal
+from typing import Optional, Callable, Any, Literal
 import logging
 import shutil
 import json
@@ -16,7 +16,7 @@ from datamintapi.apihandler.api_handler import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
-from datamintapi.utils.dicom_utils import load_image_normalized
+from datamintapi.utils.io_utils import read_array_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,21 +32,22 @@ class DatamintBaseDataset:
     Args:
         root (str): Root directory of dataset where data already exists or will be downloaded.
         project_name (str): Name of the project to download.
-        dataset_name (str): Name of the dataset to download. Deprecated, use 'project_name' instead.
-        version (int | str): Version of the dataset to download.
-            If 'latest', the latest version will be downloaded. Default: 'latest'.
-            .. deprecated:: 0.7.0
+        dataset_name (str): Deprecated, use 'project_name' instead.
         auto_update (bool): If True, the dataset will be checked for updates and downloaded if necessary.
         api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
             environment variable 'DATAMINT_API_KEY'. Not necessary if
             you don't want to download/update the dataset.
+        return_dicom (bool): If True, the DICOM object will be returned, if the image is a DICOM file.
+        return_metainfo (bool): If True, the metainfo of the image will be returned.
+        return_annotations (bool): If True, the annotations of the image will be returned.
+        return_frame_by_frame (bool): If True, each frame of a video/DICOM/3d-image will be returned separately.
+        discard_without_annotations (bool): If True, images without annotations will be discarded.
+
     """
 
     def __init__(self,
                  root: str,
                  project_name: str,
-                 dataset_name: str = None,
-                 version=None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,
@@ -54,7 +55,11 @@ class DatamintBaseDataset:
                  return_metainfo: bool = True,
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
+                 discard_without_annotations: bool = False,
                  ):
+        if project_name is None:
+            raise ValueError("project_name is required.")
+
         self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
         self.server_url = self.api_handler.root_url
         if isinstance(root, str):
@@ -68,35 +73,28 @@ class DatamintBaseDataset:
         self.return_metainfo = return_metainfo
         self.return_frame_by_frame = return_frame_by_frame
         self.return_annotations = return_annotations
+        self.discard_without_annotations = discard_without_annotations
 
-        if version is not None:
-            _LOGGER.warning("The 'version' argument is deprecated and will be removed in future versions. " +
-                            "See the 'auto_update' argument instead.")
-
-        if dataset_name is not None and project_name is not None:
-            raise ValueError("Either 'dataset_name' or 'project_name' must be provided, not both.")
-
-        self.dataset_name = dataset_name
         self.project_name = project_name
-        if project_name is not None:
-            dataset_name = project_name
+        dataset_name = project_name
 
         self.dataset_dir = os.path.join(root, dataset_name)
         self.dataset_zippath = os.path.join(root, f'{dataset_name}.zip')
 
         local_dataset_exists = os.path.exists(os.path.join(self.dataset_dir, 'dataset.json'))
 
-        if project_name is not None and not (local_dataset_exists and auto_update == False):
+        if local_dataset_exists and auto_update == False:
+            # In this case, we don't need to check the API, so we don't need the id.
+            self.dataset_id = None
+        else:
             self.project_info = self.get_info()
             self.dataset_id = self.project_info['dataset_id']
-        else:
-            self.dataset_id = None
 
         self.api_key = self.api_handler.api_key
         if self.api_key is None:
             _LOGGER.warning("API key not provided. If you want to download data, please provide an API key, " +
-                            f"eifther by passing it as an argument," +
-                            f"setting enviroment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
+                            f"either by passing it as an argument," +
+                            f"setting environment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or " +
                             "using datamint-config command line tool."
                             )
 
@@ -117,6 +115,13 @@ class DatamintBaseDataset:
             with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
                 self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
+        
+        # filter out images with no annotations.
+        if self.discard_without_annotations:
+            original_count = len(self.images_metainfo)
+            self.images_metainfo = [img for img in self.images_metainfo if len(img.get('annotations', []))]
+            _LOGGER.info(f"Discarded {original_count - len(self.images_metainfo)} images without annotations.")
+
         self._check_integrity()
 
         # fix images_metainfo labels
@@ -130,7 +135,6 @@ class DatamintBaseDataset:
         #                 flabels['label'] = flabels['label'].split(',')
 
         if self.return_frame_by_frame:
-            _LOGGER.debug(f"Loading frame-by-frame metadata of {len(self.images_metainfo)} resources...")
             self.dataset_length = 0
             for imginfo in self.images_metainfo:
                 filepath = os.path.join(self.dataset_dir, imginfo['file'])
@@ -145,7 +149,7 @@ class DatamintBaseDataset:
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
 
-    def __compute_num_frames_per_resource(self) -> List[int]:
+    def __compute_num_frames_per_resource(self) -> list[int]:
         num_frames_per_dicom = []
         for imginfo in self.images_metainfo:
             filepath = os.path.join(self.dataset_dir, imginfo['file'])
@@ -153,7 +157,7 @@ class DatamintBaseDataset:
         return num_frames_per_dicom
 
     @property
-    def frame_labels_set(self) -> List[str]:
+    def frame_labels_set(self) -> list[str]:
         """
         Returns the set of independent labels in the dataset.
         This is more related to multi-label tasks.
@@ -161,7 +165,7 @@ class DatamintBaseDataset:
         return self.frame_lsets['multilabel']
 
     @property
-    def frame_categories_set(self) -> List[Tuple[str, str]]:
+    def frame_categories_set(self) -> list[tuple[str, str]]:
         """
         Returns the set of categories in the dataset.
         This is more related to multi-class tasks.
@@ -169,7 +173,7 @@ class DatamintBaseDataset:
         return self.frame_lsets['multiclass']
 
     @property
-    def image_labels_set(self) -> List[str]:
+    def image_labels_set(self) -> list[str]:
         """
         Returns the set of independent labels in the dataset.
         This is more related to multi-label tasks.
@@ -177,7 +181,7 @@ class DatamintBaseDataset:
         return self.image_lsets['multilabel']
 
     @property
-    def image_categories_set(self) -> List[Tuple[str, str]]:
+    def image_categories_set(self) -> list[tuple[str, str]]:
         """
         Returns the set of categories in the dataset.
         This is more related to multi-class tasks.
@@ -185,16 +189,16 @@ class DatamintBaseDataset:
         return self.image_lsets['multiclass']
 
     @property
-    def segmentation_labels_set(self) -> List[str]:
+    def segmentation_labels_set(self) -> list[str]:
         """
         Returns the set of segmentation labels in the dataset.
         """
         return self.frame_lsets['segmentation']
 
     def _get_annotations_internal(self,
-                                  annotations: List[Dict],
+                                  annotations: list[dict],
                                   type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
-                                  scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+                                  scope: Literal['frame', 'image', 'all'] = 'all') -> list[dict]:
         # check parameters
         if type not in ['label', 'category', 'segmentation', 'all']:
             raise ValueError(f"Invalid value for 'type': {type}")
@@ -211,7 +215,7 @@ class DatamintBaseDataset:
     def get_annotations(self,
                         index: int,
                         type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
-                        scope: Literal['frame', 'image', 'all'] = 'all') -> List[Dict]:
+                        scope: Literal['frame', 'image', 'all'] = 'all') -> list[dict]:
         """
         Returns the annotations of the image at the given index.
 
@@ -244,10 +248,10 @@ class DatamintBaseDataset:
         else:
             raise ValueError(f"Unsupported file type: {filepath}")
 
-    def get_resources_ids(self) -> List[str]:
+    def get_resources_ids(self) -> list[str]:
         return [self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id'] for i in self.subset_indices]
 
-    def _get_labels_set(self, framed: bool) -> Tuple[Dict, Dict[str, Dict[str, int]]]:
+    def _get_labels_set(self, framed: bool) -> tuple[dict, dict[str, dict[str, int]]]:
         """
         Returns the set of labels and a dictionary that maps labels to integers.
 
@@ -287,7 +291,7 @@ class DatamintBaseDataset:
                      'multiclass': multiclass2code}
         return sets, codes_map
 
-    def get_framelabel_distribution(self, normalize=False) -> Dict[str, float]:
+    def get_framelabel_distribution(self, normalize=False) -> dict[str, float]:
         """
         Returns the distribution of labels in the dataset.
 
@@ -307,7 +311,7 @@ class DatamintBaseDataset:
             label_distribution = {k: v/total for k, v in label_distribution.items()}
         return label_distribution
 
-    def get_segmentationlabel_distribution(self, normalize=False) -> Dict[str, float]:
+    def get_segmentationlabel_distribution(self, normalize=False) -> dict[str, float]:
         """
         Returns the distribution of segmentation labels in the dataset.
 
@@ -333,7 +337,7 @@ class DatamintBaseDataset:
             if not os.path.isfile(os.path.join(self.dataset_dir, imginfo['file'])):
                 raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
-    def _get_datasetinfo(self) -> Dict:
+    def _get_datasetinfo(self) -> dict:
         # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
 
         request_params = {
@@ -345,12 +349,8 @@ class DatamintBaseDataset:
             response = self._run_request(session, request_params)
             resp = response.json()
 
-        if self.dataset_id is not None:
-            value_to_search = self.dataset_id
-            field_to_search = 'id'
-        else:
-            value_to_search = self.dataset_name
-            field_to_search = 'name'
+        value_to_search = self.dataset_id
+        field_to_search = 'id'
 
         for d in resp['data']:
             if d[field_to_search] == value_to_search:
@@ -362,7 +362,7 @@ class DatamintBaseDataset:
             f" Available datasets: {available_datasets}"
         )
 
-    def get_info(self) -> Dict:
+    def get_info(self) -> dict:
         project = self.api_handler.get_project_by_name(self.project_name)
         if 'error' in project:
             available_projects = project['all_projects']
@@ -381,7 +381,7 @@ class DatamintBaseDataset:
             raise ValueError("Dataset ID is required to download the dataset.")
         request_params = {
             'method': 'GET',
-            'url': f'{self.server_url}/datasets/{dataset_id}/download/dicom',
+            'url': f'{self.server_url}/datasets/{dataset_id}/download/png',
             'headers': {'apikey': self.api_key},
             'stream': True
         }
@@ -438,7 +438,7 @@ class DatamintBaseDataset:
         Downloads the dataset from the Sonance API into the root directory `self.root`.
 
         Raises:
-            SonanceDatasetException: If the download fails.
+            DatamintDatasetException: If the download fails.
         """
         from torchvision.datasets.utils import extract_archive
 
@@ -481,19 +481,14 @@ class DatamintBaseDataset:
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
             json.dump(self.metainfo, file)
 
-    def _load_image(self, filepath: str, index: int = None) -> Tuple[torch.Tensor, pydicom.FileDataset]:
-        ds = pydicom.dcmread(filepath)
+    def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
+        if os.path.isdir(filepath):
+            raise NotImplementedError("Loading a image from a directory is not supported yet.")
 
         if self.return_frame_by_frame:
-            img = load_image_normalized(ds, index=index)
-            img = img[0]
+            img, ds = read_array_normalized(filepath, return_metainfo=True, index=index)
         else:
-            img = load_image_normalized(ds)
-        # Free up memory
-        if hasattr(ds, '_pixel_array'):
-            ds._pixel_array = None
-        if hasattr(ds, 'PixelData'):
-            ds.PixelData = None
+            img, ds = read_array_normalized(filepath, return_metainfo=True)
 
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16
@@ -505,7 +500,7 @@ class DatamintBaseDataset:
 
         return img, ds
 
-    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> Dict[str, Any]:
+    def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> dict[str, Any]:
         if bypass_subset_indices == False:
             index = self.subset_indices[index]
         if self.return_frame_by_frame:
@@ -522,7 +517,7 @@ class DatamintBaseDataset:
             img_metainfo = self.images_metainfo[index]
         return img_metainfo
 
-    def __find_index(self, index: int) -> Tuple[int, int]:
+    def __find_index(self, index: int) -> tuple[int, int]:
         frame_index = index
         for i, num_frames in enumerate(self.num_frames_per_resource):
             if frame_index < num_frames:
@@ -533,8 +528,12 @@ class DatamintBaseDataset:
 
         return i, frame_index
 
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> Dict[str, Any]:
-        resource_index, _ = self.__find_index(index)
+    def __getitem_internal(self, index: int, only_load_metainfo=False) -> dict[str, Any]:
+        if self.return_frame_by_frame:
+            resource_index, frame_idx = self.__find_index(index)
+        else:
+            resource_index = index
+            frame_idx = None
         img_metainfo = self._get_image_metainfo(index, bypass_subset_indices=True)
 
         if only_load_metainfo:
@@ -543,7 +542,7 @@ class DatamintBaseDataset:
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
 
         # Can be multi-frame, Gray-scale and/or RGB. So the shape is really variable, but it's always a numpy array.
-        img, ds = self._load_image(filepath, resource_index)
+        img, ds = self._load_image(filepath, frame_idx)
 
         ret = {'image': img}
 
@@ -556,13 +555,13 @@ class DatamintBaseDataset:
 
         return ret
 
-    def __getitem__(self, index: int) -> Dict[str, Any]:
+    def __getitem__(self, index: int) -> dict[str, Any]:
         """
         Args:
             index (int): Index
 
         Returns:
-            Dict: A dictionary containing three keys: 'image', 'metainfo' and 'annotations'.
+            dict: A dictionary containing three keys: 'image', 'metainfo' and 'annotations'.
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
@@ -589,8 +588,10 @@ class DatamintBaseDataset:
             external_metadata_info = self._get_datasetinfo()
             server_updated_at = external_metadata_info['updated_at']
         except Exception as e:
-            _LOGGER.warning(f"Failed to check for updates in {self.dataset_name}: {e}")
+            _LOGGER.warning(f"Failed to check for updates in {self.project_name}: {e}")
             return
+
+        _LOGGER.debug(f"Local updated at: {local_updated_at}, Server updated at: {server_updated_at}")
 
         if local_updated_at is None or local_updated_at != server_updated_at:
             _LOGGER.info(
@@ -612,7 +613,7 @@ class DatamintBaseDataset:
                           **kwargs)
 
     def get_collate_fn(self) -> Callable:
-        def collate_fn(batch: Dict) -> Dict:
+        def collate_fn(batch: dict) -> dict:
             keys = batch[0].keys()
             collated_batch = {}
             for key in keys:
@@ -629,7 +630,7 @@ class DatamintBaseDataset:
 
         return collate_fn
 
-    def subset(self, indices: List[int]) -> 'DatamintDataset':
+    def subset(self, indices: list[int]) -> 'DatamintBaseDataset':
         if len(self.subset_indices) > self.dataset_length:
             raise ValueError(f"Subset indices must be less than the dataset length: {self.dataset_length}")
 

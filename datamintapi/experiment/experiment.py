@@ -65,7 +65,7 @@ class _DryRunExperimentAPIHandler(APIHandler):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, check_connection=False, **kwargs)
 
     def create_experiment(self, dataset_id: str, name: str, description: str, environment: Dict) -> str:
         return "dry_run"
@@ -81,6 +81,9 @@ class _DryRunExperimentAPIHandler(APIHandler):
 
     def finish_experiment(self, exp_id: str):
         pass
+
+    def upload_segmentations(self, *args, **kwargs) -> str:
+        return "dry_run"
 
 
 def _get_confidence_callback(pred) -> float:
@@ -366,9 +369,9 @@ class Experiment:
                 metrics[name] = 'NAN'
 
         for name, value in metrics.items():
-            base_name = name.lower().split('test/', maxsplit=1)[-1]
-            if base_name in METRIC_RENAMER:
-                name = METRIC_RENAMER[base_name]
+            spl_name = name.lower().split('test/', maxsplit=1)
+            if spl_name[-1] in METRIC_RENAMER:
+                name = spl_name[0] + 'test/' + METRIC_RENAMER[spl_name[-1]]
 
             if show_in_summary or name.lower() in IMPORTANT_METRICS:
                 self.add_to_summary({'metrics': {name: value}})
@@ -403,6 +406,43 @@ class Experiment:
             else:
                 _LOGGER.warning(f"Key {key} already exists in summary. Overwriting value.")
                 self.summary_log[key] = value
+
+    def update_summary_metrics(self,
+                               phase: str | None,
+                               f1score: float | None,
+                               accuracy: float | None,
+                               sensitivity: float | None,
+                               ppv: float | None,
+                               ):
+        """
+        Handy method to update the summary with the most common classification metrics.
+
+        Args:
+            phase (str): The phase of the experiment. Can be 'train', 'val', 'test', '', or None.
+            f1score (float): The F1 score.
+            accuracy (float): The accuracy.
+            sensitivity (float): The sensitivity (a.k.a recall).
+            specificity (float): The specificity.
+            ppv (float): The positive predictive value (a.k.a precision).
+        """
+
+        if phase is None:
+            phase = ""
+
+        if phase not in ['train', 'val', 'test', '']:
+            raise ValueError(f"Invalid phase: '{phase}'. Must be one of ['train', 'val', 'test', '']")
+
+        metrics = {}
+        if f1score is not None:
+            metrics[f'{phase}/F1Score'] = f1score
+        if accuracy is not None:
+            metrics[f'{phase}/Accuracy'] = accuracy
+        if sensitivity is not None:
+            metrics[f'{phase}/Sensitivity'] = sensitivity
+        if ppv is not None:
+            metrics[f'{phase}/Positive Predictive Value'] = ppv
+
+        self.add_to_summary({'metrics': metrics})
 
     def log_summary(self,
                     result_summary: Dict) -> None:
@@ -514,7 +554,7 @@ class Experiment:
         dataset_stats.update({k: v for k, v in dataset.metainfo.items() if k in keys_to_get})
 
         self.add_to_summary({'dataset_stats': dataset_stats})
-        dataset_params_names = ['return_dicom', 'return_metainfo', 'return_seg_annotations'
+        dataset_params_names = ['return_dicom', 'return_metainfo', 'return_segmentations'
                                 'return_frame_by_frame', 'return_as_semantic_segmentation']
         dataset_stats['dataset_params'] = {k: getattr(dataset, k) for k in dataset_params_names if hasattr(dataset, k)}
         dataset_stats['dataset_params']['image_transform'] = repr(dataset.image_transform)
@@ -538,10 +578,7 @@ class Experiment:
         if split not in ['all', 'train', 'test', 'val']:
             raise ValueError(f"Invalid split parameter: '{split}'. Must be one of ['all', 'train', 'test', 'val']")
 
-        if self.project_name is not None:
-            params = dict(project_name=self.project_name)
-        else:
-            params = dict(dataset_name=self.dataset_name)
+        params = dict(project_name=self.project_name)
 
         dataset = DatamintDataset(self.dataset_dir,
                                   api_key=self.apihandler.api_key,
@@ -583,25 +620,28 @@ class Experiment:
         return dataset
 
     def _detect_machine_learning_task(self, dataset: DatamintDataset) -> str:
-        # Detect machine learning task based on the dataset params
-        if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
-            return 'semantic segmentation'
-        elif dataset.return_seg_annotations and len(dataset.segmentation_labels_set) > 0:
-            return 'instance segmentation'
+        try:
+            # Detect machine learning task based on the dataset params
+            if dataset.return_as_semantic_segmentation and len(dataset.segmentation_labels_set) > 0:
+                return 'semantic segmentation'
+            elif dataset.return_segmentations and len(dataset.segmentation_labels_set) > 0:
+                return 'instance segmentation'
 
-        num_labels = len(dataset.frame_labels_set)  # FIXME: when not frame by frame
-        num_categories = len(dataset.segmentation_labels_set)
-        if num_categories == 0:
-            if dataset.num_labels == 1:
-                return 'binary classification'
-            elif dataset.num_labels > 1:
-                return 'multilabel classification'
-        elif num_categories == 1:
-            if num_labels == 0:
-                return 'multiclass classification'
-            return 'multi-task classification'
-        else:
-            return 'multi-task classification'
+            num_labels = len(dataset.frame_labels_set)  # FIXME: when not frame by frame
+            num_categories = len(dataset.segmentation_labels_set)
+            if num_categories == 0:
+                if num_labels == 1:
+                    return 'binary classification'
+                elif num_labels > 1:
+                    return 'multilabel classification'
+            elif num_categories == 1:
+                if num_labels == 0:
+                    return 'multiclass classification'
+                return 'multi-task classification'
+            else:
+                return 'multi-task classification'
+        except Exception as e:
+            _LOGGER.warning(f"Could not detect machine learning task: {e}")
 
         return 'unknown'
 

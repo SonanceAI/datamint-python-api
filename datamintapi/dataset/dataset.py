@@ -1,5 +1,5 @@
 from .base_dataset import DatamintBaseDataset
-from typing import Tuple, List, Optional, Callable, Any, Dict, Literal, Union
+from typing import List, Optional, Callable, Any, Dict, Literal, Union
 import torch
 from torch import Tensor
 import os
@@ -15,8 +15,6 @@ class DatamintDataset(DatamintBaseDataset):
     def __init__(self,
                  root: str,
                  project_name: str,
-                 dataset_name: str = None,
-                 version=None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,
@@ -30,11 +28,10 @@ class DatamintDataset(DatamintBaseDataset):
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
+                 discard_without_annotations: bool = False,
                  ):
         super().__init__(root=root,
                          project_name=project_name,
-                         dataset_name=dataset_name,
-                         version=version,
                          auto_update=auto_update,
                          api_key=api_key,
                          server_url=server_url,
@@ -42,6 +39,7 @@ class DatamintDataset(DatamintBaseDataset):
                          return_metainfo=return_metainfo,
                          return_frame_by_frame=return_frame_by_frame,
                          return_annotations=return_annotations,
+                         discard_without_annotations=discard_without_annotations,
                          )
         self.return_segmentations = return_segmentations
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
@@ -52,7 +50,10 @@ class DatamintDataset(DatamintBaseDataset):
         if return_segmentations == False and return_as_semantic_segmentation == True:
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
 
-    def _load_segmentations(self, annotations: List[Dict], img_shape) -> Tuple[Dict[str, List], Dict[str, List]]:
+        if semantic_seg_merge_strategy is not None and not return_as_semantic_segmentation:
+            raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
+
+    def _load_segmentations(self, annotations: list[dict], img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
         Load segmentations from annotations.
 
@@ -61,9 +62,9 @@ class DatamintDataset(DatamintBaseDataset):
             img_shape: shape of the image (#frames, C, H, W)
 
         Returns:
-            Tuple[Dict[str, List], Dict[str, List]]: a tuple of two dictionaries.
-                The first dictionary is author -> list of segmentations (tensors) of shape (#frames, H, W).
-                The second dictionary is author -> list of segmentation labels (tensors).
+            tuple[dict[str, list], dict[str, list]]: a tuple of two dictionaries.
+                The first dictionary is author -> list of #frames tensors, each tensor has shape (#instances_i, H, W).
+                The second dictionary is author -> list of #frames segmentation labels (tensors).
         """
         segmentations = {}
         seg_labels = {}
@@ -73,7 +74,7 @@ class DatamintDataset(DatamintBaseDataset):
             _, h, w = img_shape
             nframes = 1
         else:
-            assert len(img_shape) == 3, f"img_shape must have 3 dimensions, got {img_shape}"
+            assert len(img_shape) == 4, f"img_shape must have 4 dimensions, got {img_shape}"
             nframes, _, h, w = img_shape
 
         # Load segmentation annotations
@@ -89,7 +90,7 @@ class DatamintDataset(DatamintBaseDataset):
             # FIXME: avoid enforcing resizing the mask
             seg = (Image.open(segfilepath)
                    .convert('L')
-                   .resize((h, w), Image.NEAREST)
+                   .resize((w, h), Image.NEAREST)
                    )
             seg = np.array(seg)
 
@@ -162,7 +163,9 @@ class DatamintDataset(DatamintBaseDataset):
             segmentations = new_segmentations.float()
         return segmentations
 
-    def apply_semantic_seg_merge_strategy(self, segmentations: Dict[str, Tensor], nframes, h, w) -> Union[Tensor, Dict]:
+    def apply_semantic_seg_merge_strategy(self, segmentations: dict[str, Tensor],
+                                          nframes: int,
+                                          h, w) -> Tensor | dict[str, Tensor]:
         if self.semantic_seg_merge_strategy is None:
             return segmentations
         if len(segmentations) == 0:
@@ -171,12 +174,14 @@ class DatamintDataset(DatamintBaseDataset):
             segmentations[:, 0, :, :] = 1  # background
             return segmentations
         if self.semantic_seg_merge_strategy == 'union':
-            return self._apply_semantic_seg_merge_strategy_union(segmentations)
-        if self.semantic_seg_merge_strategy == 'intersection':
-            return self._apply_semantic_seg_merge_strategy_intersection(segmentations)
-        if self.semantic_seg_merge_strategy == 'mode':
-            return self._apply_semantic_seg_merge_strategy_mode(segmentations)
-        raise ValueError(f"Unknown semantic_seg_merge_strategy: {self.semantic_seg_merge_strategy}")
+            merged_segs = self._apply_semantic_seg_merge_strategy_union(segmentations)
+        elif self.semantic_seg_merge_strategy == 'intersection':
+            merged_segs = self._apply_semantic_seg_merge_strategy_intersection(segmentations)
+        elif self.semantic_seg_merge_strategy == 'mode':
+            merged_segs = self._apply_semantic_seg_merge_strategy_mode(segmentations)
+        else:
+            raise ValueError(f"Unknown semantic_seg_merge_strategy: {self.semantic_seg_merge_strategy}")
+        return merged_segs.to(torch.get_default_dtype())
 
     def _apply_semantic_seg_merge_strategy_union(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
         new_segmentations = torch.zeros_like(list(segmentations.values())[0])
@@ -197,7 +202,26 @@ class DatamintDataset(DatamintBaseDataset):
         new_segmentations = new_segmentations >= len(segmentations) / 2
         return new_segmentations
 
-    def __getitem__(self, index) -> Dict[str, Any]:
+    def __getitem__(self, index) -> dict[str, Any]:
+        """
+        Get the item at the given index.
+
+        Args:
+            index (int): Index of the item to return.
+
+        Returns:
+            dict[str, Any]: A dictionary with the following keys:
+
+            * 'image' (Tensor): Tensor of shape (C, H, W) or (N, C, H, W), depending on `self.return_frame_by_frame`.
+              If `self.return_as_semantic_segmentation` is True, the image is a tensor of shape (N, L, H, W) or (L, H, W),
+              where `L` is the number of segmentation labels + 1 (background): ``L=len(self.segmentation_labels_set)+1``.
+            * 'metainfo' (dict): Dictionary with metadata information.
+            * 'segmentations' (dict[str, list[Tensor]] or dict[str,Tensor] or Tensor): Segmentation masks,
+              depending on the configuration of parameters `self.return_segmentations`, `self.return_as_semantic_segmentation`, `self.return_frame_by_frame`, `self.semantic_seg_merge_strategy`.
+            * 'seg_labels' (dict[str, list[Tensor]] or Tensor): Segmentation labels with the same length as `segmentations`.
+            * 'frame_labels' (dict[str, Tensor]): Frame-level labels.
+            * 'image_labels' (dict[str, Tensor]): Image-level labels.
+        """
         item = super().__getitem__(index)
         img = item['image']
         metainfo = item['metainfo']
@@ -211,8 +235,10 @@ class DatamintDataset(DatamintBaseDataset):
         if img.ndim == 3:
             _, h, w = img.shape
             nframes = 1
-        else:
+        elif img.ndim == 4:
             nframes, _, h, w = img.shape
+        else:
+            raise ValueError(f"Image must have 3 or 4 dimensions, got {img.shape}")
 
         new_item = {
             'image': img,
@@ -229,12 +255,14 @@ class DatamintDataset(DatamintBaseDataset):
                             seglist[i] = self.mask_transform(seg)
 
             if self.return_as_semantic_segmentation:
-                sem_segmentations: Dict[str, torch.Tensor] = {}
+                sem_segmentations: dict[str, torch.Tensor] = {}
                 for author in segmentations.keys():
                     sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author],
                                                                               seg_labels[author])
                     segmentations[author] = None  # free memory
-                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations, nframes, h, w).to(torch.float32)
+                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations,
+                                                                       nframes,
+                                                                       h, w)
                 seg_labels = None
 
             if self.return_frame_by_frame:
@@ -261,7 +289,7 @@ class DatamintDataset(DatamintBaseDataset):
         new_item['frame_labels'] = framelabels
         new_item['image_labels'] = imagelabels
 
-        # FIXME: deal with multiple annotators
+        # FIXME: deal with multiple annotators in instance segmentation
 
         return new_item
 
@@ -312,6 +340,21 @@ class DatamintDataset(DatamintBaseDataset):
         return dict(frame_labels_byuser)
 
     def __repr__(self) -> str:
+        """
+        Example:
+            .. code-block:: python
+
+                print(dataset)
+
+            Output:
+
+            .. code-block:: text
+
+                Dataset DatamintDataset
+                    Number of datapoints: 3
+                    Root location: /home/user/.datamint/datasets
+
+        """
         super_repr = super().__repr__()
         body = []
         if self.image_transform is not None:
