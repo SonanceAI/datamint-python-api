@@ -9,7 +9,7 @@ include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10"
 numpy = "*"
 # exclude version 2.3.0 due to a bug in the library
 torch = ">=1.2.0, !=2.3.0"
@@ -29,6 +29,7 @@ opencv-python = ">=4.0.0"
 Deprecated = ">=1.2.0"
 pydantic = "^2.0.3"
 platformdirs = "^4.0.0"
+pandas = ">=2.0.0"
 # Extra dependencies for docs
 sphinx = { version = ">=5.0", optional = true }
 sphinx_rtd_theme = { version = ">=2.0.0", optional = true }
