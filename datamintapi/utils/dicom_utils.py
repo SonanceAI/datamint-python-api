@@ -1,3 +1,4 @@
+from pydicom.pixels import pixel_array
 import pydicom
 from pydicom.uid import generate_uid
 from typing import Sequence
@@ -8,6 +9,7 @@ from pathlib import Path
 from pydicom.misc import is_dicom as pydicom_is_dicom
 from io import BytesIO
 import os
+import numpy as np
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,3 +117,42 @@ def to_bytesio(ds: pydicom.Dataset, name: str) -> BytesIO:
     dicom_bytes.name = name
     dicom_bytes.mode = 'rb'
     return dicom_bytes
+
+
+def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarray:
+    """
+    Normalizes the shape of an array of images to (n, c, y, x)=(#slices, #channels, height, width).
+    It uses dicom.Rows, dicom.Columns, and other information to determine the shape.
+
+    Args:
+        dicom: A dicom with images of varying shapes.
+
+    Returns:
+        A numpy array of shape (n, c, y, x)=(#slices, #channels, height, width).
+    """
+    n = dicom.get('NumberOfFrames')
+    if index is None:
+        images = dicom.pixel_array
+    else:
+        if index is not None and index >= n:
+            raise ValueError(f"Index {index} is out of bounds. The number of frames is {n}.")
+        images = pixel_array(dicom, index=index)
+        n = 1
+    shape = images.shape
+
+    c = dicom.get('SamplesPerPixel')
+
+    # x=width, y=height
+    if images.ndim == 2:
+        # Single grayscale image (y, x)
+        # Reshape to (1, 1, y, x)
+        return images.reshape((1, 1) + images.shape)
+    elif images.ndim == 3:
+        # (n, y, x) or (y, x, c)
+        if shape[0] == 1 or (n is not None and n > 1):
+            # (n, y, x)
+            return images.reshape(shape[0], 1, shape[1], shape[2])
+        if shape[2] in (1, 3, 4) or (c is not None and c > 1):
+            # (y, x, c)
+            images = images.transpose(2, 0, 1)
+            return images.reshape(1, *images.shape)

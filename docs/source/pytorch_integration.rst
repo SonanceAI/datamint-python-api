@@ -9,7 +9,7 @@ Dataset
 -------
 
 Datamint provides a custom PyTorch dataset class that can be used to load data from the server in a PyTorch-friendly way.
-To use it, import the :py:class:`~datamintapi.dataset.DatamintDataset` class and create an instance of it, passing the necessary parameters.
+To use it, import the |DatamintDatasetClass| class and create an instance of it, passing the necessary parameters.
 
 .. code-block:: python
 
@@ -22,7 +22,7 @@ To use it, import the :py:class:`~datamintapi.dataset.DatamintDataset` class and
 
 and then use it in your PyTorch code as usual.
 
-Here is a complete example that inherits :py:class:`~datamintapi.dataset.DatamintDataset`:
+Here is a complete example that inherits |DatamintDatasetClass|:
 
 .. code-block:: python
 

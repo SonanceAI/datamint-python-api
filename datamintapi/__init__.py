@@ -4,8 +4,8 @@ Datamint API is a Python package that provides a simple interface to the Datamin
 TODO...
 """
 
-from .dataset import DatamintDataset as Dataset
-from .api_handler import APIHandler
+from .dataset.dataset import DatamintDataset as Dataset
+from .apihandler.api_handler import APIHandler
 from .experiment import Experiment
 import importlib.metadata
 

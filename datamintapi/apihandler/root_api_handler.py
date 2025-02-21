@@ -1,5 +1,6 @@
-from typing import Optional, IO, Sequence, Literal, Generator, TypeAlias, Dict, Tuple, Union, List
+from typing import Optional, IO, Sequence, Literal, Generator, Dict, Union, List
 import os
+import pydicom.data
 import pydicom.dataset
 from requests.exceptions import HTTPError
 import logging
@@ -15,6 +16,8 @@ import cv2
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamintapi import configs
 from .base_api_handler import BaseAPIHandler, DatamintException, validate_call, ResourceNotFoundError, ResourceFields, ResourceStatus
+from deprecated.sphinx import deprecated
+import json
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -47,7 +50,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            labels: list[str] = None,
+                                            tags: List[str] = None,
                                             mung_filename: Sequence[int] | Literal['all'] = None,
                                             channel: Optional[str] = None,
                                             session=None,
@@ -117,10 +120,10 @@ class RootAPIHandler(BaseAPIHandler):
             if modality is not None:
                 form.add_field('modality', modality)
             # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
-            if labels is not None and len(labels) > 0:
-                # comma separated list of labels
-                labels = ','.join([l.strip() for l in labels])
-                form.add_field('labels', labels)
+            if tags is not None and len(tags) > 0:
+                # comma separated list of tags
+                tags = ','.join([l.strip() for l in tags])
+                form.add_field('tags', tags)
 
             request_params = {
                 'method': 'POST',
@@ -148,7 +151,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
                                       on_error: Literal['raise', 'skip'] = 'raise',
-                                      labels=None,
+                                      tags=None,
                                       mung_filename: Sequence[int] | Literal['all'] = None,
                                       channel: Optional[str] = None,
                                       modality: Optional[str] = None,
@@ -171,7 +174,7 @@ class RootAPIHandler(BaseAPIHandler):
                         mimetype=mimetype,
                         anonymize=anonymize,
                         anonymize_retain_codes=anonymize_retain_codes,
-                        labels=labels,
+                        tags=tags,
                         session=session,
                         mung_filename=mung_filename,
                         channel=channel,
@@ -184,6 +187,7 @@ class RootAPIHandler(BaseAPIHandler):
                         if isinstance(names, dict):
                             names = [names]*len(files_path)
                         frame_indices = segfiles.get('frame_index', [None] * len(files_path))
+                        _LOGGER.debug(f"Segmentation files: {files_path}")
                         for f, name, frame_index in zip(files_path, names, frame_indices):
                             if f is not None:
                                 await self._upload_segmentations_async(rid,
@@ -197,12 +201,13 @@ class RootAPIHandler(BaseAPIHandler):
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_resources(self,
-                         files_path: str | IO | Sequence[str | IO],
+                         files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
                          mimetype: Optional[str] = None,
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels: Optional[Sequence[str]] = None,
+                         labels=None,
+                         tags: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] = None,
                          channel: Optional[str] = None,
                          publish: bool = False,
@@ -220,15 +225,20 @@ class RootAPIHandler(BaseAPIHandler):
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels (Sequence[str]): The labels to assign to the resources.
+            labels: 
+                .. deprecated:: 0.11.0
+                    Use `tags` instead.
+            tags (Optional[Sequence[str]]): The tags to add to the resources.
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the resource file.
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
             publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
             publish_to (Optional[str]): The project name or id to publish the resources to.
-                They will have the 'published' status and will be added to the dataset.
+                They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
-            segmentation_files (Optional[List]): The segmentation files to upload.
+            segmentation_files (Optional[List[Union[List[str], Dict]]]): The segmentation files to upload.
+            transpose_segmentation (bool): Whether to transpose the segmentation files or not.
+            modality (Optional[str]): The modality of the resources.
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
@@ -239,6 +249,8 @@ class RootAPIHandler(BaseAPIHandler):
 
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
+        if labels is not None and tags is None:
+            tags = labels
 
         files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
         if segmentation_files is not None:
@@ -259,7 +271,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             anonymize=anonymize,
                                             anonymize_retain_codes=anonymize_retain_codes,
                                             on_error=on_error,
-                                            labels=labels,
+                                            tags=tags,
                                             mung_filename=mung_filename,
                                             channel=channel,
                                             publish=publish,
@@ -369,7 +381,10 @@ class RootAPIHandler(BaseAPIHandler):
             raise e
 
     @staticmethod
-    def __process_files_parameter(file_path: str | IO | Sequence[str | IO]) -> Tuple[Sequence[str | IO], bool]:
+    def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset) -> tuple[Sequence[str | IO], bool]:
+        if isinstance(file_path, pydicom.dataset.Dataset):
+            file_path = to_bytesio(file_path, file_path.filename)
+
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 is_list = True
@@ -432,31 +447,38 @@ class RootAPIHandler(BaseAPIHandler):
 
     @validate_call
     def get_resources(self,
-                      status: ResourceStatus,
+                      status: Optional[ResourceStatus] = None,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels: Optional[Sequence[str]] = None,
+                      labels=None,
+                      tags: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
                       return_ids_only: bool = False,
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
-                      channel: Optional[str] = None
-                      ) -> Generator[dict, None, None]:
+                      channel: Optional[str] = None,
+                      project_id: Optional[str] = None,
+                      project_name: Optional[str] = None,
+                      filename: Optional[str] = None
+                      ) -> Generator[Dict, None, None]:
         """
         Iterates over resources with the specified filters.
         Filters can be combined to narrow down the search.
         It returns full information of the resources by default, but it can be configured to return only the ids with parameter `return_ids_only`.
 
         Args:
-            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published' or 'archived'.
+            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
             from_date (Optional[date]): The start date.
             to_date (Optional[date]): The end date.
-            labels (Optional[list[str]]): The labels to filter the resources.
+            labels: 
+                .. deprecated:: 0.11.0
+                    Use `tags` instead.
+            tags (Optional[list[str]]): The tags to filter the resources.
             modality (Optional[str]): The modality of the resources.
             mimetype (Optional[str]): The mimetype of the resources.
             return_ids_only (bool): Whether to return only the ids of the resources.
-            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~ResourceFields`.
+            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~.base_api_handler.ResourceFields`.
             order_ascending (Optional[bool]): Whether to order the resources in ascending order.
 
         Returns:
@@ -466,7 +488,11 @@ class RootAPIHandler(BaseAPIHandler):
             >>> for resource in api_handler.get_resources(status='inbox'):
             >>>     print(resource)
         """
-        # check if status is valid
+        if labels is not None and tags is None:
+            tags = labels
+
+        if project_id is not None and project_name is not None:
+            _LOGGER.warning("Both project_id and project_name were provided.")
 
         # Convert datetime objects to ISO format
         if from_date:
@@ -478,18 +504,27 @@ class RootAPIHandler(BaseAPIHandler):
         payload = {
             "from": from_date,
             "to": to_date,
+            "status": status if status is not None else "",
             "modality": modality,
-            "status": status,
             "mimetype": mimetype,
             "ids": return_ids_only,
             "order_field": order_field,
             "order_by_asc": order_ascending,
-            "channel_name": channel
+            "channel_name": channel,
+            "projectId": project_id,
+            "filename": filename,
         }
+        if project_name is not None:
+            payload["project"] = json.dumps({'items': [project_name], 'filterType': 'union'})
 
-        if labels is not None:
-            for i, label in enumerate(labels):
-                payload[f'labels[{i}]'] = label
+        if tags is not None:
+            if isinstance(tags, str):
+                tags = [tags]
+            tags_filter = {
+                "items": tags,
+                "filterType": "union"
+            }
+            payload['tags'] = json.dumps(tags_filter)
 
         # Remove None values from the payload.
         # Maybe it is not necessary.
@@ -537,15 +572,15 @@ class RootAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params,
                                                 return_field='data')
 
-    def set_resource_labels(self, resource_id: str,
-                            labels: Sequence[str] = None,
-                            frame_labels: Sequence[Dict] = None
-                            ):
-        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/labels"
+    def set_resource_tags(self, resource_id: str,
+                          tags: Sequence[str] = None,
+                          frame_labels: Sequence[Dict] = None
+                          ):
+        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/tags"
         data = {}
 
-        if labels is not None:
-            data['labels'] = labels
+        if tags is not None:
+            data['tags'] = tags
         if frame_labels is not None:
             data['frame_labels'] = frame_labels
 
@@ -666,6 +701,7 @@ class RootAPIHandler(BaseAPIHandler):
             if e.response is not None and e.response.status_code == 500:
                 raise ResourceNotFoundError('dataset', {'dataset_id': dataset_id})
             raise e
+
     def get_users(self) -> list[dict]:
         """
         Get all users.
@@ -731,3 +767,79 @@ class RootAPIHandler(BaseAPIHandler):
             'url': f'{self.root_url}/projects'
         }
         return self._run_request(request_params).json()['data']
+
+    @deprecated(version='0.12.0', reason="Use :meth:`~get_resources` with project_id parameter instead.")
+    def get_resources_by_project(self, project_id: str) -> Generator[Dict, None, None]:
+        """
+        Get the resources by project.
+
+        Args:
+            project_id (str): The project id.
+
+        Returns:
+            List[Dict]: The list of resources.
+
+        Example:
+            >>> api_handler.get_resources_by_project('project_id')
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects/{project_id}/resources'
+        }
+        return self._run_pagination_request(request_params)
+
+    def create_project(self,
+                       name: str,
+                       description: str,
+                       resources_ids: List[str],
+                       is_active_learning: bool = False) -> dict:
+        """
+        Create a new project.
+
+        Args:
+            name (str): The name of the project.
+
+        Returns:
+            dict: The created project.
+
+        Raises:
+            DatamintException: If the project could not be created.
+        """
+        request_args = {
+            'url': self._get_endpoint_url('projects'),
+            'method': 'POST',
+            'json': {'name': name,
+                     'is_active_learning': is_active_learning,
+                     'resource_ids': resources_ids,
+                     'annotation_set': {
+                         "annotators": [],
+                         "resource_ids": resources_ids,
+                         "annotations": [],
+                         "frame_labels": [],
+                         "image_labels": []
+                     },
+                     'description': description}
+        }
+        response = self._run_request(request_args)
+        self._check_errors_response_json(response)
+        return response.json()
+
+    def delete_project(self, project_id: str) -> None:
+        """
+        Delete a project by its id.
+
+        Args:
+            project_id (str): The project id.
+
+        Raises:
+            ResourceNotFoundError: If the project does not exists.
+        """
+        url = f"{self._get_endpoint_url('projects')}/{project_id}"
+        request_params = {'method': 'DELETE',
+                          'url': url
+                          }
+        try:
+            self._run_request(request_params)
+        except ResourceNotFoundError as e:
+            e.set_params('project', {'project_id': project_id})
+            raise e
