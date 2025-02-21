@@ -1,7 +1,7 @@
 import threading
 import queue
 import json
-from datamintapi.base_api_handler import BaseAPIHandler
+from datamintapi.apihandler.base_api_handler import BaseAPIHandler
 import logging
 import atexit
 import inspect
