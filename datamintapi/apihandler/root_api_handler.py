@@ -140,12 +140,15 @@ class RootAPIHandler(BaseAPIHandler):
             resp_data = await self._run_request_async(request_params, session)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
-            _LOGGER.info(f"Response on uploading {file_path}: {resp_data}")
+            _LOGGER.info(f"Response on uploading {name}: {resp_data}")
 
-            _USER_LOGGER.info(f'"{file_path}" uploaded')
+            _USER_LOGGER.info(f'"{name}" uploaded')
             return resp_data['id']
         except Exception as e:
-            _LOGGER.error(f"Error uploading {file_path}: {e}")
+            if 'name' in locals():
+                _LOGGER.error(f"Error uploading {name}: {e}")
+            else:
+                _LOGGER.error(f"Error uploading {file_path}: {e}")
             raise e
         finally:
             f.close()
