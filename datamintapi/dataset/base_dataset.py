@@ -526,7 +526,14 @@ class DatamintBaseDataset:
 
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16
-            img = (img//256).astype(np.uint8)
+            if getattr(self, '__logged_uint16_conversion', False) == False:
+                _LOGGER.info("Original image is uint16, converting to uint8")
+                self.__logged_uint16_conversion = True
+            
+            # min-max normalization
+            img = img.astype(np.float32)
+            img = (img - img.min()) / (img.max() - img.min()) * 255
+            img = img.astype(np.uint8)
 
         img = torch.from_numpy(img).contiguous()
         if isinstance(img, torch.ByteTensor):
