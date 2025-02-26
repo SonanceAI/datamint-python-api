@@ -1,0 +1,96 @@
+import matplotlib.pyplot as plt
+import numpy as np
+from torchvision.transforms import functional as F
+from torch import Tensor
+import torchvision.utils
+import torch
+import colorsys
+
+
+def show(imgs: list[Tensor] | Tensor, figsize: tuple[int, int] = None):
+    if not isinstance(imgs, list):
+        imgs = [imgs]
+    if figsize is not None:
+        fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
+    else:
+        fig, axs = plt.subplots(ncols=len(imgs), squeeze=False)
+    for i, img in enumerate(imgs):
+        img = img.detach()
+        img = F.to_pil_image(img)
+        axs[0, i].imshow(np.asarray(img))
+        axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+
+_COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255),
+           (200, 128, 0), (128, 200, 0), (0, 128, 200), (200, 0, 128), (128, 0, 200), (0, 200, 128)]
+
+
+def generate_color_palette(num_objects: int) -> list[tuple[int, int, int]]:
+    """
+    Generate a list of colors for segmentation masks.
+
+    Args:
+        num_objects (int): Number of objects to generate colors for.
+
+    Returns:
+        List of RGB colors.
+    """
+    if num_objects <= 0:
+        raise ValueError("Number of objects must be greater than 0.")
+
+    colors = _COLORS[:num_objects]
+    if len(colors) == num_objects:
+        return colors
+
+    num_objects -= len(colors)
+
+    # generate random colors
+    for _ in range(num_objects):
+        hue = np.random.rand()
+        rgb = colorsys.hsv_to_rgb(hue, 0.9, 0.9)
+        colors.append(tuple(int(c * 255) for c in rgb))
+
+    return colors
+
+
+@torch.no_grad()
+def draw_masks(
+    image: Tensor,
+    masks: Tensor,
+    alpha: float = 0.5,
+    colors: list[str | tuple[int, int, int]] | str | tuple[int, int, int] | None = None,
+) -> Tensor:
+    """
+    Draws segmentation masks on given RGB image.
+    This is different from `torchvision.utils.draw_segmentation_masks` as overlapping masks are blended together correctly.
+    The image values should be uint8 in [0, 255] or float in [0, 1].
+
+    Args:
+        image (Tensor): Tensor of shape (3, H, W) and dtype uint8 or float.
+        masks (Tensor): Tensor of shape (num_masks, H, W) or (H, W) and dtype bool.
+        alpha (float): Float number between 0 and 1 denoting the transparency of the masks.
+            0 means full transparency, 1 means no transparency.
+        colors (color or list of colors, optional): List containing the colors
+            of the masks or single color for all masks. The color can be represented as
+            PIL strings e.g. "red" or "#FF00FF", or as RGB tuples e.g. ``(240, 10, 157)``.
+            By default, random colors are generated for each mask.
+
+    Returns:
+        img (Tensor[C, H, W]): Image Tensor, with segmentation masks drawn on top.
+    """
+
+    if masks.ndim == 2:
+        return torchvision.utils.draw_segmentation_masks(image=image,
+                                                         masks=masks,
+                                                         alpha=alpha,
+                                                         colors=colors)
+
+    if colors is None:
+        colors = generate_color_palette(len(masks))
+
+    for color, mask in zip(colors, masks):
+        image = torchvision.utils.draw_segmentation_masks(image=image,
+                                                          masks=mask,
+                                                          alpha=alpha,
+                                                          colors=color)
+    return image
