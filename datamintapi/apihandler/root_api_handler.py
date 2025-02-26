@@ -20,6 +20,7 @@ from .base_api_handler import BaseAPIHandler, DatamintException, validate_call, 
 from deprecated.sphinx import deprecated
 import json
 import itertools
+from tqdm.auto import tqdm
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -866,3 +867,29 @@ class RootAPIHandler(BaseAPIHandler):
         except ResourceNotFoundError as e:
             e.set_params('project', {'project_id': project_id})
             raise e
+
+    def download_project(self, project_id: str, outpath: str) -> None:
+        """
+        Download a project by its id.
+
+        Args:
+            project_id (str): The project id.
+            outpath (str): The path to save the project.
+
+        Example:
+            >>> api_handler.download_project('project_id', 'path/to/project.zip')
+        """
+        url = f"{self._get_endpoint_url('projects')}/{project_id}/annotated_dataset"
+        request_params = {'method': 'GET',
+                          'url': url,
+                          'stream': True
+                          }
+        response = self._run_request(request_params)
+        total_size = int(response.headers.get('content-length', 0))
+        if total_size == 0:
+            total_size = None
+        with tqdm(total=total_size, unit='B', unit_scale=True) as progress_bar:
+            with open(outpath, 'wb') as file:
+                for data in response.iter_content(1024):
+                    progress_bar.update(len(data))
+                    file.write(data)
