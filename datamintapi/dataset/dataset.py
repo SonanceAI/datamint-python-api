@@ -263,12 +263,14 @@ class DatamintDataset(DatamintBaseDataset):
                 segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations,
                                                                        nframes,
                                                                        h, w)
+                # In semantic segmentation, seg_labels is not needed
                 seg_labels = None
 
             if self.return_frame_by_frame:
                 if isinstance(segmentations, dict):  # author->segmentations format
                     segmentations = {k: v[0] for k, v in segmentations.items()}
-                    seg_labels = {k: v[0] for k, v in seg_labels.items()}
+                    if seg_labels is not None:
+                        seg_labels = {k: v[0] for k, v in seg_labels.items()}
                 else:
                     # segmentations is a tensor
                     segmentations = segmentations[0]
