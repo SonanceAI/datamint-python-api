@@ -108,14 +108,14 @@ class DatamintBaseDataset:
             if self.api_key is None:
                 raise DatamintDatasetException("API key is required to download the dataset.")
             _LOGGER.info(f"No data found at {self.dataset_dir}. Downloading...")
-            self.download()
+            self.download_project()
 
         # Loads the metadata
         if not hasattr(self, 'metainfo'):
             with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
                 self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
-        
+
         # filter out images with no annotations.
         if self.discard_without_annotations:
             original_count = len(self.images_metainfo)
@@ -373,6 +373,8 @@ class DatamintBaseDataset:
 
     def _run_request(self, session, request_args) -> requests.Response:
         response = session.request(**request_args)
+        if response.status_code == 400:
+            _LOGGER.error(f"Bad request: {response.text}")
         response.raise_for_status()
         return response
 
@@ -385,6 +387,7 @@ class DatamintBaseDataset:
             'headers': {'apikey': self.api_key},
             'stream': True
         }
+        _LOGGER.debug(f"Getting jwt token for dataset {dataset_id}...")
         response = self._run_request(session, request_params)
         progress_bar = None
         number_processed_images = 0
@@ -406,6 +409,7 @@ class DatamintBaseDataset:
                     continue
                 dataline = yaml.safe_load(line)['data']
                 if 'zip' in dataline:
+                    _LOGGER.debug(f"Got jwt token for dataset {dataset_id}")
                     return dataline['zip']  # Function normally ends here
                 elif 'processedImages' in dataline:
                     if progress_bar is None:
@@ -433,7 +437,7 @@ class DatamintBaseDataset:
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
-    def download(self):
+    def download_dataset(self):
         """
         Downloads the dataset from the Sonance API into the root directory `self.root`.
 
@@ -458,11 +462,13 @@ class DatamintBaseDataset:
             }
             response = self._run_request(session, request_params)
             total_size = int(response.headers.get('content-length', 0))
+            _LOGGER.debug(f'Downloading dataset... Total size: {total_size}')
             with tqdm(total=total_size, unit='iB', unit_scale=True) as progress_bar:
                 with open(self.dataset_zippath, 'wb') as file:
                     for data in response.iter_content(1024):
                         progress_bar.update(len(data))
                         file.write(data)
+            _LOGGER.debug(f"Downloaded dataset")
             if total_size != 0 and progress_bar.n != total_size:
                 raise DatamintDatasetException("Download failed.")
 
@@ -473,6 +479,34 @@ class DatamintBaseDataset:
                             self.dataset_dir,
                             remove_finished=True
                             )
+        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
+            self.metainfo = json.load(file)
+        if 'updated_at' not in self.metainfo:
+            self.metainfo['updated_at'] = self.last_updaded_at
+        # save the updated_at date
+        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
+            json.dump(self.metainfo, file)
+
+    def download_project(self):
+        from torchvision.datasets.utils import extract_archive
+
+        dataset_info = self._get_datasetinfo()
+        self.dataset_id = dataset_info['id']
+        self.last_updaded_at = dataset_info['updated_at']
+
+        self.api_handler.download_project(self.project_info['id'], self.dataset_zippath)
+        _LOGGER.debug(f"Downloaded dataset")
+        downloaded_size = os.path.getsize(self.dataset_zippath)
+        if downloaded_size == 0:
+            raise DatamintDatasetException("Download failed.")
+
+        if os.path.exists(self.dataset_dir):
+            _LOGGER.info(f"Deleting existing dataset directory: {self.dataset_dir}")
+            shutil.rmtree(self.dataset_dir)
+        extract_archive(self.dataset_zippath,
+                        self.dataset_dir,
+                        remove_finished=True
+                        )
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
             self.metainfo = json.load(file)
         if 'updated_at' not in self.metainfo:
@@ -578,7 +612,7 @@ class DatamintBaseDataset:
     def _check_version(self):
         metainfo_path = os.path.join(self.dataset_dir, 'dataset.json')
         if not os.path.exists(metainfo_path):
-            self.download()
+            self.download_project()
             return
         with open(metainfo_path, 'r') as file:
             local_dataset_info = json.load(file)
@@ -598,7 +632,7 @@ class DatamintBaseDataset:
                 f"A newer version of the dataset is available. Your version: {local_updated_at}." +
                 f" Last version: {server_updated_at}."
             )
-            self.download()
+            self.download_project()
         _LOGGER.info('Local version is up to date with the latest version.')
 
     def __add__(self, other):
