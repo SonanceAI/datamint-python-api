@@ -45,9 +45,12 @@ class DatamintBaseDataset:
 
     """
 
+    DATAMINT_DEFAULT_DIR = ".datamint"
+    DATAMINT_DATASETS_DIR = "datasets"
+
     def __init__(self,
-                 root: str,
                  project_name: str,
+                 root: str | None = None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,
@@ -62,12 +65,17 @@ class DatamintBaseDataset:
 
         self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
         self.server_url = self.api_handler.root_url
-        if isinstance(root, str):
+        if root is None:
+            # store them in the home directory
+            root = os.path.join(os.path.expanduser("~"),
+                                DatamintBaseDataset.DATAMINT_DEFAULT_DIR)
+            root = os.path.join(root, DatamintBaseDataset.DATAMINT_DATASETS_DIR)
+            if not os.path.exists(root):
+                os.makedirs(root)
+        elif isinstance(root, str):
             root = os.path.expanduser(root)
-        if not os.path.isdir(root):
-            raise NotADirectoryError(f"Root directory not found: {root}")
-
-        self.root = root
+            if not os.path.isdir(root):
+                raise NotADirectoryError(f"Root directory not found: {root}")
 
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
@@ -529,7 +537,7 @@ class DatamintBaseDataset:
             if getattr(self, '__logged_uint16_conversion', False) == False:
                 _LOGGER.info("Original image is uint16, converting to uint8")
                 self.__logged_uint16_conversion = True
-            
+
             # min-max normalization
             img = img.astype(np.float32)
             img = (img - img.min()) / (img.max() - img.min()) * 255

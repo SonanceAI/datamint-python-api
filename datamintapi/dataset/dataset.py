@@ -13,8 +13,8 @@ _LOGGER = logging.getLogger(__name__)
 
 class DatamintDataset(DatamintBaseDataset):
     def __init__(self,
-                 root: str,
                  project_name: str,
+                 root: str | None = None,
                  auto_update: bool = True,
                  api_key: Optional[str] = None,
                  server_url: Optional[str] = None,

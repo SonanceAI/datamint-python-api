@@ -147,7 +147,7 @@ class Experiment:
             # store them in the home directory
             dataset_dir = os.path.join(os.path.expanduser("~"),
                                        Experiment.DATAMINT_DEFAULT_DIR)
-        dataset_dir = os.path.join(dataset_dir, Experiment.DATAMINT_DATASETS_DIR)
+            dataset_dir = os.path.join(dataset_dir, Experiment.DATAMINT_DATASETS_DIR)
 
         if not os.path.exists(dataset_dir):
             os.makedirs(dataset_dir)
