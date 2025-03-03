@@ -569,3 +569,21 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         resp = self._run_request(request_params)
         return resp.content
+
+    def set_annotation_status(self,
+                              project_id: str,
+                              resource_id: str,
+                              status: Literal['opened', 'annotated', 'closed']
+                              ):
+
+        if status not in ['opened', 'annotated', 'closed']:
+            raise ValueError("status must be one of ['opened', 'annotated', 'closed']")
+        request_params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/projects/{project_id}/resources/{resource_id}/status',
+            'json': {
+                'status': status
+            }
+        }
+        resp = self._run_request(request_params)
+        self._check_errors_response_json(resp)

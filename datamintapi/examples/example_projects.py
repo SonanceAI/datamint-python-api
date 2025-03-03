@@ -51,6 +51,9 @@ class ProjectMR:
         api.upload_segmentations(resid, np.array(img),
                                  name='object1', frame_index=1,
                                  worklist_id=proj_info['worklist_id'])
+        api.set_annotation_status(project_id=proj_id,
+                                  resource_id=resid,
+                                  status='closed')
 
     @staticmethod
     def create(project_name: str = 'Example Project MR',
