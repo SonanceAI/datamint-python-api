@@ -79,6 +79,13 @@ def draw_masks(
         img (Tensor[C, H, W]): Image Tensor, with segmentation masks drawn on top.
     """
 
+    if image.ndim == 3 and image.shape[0] == 1:
+        # convert to RGB
+        image = image.expand(3, -1, -1)
+
+    if masks.dtype != torch.bool:
+        masks = masks.bool()
+
     if masks.ndim == 2:
         return torchvision.utils.draw_segmentation_masks(image=image,
                                                          masks=masks,
