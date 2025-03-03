@@ -40,6 +40,10 @@ class AnnotationAPIHandler(BaseAPIHandler):
     def _generate_segmentations_ios(file_path: str | np.ndarray,
                                     transpose_segmentation: bool = False) -> tuple[int, Generator[BinaryIO, None, None]]:
         _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
+
+        if not isinstance(file_path, (str, np.ndarray)):
+            raise ValueError(f"Unsupported file type: {type(file_path)}")
+
         if isinstance(file_path, np.ndarray):
             segs_imgs = file_path  # (#frames, height, width) or (height, width)
             if transpose_segmentation:

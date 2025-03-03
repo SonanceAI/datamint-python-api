@@ -380,7 +380,31 @@ class RootAPIHandler(BaseAPIHandler):
 
         self._run_request(params)
 
-    def get_project_by_name(self, project_name: str) -> Dict:
+    def get_project_by_id(self, project_id: str) -> dict:
+        """
+        Get a project by its id.
+
+        Args:
+            project_id (str): The project id.
+
+        Returns:
+            dict: The project information.
+
+        Raises:
+            ResourceNotFoundError: If the project does not exists.
+        """
+        try:
+            request_params = {
+                'method': 'GET',
+                'url': f'{self.root_url}/projects/{project_id}',
+            }
+            return self._run_request(request_params).json()
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('project', {'project_id': project_id})
+            raise e
+
+    def get_project_by_name(self, project_name: str) -> dict:
         """
         Get a project by its name.
 
