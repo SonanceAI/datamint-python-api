@@ -578,7 +578,7 @@ class Experiment:
 
         params = dict(project_name=self.project_name)
 
-        dataset = DatamintDataset(self.dataset_dir,
+        dataset = DatamintDataset(root=self.dataset_dir,
                                   api_key=self.apihandler.api_key,
                                   server_url=self.apihandler.root_url,
                                   **params,

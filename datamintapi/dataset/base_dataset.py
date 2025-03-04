@@ -76,6 +76,8 @@ class DatamintBaseDataset:
             root = os.path.expanduser(root)
             if not os.path.isdir(root):
                 raise NotADirectoryError(f"Root directory not found: {root}")
+            
+        self.root = root
 
         self.return_dicom = return_dicom
         self.return_metainfo = return_metainfo
