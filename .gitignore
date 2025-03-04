@@ -102,3 +102,14 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
+
+# log files
+*.log
+logs/
+junit/
+
+# dev files and folders
+dev/
+
+# vscode
+.vscode/
