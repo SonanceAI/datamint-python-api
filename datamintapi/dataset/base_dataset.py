@@ -17,6 +17,8 @@ from datamintapi.apihandler.base_api_handler import DatamintException
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
 from datamintapi.utils.io_utils import read_array_normalized
+from deprecated import deprecated
+from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -447,6 +449,7 @@ class DatamintBaseDataset:
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
+    @deprecated(reason="Use `download_project` instead.")
     def download_dataset(self):
         """
         Downloads the dataset from the Sonance API into the root directory `self.root`.
@@ -521,6 +524,15 @@ class DatamintBaseDataset:
             self.metainfo = json.load(file)
         if 'updated_at' not in self.metainfo:
             self.metainfo['updated_at'] = self.last_updaded_at
+        else:
+            # if self.last_updated_at is newer than the one in the dataset, update it
+            try:
+                if datetime.fromisoformat(self.metainfo['updated_at']) < datetime.fromisoformat(self.last_updaded_at):
+                    _LOGGER.debug(f"Inconsistent updated_at dates detected. Fixing it to {self.last_updaded_at}")
+                    self.metainfo['updated_at'] = self.last_updaded_at
+            except Exception as e:
+                _LOGGER.warning(f"Failed to parse updated_at date: {e}")
+
         # save the updated_at date
         with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
             json.dump(self.metainfo, file)
