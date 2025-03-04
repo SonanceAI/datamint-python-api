@@ -64,10 +64,10 @@ class DatamintDataset(DatamintBaseDataset):
     def _should_include_annotator(self, annotator_id: str) -> bool:
         """
         Check if an annotator should be included based on the filtering settings.
-        
+
         Args:
             annotator_id: The ID of the annotator to check
-            
+
         Returns:
             bool: True if the annotator should be included, False otherwise
         """
@@ -109,11 +109,11 @@ class DatamintDataset(DatamintBaseDataset):
                 _LOGGER.warning(f"Segmentation annotation without file in annotations {ann}")
                 continue
             author = ann['added_by']
-            
+
             # Skip if annotator should be filtered out
             if not self._should_include_annotator(author):
                 continue
-                
+
             segfilepath = ann['file']  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
             # FIXME: avoid enforcing resizing the mask
@@ -325,8 +325,8 @@ class DatamintDataset(DatamintBaseDataset):
         return new_item
 
     def _convert_labels_annotations(self,
-                                    annotations: List[Dict],
-                                    num_frames: int = None) -> Dict[str, torch.Tensor]:
+                                    annotations: list[dict],
+                                    num_frames: int = None) -> dict[str, torch.Tensor]:
         """
         Converts the annotations, of the same type and scope, to tensor of shape (num_frames, num_labels)
         for each annotator.
@@ -348,18 +348,20 @@ class DatamintDataset(DatamintBaseDataset):
         if num_frames is not None and num_frames > 1 and self.return_frame_by_frame:
             raise ValueError("num_frames must be 1 if return_frame_by_frame is True")
 
-        frame_labels_byuser = defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
+        frame_labels_byuser = {} #defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
         if len(annotations) == 0:
             return frame_labels_byuser
         for ann in annotations:
             user_id = ann['added_by']
-            
+
             # Skip if annotator should be filtered out
             if not self._should_include_annotator(user_id):
                 continue
-                
+
             frame_idx = ann.get('index', None)
 
+            if user_id not in frame_labels_byuser.keys():
+                frame_labels_byuser[user_id] = torch.zeros(size=labels_ret_size, dtype=torch.int32)
             labels_onehot_i = frame_labels_byuser[user_id]
             code = label2code[ann['name']]
             if frame_idx is None:
