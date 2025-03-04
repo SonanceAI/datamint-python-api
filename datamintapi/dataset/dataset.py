@@ -29,6 +29,9 @@ class DatamintDataset(DatamintBaseDataset):
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  discard_without_annotations: bool = False,
+                 # annotator filtering parameters
+                 include_annotators: Optional[List[str]] = None,
+                 exclude_annotators: Optional[List[str]] = None,
                  ):
         super().__init__(root=root,
                          project_name=project_name,
@@ -46,12 +49,33 @@ class DatamintDataset(DatamintBaseDataset):
         self.image_transform = image_transform
         self.mask_transform = mask_transform
         self.semantic_seg_merge_strategy = semantic_seg_merge_strategy
+        self.include_annotators = include_annotators
+        self.exclude_annotators = exclude_annotators
 
         if return_segmentations == False and return_as_semantic_segmentation == True:
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
 
         if semantic_seg_merge_strategy is not None and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
+
+        if include_annotators is not None and exclude_annotators is not None:
+            raise ValueError("Cannot set both include_annotators and exclude_annotators at the same time")
+
+    def _should_include_annotator(self, annotator_id: str) -> bool:
+        """
+        Check if an annotator should be included based on the filtering settings.
+        
+        Args:
+            annotator_id: The ID of the annotator to check
+            
+        Returns:
+            bool: True if the annotator should be included, False otherwise
+        """
+        if self.include_annotators is not None:
+            return annotator_id in self.include_annotators
+        if self.exclude_annotators is not None:
+            return annotator_id not in self.exclude_annotators
+        return True
 
     def _load_segmentations(self, annotations: list[dict], img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
@@ -85,6 +109,11 @@ class DatamintDataset(DatamintBaseDataset):
                 _LOGGER.warning(f"Segmentation annotation without file in annotations {ann}")
                 continue
             author = ann['added_by']
+            
+            # Skip if annotator should be filtered out
+            if not self._should_include_annotator(author):
+                continue
+                
             segfilepath = ann['file']  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
             # FIXME: avoid enforcing resizing the mask
@@ -324,6 +353,11 @@ class DatamintDataset(DatamintBaseDataset):
             return frame_labels_byuser
         for ann in annotations:
             user_id = ann['added_by']
+            
+            # Skip if annotator should be filtered out
+            if not self._should_include_annotator(user_id):
+                continue
+                
             frame_idx = ann.get('index', None)
 
             labels_onehot_i = frame_labels_byuser[user_id]
@@ -363,6 +397,10 @@ class DatamintDataset(DatamintBaseDataset):
             body += [repr(self.image_transform)]
         if self.mask_transform is not None:
             body += [repr(self.mask_transform)]
+        if self.include_annotators is not None:
+            body += [f"Including only annotators: {self.include_annotators}"]
+        if self.exclude_annotators is not None:
+            body += [f"Excluding annotators: {self.exclude_annotators}"]
         if len(body) == 0:
             return super_repr
         lines = [" " * 4 + line for line in body]
