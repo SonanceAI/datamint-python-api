@@ -30,6 +30,22 @@ class DatamintDatasetException(DatamintException):
 class DatamintBaseDataset:
     """
     Class to download and load datasets from the Datamint API.
+
+    Args:
+        root: Root directory of dataset where data already exists or will be downloaded.
+        project_name: Name of the project to download.
+        auto_update: If True, the dataset will be checked for updates and downloaded if necessary.
+        api_key: API key to access the Datamint API. If not provided, it will look for the
+            environment variable 'DATAMINT_API_KEY'. Not necessary if
+            you don't want to download/update the dataset.
+        return_dicom: If True, the DICOM object will be returned, if the image is a DICOM file.
+        return_metainfo: If True, the metainfo of the image will be returned.
+        return_annotations: If True, the annotations of the image will be returned.
+        return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
+        discard_without_annotations: If True, images without annotations will be discarded.
+        all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
+        server_url: URL of the Datamint server. If not provided, it will use the default server.
+
     """
 
     DATAMINT_DEFAULT_DIR = ".datamint"
@@ -48,22 +64,6 @@ class DatamintBaseDataset:
                  discard_without_annotations: bool = False,
                  all_annotations: bool = False
                  ):
-        """
-        Args:
-            root: Root directory of dataset where data already exists or will be downloaded.
-            project_name: Name of the project to download.
-            auto_update: If True, the dataset will be checked for updates and downloaded if necessary.
-            api_key: API key to access the Datamint API. If not provided, it will look for the
-                environment variable 'DATAMINT_API_KEY'. Not necessary if
-                you don't want to download/update the dataset.
-            return_dicom: If True, the DICOM object will be returned, if the image is a DICOM file.
-            return_metainfo: If True, the metainfo of the image will be returned.
-            return_annotations: If True, the annotations of the image will be returned.
-            return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
-            discard_without_annotations: If True, images without annotations will be discarded.
-            all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
-            server_url: URL of the Datamint server. If not provided, it will use the default server.
-        """
         if project_name is None:
             raise ValueError("project_name is required.")
 

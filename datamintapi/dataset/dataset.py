@@ -1,17 +1,48 @@
 from .base_dataset import DatamintBaseDataset
-from typing import List, Optional, Callable, Any, Dict, Literal, Union
+from typing import List, Optional, Callable, Any, Dict, Literal
 import torch
 from torch import Tensor
 import os
 import numpy as np
 import logging
 from PIL import Image
-from collections import defaultdict
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class DatamintDataset(DatamintBaseDataset):
+    """
+    This Dataset class extends the `DatamintBaseDataset` class to be easily used with PyTorch.
+    In addition to that, it has functionality to better process annotations and segmentations.
+
+    .. note:: 
+        Import using ``from datamintapi import Dataset``.
+
+    Args:
+        root: Root directory of dataset where data already exists or will be downloaded.
+        project_name: Name of the project to download.
+        auto_update: If True, the dataset will be checked for updates and downloaded if necessary.
+        api_key: API key to access the Datamint API. If not provided, it will look for the
+            environment variable 'DATAMINT_API_KEY'. Not necessary if
+            you don't want to download/update the dataset.
+        return_dicom: If True, the DICOM object will be returned, if the image is a DICOM file.
+        return_metainfo: If True, the metainfo of the image will be returned.
+        return_annotations: If True, the annotations of the image will be returned.
+        return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
+        discard_without_annotations: If True, images without annotations will be discarded.
+        all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
+        server_url: URL of the Datamint server. If not provided, it will use the default server.
+        return_segmentations: If True (default), the segmentations of the image will be returned in the 'segmentations' key.
+        return_as_semantic_segmentation: If True, the segmentations will be returned as semantic segmentation.
+        image_transform: A function to transform the image.
+        mask_transform: A function to transform the mask.
+        semantic_seg_merge_strategy: If not None, the segmentations will be merged using this strategy.
+            Possible values are 'union', 'intersection', 'mode'.
+        include_annotators: List of annotators to include. If None, all annotators will be included. See parameter ``exclude_annotators``.
+        exclude_annotators: List of annotators to exclude. If None, no annotators will be excluded. See parameter ``include_annotators``.
+        all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
+    """
+
     def __init__(self,
                  project_name: str,
                  root: str | None = None,
@@ -30,8 +61,8 @@ class DatamintDataset(DatamintBaseDataset):
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  discard_without_annotations: bool = False,
                  # annotator filtering parameters
-                 include_annotators: Optional[List[str]] = None,
-                 exclude_annotators: Optional[List[str]] = None,
+                 include_annotators: Optional[list[str]] = None,
+                 exclude_annotators: Optional[list[str]] = None,
                  all_annotations: bool = False
                  ):
         super().__init__(root=root,
@@ -350,7 +381,7 @@ class DatamintDataset(DatamintBaseDataset):
         if num_frames is not None and num_frames > 1 and self.return_frame_by_frame:
             raise ValueError("num_frames must be 1 if return_frame_by_frame is True")
 
-        frame_labels_byuser = {} #defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
+        frame_labels_byuser = {}  # defaultdict(lambda: torch.zeros(size=labels_ret_size, dtype=torch.int32))
         if len(annotations) == 0:
             return frame_labels_byuser
         for ann in annotations:
