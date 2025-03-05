@@ -59,6 +59,7 @@ typehints_fully_qualified = False
 always_document_param_types = True
 always_use_bars_union = True
 ##########
+autodoc_inherit_docstrings = True
 
 autosummary_imported_members = True  # Also documents imports in __init__.py
 
