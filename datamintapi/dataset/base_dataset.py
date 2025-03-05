@@ -546,6 +546,9 @@ class DatamintBaseDataset:
             except Exception as e:
                 _LOGGER.warning(f"Failed to parse updated_at date: {e}")
 
+        # Add all_annotations to the metadata
+        self.metainfo['all_annotations'] = self.all_annotations
+        
         # save the updated_at date
         with open(datasetjson, 'w') as file:
             json.dump(self.metainfo, file)
@@ -659,6 +662,7 @@ class DatamintBaseDataset:
         with open(metainfo_path, 'r') as file:
             local_dataset_info = json.load(file)
         local_updated_at = local_dataset_info.get('updated_at', None)
+        local_all_annotations = local_dataset_info.get('all_annotations', None)
 
         try:
             external_metadata_info = self._get_datasetinfo()
@@ -668,15 +672,24 @@ class DatamintBaseDataset:
             return
 
         _LOGGER.debug(f"Local updated at: {local_updated_at}, Server updated at: {server_updated_at}")
+        
+        # Check if all_annotations changed or doesn't exist
+        annotations_changed = local_all_annotations != self.all_annotations
 
-        if local_updated_at is None or local_updated_at < server_updated_at:
-            _LOGGER.info(
-                f"A newer version of the dataset is available. Your version: {local_updated_at}." +
-                f" Last version: {server_updated_at}."
-            )
+        if local_updated_at is None or local_updated_at < server_updated_at or annotations_changed:
+            if annotations_changed:
+                _LOGGER.info(
+                    f"The 'all_annotations' parameter has changed. Previous: {local_all_annotations}, Current: {self.all_annotations}."
+                )
+            else:
+                _LOGGER.info(
+                    f"A newer version of the dataset is available. Your version: {local_updated_at}." +
+                    f" Last version: {server_updated_at}."
+                )
             self.download_project()
-        _LOGGER.info('Local version is up to date with the latest version.')
-
+        else:
+            _LOGGER.info('Local version is up to date with the latest version.')
+            
     def __add__(self, other):
         from torch.utils.data import ConcatDataset
         return ConcatDataset([self, other])
