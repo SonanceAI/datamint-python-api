@@ -32,6 +32,7 @@ class DatamintDataset(DatamintBaseDataset):
                  # annotator filtering parameters
                  include_annotators: Optional[List[str]] = None,
                  exclude_annotators: Optional[List[str]] = None,
+                 all_annotations: bool = False
                  ):
         super().__init__(root=root,
                          project_name=project_name,
@@ -43,6 +44,7 @@ class DatamintDataset(DatamintBaseDataset):
                          return_frame_by_frame=return_frame_by_frame,
                          return_annotations=return_annotations,
                          discard_without_annotations=discard_without_annotations,
+                         all_annotations=all_annotations
                          )
         self.return_segmentations = return_segmentations
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
@@ -378,21 +380,6 @@ class DatamintDataset(DatamintBaseDataset):
         return dict(frame_labels_byuser)
 
     def __repr__(self) -> str:
-        """
-        Example:
-            .. code-block:: python
-
-                print(dataset)
-
-            Output:
-
-            .. code-block:: text
-
-                Dataset DatamintDataset
-                    Number of datapoints: 3
-                    Root location: /home/user/.datamint/datasets
-
-        """
         super_repr = super().__repr__()
         body = []
         if self.image_transform is not None:

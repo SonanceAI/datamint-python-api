@@ -115,6 +115,51 @@ class BaseAPIHandler:
             raise DatamintException("Error connecting to the Datamint API." +
                                     f" Please check your api_key and/or other configurations. {e}")
 
+    def _generate_curl_command(self, request_args: dict) -> str:
+        """
+        Generate a curl command for debugging purposes.
+
+        Args:
+            request_args (dict): Request arguments dictionary containing method, url, headers, etc.
+
+        Returns:
+            str: Equivalent curl command
+        """
+        method = request_args.get('method', 'GET').upper()
+        url = request_args['url']
+        headers = request_args.get('headers', {})
+        data = request_args.get('json') or request_args.get('data')
+        params = request_args.get('params')
+
+        curl_command = ['curl']
+
+        # Add method if not GET
+        if method != 'GET':
+            curl_command.extend(['-X', method])
+
+        # Add headers
+        for key, value in headers.items():
+            if key.lower() == 'apikey':
+                value = '<YOUR-API-KEY>'  # Mask API key for security
+            curl_command.extend(['-H', f"'{key}: {value}'"])
+
+        # Add query parameters
+        if params:
+            param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
+            url = f"{url}?{param_str}"
+
+        # Add data
+        if data:
+            if isinstance(data, dict):
+                curl_command.extend(['-d', f"'{json.dumps(data)}'"])
+            else:
+                curl_command.extend(['-d', f"'{data}'"])
+
+        # Add URL
+        curl_command.append(f"'{url}'")
+
+        return ' '.join(curl_command)
+
     async def _run_request_async(self,
                                  request_args: dict,
                                  session: aiohttp.ClientSession = None,
@@ -122,9 +167,8 @@ class BaseAPIHandler:
         if session is None:
             async with aiohttp.ClientSession() as s:
                 return await self._run_request_async(request_args, s)
-
         _LOGGER.debug(f"Running request to {request_args['url']}")
-        _LOGGER.debug(f"Request args: {request_args}")
+        _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
 
         # add apikey to the headers
         if 'headers' not in request_args:
@@ -181,6 +225,7 @@ class BaseAPIHandler:
         if session is None:
             with Session() as s:
                 return self._run_request(request_args, s)
+        _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
 
         # add apikey to the headers
         if 'headers' not in request_args:

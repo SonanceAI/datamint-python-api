@@ -728,7 +728,23 @@ class RootAPIHandler(BaseAPIHandler):
                 e.set_params('resource', {'resource_id': rid})
                 raise e
 
-    def get_datasetsinfo_by_name(self, dataset_name: str) -> List[Dict]:
+    def get_datasets(self) -> list[dict]:
+        """
+        Get all datasets.
+
+        Returns:
+            list[dict]: A list of dictionaries with the datasets information.
+
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/datasets',
+        }
+
+        response = self._run_request(request_params)
+        return response.json()['data']
+
+    def get_datasetsinfo_by_name(self, dataset_name: str) -> list[dict]:
         request_params = {
             'method': 'GET',
             'url': f'{self.root_url}/datasets',
@@ -738,7 +754,7 @@ class RootAPIHandler(BaseAPIHandler):
         datasets = [d for d in resp['data'] if d['name'] == dataset_name]
         return datasets
 
-    def get_dataset_by_id(self, dataset_id: str) -> Dict:
+    def get_dataset_by_id(self, dataset_id: str) -> dict:
         try:
             request_params = {
                 'method': 'GET',
@@ -892,13 +908,15 @@ class RootAPIHandler(BaseAPIHandler):
             e.set_params('project', {'project_id': project_id})
             raise e
 
-    def download_project(self, project_id: str, outpath: str) -> None:
+    def download_project(self, project_id: str,
+                         outpath: str,
+                         all_annotations: bool = False) -> None:
         """
         Download a project by its id.
 
         Args:
             project_id (str): The project id.
-            outpath (str): The path to save the project.
+            outpath (str): The path to save the project zip file.
 
         Example:
             >>> api_handler.download_project('project_id', 'path/to/project.zip')
@@ -906,7 +924,8 @@ class RootAPIHandler(BaseAPIHandler):
         url = f"{self._get_endpoint_url('projects')}/{project_id}/annotated_dataset"
         request_params = {'method': 'GET',
                           'url': url,
-                          'stream': True
+                          'stream': True,
+                          'params': {'all_annotations': all_annotations}
                           }
         response = self._run_request(request_params)
         total_size = int(response.headers.get('content-length', 0))

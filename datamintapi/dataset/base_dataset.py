@@ -30,21 +30,6 @@ class DatamintDatasetException(DatamintException):
 class DatamintBaseDataset:
     """
     Class to download and load datasets from the Datamint API.
-
-    Args:
-        root (str): Root directory of dataset where data already exists or will be downloaded.
-        project_name (str): Name of the project to download.
-        dataset_name (str): Deprecated, use 'project_name' instead.
-        auto_update (bool): If True, the dataset will be checked for updates and downloaded if necessary.
-        api_key (str, optional): API key to access the Datamint API. If not provided, it will look for the
-            environment variable 'DATAMINT_API_KEY'. Not necessary if
-            you don't want to download/update the dataset.
-        return_dicom (bool): If True, the DICOM object will be returned, if the image is a DICOM file.
-        return_metainfo (bool): If True, the metainfo of the image will be returned.
-        return_annotations (bool): If True, the annotations of the image will be returned.
-        return_frame_by_frame (bool): If True, each frame of a video/DICOM/3d-image will be returned separately.
-        discard_without_annotations (bool): If True, images without annotations will be discarded.
-
     """
 
     DATAMINT_DEFAULT_DIR = ".datamint"
@@ -61,10 +46,28 @@ class DatamintBaseDataset:
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
                  discard_without_annotations: bool = False,
+                 all_annotations: bool = False
                  ):
+        """
+        Args:
+            root: Root directory of dataset where data already exists or will be downloaded.
+            project_name: Name of the project to download.
+            auto_update: If True, the dataset will be checked for updates and downloaded if necessary.
+            api_key: API key to access the Datamint API. If not provided, it will look for the
+                environment variable 'DATAMINT_API_KEY'. Not necessary if
+                you don't want to download/update the dataset.
+            return_dicom: If True, the DICOM object will be returned, if the image is a DICOM file.
+            return_metainfo: If True, the metainfo of the image will be returned.
+            return_annotations: If True, the annotations of the image will be returned.
+            return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
+            discard_without_annotations: If True, images without annotations will be discarded.
+            all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
+            server_url: URL of the Datamint server. If not provided, it will use the default server.
+        """
         if project_name is None:
             raise ValueError("project_name is required.")
 
+        self.all_annotations = all_annotations
         self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
         self.server_url = self.api_handler.root_url
         if root is None:
@@ -78,7 +81,7 @@ class DatamintBaseDataset:
             root = os.path.expanduser(root)
             if not os.path.isdir(root):
                 raise NotADirectoryError(f"Root directory not found: {root}")
-            
+
         self.root = root
 
         self.return_dicom = return_dicom
@@ -350,25 +353,16 @@ class DatamintBaseDataset:
                 raise DatamintDatasetException(f"Image file {imginfo['file']} not found.")
 
     def _get_datasetinfo(self) -> dict:
-        # FIXME: use `APIHandler.get_datastsinfo_by_name` instead of direct requests
-
-        request_params = {
-            'method': 'GET',
-            'url': f'{self.server_url}/datasets',
-            'headers': {'apikey': self.api_key}
-        }
-        with Session() as session:
-            response = self._run_request(session, request_params)
-            resp = response.json()
+        all_datasets = self.api_handler.get_datasets()
 
         value_to_search = self.dataset_id
         field_to_search = 'id'
 
-        for d in resp['data']:
+        for d in all_datasets:
             if d[field_to_search] == value_to_search:
                 return d
 
-        available_datasets = [(d['name'], d['id']) for d in resp['data']]
+        available_datasets = [(d['name'], d['id']) for d in all_datasets]
         raise DatamintDatasetException(
             f"Dataset with {field_to_search} '{value_to_search}' not found." +
             f" Available datasets: {available_datasets}"
@@ -442,6 +436,21 @@ class DatamintBaseDataset:
         raise DatamintDatasetException("Getting jwt token failed! No dataline with 'zip' entry found.")
 
     def __repr__(self) -> str:
+        """
+        Example:
+            .. code-block:: python
+
+                print(dataset)
+
+            Output:
+
+            .. code-block:: text
+
+                Dataset DatamintDataset
+                    Number of datapoints: 3
+                    Root location: /home/user/.datamint/datasets
+
+        """
         head = "Dataset " + self.__class__.__name__
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
@@ -507,7 +516,9 @@ class DatamintBaseDataset:
         self.dataset_id = dataset_info['id']
         self.last_updaded_at = dataset_info['updated_at']
 
-        self.api_handler.download_project(self.project_info['id'], self.dataset_zippath)
+        self.api_handler.download_project(self.project_info['id'],
+                                          self.dataset_zippath,
+                                          all_annotations=self.all_annotations)
         _LOGGER.debug(f"Downloaded dataset")
         downloaded_size = os.path.getsize(self.dataset_zippath)
         if downloaded_size == 0:
@@ -528,7 +539,8 @@ class DatamintBaseDataset:
             # if self.last_updated_at is newer than the one in the dataset, update it
             try:
                 if datetime.fromisoformat(self.metainfo['updated_at']) < datetime.fromisoformat(self.last_updaded_at):
-                    _LOGGER.debug(f"Inconsistent updated_at dates detected. Fixing it to {self.last_updaded_at}")
+                    _LOGGER.warning(f"Inconsistent updated_at dates detected ({self.metainfo['updated_at']} < {self.last_updaded_at})." +
+                                  f"Fixing it to {self.last_updaded_at}")
                     self.metainfo['updated_at'] = self.last_updaded_at
             except Exception as e:
                 _LOGGER.warning(f"Failed to parse updated_at date: {e}")
