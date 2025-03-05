@@ -531,7 +531,8 @@ class DatamintBaseDataset:
                         self.dataset_dir,
                         remove_finished=True
                         )
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
+        datasetjson = os.path.join(self.dataset_dir, 'dataset.json')
+        with open(datasetjson, 'r') as file:
             self.metainfo = json.load(file)
         if 'updated_at' not in self.metainfo:
             self.metainfo['updated_at'] = self.last_updaded_at
@@ -546,7 +547,7 @@ class DatamintBaseDataset:
                 _LOGGER.warning(f"Failed to parse updated_at date: {e}")
 
         # save the updated_at date
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
+        with open(datasetjson, 'w') as file:
             json.dump(self.metainfo, file)
 
     def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
@@ -668,7 +669,7 @@ class DatamintBaseDataset:
 
         _LOGGER.debug(f"Local updated at: {local_updated_at}, Server updated at: {server_updated_at}")
 
-        if local_updated_at is None or local_updated_at != server_updated_at:
+        if local_updated_at is None or local_updated_at < server_updated_at:
             _LOGGER.info(
                 f"A newer version of the dataset is available. Your version: {local_updated_at}." +
                 f" Last version: {server_updated_at}."
