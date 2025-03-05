@@ -29,7 +29,7 @@ class DatamintDataset(DatamintBaseDataset):
         return_metainfo: If True, the metainfo of the image will be returned.
         return_annotations: If True, the annotations of the image will be returned.
         return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
-        discard_without_annotations: If True, images without annotations will be discarded.
+        discard_without_annotations: If True, images without annotations will be discarded. This runs after the filters.
         all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
         server_url: URL of the Datamint server. If not provided, it will use the default server.
         return_segmentations: If True (default), the segmentations of the image will be returned in the 'segmentations' key.
@@ -40,6 +40,12 @@ class DatamintDataset(DatamintBaseDataset):
             Possible values are 'union', 'intersection', 'mode'.
         include_annotators: List of annotators to include. If None, all annotators will be included. See parameter ``exclude_annotators``.
         exclude_annotators: List of annotators to exclude. If None, no annotators will be excluded. See parameter ``include_annotators``.
+        include_segmentation_names: List of segmentation names to include. If None, all segmentations will be included.
+        exclude_segmentation_names: List of segmentation names to exclude. If None, no segmentations will be excluded.
+        include_image_label_names: List of image label names to include. If None, all image labels will be included.
+        exclude_image_label_names: List of image label names to exclude. If None, no image labels will be excluded.
+        include_frame_label_names: List of frame label names to include. If None, all frame labels will be included.
+        exclude_frame_label_names: List of frame label names to exclude. If None, no frame labels will be excluded.
         all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
     """
 
@@ -60,9 +66,15 @@ class DatamintDataset(DatamintBaseDataset):
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  discard_without_annotations: bool = False,
-                 # annotator filtering parameters
+                 # filtering parameters
                  include_annotators: Optional[list[str]] = None,
                  exclude_annotators: Optional[list[str]] = None,
+                 include_segmentation_names: Optional[list[str]] = None,
+                 exclude_segmentation_names: Optional[list[str]] = None,
+                 include_image_label_names: Optional[list[str]] = None,
+                 exclude_image_label_names: Optional[list[str]] = None,
+                 include_frame_label_names: Optional[list[str]] = None,
+                 exclude_frame_label_names: Optional[list[str]] = None,
                  all_annotations: bool = False
                  ):
         super().__init__(root=root,
@@ -75,40 +87,27 @@ class DatamintDataset(DatamintBaseDataset):
                          return_frame_by_frame=return_frame_by_frame,
                          return_annotations=return_annotations,
                          discard_without_annotations=discard_without_annotations,
-                         all_annotations=all_annotations
+                         all_annotations=all_annotations,
+                         include_annotators=include_annotators,
+                         exclude_annotators=exclude_annotators,
+                         include_segmentation_names=include_segmentation_names,
+                         exclude_segmentation_names=exclude_segmentation_names,
+                         include_image_label_names=include_image_label_names,
+                         exclude_image_label_names=exclude_image_label_names,
+                         include_frame_label_names=include_frame_label_names,
+                         exclude_frame_label_names=exclude_frame_label_names
                          )
         self.return_segmentations = return_segmentations
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.image_transform = image_transform
         self.mask_transform = mask_transform
         self.semantic_seg_merge_strategy = semantic_seg_merge_strategy
-        self.include_annotators = include_annotators
-        self.exclude_annotators = exclude_annotators
 
         if return_segmentations == False and return_as_semantic_segmentation == True:
             raise ValueError("return_as_semantic_segmentation can only be True if return_segmentations is True")
 
         if semantic_seg_merge_strategy is not None and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
-
-        if include_annotators is not None and exclude_annotators is not None:
-            raise ValueError("Cannot set both include_annotators and exclude_annotators at the same time")
-
-    def _should_include_annotator(self, annotator_id: str) -> bool:
-        """
-        Check if an annotator should be included based on the filtering settings.
-
-        Args:
-            annotator_id: The ID of the annotator to check
-
-        Returns:
-            bool: True if the annotator should be included, False otherwise
-        """
-        if self.include_annotators is not None:
-            return annotator_id in self.include_annotators
-        if self.exclude_annotators is not None:
-            return annotator_id not in self.exclude_annotators
-        return True
 
     def _load_segmentations(self, annotations: list[dict], img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
@@ -142,10 +141,6 @@ class DatamintDataset(DatamintBaseDataset):
                 _LOGGER.warning(f"Segmentation annotation without file in annotations {ann}")
                 continue
             author = ann['added_by']
-
-            # Skip if annotator should be filtered out
-            if not self._should_include_annotator(author):
-                continue
 
             segfilepath = ann['file']  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
@@ -374,9 +369,11 @@ class DatamintDataset(DatamintBaseDataset):
         if num_frames is None:
             labels_ret_size = (len(self.image_labels_set),)
             label2code = self.image_lcodes['multilabel']
+            should_include_label = self._should_include_image_label
         else:
             labels_ret_size = (num_frames, len(self.frame_labels_set))
             label2code = self.frame_lcodes['multilabel']
+            should_include_label = self._should_include_frame_label
 
         if num_frames is not None and num_frames > 1 and self.return_frame_by_frame:
             raise ValueError("num_frames must be 1 if return_frame_by_frame is True")
@@ -386,10 +383,6 @@ class DatamintDataset(DatamintBaseDataset):
             return frame_labels_byuser
         for ann in annotations:
             user_id = ann['added_by']
-
-            # Skip if annotator should be filtered out
-            if not self._should_include_annotator(user_id):
-                continue
 
             frame_idx = ann.get('index', None)
 
@@ -417,10 +410,6 @@ class DatamintDataset(DatamintBaseDataset):
             body += [repr(self.image_transform)]
         if self.mask_transform is not None:
             body += [repr(self.mask_transform)]
-        if self.include_annotators is not None:
-            body += [f"Including only annotators: {self.include_annotators}"]
-        if self.exclude_annotators is not None:
-            body += [f"Excluding annotators: {self.exclude_annotators}"]
         if len(body) == 0:
             return super_repr
         lines = [" " * 4 + line for line in body]

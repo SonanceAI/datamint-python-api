@@ -45,6 +45,14 @@ class DatamintBaseDataset:
         discard_without_annotations: If True, images without annotations will be discarded.
         all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
         server_url: URL of the Datamint server. If not provided, it will use the default server.
+        include_annotators: List of annotators to include. If None, all annotators will be included. See parameter ``exclude_annotators``.
+        exclude_annotators: List of annotators to exclude. If None, no annotators will be excluded. See parameter ``include_annotators``.
+        include_segmentation_names: List of segmentation names to include. If None, all segmentations will be included.
+        exclude_segmentation_names: List of segmentation names to exclude. If None, no segmentations will be excluded.
+        include_image_label_names: List of image label names to include. If None, all image labels will be included.
+        exclude_image_label_names: List of image label names to exclude. If None, no image labels will be excluded.
+        include_frame_label_names: List of frame label names to include. If None, all frame labels will be included.
+        exclude_frame_label_names: List of frame label names to exclude. If None, no frame labels will be excluded.
 
     """
 
@@ -62,7 +70,16 @@ class DatamintBaseDataset:
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
                  discard_without_annotations: bool = False,
-                 all_annotations: bool = False
+                 all_annotations: bool = False,
+                 # filtering parameters
+                 include_annotators: Optional[list[str]] = None,
+                 exclude_annotators: Optional[list[str]] = None,
+                 include_segmentation_names: Optional[list[str]] = None,
+                 exclude_segmentation_names: Optional[list[str]] = None,
+                 include_image_label_names: Optional[list[str]] = None,
+                 exclude_image_label_names: Optional[list[str]] = None,
+                 include_frame_label_names: Optional[list[str]] = None,
+                 exclude_frame_label_names: Optional[list[str]] = None
                  ):
         if project_name is None:
             raise ValueError("project_name is required.")
@@ -89,6 +106,29 @@ class DatamintBaseDataset:
         self.return_frame_by_frame = return_frame_by_frame
         self.return_annotations = return_annotations
         self.discard_without_annotations = discard_without_annotations
+        
+        # Filtering parameters
+        self.include_annotators = include_annotators
+        self.exclude_annotators = exclude_annotators
+        self.include_segmentation_names = include_segmentation_names
+        self.exclude_segmentation_names = exclude_segmentation_names
+        self.include_image_label_names = include_image_label_names
+        self.exclude_image_label_names = exclude_image_label_names
+        self.include_frame_label_names = include_frame_label_names
+        self.exclude_frame_label_names = exclude_frame_label_names
+        
+        # Validate filtering parameters
+        if include_annotators is not None and exclude_annotators is not None:
+            raise ValueError("Cannot set both include_annotators and exclude_annotators at the same time")
+            
+        if include_segmentation_names is not None and exclude_segmentation_names is not None:
+            raise ValueError("Cannot set both include_segmentation_names and exclude_segmentation_names at the same time")
+            
+        if include_image_label_names is not None and exclude_image_label_names is not None:
+            raise ValueError("Cannot set both include_image_label_names and exclude_image_label_names at the same time")
+            
+        if include_frame_label_names is not None and exclude_frame_label_names is not None:
+            raise ValueError("Cannot set both include_frame_label_names and exclude_frame_label_names at the same time")
 
         self.project_name = project_name
         dataset_name = project_name
@@ -131,6 +171,10 @@ class DatamintBaseDataset:
                 self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
 
+        # filter annotations
+        for imginfo in self.images_metainfo:
+             imginfo['annotations'] = self._filter_annotations(imginfo['annotations'])
+
         # filter out images with no annotations.
         if self.discard_without_annotations:
             original_count = len(self.images_metainfo)
@@ -163,6 +207,7 @@ class DatamintBaseDataset:
         # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
+        self.__logged_uint16_conversion = False
 
     def __compute_num_frames_per_resource(self) -> list[int]:
         num_frames_per_dicom = []
@@ -455,6 +500,25 @@ class DatamintBaseDataset:
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
             body.append(f"Root location: {self.root}")
+            
+        # Add filter information to representation
+        if self.include_annotators is not None:
+            body += [f"Including only annotators: {self.include_annotators}"]
+        if self.exclude_annotators is not None:
+            body += [f"Excluding annotators: {self.exclude_annotators}"]
+        if self.include_segmentation_names is not None:
+            body += [f"Including only segmentations: {self.include_segmentation_names}"]
+        if self.exclude_segmentation_names is not None:
+            body += [f"Excluding segmentations: {self.exclude_segmentation_names}"]
+        if self.include_image_label_names is not None:
+            body += [f"Including only image labels: {self.include_image_label_names}"]
+        if self.exclude_image_label_names is not None:
+            body += [f"Excluding image labels: {self.exclude_image_label_names}"]
+        if self.include_frame_label_names is not None:
+            body += [f"Including only frame labels: {self.include_frame_label_names}"]
+        if self.exclude_frame_label_names is not None:
+            body += [f"Excluding frame labels: {self.exclude_frame_label_names}"]
+            
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
@@ -564,7 +628,7 @@ class DatamintBaseDataset:
 
         if img.dtype == np.uint16:
             # Pytorch doesn't support uint16
-            if getattr(self, '__logged_uint16_conversion', False) == False:
+            if self.__logged_uint16_conversion == False:
                 _LOGGER.info("Original image is uint16, converting to uint8")
                 self.__logged_uint16_conversion = True
 
@@ -634,6 +698,45 @@ class DatamintBaseDataset:
 
         return ret
 
+    def _filter_annotations(self, annotations: list[dict]) -> list[dict]:
+        """
+        Filter annotations based on the filtering settings.
+
+        Args:
+            annotations: list of annotations
+
+        Returns:
+            list[dict]: filtered list of annotations
+        """
+        if annotations is None:
+            return []
+            
+        filtered_annotations = []
+        for ann in annotations:
+            # Filter by annotator
+            if not self._should_include_annotator(ann['added_by']):
+                continue
+                
+            # Filter by annotation type and name
+            if ann['type'] == 'segmentation':
+                if not self._should_include_segmentation(ann['name']):
+                    continue
+            elif ann['type'] == 'label':
+                # Check if it's a frame or image label
+                if ann.get('index', None) is None:
+                    # Image label
+                    if not self._should_include_image_label(ann['name']):
+                        continue
+                else:
+                    # Frame label
+                    if not self._should_include_frame_label(ann['name']):
+                        continue
+            
+            # If we reach here, the annotation passed all filters
+            filtered_annotations.append(ann)
+            
+        return filtered_annotations
+        
     def __getitem__(self, index: int) -> dict[str, Any]:
         """
         Args:
@@ -646,7 +749,7 @@ class DatamintBaseDataset:
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
 
         return self.__getitem_internal(self.subset_indices[index])
-
+        
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
@@ -726,3 +829,67 @@ class DatamintBaseDataset:
         self.subset_indices = indices
 
         return self
+
+    def _should_include_annotator(self, annotator_id: str) -> bool:
+        """
+        Check if an annotator should be included based on the filtering settings.
+
+        Args:
+            annotator_id: The ID of the annotator to check
+
+        Returns:
+            bool: True if the annotator should be included, False otherwise
+        """
+        if self.include_annotators is not None:
+            return annotator_id in self.include_annotators
+        if self.exclude_annotators is not None:
+            return annotator_id not in self.exclude_annotators
+        return True
+    
+    def _should_include_segmentation(self, segmentation_name: str) -> bool:
+        """
+        Check if a segmentation should be included based on the filtering settings.
+
+        Args:
+            segmentation_name: The name of the segmentation to check
+
+        Returns:
+            bool: True if the segmentation should be included, False otherwise
+        """
+        if self.include_segmentation_names is not None:
+            return segmentation_name in self.include_segmentation_names
+        if self.exclude_segmentation_names is not None:
+            return segmentation_name not in self.exclude_segmentation_names
+        return True
+    
+    def _should_include_image_label(self, label_name: str) -> bool:
+        """
+        Check if an image label should be included based on the filtering settings.
+
+        Args:
+            label_name: The name of the image label to check
+
+        Returns:
+            bool: True if the image label should be included, False otherwise
+        """
+        if self.include_image_label_names is not None:
+            return label_name in self.include_image_label_names
+        if self.exclude_image_label_names is not None:
+            return label_name not in self.exclude_image_label_names
+        return True
+    
+    def _should_include_frame_label(self, label_name: str) -> bool:
+        """
+        Check if a frame label should be included based on the filtering settings.
+
+        Args:
+            label_name: The name of the frame label to check
+
+        Returns:
+            bool: True if the frame label should be included, False otherwise
+        """
+        if self.include_frame_label_names is not None:
+            return label_name in self.include_frame_label_names
+        if self.exclude_frame_label_names is not None:
+            return label_name not in self.exclude_frame_label_names
+        return True
