@@ -7,9 +7,28 @@ import torch
 import colorsys
 
 
-def show(imgs: list[Tensor] | Tensor, figsize: tuple[int, int] = None):
+def show(imgs: list[Tensor] | Tensor,
+         figsize: tuple[int, int] = None,
+         normalize: bool = False):
+    """
+    Show a list of images in a grid.
+    Args:
+        imgs (list[Tensor] | Tensor): List of images to show.
+            Each image should be a tensor of shape (C, H, W) and dtype uint8 or float.
+        figsize (tuple[int, int], optional): Size of the figure. Defaults to None.
+        normalize (bool, optional): Whether to normalize the images to [0, 1] range by min-max scaling.
+    """
+
     if not isinstance(imgs, list):
         imgs = [imgs]
+
+    if normalize:
+        for i, img in enumerate(imgs):
+            img = img.float()
+            img = img - img.min()
+            img = img / img.max()
+            imgs[i] = img
+
     if figsize is not None:
         fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
     else:
@@ -63,7 +82,7 @@ def draw_masks(
     """
     Draws segmentation masks on given RGB image.
     This is different from `torchvision.utils.draw_segmentation_masks` as overlapping masks are blended together correctly.
-    The image values should be uint8 in [0, 255] or float in [0, 1].
+    The image values should be uint8 or float.
 
     Args:
         image (Tensor): Tensor of shape (3, H, W) and dtype uint8 or float.
@@ -78,6 +97,7 @@ def draw_masks(
     Returns:
         img (Tensor[C, H, W]): Image Tensor, with segmentation masks drawn on top.
     """
+    
 
     if image.ndim == 3 and image.shape[0] == 1:
         # convert to RGB
@@ -85,6 +105,12 @@ def draw_masks(
 
     if masks.dtype != torch.bool:
         masks = masks.bool()
+
+    # if image has negative values, scale to [0, 1]
+    if image.min() < 0:
+        image = image.float()
+        image = image - image.min()
+        image = image / image.max()
 
     if masks.ndim == 2:
         return torchvision.utils.draw_segmentation_masks(image=image,
