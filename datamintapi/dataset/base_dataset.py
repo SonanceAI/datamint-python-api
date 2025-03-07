@@ -496,10 +496,10 @@ class DatamintBaseDataset:
                     Root location: /home/user/.datamint/datasets
 
         """
-        head = "Dataset " + self.__class__.__name__
+        head = f"Dataset {self.project_name}"
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
-            body.append(f"Root location: {self.root}")
+            body.append(f"Location: {self.dataset_dir}")
             
         # Add filter information to representation
         if self.include_annotators is not None:
@@ -797,10 +797,20 @@ class DatamintBaseDataset:
         from torch.utils.data import ConcatDataset
         return ConcatDataset([self, other])
 
-    def get_dataloader(self, *args, batch_size: int, **kwargs) -> DataLoader:
+    def get_dataloader(self, *args, **kwargs) -> DataLoader:
+        """
+        Returns a DataLoader for the dataset.
+        This is a wrapper around the PyTorch DataLoader, with the convinience of using a nice collate_fn
+        that properly handles the different types of data in this dataset.
+
+        Args:
+            *args: Positional arguments for the DataLoader. See `torch.utils.data.DataLoader <https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader>`_ for details.
+            **kwargs: Keyword arguments for the DataLoader. See `torch.utils.data.DataLoader <https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader>`_ for details.
+            
+
+        """
         return DataLoader(self,
                           *args,
-                          batch_size=batch_size,
                           collate_fn=self.get_collate_fn(),
                           **kwargs)
 

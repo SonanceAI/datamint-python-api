@@ -70,6 +70,17 @@ exclude_patterns = []
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "sphinx_rtd_theme"
+html_theme_options = {
+    "navigation_depth": 3,
+    "collapse_navigation": False,
+    "style_external_links": True,
+    "logo_only": False,
+}
 html_static_path = ['_static']
+
+# Add custom CSS to override theme defaults
+html_css_files = [
+    'custom.css',
+]
 
 html_favicon = "favicon.png"

@@ -1,0 +1,42 @@
+/* Increase maximum width of the main content container */
+.wy-nav-content {
+    max-width: 930px !important;
+}
+
+/* Optional: Adjust the content area for better readability on wider screens */
+@media screen and (min-width: 1000px) {
+    .wy-nav-content-wrap {
+        background: rgba(0, 0, 0, 0.05);
+    }
+}
+
+/* Collapsible sidebar in portrait mode */
+@media screen and (orientation: portrait) {
+    .wy-nav-side {
+        left: -300px;
+        transition: left 0.25s ease;
+        position: fixed;
+        z-index: 1000;
+    }
+    .wy-nav-content-wrap {
+        margin-left: 0;
+        transition: margin-left 0.25s ease;
+    }
+    .wy-nav-top {
+        display: block;
+    }
+    
+    /* Sidebar when toggled/expanded */
+    .wy-nav-side.shift {
+        left: 0;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+    }
+    
+    /* Adjust content area when sidebar is expanded */
+    .wy-nav-content-wrap.shift {
+        margin-left: 300px;
+    }
+    .wy-nav-content {
+        max-width: 930px !important;
+    }
+}

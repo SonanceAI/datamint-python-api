@@ -407,9 +407,11 @@ class DatamintDataset(DatamintBaseDataset):
         super_repr = super().__repr__()
         body = []
         if self.image_transform is not None:
-            body += [repr(self.image_transform)]
+            body.append("Image transform:")
+            body += [" " * 4 + line for line in repr(self.image_transform).split('\n')]
         if self.mask_transform is not None:
-            body += [repr(self.mask_transform)]
+            body.append("Mask transform:")
+            body += [" " * 4 + line for line in repr(self.mask_transform).split('\n')]
         if len(body) == 0:
             return super_repr
         lines = [" " * 4 + line for line in body]
