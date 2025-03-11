@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, Dict, Union, List
+from typing import Optional, IO, Sequence, Literal, Generator, Union
 import os
 import pydicom.data
 import pydicom.dataset
@@ -57,7 +57,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            tags: List[str] = None,
+                                            tags: list[str] = None,
                                             mung_filename: Sequence[int] | Literal['all'] = None,
                                             channel: Optional[str] = None,
                                             session=None,
@@ -166,7 +166,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       channel: Optional[str] = None,
                                       modality: Optional[str] = None,
                                       publish: bool = False,
-                                      segmentation_files: Optional[List[Dict]] = None,
+                                      segmentation_files: Optional[list[dict]] = None,
                                       transpose_segmentation: bool = False,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
@@ -176,7 +176,7 @@ class RootAPIHandler(BaseAPIHandler):
             segmentation_files = _infinite_gen(None)
 
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: Dict):
+            async def __upload_single_resource(file_path, segfiles: dict):
                 async with self.semaphore:
                     rid = await self._upload_single_resource_async(
                         file_path=file_path,
@@ -221,7 +221,7 @@ class RootAPIHandler(BaseAPIHandler):
                          channel: Optional[str] = None,
                          publish: bool = False,
                          publish_to: Optional[str] = None,
-                         segmentation_files: Optional[list[Union[List[str], dict]]] = None,
+                         segmentation_files: Optional[list[Union[list[str], dict]]] = None,
                          transpose_segmentation: bool = False,
                          modality: Optional[str] = None,
                          assemble_dicoms: bool = True
@@ -246,7 +246,7 @@ class RootAPIHandler(BaseAPIHandler):
             publish_to (Optional[str]): The project name or id to publish the resources to.
                 They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
-            segmentation_files (Optional[List[Union[List[str], Dict]]]): The segmentation files to upload.
+            segmentation_files (Optional[list[Union[list[str], dict]]]): The segmentation files to upload.
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
@@ -509,7 +509,7 @@ class RootAPIHandler(BaseAPIHandler):
                       project_id: Optional[str] = None,
                       project_name: Optional[str] = None,
                       filename: Optional[str] = None
-                      ) -> Generator[Dict, None, None]:
+                      ) -> Generator[dict, None, None]:
         """
         Iterates over resources with the specified filters.
         Filters can be combined to narrow down the search.
@@ -589,7 +589,7 @@ class RootAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params,
                                                 return_field=['data', 0, 'resources'])
 
-    def get_channels(self) -> Generator[Dict, None, None]:
+    def get_channels(self) -> Generator[dict, None, None]:
         """
         Iterates over the channels with the specified filters.
 
@@ -622,7 +622,7 @@ class RootAPIHandler(BaseAPIHandler):
 
     def set_resource_tags(self, resource_id: str,
                           tags: Sequence[str] = None,
-                          frame_labels: Sequence[Dict] = None
+                          frame_labels: Sequence[dict] = None
                           ):
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/tags"
         data = {}
@@ -789,7 +789,7 @@ class RootAPIHandler(BaseAPIHandler):
                     password: Optional[str] = None,
                     firstname: Optional[str] = None,
                     lastname: Optional[str] = None,
-                    roles: Optional[List[str]] = None) -> dict:
+                    roles: Optional[list[str]] = None) -> dict:
         """
         Create a user.
 
@@ -816,12 +816,12 @@ class RootAPIHandler(BaseAPIHandler):
             _LOGGER.error(f"Error creating user: {e.response.text}")
             raise e
 
-    def get_projects(self) -> List[Dict]:
+    def get_projects(self) -> list[dict]:
         """
         Get the list of projects.
 
         Returns:
-            List[Dict]: The list of projects.
+            list[dict]: The list of projects.
 
         Example:
             >>> api_handler.get_projects()
@@ -833,7 +833,7 @@ class RootAPIHandler(BaseAPIHandler):
         return self._run_request(request_params).json()['data']
 
     @deprecated(version='0.12.0', reason="Use :meth:`~get_resources` with project_id parameter instead.")
-    def get_resources_by_project(self, project_id: str) -> Generator[Dict, None, None]:
+    def get_resources_by_project(self, project_id: str) -> Generator[dict, None, None]:
         """
         Get the resources by project.
 
@@ -841,7 +841,7 @@ class RootAPIHandler(BaseAPIHandler):
             project_id (str): The project id.
 
         Returns:
-            List[Dict]: The list of resources.
+            list[dict]: The list of resources.
 
         Example:
             >>> api_handler.get_resources_by_project('project_id')
@@ -855,7 +855,7 @@ class RootAPIHandler(BaseAPIHandler):
     def create_project(self,
                        name: str,
                        description: str,
-                       resources_ids: List[str],
+                       resources_ids: list[str],
                        is_active_learning: bool = False) -> dict:
         """
         Create a new project.

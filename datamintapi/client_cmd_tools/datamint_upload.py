@@ -463,7 +463,7 @@ def main():
     api_handler = APIHandler()
     results = api_handler.upload_resources(channel=args.channel,
                                            files_path=files_path,
-                                           tags=args.label,
+                                           tags=args.tag,
                                            on_error='skip',
                                            anonymize=args.retain_pii == False and has_a_dicom_file,
                                            anonymize_retain_codes=args.retain_attribute,
