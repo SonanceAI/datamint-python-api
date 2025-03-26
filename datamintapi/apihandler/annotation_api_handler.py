@@ -11,6 +11,7 @@ import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
+from .dto.annotation_dto import CreateAnnotationDto, MainGeometry, ExternalDescription, Handles
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -75,7 +76,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_annotations_async(self,
                                         resource_id: str,
-                                        annotations: list[dict]) -> list[str]:
+                                        annotations: list[dict | CreateAnnotationDto]) -> list[str]:
+        annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations]
+        _LOGGER.debug(annotations)
         request_params = dict(
             method='POST',
             url=f'{self.root_url}/annotations/{resource_id}/annotations',
@@ -131,23 +134,20 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
                 segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
                 segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
-                annotations = []
+                annotations: list[CreateAnnotationDto] = []
                 for segname in segnames:
-                    ann = {
-                        "identifier": segname,
-                        "scope": 'frame',
-                        "frame_index": frame_index,
-                        'imported_from': imported_from,
-                        'import_author': author_email,
-                        "type": 'segmentation',
-                        'annotation_worklist_id': worklist_id
-                    }
-                    if model_id is not None:
-                        ann['model_id'] = model_id
-                        ann['is_model'] = True
+                    ann = CreateAnnotationDto(type='segmentation',
+                                              identifier=segname,
+                                              scope='frame',
+                                              frame_index=frame_index,
+                                              imported_from=imported_from,
+                                              import_author=author_email,
+                                              model_id=model_id,
+                                              annotation_worklist_id=worklist_id)
+
                     annotations.append(ann)
                 # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
-                if len(annotations) != len(set([a['identifier'] for a in annotations])):
+                if len(annotations) != len(set([a.identifier for a in annotations])):
                     raise ValueError(
                         "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
 
@@ -253,18 +253,20 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                       worklist_id: Optional[str] = None
                                       ):
 
+        dto = CreateAnnotationDto(
+            type='category',
+            identifier=identifier,
+            scope='image',
+            value=value,
+            imported_from=imported_from,
+            import_author=author_email,
+            annotation_worklist_id=worklist_id
+        )
+
         request_params = {
             'method': 'POST',
             'url': f'{self.root_url}/annotations/{resource_id}/annotations',
-            'json': [{
-                'identifier': identifier,
-                'value': value,
-                'scope': 'image',
-                'type': 'category',
-                'imported_from': imported_from,
-                'import_author': author_email,
-                'annotation_worklist_id': worklist_id
-            }]
+            'json': [dto.to_dict()]
         }
 
         resp = self._run_request(request_params)
@@ -289,6 +291,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
             identifier (str): The annotation identifier.
             value (str): The annotation value.
             worklist_id (Optional[str]): The annotation worklist unique id.
+            imported_from (Optional[str]): The imported source.
             author_email (Optional[str]): The author email. If None, use the customer of the api key.
                 Requires admin permissions to set a different customer.
         """
@@ -298,15 +301,18 @@ class AnnotationAPIHandler(BaseAPIHandler):
         elif isinstance(frame_index, int):
             frame_index = [frame_index]
 
-        json_data = [{
-            'identifier': identifier,
-            'value': value,
-            'scope': 'frame',
-            'frame_index': i,
-            'annotation_worklist_id': worklist_id,
-            'imported_from': imported_from,
-            'import_author': author_email,
-            'type': 'category'} for i in frame_index]
+        params = dict(
+            identifier=identifier,
+            value=value,
+            scope='frame',
+            annotation_worklist_id=worklist_id,
+            imported_from=imported_from,
+            import_author=author_email,
+            type='category'
+        )
+
+        json_data = [CreateAnnotationDto(frame_index=i, **params).to_dict()
+                     for i in frame_index]
 
         request_params = {
             'method': 'POST',
@@ -317,59 +323,62 @@ class AnnotationAPIHandler(BaseAPIHandler):
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
 
-    def add_annotations(self,
-                        resource_id: str,
-                        identifier: str,
-                        frame_index: int | tuple[int, int] | None = None,
-                        value: Optional[str] = None,
-                        worklist_id: Optional[str] = None,
-                        imported_from: Optional[str] = None,
-                        author_email: Optional[str] = None,
-                        model_id: Optional[str] = None,
-                        ):
+    def add_boundingbox_annotation(self,
+                                   x0: int,
+                                   y0: int,
+                                   x1: int,
+                                   y1: int,
+                                   resource_id: str,
+                                   identifier: str,
+                                   frame_index: int,
+                                   worklist_id: Optional[str] = None,
+                                   imported_from: Optional[str] = None,
+                                   author_email: Optional[str] = None,
+                                   model_id: Optional[str] = None,
+                                   ):
         """
         Add annotations to a resource.
 
         Args:
+            x0: The top-left x coordinate.
+            y0: The top-left y coordinate.
+            x1: The bottom-right x coordinate.
+            y1: The bottom-right y coordinate.
             resource_id: The resource unique id.
             identifier: The annotation identifier.
-            frame_index: The frame index or a tuple with the range of frame indexes.
+            frame_index: The frame index.
                 If a tuple is provided, the annotation will be added to all frames in the range (Inclusive on both ends).
-            value: The annotation value.
             worklist_id: The annotation worklist unique id.
-            imported_from: The imported from value.
+            imported_from: The imported source.
             author_email: The author email. If None, use the customer of the api key.
                 Requires admin permissions to set a different customer.
             model_id: The model unique id.
         """
 
-        if isinstance(frame_index, tuple):
-            begin, end = frame_index
-            if begin > end:
-                raise ValueError('The first element of the tuple must be less than the second element.')
-            frame_index = list(range(begin, end+1))
-        elif isinstance(frame_index, int):
-            frame_index = [frame_index]
+        
 
-        scope = 'frame' if frame_index is not None else 'image'
+        handl = Handles(points=[[3.97, 2.5475, 0], [450.5, 181.92, 0]])
+        metadata = ExternalDescription.Metadata(
+            sliceIndex=frame_index,
+            referencedImageId='web:http://localhost:3000/api/resources/7374ef08-11f4-40c8-bcb2-e4f50b04913d/image?published=false',
+            toolName="Length"
+        )
 
-        params = {
-            'identifier': identifier,
-            'value': value,
-            'scope': scope,
-            'annotation_worklist_id': worklist_id,
-            'imported_from': imported_from,
-            'import_author': author_email,
-            'type': 'category',
-        }
-        if model_id is not None:
-            params['model_id'] = model_id
-            params['is_model'] = True
+        extdesc = ExternalDescription(annotationUID=None,
+                                      label="",
+                                      handles=handl,
+                                      metadata=metadata,
+                                      )
 
-        if frame_index is not None:
-            json_data = [dict(params, frame_index=i) for i in frame_index]
-        else:
-            json_data = [params]
+        geom = MainGeometry(sam_geometry=None, external_description=extdesc)
+
+        dto = CreateAnnotationDto(
+            identifier=identifier,
+            scope='frame',
+            imported_from=imported_from,
+            import_author=author_email,
+            type='square',
+        )
 
         request_params = {
             'method': 'POST',
