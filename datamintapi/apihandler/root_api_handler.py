@@ -937,9 +937,11 @@ class RootAPIHandler(BaseAPIHandler):
         request_params = {'method': 'GET',
                           'url': url,
                           'stream': True,
-                          'params': {'all_annotations': all_annotations,
-                                     'discard_without_annotations': discard_without_annotations}
+                          'params': {'all_annotations': all_annotations}
                           }
+        if discard_without_annotations==False:
+            request_params['params']['include_unannotated'] = not discard_without_annotations
+
         response = self._run_request(request_params)
         total_size = int(response.headers.get('content-length', 0))
         if total_size == 0:
