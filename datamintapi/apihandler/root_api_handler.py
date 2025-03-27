@@ -209,6 +209,29 @@ class RootAPIHandler(BaseAPIHandler):
             tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
+    def _assemble_dicoms(self, files_path: Sequence[str | IO]) -> tuple[Sequence[str | IO], bool]:
+        dicoms_files_path = []
+        other_files_path = []
+        for f in files_path:
+            if is_dicom(f):
+                dicoms_files_path.append(f)
+            else:
+                other_files_path.append(f)
+
+        orig_len = len(dicoms_files_path)
+        dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
+        print([d.name for d in dicoms_files_path])
+
+        new_len = len(dicoms_files_path)
+        if new_len != orig_len:
+            _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
+            files_path = itertools.chain(dicoms_files_path, other_files_path)
+            assembled = True
+        else:
+            assembled = False
+
+        return files_path, assembled
+
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
                          mimetype: Optional[str] = None,
@@ -265,22 +288,9 @@ class RootAPIHandler(BaseAPIHandler):
 
         files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
         if assemble_dicoms:
-            dicoms_files_path = []
-            other_files_path = []
-            for f in files_path:
-                if is_dicom(f):
-                    dicoms_files_path.append(f)
-                else:
-                    other_files_path.append(f)
+            files_path, assembled = self._assemble_dicoms(files_path)
+            assemble_dicoms = assembled
 
-            orig_len = len(dicoms_files_path)
-            dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
-            new_len = len(dicoms_files_path)
-            if new_len != orig_len:
-                _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
-                files_path = itertools.chain(dicoms_files_path, other_files_path)
-            else:
-                assemble_dicoms = False
         if segmentation_files is not None:
             if assemble_dicoms:
                 raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")

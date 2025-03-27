@@ -471,6 +471,7 @@ def main():
                                            publish=args.publish,
                                            segmentation_files=segfiles,
                                            transpose_segmentation=args.transpose_segmentation,
+                                           assemble_dicoms=True
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
