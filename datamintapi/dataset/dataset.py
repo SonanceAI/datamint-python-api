@@ -29,7 +29,7 @@ class DatamintDataset(DatamintBaseDataset):
         return_metainfo: If True, the metainfo of the image will be returned.
         return_annotations: If True, the annotations of the image will be returned.
         return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
-        discard_without_annotations: If True, images without annotations will be discarded. This runs after the filters.
+        include_unannotated: If True, images without annotations will be included. If False, images without annotations will be discarded. 
         all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
         server_url: URL of the Datamint server. If not provided, it will use the default server.
         return_segmentations: If True (default), the segmentations of the image will be returned in the 'segmentations' key.
@@ -65,7 +65,7 @@ class DatamintDataset(DatamintBaseDataset):
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
-                 discard_without_annotations: bool = True,
+                 include_unannotated: bool = True,
                  # filtering parameters
                  include_annotators: Optional[list[str]] = None,
                  exclude_annotators: Optional[list[str]] = None,
@@ -86,7 +86,7 @@ class DatamintDataset(DatamintBaseDataset):
                          return_metainfo=return_metainfo,
                          return_frame_by_frame=return_frame_by_frame,
                          return_annotations=return_annotations,
-                         discard_without_annotations=discard_without_annotations,
+                         include_unannotated=include_unannotated,
                          all_annotations=all_annotations,
                          include_annotators=include_annotators,
                          exclude_annotators=exclude_annotators,

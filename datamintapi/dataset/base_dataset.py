@@ -42,7 +42,7 @@ class DatamintBaseDataset:
         return_metainfo: If True, the metainfo of the image will be returned.
         return_annotations: If True, the annotations of the image will be returned.
         return_frame_by_frame: If True, each frame of a video/DICOM/3d-image will be returned separately.
-        discard_without_annotations: If True, images without annotations will be discarded.
+        include_unannotated: If True, images without annotations will be included. If False, images without annotations will be discarded. 
         all_annotations: If True, all annotations will be downloaded, including the ones that are not set as closed/done.
         server_url: URL of the Datamint server. If not provided, it will use the default server.
         include_annotators: List of annotators to include. If None, all annotators will be included. See parameter ``exclude_annotators``.
@@ -69,7 +69,7 @@ class DatamintBaseDataset:
                  return_metainfo: bool = True,
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
-                 discard_without_annotations: bool = True,
+                 include_unannotated: bool = True,
                  all_annotations: bool = False,
                  # filtering parameters
                  include_annotators: Optional[list[str]] = None,
@@ -105,7 +105,8 @@ class DatamintBaseDataset:
         self.return_metainfo = return_metainfo
         self.return_frame_by_frame = return_frame_by_frame
         self.return_annotations = return_annotations
-        self.discard_without_annotations = discard_without_annotations
+        self.include_unannotated = include_unannotated
+        self.discard_without_annotations = not include_unannotated
         
         # Filtering parameters
         self.include_annotators = include_annotators
@@ -583,7 +584,7 @@ class DatamintBaseDataset:
         self.api_handler.download_project(self.project_info['id'],
                                           self.dataset_zippath,
                                           all_annotations=self.all_annotations,
-                                          discard_without_annotations=self.discard_without_annotations)
+                                          include_unannotated=self.include_unannotated)
         _LOGGER.debug(f"Downloaded dataset")
         downloaded_size = os.path.getsize(self.dataset_zippath)
         if downloaded_size == 0:

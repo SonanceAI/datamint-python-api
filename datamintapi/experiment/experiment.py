@@ -798,14 +798,15 @@ class Experiment:
         Log the segmentation prediction of the model for a single frame
 
         Args:
-            resource_id (str): The resource ID of the sample.
-            predictions (np.ndarray): The predictions of the model. A numpy array of shape (H, W) or (N,H,W).
-            label_name (str | dict): The name of the class or a dictionary mapping pixel values to names.
+            resource_id: The resource ID of the sample.
+            predictions: The predictions of the model. Can be a numpy array of shape (H, W) or (N,H,W);
+                Or a path to a png file; Or a path to a .nii.gz file.
+            label_name: The name of the class or a dictionary mapping pixel values to names.
                 Example: ``{1: 'Femur', 2: 'Tibia'}`` means that pixel value 1 is 'Femur' and pixel value 2 is 'Tibia'.
-            frame_index (int | list[int]): The frame index of the prediction or a list of frame indexes.
+            frame_index: The frame index of the prediction or a list of frame indexes.
                 If a list, must have the same length as the predictions.
                 If None, 
-            threshold (float): The threshold to apply to the predictions.
+            threshold: The threshold to apply to the predictions.
         """
 
         if isinstance(resource_id, dict):
