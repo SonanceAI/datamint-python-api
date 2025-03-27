@@ -69,7 +69,7 @@ class DatamintBaseDataset:
                  return_metainfo: bool = True,
                  return_annotations: bool = True,
                  return_frame_by_frame: bool = False,
-                 discard_without_annotations: bool = False,
+                 discard_without_annotations: bool = True,
                  all_annotations: bool = False,
                  # filtering parameters
                  include_annotators: Optional[list[str]] = None,
@@ -582,7 +582,8 @@ class DatamintBaseDataset:
 
         self.api_handler.download_project(self.project_info['id'],
                                           self.dataset_zippath,
-                                          all_annotations=self.all_annotations)
+                                          all_annotations=self.all_annotations,
+                                          discard_without_annotations=self.discard_without_annotations)
         _LOGGER.debug(f"Downloaded dataset")
         downloaded_size = os.path.getsize(self.dataset_zippath)
         if downloaded_size == 0:

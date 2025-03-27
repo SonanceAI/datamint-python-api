@@ -65,7 +65,7 @@ class DatamintDataset(DatamintBaseDataset):
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
-                 discard_without_annotations: bool = False,
+                 discard_without_annotations: bool = True,
                  # filtering parameters
                  include_annotators: Optional[list[str]] = None,
                  exclude_annotators: Optional[list[str]] = None,
@@ -75,7 +75,7 @@ class DatamintDataset(DatamintBaseDataset):
                  exclude_image_label_names: Optional[list[str]] = None,
                  include_frame_label_names: Optional[list[str]] = None,
                  exclude_frame_label_names: Optional[list[str]] = None,
-                 all_annotations: bool = False
+                 all_annotations: bool = False,
                  ):
         super().__init__(root=root,
                          project_name=project_name,
@@ -364,7 +364,7 @@ class DatamintDataset(DatamintBaseDataset):
             num_frames: number of frames in the video
 
         Returns:
-            Dict[torch.Tensor]: dictionary of annotator_id -> tensor of shape (num_frames, num_labels)
+            dict[str, torch.Tensor]: dictionary of annotator_id -> tensor of shape (num_frames, num_labels)
         """
         if num_frames is None:
             labels_ret_size = (len(self.image_labels_set),)

@@ -920,7 +920,9 @@ class RootAPIHandler(BaseAPIHandler):
 
     def download_project(self, project_id: str,
                          outpath: str,
-                         all_annotations: bool = False) -> None:
+                         all_annotations: bool = False,
+                         discard_without_annotations: bool = False,
+                         ) -> None:
         """
         Download a project by its id.
 
@@ -935,7 +937,8 @@ class RootAPIHandler(BaseAPIHandler):
         request_params = {'method': 'GET',
                           'url': url,
                           'stream': True,
-                          'params': {'all_annotations': all_annotations}
+                          'params': {'all_annotations': all_annotations,
+                                     'discard_without_annotations': discard_without_annotations}
                           }
         response = self._run_request(request_params)
         total_size = int(response.headers.get('content-length', 0))
