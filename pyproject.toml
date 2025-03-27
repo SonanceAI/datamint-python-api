@@ -6,6 +6,10 @@ authors = ["Sonance Team"]
 readme = "README.md"
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
 include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
+packages = [
+    { include = "datamintapi" },
+    { include = "datamint" }
+]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
