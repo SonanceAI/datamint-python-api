@@ -220,7 +220,6 @@ class RootAPIHandler(BaseAPIHandler):
 
         orig_len = len(dicoms_files_path)
         dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
-        print([d.name for d in dicoms_files_path])
 
         new_len = len(dicoms_files_path)
         if new_len != orig_len:
