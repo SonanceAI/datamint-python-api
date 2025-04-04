@@ -2,7 +2,7 @@ import logging
 from datamintapi.apihandler.api_handler import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 from datetime import datetime, timezone
-from typing import List, Dict, Optional, Union, Any, Tuple, IO
+from typing import List, Dict, Optional, Union, Any, Tuple, IO, Literal
 from collections import defaultdict
 import torch
 from datamintapi import Dataset as DatamintDataset
@@ -793,13 +793,14 @@ class Experiment:
                                      label_name: str | dict[int, str],
                                      frame_index: int | list[int] | None = None,
                                      threshold: float = 0.5,
+                                     predictions_format: Literal['multi-class', 'probability'] = 'probability'
                                      ):
         """
         Log the segmentation prediction of the model for a single frame
 
         Args:
             resource_id: The resource ID of the sample.
-            predictions: The predictions of the model. Can be a numpy array of shape (H, W) or (N,H,W);
+            predictions: The predictions of the model. One binary mask for each class. Can be a numpy array of shape (H, W) or (N,H,W);
                 Or a path to a png file; Or a path to a .nii.gz file.
             label_name: The name of the class or a dictionary mapping pixel values to names.
                 Example: ``{1: 'Femur', 2: 'Tibia'}`` means that pixel value 1 is 'Femur' and pixel value 2 is 'Tibia'.
@@ -807,7 +808,34 @@ class Experiment:
                 If a list, must have the same length as the predictions.
                 If None, 
             threshold: The threshold to apply to the predictions.
+            predictions_format: The format of the predictions. Can be a probability mask ('probability') or a multi-class mask ('multi-class').
+
+        Example:
+            .. code-block:: python
+
+            resource_id = '123'
+            predictions = np.array([[0.1, 0.4], [0.9, 0.2]])
+            label_name = 'fracture'
+            exp.log_segmentation_predictions(resource_id, predictions, label_name, threshold=0.5)
+
+            .. code-block:: python
+
+            resource_id = '456'
+            predictions = np.array([[0, 1, 2], [1, 2, 0]])  # Multi-class mask with values 0, 1, 2
+            label_name = {1: 'Femur', 2: 'Tibia'}  # Mapping of pixel values to class names
+            exp.log_segmentation_predictions(
+                resource_id, 
+                predictions, 
+                label_name, 
+                predictions_format='multi-class'
+            )
         """
+
+        if predictions_format not in ['multi-class', 'probability']:
+            raise ValueError("predictions_format must be 'multi-class' or 'probability'.")
+
+        if isinstance(label_name, dict) and predictions_format!='multi-class':
+            raise ValueError("If label_name is a dictionary, predictions_format must be 'multi-class'.")
 
         if isinstance(resource_id, dict):
             resource_id = resource_id['id']
@@ -817,6 +845,9 @@ class Experiment:
 
         if isinstance(predictions, str):
             predictions = io_utils.read_array_normalized(predictions)
+
+        if predictions_format == 'probability':
+            predictions = predictions > threshold
 
         is_2d_prediction = predictions.ndim == 2
 
@@ -837,8 +868,6 @@ class Experiment:
             if len(frame_index) != predictions.shape[0]:
                 raise ValueError("Length of frame_index must match the first dimension of predictions.")
 
-        # For each frame
-        predictions = predictions > threshold
         new_ann_id = self.apihandler.upload_segmentations(
             resource_id=resource_id,
             file_path=predictions.transpose(1, 2, 0),
@@ -849,11 +878,11 @@ class Experiment:
         )
 
     def log_semantic_seg_predictions(self,
-                                     predictions: np.ndarray,
-                                     resource_ids: Union[List[str], str],
-                                     label_names: List[str],
+                                     predictions: np.ndarray | str,
+                                     resource_ids: Union[list[str], str],
+                                     label_names: list[str],
                                      dataset_split: Optional[str] = None,
-                                     frame_idxs: Optional[List[int]] = None,
+                                     frame_idxs: Optional[list[int]] = None,
                                      step: Optional[int] = None,
                                      epoch: Optional[int] = None,
                                      threshold: float = 0.5
@@ -862,14 +891,19 @@ class Experiment:
         Log the semantic segmentation predictions of the model.
 
         Args:
-            predictions (np.ndarray): The predictions of the model. A list of numpy arrays of shape (N, C, H, W).
-            label_names (List[str]): The names of the classes. List of strings of size C.
-            resource_ids (List[str]): The resource IDs of the samples.
+            predictions (np.ndarray | str): The predictions of the model. A list of numpy arrays of shape (N, C, H, W).
+                Or a path to a png file; Or a path to a .nii.gz file.
+            label_names (list[str]): The names of the classes. List of strings of size C.
+            resource_ids (list[str]): The resource IDs of the samples.
             dataset_split (Optional[str]): The dataset split of the predictions.
-            frame_idxs (Optional[List[int]]): The frame indexes of the predictions.
+            frame_idxs (Optional[list[int]]): The frame indexes of the predictions.
             step (Optional[int]): The step of the experiment.
             epoch (Optional[int]): The epoch of the experiment.
         """
+
+        if isinstance(predictions, str):
+            predictions = io_utils.read_array_normalized(predictions)
+
         if isinstance(resource_ids, str):
             resource_ids = [resource_ids] * len(predictions)
 

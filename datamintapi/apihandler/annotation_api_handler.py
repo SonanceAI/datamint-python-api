@@ -39,8 +39,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
     @staticmethod
     def _generate_segmentations_ios(file_path: str | np.ndarray,
                                     transpose_segmentation: bool = False) -> tuple[int, Generator[BinaryIO, None, None]]:
-        _LOGGER.debug(f'Generating segmentations io from file_path type: {type(file_path)}')
-
         if not isinstance(file_path, (str, np.ndarray)):
             raise ValueError(f"Unsupported file type: {type(file_path)}")
 
@@ -90,7 +88,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     async def _upload_segmentations_async(self,
                                           resource_id: str,
                                           frame_index: int,
-                                          file_path: str | None = None,
+                                          file_path: str | np.ndarray | None = None,
                                           fio: IO = None,
                                           name: Optional[str | dict[int, str]] = None,
                                           imported_from: Optional[str] = None,
@@ -533,6 +531,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 return [names]
             return [f'{names}_{v}' for v in uniq_vals]
         if isinstance(names, dict):
+            for v in uniq_vals:
+                new_name = names.get(v, names.get('default', None))
+                if new_name is None:
+                    raise ValueError(f"Value {v} not found in names dictionary." +
+                                     f" Provide a name for {v} or use 'default' key to provide a prefix.")
             return [names.get(v, names.get('default', '')+'_'+str(v)) for v in uniq_vals]
         raise ValueError("names must be a string or a dictionary.")
 
