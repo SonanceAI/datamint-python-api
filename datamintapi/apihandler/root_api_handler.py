@@ -889,8 +889,10 @@ class RootAPIHandler(BaseAPIHandler):
                          "resource_ids": resources_ids,
                          "annotations": [],
                          "frame_labels": [],
-                         "image_labels": []
+                         "image_labels": [],
                      },
+                     "two_up_display": False,
+                     "require_review": False,
                      'description': description}
         }
         response = self._run_request(request_args)
@@ -912,7 +914,7 @@ class RootAPIHandler(BaseAPIHandler):
                           'url': url
                           }
         try:
-            self._run_request(request_params)
+            print(self._run_request(request_params))
         except ResourceNotFoundError as e:
             e.set_params('project', {'project_id': project_id})
             raise e
