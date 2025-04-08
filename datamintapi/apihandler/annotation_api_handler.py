@@ -248,8 +248,32 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                       value: str,
                                       imported_from: Optional[str] = None,
                                       author_email: Optional[str] = None,
-                                      worklist_id: Optional[str] = None
+                                      worklist_id: Optional[str] = None,
+                                      project: Optional[str] = None
                                       ):
+        """
+        Add a category annotation to an image.
+
+        Args:
+            resource_id (str): The resource unique id.
+            identifier (str): The annotation identifier. For example: 'fracture'.
+            value (str): The annotation value. 
+            imported_from (Optional[str]): The imported from value.
+            author_email (Optional[str]): The author email. If None, use the customer of the api key.
+            wokklist_id (Optional[str]): The annotation worklist unique id.
+            project (Optional[str]): The project unique id or name. Only this or worklist_id can be provided at the same time.
+
+        """
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+        if project is not None:
+            proj = self.get_project_by_name(project)
+            if 'error' in proj.keys():
+                raise DatamintException(f"Project {project} not found.")
+            worklist_id = proj['worklist_id']
+
+        if value is None:
+            raise ValueError('Value cannot be None.')
 
         request_params = {
             'method': 'POST',
@@ -324,6 +348,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         imported_from: Optional[str] = None,
                         author_email: Optional[str] = None,
                         model_id: Optional[str] = None,
+                        project: Optional[str] = None,
                         ):
         """
         Add annotations to a resource.
@@ -339,7 +364,16 @@ class AnnotationAPIHandler(BaseAPIHandler):
             author_email: The author email. If None, use the customer of the api key.
                 Requires admin permissions to set a different customer.
             model_id: The model unique id.
+            project: The project unique id or name. Only this or worklist_id can be provided at the same time.
         """
+
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+        if project is not None:
+            proj = self.get_project_by_name(project)
+            if 'error' in proj.keys():
+                raise DatamintException(f"Project {project} not found.")
+            worklist_id = proj['worklist_id']
 
         if isinstance(frame_index, tuple):
             begin, end = frame_index
@@ -358,7 +392,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
             'annotation_worklist_id': worklist_id,
             'imported_from': imported_from,
             'import_author': author_email,
-            'type': 'category',
+            'type': 'label' if value is None else 'category',
         }
         if model_id is not None:
             params['model_id'] = model_id
