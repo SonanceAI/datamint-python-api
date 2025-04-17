@@ -39,6 +39,8 @@ def set_project(project_name: Optional[str] = None, project_id: Optional[str] = 
             project = dt_client.get_project_by_name(project_name)
             if project is None:
                 raise DatamintException(f"Project with name '{project_name}' does not exist.")
+            if 'error' in project:
+                raise DatamintException(f'Error getting project "{project_name}" by name: {project["error"]}')
             project_id = project['id']
         else:
             project = dt_client.get_project_by_id(project_id)
