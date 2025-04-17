@@ -13,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 _ACTIVE_PROJECT_ID: Optional[str] = None
 
 
-def _get_active_project_id() -> str | None:
+def get_active_project_id() -> str | None:
     """
     Get the active project ID from the environment variable or the global variable.
     """
