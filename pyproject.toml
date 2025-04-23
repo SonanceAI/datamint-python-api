@@ -78,3 +78,6 @@ datamint = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRe
 http = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
 https = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
 mlflow-artifacts = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+
+[tool.poetry.plugins."mlflow.default_experiment_provider"]
+datamint = "datamint.mlflow.tracking.default_experiment:DatamintExperimentProvider"
