@@ -70,3 +70,11 @@ datamint-config = 'datamintapi.client_cmd_tools.datamint_config:main'
 
 [tool.poetry.plugins."mlflow.tracking_store"]
 datamint = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+http = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+https = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+
+[tool.poetry.plugins."mlflow.artifact_repository"]
+datamint = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+http = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+https = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+mlflow-artifacts = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"

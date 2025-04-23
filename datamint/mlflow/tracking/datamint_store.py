@@ -13,12 +13,19 @@ class DatamintStore(RestStore):
     implementation for Datamint.
     """
 
-    def __init__(self, store_uri: str, artifact_uri=None):
+    def __init__(self, store_uri: str, artifact_uri=None, force_valid=False):
+        if store_uri.startswith('datamint://') or 'datamint.io' in store_uri or force_valid:
+            self.invalid = False
+        else:
+            self.invalid = True
+
         store_uri = store_uri.split('datamint://', maxsplit=1)[-1]
         get_host_creds = partial(get_default_host_creds, store_uri)
         super().__init__(get_host_creds=get_host_creds)
 
     def create_experiment(self, name, artifact_location=None, tags=None, project_id: str = None) -> str:
+        if self.invalid:
+            return super().create_experiment(name, artifact_location, tags)
         if project_id is None:
             project_id = get_active_project_id()
         tag_protos = [tag.to_proto() for tag in tags] if tags else []
