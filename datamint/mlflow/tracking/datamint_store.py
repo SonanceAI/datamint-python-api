@@ -13,7 +13,7 @@ class DatamintStore(RestStore):
     implementation for Datamint.
     """
 
-    def __init__(self, store_uri: str, artifact_uri=None, force_valid=False):
+    def __init__(self, store_uri: str, artifact_uri=None, force_valid=True):
         if store_uri.startswith('datamint://') or 'datamint.io' in store_uri or force_valid:
             self.invalid = False
         else:
