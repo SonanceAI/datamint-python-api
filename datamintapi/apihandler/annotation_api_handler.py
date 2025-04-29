@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
-from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, CoordinateSystem
+from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, CoordinateSystem, AnnotationType
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -422,6 +422,37 @@ class AnnotationAPIHandler(BaseAPIHandler):
                             imported_from: Optional[str] = None,
                             author_email: Optional[str] = None,
                             model_id: Optional[str] = None):
+        """
+        Add a line annotation to a resource.
+
+        Args:
+            point1: The first point of the line. Can be a 2d or 3d point. 
+                If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
+                If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
+                to the DICOM metadata.
+            If `coords_system` is 'patient', it must be a 3d point.
+            point2: The second point of the line. See `point1` for more details.
+            resource_id: The resource unique id.
+            identifier: The annotation identifier, also as known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'. 
+                If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
+            project: The project unique id or name.
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
+            model_id: The model unique id. Optional.
+
+        Example:
+            .. code-block:: python
+
+                res_id = 'aa93813c-cef0-4edd-a45c-85d4a8f1ad0d'
+                api.add_line_annotation([0, 0], (10, 30),
+                                        resource_id=res_id,
+                                        identifier='Line1',
+                                        frame_index=2,
+                                        project='Example Project')
+        """
 
         if project is not None and worklist_id is not None:
             raise ValueError('Only one of project or worklist_id can be provided.')
@@ -443,6 +474,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
             raise ValueError(f"Unknown coordinate system: {coords_system}")
 
         anndto = CreateAnnotationDto(
+            type=AnnotationType.LINE,
             identifier=identifier,
             scope='frame',
             annotation_worklist_id=worklist_id,
