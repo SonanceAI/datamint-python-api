@@ -1,5 +1,5 @@
 from typing import Optional, Generator, Literal, IO, BinaryIO
-from .base_api_handler import BaseAPIHandler, ResourceNotFoundError, DatamintException
+from .base_api_handler import BaseAPIHandler, ResourceNotFoundError, DatamintException, validate_call
 from datetime import date
 import logging
 import numpy as np
@@ -11,6 +11,7 @@ import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
+from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, CoordinateSystem, AnnotationType
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -73,7 +74,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_annotations_async(self,
                                         resource_id: str,
-                                        annotations: list[dict]) -> list[str]:
+                                        annotations: list[dict | CreateAnnotationDto]) -> list[str]:
+        annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations]
         request_params = dict(
             method='POST',
             url=f'{self.root_url}/annotations/{resource_id}/annotations',
@@ -130,23 +132,19 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
                 segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
                 segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
-                annotations = []
+                annotations: list[CreateAnnotationDto] = []
                 for segname in segnames:
-                    ann = {
-                        "identifier": segname,
-                        "scope": 'frame',
-                        "frame_index": frame_index,
-                        'imported_from': imported_from,
-                        'import_author': author_email,
-                        "type": 'segmentation',
-                        'annotation_worklist_id': worklist_id
-                    }
-                    if model_id is not None:
-                        ann['model_id'] = model_id
-                        ann['is_model'] = True
+                    ann = CreateAnnotationDto(type='segmentation',
+                                              identifier=segname,
+                                              scope='frame',
+                                              frame_index=frame_index,
+                                              imported_from=imported_from,
+                                              import_author=author_email,
+                                              model_id=model_id,
+                                              annotation_worklist_id=worklist_id)
                     annotations.append(ann)
                 # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
-                if len(annotations) != len(set([a['identifier'] for a in annotations])):
+                if len(annotations) != len(set([a.identifier for a in annotations])):
                     raise ValueError(
                         "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
 
@@ -407,6 +405,94 @@ class AnnotationAPIHandler(BaseAPIHandler):
             'method': 'POST',
             'url': f'{self.root_url}/annotations/{resource_id}/annotations',
             'json': json_data
+        }
+
+        resp = self._run_request(request_params)
+        self._check_errors_response_json(resp)
+
+    def add_line_annotation(self,
+                            point1: tuple[int, int] | tuple[float, float, float],
+                            point2: tuple[int, int] | tuple[float, float, float],
+                            resource_id: str,
+                            identifier: str,
+                            frame_index: int,
+                            coords_system: CoordinateSystem = 'pixel',
+                            project: Optional[str] = None,
+                            worklist_id: Optional[str] = None,
+                            imported_from: Optional[str] = None,
+                            author_email: Optional[str] = None,
+                            model_id: Optional[str] = None):
+        """
+        Add a line annotation to a resource.
+
+        Args:
+            point1: The first point of the line. Can be a 2d or 3d point. 
+                If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
+                If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
+                to the DICOM metadata.
+            If `coords_system` is 'patient', it must be a 3d point.
+            point2: The second point of the line. See `point1` for more details.
+            resource_id: The resource unique id.
+            identifier: The annotation identifier, also as known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'. 
+                If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
+            project: The project unique id or name.
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
+            model_id: The model unique id. Optional.
+
+        Example:
+            .. code-block:: python
+
+                res_id = 'aa93813c-cef0-4edd-a45c-85d4a8f1ad0d'
+                api.add_line_annotation([0, 0], (10, 30),
+                                        resource_id=res_id,
+                                        identifier='Line1',
+                                        frame_index=2,
+                                        project='Example Project')
+        """
+
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+
+        if project is not None:
+            proj = self.get_project_by_name(project)
+            if 'error' in proj.keys():
+                raise DatamintException(f"Project {project} not found.")
+            worklist_id = proj['worklist_id']
+
+        if coords_system == 'pixel':
+            point1 = (point1[0], point1[1], frame_index)
+            point2 = (point2[0], point2[1], frame_index)
+            geom = LineGeometry(point1, point2)
+        elif coords_system == 'patient':
+            raise NotImplementedError("Coordinate system not implemented yet.")
+            geom = LineGeometry.from_dicom(ds, point1, point2, slice_index=frame_index)
+        else:
+            raise ValueError(f"Unknown coordinate system: {coords_system}")
+
+        anndto = CreateAnnotationDto(
+            type=AnnotationType.LINE,
+            identifier=identifier,
+            scope='frame',
+            annotation_worklist_id=worklist_id,
+            value=None,
+            imported_from=imported_from,
+            import_author=author_email,
+            frame_index=frame_index,
+            geometry=geom,
+            model_id=model_id,
+            is_model=model_id is not None,
+        )
+
+        json_data = anndto.to_dict()
+
+        request_params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/annotations/{resource_id}/annotations',
+            'json': [json_data]
         }
 
         resp = self._run_request(request_params)
