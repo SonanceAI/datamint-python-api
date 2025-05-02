@@ -85,7 +85,8 @@ class DatamintBaseDataset:
             raise ValueError("project_name is required.")
 
         self.all_annotations = all_annotations
-        self.api_handler = APIHandler(root_url=server_url, api_key=api_key)
+        self.api_handler = APIHandler(root_url=server_url, api_key=api_key, 
+                                      check_connection=auto_update)
         self.server_url = self.api_handler.root_url
         if root is None:
             # store them in the home directory
