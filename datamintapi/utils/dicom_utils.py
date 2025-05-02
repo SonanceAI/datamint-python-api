@@ -401,3 +401,203 @@ def _generate_merged_dicoms(dicoms_map: dict[str, list],
             yield to_bytesio(merged_dicom, name=name)
         else:
             yield merged_dicom
+
+
+"""
+- The Slice Location (0020,1041) is usually a derived attribute,
+typically computed from Image Position (Patient) (0020,0032)
+"""
+
+
+def get_space_between_slices(ds: pydicom.Dataset) -> float:
+    """
+    Get the space between slices from a DICOM dataset.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+
+    Returns:
+        float: Space between slices in millimeters.
+    """
+    # Get the Spacing Between Slices attribute
+    if 'SpacingBetweenSlices' in ds:
+        return ds.SpacingBetweenSlices
+
+    if 'SharedFunctionalGroupsSequence' in ds:
+        shared_group = ds.SharedFunctionalGroupsSequence[0]
+        if 'PixelMeasuresSequence' in shared_group and 'SpacingBetweenSlices' in shared_group.PixelMeasuresSequence[0]:
+            return shared_group.PixelMeasuresSequence[0].SpacingBetweenSlices
+
+    if 'SliceThickness' in ds:
+        return ds.SliceThickness
+
+    return 1.0  # Default value if not found
+
+
+def get_image_orientation(ds: pydicom.Dataset, slice_index: int) -> np.ndarray:
+    """
+    Get the image orientation from a DICOM dataset.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+
+    Returns:
+        numpy.ndarray: Image orientation (X, Y, Z) for the specified slice.
+    """
+    # Get the Image Orientation Patient attribute
+    if 'ImageOrientationPatient' in ds:
+        return ds.ImageOrientationPatient
+
+    if 'PerFrameFunctionalGroupsSequence' in ds:
+        if 'PlaneOrientationSequence' in ds.PerFrameFunctionalGroupsSequence[slice_index]:
+            return ds.PerFrameFunctionalGroupsSequence[slice_index].PlaneOrientationSequence[0].ImageOrientationPatient
+
+    if 'SharedFunctionalGroupsSequence' in ds:
+        return ds.SharedFunctionalGroupsSequence[0].PlaneOrientationSequence[0].ImageOrientationPatient
+
+    raise ValueError("ImageOrientationPatient not found in DICOM dataset.")
+
+
+def get_slice_orientation(ds: pydicom.Dataset, slice_index: int) -> np.ndarray:
+    """
+    Get the slice orientation from a DICOM dataset.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+        slice_index (int): 0-based index of the slice in the 3D volume. This is the `InstanceNumber-1`.
+
+    Returns:
+        numpy.ndarray: Slice orientation (X, Y, Z) for the specified slice.
+    """
+    # Get the Image Orientation Patient attribute
+
+    x_orient, y_orient = np.array(get_image_orientation(ds, slice_index), dtype=np.float64).reshape(2, 3)
+    # compute the normal vector of the slice
+    slice_orient = np.cross(x_orient, y_orient)
+    # normalize the vector to space_between_slices
+    space_between_slices = get_space_between_slices(ds)
+    slice_orient = slice_orient / np.linalg.norm(slice_orient) * space_between_slices
+
+    return slice_orient
+
+
+def _get_instance_number(ds: pydicom.Dataset, slice_index: int | None = None) -> int:
+    if slice_index is None:
+        if 'InstanceNumber' in ds:
+            slice_index = ds.InstanceNumber - 1
+        elif 'NumberOfFrames' in ds and ds.NumberOfFrames == 1:
+            slice_index = 0
+        else:
+            raise ValueError("Slice index is required for multi-frame images.")
+    else:
+        if slice_index < 0:
+            raise ValueError("Slice index must be a non-negative integer.")
+        if 'NumberOfFrames' in ds and slice_index >= ds.NumberOfFrames:
+            logging.warning(f"Slice index {slice_index} exceeds number of frames {ds.NumberOfFrames}.")
+
+    return slice_index
+
+
+def get_image_position(ds: pydicom.Dataset,
+                       slice_index: int | None = None) -> np.ndarray:
+    """
+    Get the image position for a specific slice in a DICOM dataset.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+        slice_index (int): Index of the slice in the 3D volume.
+
+    Returns:
+        numpy.ndarray: Image position (X, Y, Z) for the specified slice.
+    """
+
+    if slice_index is None:
+        if 'InstanceNumber' in ds:
+            instance_number = ds.InstanceNumber
+        elif 'NumberOfFrames' in ds and ds.NumberOfFrames == 1:
+            instance_number = 1
+        else:
+            raise ValueError("Slice index or InstanceNumber is required for multi-frame images.")
+    else:
+        instance_number = slice_index + 1
+
+    if 'PerFrameFunctionalGroupsSequence' in ds:
+        if slice_index is not None:
+            frame_groups = ds.PerFrameFunctionalGroupsSequence[slice_index]
+            if 'PlanePositionSequence' in frame_groups and 'ImagePositionPatient' in frame_groups.PlanePositionSequence[0]:
+                return frame_groups.PlanePositionSequence[0].ImagePositionPatient
+        else:
+            logging.warning("PerFrameFunctionalGroupsSequence is available, but slice_index is not provided.")
+
+    # Get the Image Position Patient attribute
+    if 'ImagePositionPatient' in ds:
+        if 'SliceLocation' in ds:
+            logging.warning("SliceLocation attribute is available, but not accounted for in calculation.")
+        x = np.array(ds.ImagePositionPatient, dtype=np.float64)
+        sc_orient = get_slice_orientation(ds, slice_index)
+        return x + sc_orient*(instance_number-ds.get('InstanceNumber', 1))
+
+    raise ValueError("ImagePositionPatient not found in DICOM dataset.")
+
+
+def get_pixel_spacing(ds: pydicom.Dataset, slice_index: int) -> np.ndarray:
+    """
+    Get the pixel spacing from a DICOM dataset.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+        slice_index (int): Index of the slice in the 3D volume.
+
+    Returns:
+        numpy.ndarray: Pixel spacing (X, Y) for the specified slice.
+    """
+    # Get the Pixel Spacing attribute
+    if 'PixelSpacing' in ds:
+        return np.array(ds.PixelSpacing, dtype=np.float64)
+
+    if 'PerFrameFunctionalGroupsSequence' in ds:
+        if 'PixelMeasuresSequence' in ds.PerFrameFunctionalGroupsSequence[slice_index]:
+            return ds.PerFrameFunctionalGroupsSequence[slice_index].PixelMeasuresSequence[0].PixelSpacing
+
+    if 'SharedFunctionalGroupsSequence' in ds:
+        if 'PixelMeasuresSequence' in ds.SharedFunctionalGroupsSequence[0]:
+            return ds.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing
+
+    raise ValueError("PixelSpacing not found in DICOM dataset.")
+
+
+def pixel_to_patient(ds: pydicom.Dataset,
+                     pixel_x, pixel_y, slice_index: int | None = None) -> np.ndarray:
+    """
+    Convert pixel coordinates (pixel_x, pixel_y) to patient coordinates in DICOM.
+
+    Parameters:
+        ds (pydicom.Dataset): The DICOM dataset containing image metadata.
+        pixel_x (float): X coordinate in pixel space.
+        pixel_y (float): Y coordinate in pixel space.
+        slice_index (int): Index of the slice in the 3D volume. This is the `InstanceNumber-1`.
+
+    Returns:
+        numpy.ndarray: Patient coordinates (X, Y, Z).
+    """
+
+    # - image_position is the origin of the image in patient coordinates (ImagePositionPatient)
+    # - row_vector and col_vector are the direction cosines from ImageOrientationPatient
+    # - pixel_spacing is the physical distance between the centers of adjacent pixels
+
+    # Get required DICOM attributes
+    image_position = np.array(get_image_position(ds, slice_index), dtype=np.float64)
+    image_orientation = np.array(get_image_orientation(ds, slice_index), dtype=np.float64).reshape(2, 3)
+    # image_position = np.array(ds.ImagePositionPatient, dtype=np.float64)  # (0020,0032)
+    # image_orientation = np.array(ds.ImageOrientationPatient, dtype=np.float64).reshape(2, 3)  # (0020,0037)
+    # pixel_spacing = np.array(ds.PixelSpacing, dtype=np.float64)  # (0028,0030)
+    pixel_spacing = np.array(get_pixel_spacing(ds, slice_index), dtype=np.float64)  # (0028,0030)
+
+    # Compute row and column vectors from image orientation
+    row_vector = image_orientation[0]
+    col_vector = image_orientation[1]
+
+    # Compute patient coordinates
+    patient_coords = image_position + pixel_x * pixel_spacing[0] * row_vector + pixel_y * pixel_spacing[1] * col_vector
+
+    return patient_coords

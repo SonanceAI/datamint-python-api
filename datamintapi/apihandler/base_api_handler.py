@@ -23,8 +23,8 @@ _LOGGER = logging.getLogger(__name__)
 ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
 """TypeAlias: The available resource status. Possible values: 'new', 'inbox', 'published', 'archived'.
 """
-ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'published_on', 'filename']
-"""TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename'.
+ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'published_on', 'filename', 'created_at']
+"""TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename', 'created_at' (default).
 """
 
 _PAGE_LIMIT = 5000
