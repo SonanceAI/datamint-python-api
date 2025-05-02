@@ -301,6 +301,9 @@ class DatamintDataset(DatamintBaseDataset):
             'image': img,
             'metainfo': metainfo,
         }
+        if 'dicom' in item:
+            new_item['dicom'] = item['dicom']
+
 
         if self.return_segmentations:
             segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
