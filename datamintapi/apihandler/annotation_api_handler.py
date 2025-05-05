@@ -12,6 +12,7 @@ import aiohttp
 from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
 from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, CoordinateSystem, AnnotationType
+import pydicom
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -415,7 +416,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                             point2: tuple[int, int] | tuple[float, float, float],
                             resource_id: str,
                             identifier: str,
-                            frame_index: int,
+                            frame_index: int | None = None,
+                            dicom_metadata: pydicom.Dataset | str | None = None,
                             coords_system: CoordinateSystem = 'pixel',
                             project: Optional[str] = None,
                             worklist_id: Optional[str] = None,
@@ -435,6 +437,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             resource_id: The resource unique id.
             identifier: The annotation identifier, also as known as the annotation's label.
             frame_index: The frame index of the annotation.
+            dicom_metadata: The DICOM metadata of the image. If provided, the coordinates will be converted to the 
+                correct coordinates automatically using the DICOM metadata.
             coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'. 
                 If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
             project: The project unique id or name.
@@ -464,12 +468,16 @@ class AnnotationAPIHandler(BaseAPIHandler):
             worklist_id = proj['worklist_id']
 
         if coords_system == 'pixel':
-            point1 = (point1[0], point1[1], frame_index)
-            point2 = (point2[0], point2[1], frame_index)
-            geom = LineGeometry(point1, point2)
+            if dicom_metadata is None:
+                point1 = (point1[0], point1[1], frame_index)
+                point2 = (point2[0], point2[1], frame_index)
+                geom = LineGeometry(point1, point2)
+            else:
+                if isinstance(dicom_metadata, str):
+                    dicom_metadata = pydicom.dcmread(dicom_metadata)
+                geom = LineGeometry.from_dicom(dicom_metadata, point1, point2, slice_index=frame_index)
         elif coords_system == 'patient':
-            raise NotImplementedError("Coordinate system not implemented yet.")
-            geom = LineGeometry.from_dicom(ds, point1, point2, slice_index=frame_index)
+            geom = LineGeometry(point1, point2)
         else:
             raise ValueError(f"Unknown coordinate system: {coords_system}")
 
