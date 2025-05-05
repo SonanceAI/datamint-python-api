@@ -483,19 +483,21 @@ def get_slice_orientation(ds: pydicom.Dataset, slice_index: int) -> np.ndarray:
 
 def _get_instance_number(ds: pydicom.Dataset, slice_index: int | None = None) -> int:
     if slice_index is None:
-        if 'InstanceNumber' in ds:
-            slice_index = ds.InstanceNumber - 1
+        if 'InstanceNumber' in ds and ds.InstanceNumber is not None:
+            return ds.InstanceNumber
         elif 'NumberOfFrames' in ds and ds.NumberOfFrames == 1:
-            slice_index = 0
+            return 0
         else:
             raise ValueError("Slice index is required for multi-frame images.")
     else:
         if slice_index < 0:
             raise ValueError("Slice index must be a non-negative integer.")
         if 'NumberOfFrames' in ds and slice_index >= ds.NumberOfFrames:
-            logging.warning(f"Slice index {slice_index} exceeds number of frames {ds.NumberOfFrames}.")
-
-    return slice_index
+            _LOGGER.warning(f"Slice index {slice_index} exceeds number of frames {ds.NumberOfFrames}.")
+        root_instance_number = ds.get('InstanceNumber', 1)
+        if root_instance_number is None:
+            root_instance_number = 1
+        return root_instance_number + slice_index
 
 
 def get_image_position(ds: pydicom.Dataset,
@@ -511,15 +513,7 @@ def get_image_position(ds: pydicom.Dataset,
         numpy.ndarray: Image position (X, Y, Z) for the specified slice.
     """
 
-    if slice_index is None:
-        if 'InstanceNumber' in ds:
-            instance_number = ds.InstanceNumber
-        elif 'NumberOfFrames' in ds and ds.NumberOfFrames == 1:
-            instance_number = 1
-        else:
-            raise ValueError("Slice index or InstanceNumber is required for multi-frame images.")
-    else:
-        instance_number = slice_index + 1
+    instance_number = _get_instance_number(ds, slice_index)
 
     if 'PerFrameFunctionalGroupsSequence' in ds:
         if slice_index is not None:
@@ -532,7 +526,7 @@ def get_image_position(ds: pydicom.Dataset,
     # Get the Image Position Patient attribute
     if 'ImagePositionPatient' in ds:
         if 'SliceLocation' in ds:
-            logging.warning("SliceLocation attribute is available, but not accounted for in calculation.")
+            _LOGGER.debug("SliceLocation attribute is available, but not accounted for in calculation.")
         x = np.array(ds.ImagePositionPatient, dtype=np.float64)
         sc_orient = get_slice_orientation(ds, slice_index)
         return x + sc_orient*(instance_number-ds.get('InstanceNumber', 1))
@@ -567,7 +561,9 @@ def get_pixel_spacing(ds: pydicom.Dataset, slice_index: int) -> np.ndarray:
 
 
 def pixel_to_patient(ds: pydicom.Dataset,
-                     pixel_x, pixel_y, slice_index: int | None = None) -> np.ndarray:
+                     pixel_x, pixel_y,
+                     slice_index: int | None = None,
+                     instance_number: int | None = None) -> np.ndarray:
     """
     Convert pixel coordinates (pixel_x, pixel_y) to patient coordinates in DICOM.
 
@@ -575,7 +571,9 @@ def pixel_to_patient(ds: pydicom.Dataset,
         ds (pydicom.Dataset): The DICOM dataset containing image metadata.
         pixel_x (float): X coordinate in pixel space.
         pixel_y (float): Y coordinate in pixel space.
-        slice_index (int): Index of the slice in the 3D volume. This is the `InstanceNumber-1`.
+        slice_index (int): Index of the slice of the `ds.pixel_array`.
+        instance_number (int): Instance number of the slice in the 3D volume.
+
 
     Returns:
         numpy.ndarray: Patient coordinates (X, Y, Z).
@@ -584,6 +582,17 @@ def pixel_to_patient(ds: pydicom.Dataset,
     # - image_position is the origin of the image in patient coordinates (ImagePositionPatient)
     # - row_vector and col_vector are the direction cosines from ImageOrientationPatient
     # - pixel_spacing is the physical distance between the centers of adjacent pixels
+
+    if slice_index is not None and instance_number is not None:
+        raise ValueError("Either slice_index or instance_number should be provided, not both.")
+
+    if slice_index is None:
+        if instance_number is None:
+            instance_number = _get_instance_number(ds)
+        root_instance_number = ds.get('InstanceNumber', 1)
+        if root_instance_number is None:
+            root_instance_number = 1
+        slice_index = instance_number - root_instance_number
 
     # Get required DICOM attributes
     image_position = np.array(get_image_position(ds, slice_index), dtype=np.float64)
