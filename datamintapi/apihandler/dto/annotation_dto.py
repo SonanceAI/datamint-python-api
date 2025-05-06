@@ -20,6 +20,7 @@ import logging
 from enum import Enum
 from datamintapi.utils.dicom_utils import pixel_to_patient
 import pydicom
+import numpy as np
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,6 +70,10 @@ class LineGeometry(Geometry):
     def __init__(self, point1: tuple[float, float, float],
                  point2: tuple[float, float, float]):
         super().__init__(AnnotationType.LINE)
+        if isinstance(point1, np.ndarray):
+            point1 = point1.tolist()
+        if isinstance(point2, np.ndarray):
+            point2 = point2.tolist()
         self.point1 = point1
         self.point2 = point2
 
