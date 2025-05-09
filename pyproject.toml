@@ -35,7 +35,7 @@ pydantic = "^2.0.3"
 platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
-lightning = "*"
+lightning = ">=2.0.0, !=2.5.1, !=2.5.1.post0"
 mlflow = "^2.0.0"
 # Extra dependencies for docs
 sphinx = { version = ">=5.0", optional = true }
