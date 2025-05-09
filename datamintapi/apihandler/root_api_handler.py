@@ -73,6 +73,8 @@ class RootAPIHandler(BaseAPIHandler):
             raise ValueError("session must be an aiohttp.ClientSession object.")
 
         name = os.path.expanduser(os.path.normpath(name))
+        if len(Path(name).parts) == 0:
+            raise ValueError(f"File path '{name}' is not valid.")
         name = os.path.join(*[x if x != '..' else '_' for x in Path(name).parts])
 
         if mung_filename is not None:

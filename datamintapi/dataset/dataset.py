@@ -6,6 +6,7 @@ import os
 import numpy as np
 import logging
 from PIL import Image
+import albumentations
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class DatamintDataset(DatamintBaseDataset):
                  return_as_semantic_segmentation: bool = False,
                  image_transform: Callable[[torch.Tensor], Any] = None,
                  mask_transform: Callable[[torch.Tensor], Any] = None,
+                 alb_transform: albumentations.BasicTransform = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  include_unannotated: bool = True,
                  # filtering parameters
@@ -101,6 +103,11 @@ class DatamintDataset(DatamintBaseDataset):
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.image_transform = image_transform
         self.mask_transform = mask_transform
+        self.alb_transform = alb_transform
+        if alb_transform is not None and return_frame_by_frame == False:
+            # not supported yet
+            raise NotImplementedError(
+                "albumentations transform is not supported yet when return_frame_by_frame is False")
         self.semantic_seg_merge_strategy = semantic_seg_merge_strategy
 
         if return_segmentations == False and return_as_semantic_segmentation == True:
@@ -259,6 +266,44 @@ class DatamintDataset(DatamintBaseDataset):
         new_segmentations = new_segmentations >= len(segmentations) / 2
         return new_segmentations
 
+    def __apply_alb_transform_segmentation(self,
+                                           img: Tensor,
+                                           segmentations: dict[str, list[Tensor]]
+                                           ) -> tuple[Any, dict[str, list]]:
+        all_masks_list = []
+        num_masks = 0
+        all_masks_key: dict[str, list] = {}
+        for author_name, seglist in segmentations.items():
+            all_masks_key[author_name] = []
+            for i, seg in enumerate(seglist):
+                if seg is not None:
+                    all_masks_list.append(seg)
+                    assert len(seg.shape) == 3, f"Segmentation must have 3 dimensions, got {seg.shape}"
+                    all_masks_key[author_name].append([num_masks+j for j in range(seg.shape[0])])
+                    num_masks += seg.shape[0]
+                else:
+                    all_masks_key[author_name].append(None)
+
+        all_masks_list = torch.concatenate(all_masks_list).numpy()
+
+        augmented = self.alb_transform(image=img.numpy().transpose(1, 2, 0),
+                                       masks=all_masks_list.astype(np.uint8))
+
+        # reconstruct the segmentations
+        all_masks = augmented['masks']  # shape: (num_masks, H, W)
+        new_segmentations: dict[str, list] = {}
+        for author_name, seglist in all_masks_key.items():
+            new_segmentations[author_name] = []
+            for i in range(len(seglist)):
+                if seglist[i] is None:
+                    new_segmentations[author_name].append(None)
+                else:
+                    masks_i = all_masks[seglist[i]]
+                    masks_i = np.stack(masks_i)
+                    new_segmentations[author_name].append(masks_i)
+
+        return augmented['image'], new_segmentations
+
     def __getitem__(self, index) -> dict[str, Any]:
         """
         Get the item at the given index.
@@ -284,6 +329,8 @@ class DatamintDataset(DatamintBaseDataset):
         metainfo = item['metainfo']
         annotations = item['annotations']
 
+        has_transformed = False  # to check if albumentations transform was applied
+
         if self.image_transform is not None:
             img = self.image_transform(img)
         if isinstance(img, np.ndarray):
@@ -304,7 +351,6 @@ class DatamintDataset(DatamintBaseDataset):
         if 'dicom' in item:
             new_item['dicom'] = item['dicom']
 
-
         if self.return_segmentations:
             segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
             # apply mask transform
@@ -313,6 +359,13 @@ class DatamintDataset(DatamintBaseDataset):
                     for i, seg in enumerate(seglist):
                         if seg is not None:
                             seglist[i] = self.mask_transform(seg)
+
+            if self.alb_transform is not None:
+                img, new_segmentations = self.__apply_alb_transform_segmentation(img, segmentations)
+                segmentations = new_segmentations
+                img = torch.from_numpy(img).permute(2, 0, 1)
+                new_item['image'] = img
+                has_transformed = True
 
             if self.return_as_semantic_segmentation:
                 sem_segmentations: dict[str, torch.Tensor] = {}
@@ -339,6 +392,12 @@ class DatamintDataset(DatamintBaseDataset):
 
         new_item['segmentations'] = segmentations
         new_item['seg_labels'] = seg_labels
+
+        if self.alb_transform is not None and not has_transformed:
+            # apply albumentations transform to the image
+            augmented = self.alb_transform(image=img.numpy().transpose(1, 2, 0))
+            img = torch.from_numpy(augmented['image']).permute(2, 0, 1)
+            new_item['image'] = img
 
         framelabel_annotations = self._get_annotations_internal(annotations, type='label', scope='frame')
         framelabels = self._convert_labels_annotations(framelabel_annotations, num_frames=nframes)
