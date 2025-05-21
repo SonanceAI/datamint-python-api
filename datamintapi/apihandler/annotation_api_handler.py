@@ -1,5 +1,5 @@
 from typing import Optional, Generator, Literal, IO, BinaryIO
-from .base_api_handler import BaseAPIHandler, ResourceNotFoundError, DatamintException, validate_call
+from .base_api_handler import BaseAPIHandler, ResourceNotFoundError, DatamintException
 from datetime import date
 import logging
 import numpy as np
@@ -522,32 +522,51 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     def get_annotations(self,
                         resource_id: Optional[str] = None,
-                        annotation_type: Optional[str] = None,
+                        annotation_type: AnnotationType | str | None = None,
                         annotator_email: Optional[str] = None,
                         date_from: Optional[date] = None,
-                        date_to: Optional[date] = None) -> Generator[dict, None, None]:
+                        date_to: Optional[date] = None,
+                        dataset_id: Optional[str] = None,
+                        worklist_id: Optional[str] = None,
+                        status: Optional[Literal['new', 'published']] = None,
+                        load_ai_segmentations: bool = None,
+                        ) -> Generator[dict, None, None]:
         """
         Get annotations for a resource.
 
         Args:
             resource_id (Optional[str]): The resource unique id.
-            annotation_type (Optional[str]): The annotation type.
+            annotation_type (Optional[str]): The annotation type. See :class:`~datamintapi.dto.annotation_dto.AnnotationType`.
             annotator_email (Optional[str]): The annotator email.
             date_from (Optional[date]): The start date.
             date_to (Optional[date]): The end date.
+            dataset_id (Optional[str]): The dataset unique id.
+            worklist_id (Optional[str]): The annotation worklist unique id.
+            status (Optional[Literal['new', 'published']]): The status of the annotations.
+            load_ai_segmentations (bool): Whether to load the AI segmentations or not. Default is False.
 
         Returns:
             Generator[dict, None, None]: A generator of dictionaries with the annotations information.
         """
         # TODO: create annotation_type enum
 
+        if annotation_type is not None and isinstance(annotation_type, AnnotationType):
+            annotation_type = annotation_type.value
+
         payload = {
             'resource_id': resource_id,
             'annotation_type': annotation_type,
             'annotatorEmail': annotator_email,
             'from': date_from.isoformat() if date_from is not None else None,
-            'to': date_to.isoformat() if date_to is not None else None
+            'to': date_to.isoformat() if date_to is not None else None,
+            'dataset_id': dataset_id,
+            'annotation_worklist_id': worklist_id,
+            'status': status,
+            'load_ai_segmentations': load_ai_segmentations
         }
+
+        # remove nones
+        payload = {k: v for k, v in payload.items() if v is not None}
 
         request_params = {
             'method': 'GET',
