@@ -524,56 +524,6 @@ class DatamintBaseDataset:
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
-    @deprecated(reason="Use `download_project` instead.")
-    def download_dataset(self):
-        """
-        Downloads the dataset from the Sonance API into the root directory `self.root`.
-
-        Raises:
-            DatamintDatasetException: If the download fails.
-        """
-        from torchvision.datasets.utils import extract_archive
-
-        dataset_info = self._get_datasetinfo()
-        self.dataset_id = dataset_info['id']
-        self.last_updaded_at = dataset_info['updated_at']
-
-        with Session() as session:
-            jwt_token = self._get_jwttoken(self.dataset_id, session)
-
-            # Initiate the download
-            request_params = {
-                'method': 'GET',
-                'url': f'{self.server_url}/datasets/download/{jwt_token}',
-                'headers': {'apikey': self.api_key},
-                'stream': True
-            }
-            response = self._run_request(session, request_params)
-            total_size = int(response.headers.get('content-length', 0))
-            _LOGGER.debug(f'Downloading dataset... Total size: {total_size}')
-            with tqdm(total=total_size, unit='iB', unit_scale=True) as progress_bar:
-                with open(self.dataset_zippath, 'wb') as file:
-                    for data in response.iter_content(1024):
-                        progress_bar.update(len(data))
-                        file.write(data)
-            _LOGGER.debug(f"Downloaded dataset")
-            if total_size != 0 and progress_bar.n != total_size:
-                raise DatamintDatasetException("Download failed.")
-
-            if os.path.exists(self.dataset_dir):
-                _LOGGER.info(f"Deleting existing dataset directory: {self.dataset_dir}")
-                shutil.rmtree(self.dataset_dir)
-            extract_archive(self.dataset_zippath,
-                            self.dataset_dir,
-                            remove_finished=True
-                            )
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'r') as file:
-            self.metainfo = json.load(file)
-        if 'updated_at' not in self.metainfo:
-            self.metainfo['updated_at'] = self.last_updaded_at
-        # save the updated_at date
-        with open(os.path.join(self.dataset_dir, 'dataset.json'), 'w') as file:
-            json.dump(self.metainfo, file)
 
     def download_project(self):
         from torchvision.datasets.utils import extract_archive
@@ -828,6 +778,8 @@ class DatamintBaseDataset:
                     shapes = [tensor.shape for tensor in collated_batch[key]]
                     if all(shape == shapes[0] for shape in shapes):
                         collated_batch[key] = torch.stack(collated_batch[key])
+                    else:
+                        _LOGGER.warning(f"Collating {key} tensors with different shapes: {shapes}. ")
                 elif isinstance(collated_batch[key][0], np.ndarray):
                     collated_batch[key] = np.stack(collated_batch[key])
 

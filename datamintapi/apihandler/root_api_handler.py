@@ -16,7 +16,7 @@ from PIL import Image
 import cv2
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamintapi import configs
-from .base_api_handler import BaseAPIHandler, DatamintException, validate_call, ResourceNotFoundError, ResourceFields, ResourceStatus
+from .base_api_handler import BaseAPIHandler, DatamintException, ResourceNotFoundError, ResourceFields, ResourceStatus
 from deprecated.sphinx import deprecated
 import json
 import itertools
@@ -504,7 +504,6 @@ class RootAPIHandler(BaseAPIHandler):
 
         return resources[0] if input_is_a_string else resources
 
-    @validate_call
     def get_resources(self,
                       status: Optional[ResourceStatus] = None,
                       from_date: Optional[date] = None,
