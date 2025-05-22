@@ -1,6 +1,6 @@
 from typing import Optional, IO, Sequence, Literal, Generator, Union
 import os
-import pydicom.data
+import io
 import pydicom.dataset
 from requests.exceptions import HTTPError
 import logging
@@ -710,6 +710,39 @@ class RootAPIHandler(BaseAPIHandler):
                 f.write(response.content)
 
         return resource_file
+
+    def download_resource_frame(self,
+                                resource_id: str,
+                                frame_index: int) -> Image.Image:
+        """
+        Download a frame of a resource.
+        This is faster than downloading the whole resource and then extracting the frame.
+
+        Args:
+            resource_id: The resource unique id.
+            frame_index: The index of the frame to download.
+
+        Returns:
+            Image.Image: The frame as a PIL image.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+            DatamintException: If the resource is not a video or dicom.
+        """
+        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/frames/{frame_index}"
+        request_params = {'method': 'GET',
+                          'headers': {'accept': 'image/png'},
+                          'url': url}
+        try:
+            response = self._run_request(request_params)
+            if response.status_code == 200:
+                return Image.open(io.BytesIO(response.content))
+            else:
+                raise DatamintException(
+                    f"Error downloading frame {frame_index} of resource {resource_id}: {response.text}")
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource_id})
+            raise e
 
     def delete_resources(self, resource_ids: Sequence[str] | str) -> None:
         """
