@@ -90,9 +90,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_segmentations_async(self,
                                           resource_id: str,
-                                          frame_index: int,
+                                          frame_index: int | None,
                                           file_path: str | np.ndarray | None = None,
-                                          fio: IO = None,
+                                          fio: IO | None = None,
                                           name: Optional[str | dict[int, str]] = None,
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
@@ -100,23 +100,25 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                           worklist_id: Optional[str] = None,
                                           model_id: Optional[str] = None,
                                           transpose_segmentation: bool = False
-                                          ) -> None:
+                                          ) -> list[str]:
         if file_path is not None:
             nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path,
                                                                              transpose_segmentation=transpose_segmentation)
             if frame_index is None:
                 frame_index = list(range(nframes))
+            annotids = []
             for fidx, f in zip(frame_index, fios):
-                await self._upload_segmentations_async(resource_id,
-                                                       fio=f,
-                                                       name=name,
-                                                       frame_index=fidx,
-                                                       imported_from=imported_from,
-                                                       author_email=author_email,
-                                                       discard_empty_segmentations=discard_empty_segmentations,
-                                                       worklist_id=worklist_id,
-                                                       model_id=model_id)
-            return
+                reti = await self._upload_segmentations_async(resource_id,
+                                                              fio=f,
+                                                              name=name,
+                                                              frame_index=fidx,
+                                                              imported_from=imported_from,
+                                                              author_email=author_email,
+                                                              discard_empty_segmentations=discard_empty_segmentations,
+                                                              worklist_id=worklist_id,
+                                                              model_id=model_id)
+                annotids.extend(reti)
+            return annotids
         try:
             try:
                 img = np.array(Image.open(fio))
@@ -127,7 +129,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         msg = f"Discarding empty segmentation for frame {frame_index}"
                         _LOGGER.debug(msg)
                         _USER_LOGGER.debug(msg)
-                        return
+                        return []
                     fio.seek(0)
                     # TODO: Optimize this. It is not necessary to open the image twice.
 
@@ -170,6 +172,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
             finally:
                 fio.close()
             _USER_LOGGER.info(f'Segmentations uploaded for resource {resource_id}')
+            return annotids
         except ResourceNotFoundError:
             raise ResourceNotFoundError('resource', {'resource_id': resource_id})
 
@@ -184,7 +187,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                              worklist_id: Optional[str] = None,
                              model_id: Optional[str] = None,
                              transpose_segmentation: bool = False
-                             ) -> str:
+                             ) -> list[str]:
         """
         Upload segmentations to a resource.
 
@@ -239,6 +242,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             to_run.append(task)
 
         ret = loop.run_until_complete(asyncio.gather(*to_run))
+        # merge the results in a single list
+        ret = [item for sublist in ret for item in sublist]
         return ret
 
     def add_image_category_annotation(self,
