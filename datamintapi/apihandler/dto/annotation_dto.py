@@ -142,6 +142,8 @@ class CreateAnnotationDto:
             'imported_from': self.imported_from,
             'import_author': self.import_author,
             'units': self.units,
-            "geometry": self.geometry.to_dict() if self.geometry else None
+            "geometry": self.geometry.to_dict() if self.geometry else None,
+            "is_model": self.is_model,
+            "model_id": self.model_id
         }
         return _remove_none(ret)
