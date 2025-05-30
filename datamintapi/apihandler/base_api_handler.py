@@ -13,9 +13,7 @@ from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
-import pydantic
 from datamintapi import configs
-from functools import wraps
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,23 +26,6 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 _PAGE_LIMIT = 5000
-
-
-def validate_call(func, *args, **kwargs):
-    """
-    wraps the function with pydantic's validate_call decorator to only warn about validation errors.
-    """
-    new_func = pydantic.validate_call(func, *args, **kwargs)
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return new_func(*args, **kwargs)
-        except pydantic.ValidationError as e:
-            _LOGGER.warning(f"Validation error: {e}")
-            return func(*args, **kwargs)
-
-    return wrapper
 
 
 class DatamintException(Exception):
