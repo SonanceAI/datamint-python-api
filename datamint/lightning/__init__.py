@@ -1,1 +1,1 @@
-from datamintdatamodule import DatamintDataModule
+from .datamintdatamodule import DatamintDataModule
