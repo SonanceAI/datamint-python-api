@@ -63,9 +63,9 @@ class DatamintDataset(DatamintBaseDataset):
                  # new parameters
                  return_segmentations: bool = True,
                  return_as_semantic_segmentation: bool = False,
-                 image_transform: Callable[[torch.Tensor], Any] = None,
-                 mask_transform: Callable[[torch.Tensor], Any] = None,
-                 alb_transform: albumentations.BasicTransform = None,
+                 image_transform: Callable[[torch.Tensor], Any] | None = None,
+                 mask_transform: Callable[[torch.Tensor], Any] | None = None,
+                 alb_transform: albumentations.BasicTransform | None = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  include_unannotated: bool = True,
                  # filtering parameters

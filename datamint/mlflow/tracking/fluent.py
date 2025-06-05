@@ -1,5 +1,4 @@
 from typing import Optional
-from mlflow.exceptions import MlflowException
 import threading
 import logging
 from datamint import APIHandler
@@ -47,7 +46,9 @@ def _find_project_by_name(project_name: str) -> Optional[dict]:
 
 
 def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None) -> dict:
+    from mlflow.exceptions import MlflowException
     global _ACTIVE_PROJECT_ID
+
     if project_name is None and project_id is None:
         raise MlflowException("You must specify either a project name or a project id")
 
