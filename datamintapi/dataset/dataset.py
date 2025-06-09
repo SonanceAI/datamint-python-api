@@ -63,9 +63,9 @@ class DatamintDataset(DatamintBaseDataset):
                  # new parameters
                  return_segmentations: bool = True,
                  return_as_semantic_segmentation: bool = False,
-                 image_transform: Callable[[torch.Tensor], Any] = None,
-                 mask_transform: Callable[[torch.Tensor], Any] = None,
-                 alb_transform: albumentations.BasicTransform = None,
+                 image_transform: Callable[[torch.Tensor], Any] | None = None,
+                 mask_transform: Callable[[torch.Tensor], Any] | None = None,
+                 alb_transform: albumentations.BasicTransform | None = None,
                  semantic_seg_merge_strategy: Optional[Literal['union', 'intersection', 'mode']] = None,
                  include_unannotated: bool = True,
                  # filtering parameters
@@ -269,7 +269,7 @@ class DatamintDataset(DatamintBaseDataset):
     def __apply_alb_transform_segmentation(self,
                                            img: Tensor,
                                            segmentations: dict[str, list[Tensor]]
-                                           ) -> tuple[Any, dict[str, list]]:
+                                           ) -> tuple[np.ndarray, dict[str, list]]:
         all_masks_list = []
         num_masks = 0
         all_masks_key: dict[str, list] = {}
@@ -351,47 +351,55 @@ class DatamintDataset(DatamintBaseDataset):
         if 'dicom' in item:
             new_item['dicom'] = item['dicom']
 
-        if self.return_segmentations:
-            segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
-            # apply mask transform
-            if self.mask_transform is not None:
-                for seglist in segmentations.values():
-                    for i, seg in enumerate(seglist):
-                        if seg is not None:
-                            seglist[i] = self.mask_transform(seg)
+        try:
+            if self.return_segmentations:
+                segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
+                # apply mask transform
+                if self.mask_transform is not None:
+                    for seglist in segmentations.values():
+                        for i, seg in enumerate(seglist):
+                            if seg is not None:
+                                seglist[i] = self.mask_transform(seg)
 
-            if self.alb_transform is not None:
-                img, new_segmentations = self.__apply_alb_transform_segmentation(img, segmentations)
-                segmentations = new_segmentations
-                img = torch.from_numpy(img).permute(2, 0, 1)
-                new_item['image'] = img
-                has_transformed = True
+                if self.alb_transform is not None:
+                    img, new_segmentations = self.__apply_alb_transform_segmentation(img, segmentations)
+                    segmentations = new_segmentations
+                    img = torch.from_numpy(img).permute(2, 0, 1)
+                    new_item['image'] = img
+                    has_transformed = True
+                    # Update dimensions after transformation
+                    if img.ndim == 3:
+                        _, h, w = img.shape
+                    elif img.ndim == 4:
+                        nframes, _, h, w = img.shape
 
-            if self.return_as_semantic_segmentation:
-                sem_segmentations: dict[str, torch.Tensor] = {}
-                for author in segmentations.keys():
-                    sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author],
-                                                                              seg_labels[author])
-                    segmentations[author] = None  # free memory
-                segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations,
-                                                                       nframes,
-                                                                       h, w)
-                # In semantic segmentation, seg_labels is not needed
-                seg_labels = None
+                if self.return_as_semantic_segmentation:
+                    sem_segmentations: dict[str, torch.Tensor] = {}
+                    for author in segmentations.keys():
+                        sem_segmentations[author] = self._instanceseg2semanticseg(segmentations[author],
+                                                                                  seg_labels[author])
+                        segmentations[author] = None  # free memory
+                    segmentations = self.apply_semantic_seg_merge_strategy(sem_segmentations,
+                                                                           nframes,
+                                                                           h, w)
+                    # In semantic segmentation, seg_labels is not needed
+                    seg_labels = None
 
-            if self.return_frame_by_frame:
-                if isinstance(segmentations, dict):  # author->segmentations format
-                    segmentations = {k: v[0] for k, v in segmentations.items()}
-                    if seg_labels is not None:
-                        seg_labels = {k: v[0] for k, v in seg_labels.items()}
-                else:
-                    # segmentations is a tensor
-                    segmentations = segmentations[0]
-                    if seg_labels is not None and len(seg_labels) > 0:
-                        seg_labels = seg_labels[0]
-
-        new_item['segmentations'] = segmentations
-        new_item['seg_labels'] = seg_labels
+                if self.return_frame_by_frame:
+                    if isinstance(segmentations, dict):  # author->segmentations format
+                        segmentations = {k: v[0] for k, v in segmentations.items()}
+                        if seg_labels is not None:
+                            seg_labels = {k: v[0] for k, v in seg_labels.items()}
+                    else:
+                        # segmentations is a tensor
+                        segmentations = segmentations[0]
+                        if seg_labels is not None and len(seg_labels) > 0:
+                            seg_labels = seg_labels[0]
+                new_item['segmentations'] = segmentations
+                new_item['seg_labels'] = seg_labels
+        except Exception:
+            _LOGGER.error(f'Error in loading/processing segmentations of {metainfo}')
+            raise
 
         if self.alb_transform is not None and not has_transformed:
             # apply albumentations transform to the image
