@@ -284,13 +284,17 @@ class DatamintDataset(DatamintBaseDataset):
                 else:
                     all_masks_key[author_name].append(None)
 
-        all_masks_list = torch.concatenate(all_masks_list).numpy()
+        if len(all_masks_list) != 0:
+            all_masks_list = torch.concatenate(all_masks_list).numpy().astype(np.uint8)
+        else:
+            all_masks_list = None#np.empty((0,img.shape[-2], img.shape[-1]), dtype=np.uint8)
 
         augmented = self.alb_transform(image=img.numpy().transpose(1, 2, 0),
-                                       masks=all_masks_list.astype(np.uint8))
+                                       masks=all_masks_list)
 
         # reconstruct the segmentations
-        all_masks = augmented['masks']  # shape: (num_masks, H, W)
+        if all_masks_list is not None:
+            all_masks = augmented['masks']  # shape: (num_masks, H, W)
         new_segmentations: dict[str, list] = {}
         for author_name, seglist in all_masks_key.items():
             new_segmentations[author_name] = []
