@@ -85,7 +85,7 @@ class DatamintBaseDataset:
             raise ValueError("project_name is required.")
 
         self.all_annotations = all_annotations
-        self.api_handler = APIHandler(root_url=server_url, api_key=api_key, 
+        self.api_handler = APIHandler(root_url=server_url, api_key=api_key,
                                       check_connection=auto_update)
         self.server_url = self.api_handler.root_url
         if root is None:
@@ -108,7 +108,7 @@ class DatamintBaseDataset:
         self.return_annotations = return_annotations
         self.include_unannotated = include_unannotated
         self.discard_without_annotations = not include_unannotated
-        
+
         # Filtering parameters
         self.include_annotators = include_annotators
         self.exclude_annotators = exclude_annotators
@@ -118,17 +118,17 @@ class DatamintBaseDataset:
         self.exclude_image_label_names = exclude_image_label_names
         self.include_frame_label_names = include_frame_label_names
         self.exclude_frame_label_names = exclude_frame_label_names
-        
+
         # Validate filtering parameters
         if include_annotators is not None and exclude_annotators is not None:
             raise ValueError("Cannot set both include_annotators and exclude_annotators at the same time")
-            
+
         if include_segmentation_names is not None and exclude_segmentation_names is not None:
             raise ValueError("Cannot set both include_segmentation_names and exclude_segmentation_names at the same time")
-            
+
         if include_image_label_names is not None and exclude_image_label_names is not None:
             raise ValueError("Cannot set both include_image_label_names and exclude_image_label_names at the same time")
-            
+
         if include_frame_label_names is not None and exclude_frame_label_names is not None:
             raise ValueError("Cannot set both include_frame_label_names and exclude_frame_label_names at the same time")
 
@@ -175,12 +175,12 @@ class DatamintBaseDataset:
 
         # filter annotations
         for imginfo in self.images_metainfo:
-             imginfo['annotations'] = self._filter_annotations(imginfo['annotations'])
+            imginfo['annotations'] = self._filter_annotations(imginfo['annotations'])
 
         # filter out images with no annotations.
         if self.discard_without_annotations:
             original_count = len(self.images_metainfo)
-            self.images_metainfo = [img for img in self.images_metainfo if len(img.get('annotations', []))]
+            self.images_metainfo = self._filter_items(self.images_metainfo)
             _LOGGER.info(f"Discarded {original_count - len(self.images_metainfo)} images without annotations.")
 
         self._check_integrity()
@@ -210,6 +210,9 @@ class DatamintBaseDataset:
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
         self.__logged_uint16_conversion = False
+
+    def _filter_items(self, images_metainfo: list[dict]) -> list[dict]:
+        return [img for img in self.images_metainfo if len(img.get('annotations', []))]
 
     def __compute_num_frames_per_resource(self) -> list[int]:
         num_frames_per_dicom = []
@@ -502,7 +505,7 @@ class DatamintBaseDataset:
         body = [f"Number of datapoints: {self.__len__()}"]
         if self.root is not None:
             body.append(f"Location: {self.dataset_dir}")
-            
+
         # Add filter information to representation
         if self.include_annotators is not None:
             body += [f"Including only annotators: {self.include_annotators}"]
@@ -520,10 +523,9 @@ class DatamintBaseDataset:
             body += [f"Including only frame labels: {self.include_frame_label_names}"]
         if self.exclude_frame_label_names is not None:
             body += [f"Excluding frame labels: {self.exclude_frame_label_names}"]
-            
+
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
-
 
     def download_project(self):
         from torchvision.datasets.utils import extract_archive
@@ -558,14 +560,14 @@ class DatamintBaseDataset:
             try:
                 if datetime.fromisoformat(self.metainfo['updated_at']) < datetime.fromisoformat(self.last_updaded_at):
                     _LOGGER.warning(f"Inconsistent updated_at dates detected ({self.metainfo['updated_at']} < {self.last_updaded_at})." +
-                                  f"Fixing it to {self.last_updaded_at}")
+                                    f"Fixing it to {self.last_updaded_at}")
                     self.metainfo['updated_at'] = self.last_updaded_at
             except Exception as e:
                 _LOGGER.warning(f"Failed to parse updated_at date: {e}")
 
         # Add all_annotations to the metadata
         self.metainfo['all_annotations'] = self.all_annotations
-        
+
         # save the updated_at date
         with open(datasetjson, 'w') as file:
             json.dump(self.metainfo, file)
@@ -663,13 +665,13 @@ class DatamintBaseDataset:
         """
         if annotations is None:
             return []
-            
+
         filtered_annotations = []
         for ann in annotations:
             # Filter by annotator
             if not self._should_include_annotator(ann['added_by']):
                 continue
-                
+
             # Filter by annotation type and name
             if ann['type'] == 'segmentation':
                 if not self._should_include_segmentation(ann['name']):
@@ -684,12 +686,12 @@ class DatamintBaseDataset:
                     # Frame label
                     if not self._should_include_frame_label(ann['name']):
                         continue
-            
+
             # If we reach here, the annotation passed all filters
             filtered_annotations.append(ann)
-            
+
         return filtered_annotations
-        
+
     def __getitem__(self, index: int) -> dict[str, Any]:
         """
         Args:
@@ -702,7 +704,7 @@ class DatamintBaseDataset:
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
 
         return self.__getitem_internal(self.subset_indices[index])
-        
+
     def __iter__(self):
         for i in range(len(self)):
             yield self[i]
@@ -728,7 +730,7 @@ class DatamintBaseDataset:
             return
 
         _LOGGER.debug(f"Local updated at: {local_updated_at}, Server updated at: {server_updated_at}")
-        
+
         # Check if all_annotations changed or doesn't exist
         annotations_changed = local_all_annotations != self.all_annotations
 
@@ -745,7 +747,7 @@ class DatamintBaseDataset:
             self.download_project()
         else:
             _LOGGER.info('Local version is up to date with the latest version.')
-            
+
     def __add__(self, other):
         from torch.utils.data import ConcatDataset
         return ConcatDataset([self, other])
@@ -759,7 +761,7 @@ class DatamintBaseDataset:
         Args:
             *args: Positional arguments for the DataLoader. See `torch.utils.data.DataLoader <https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader>`_ for details.
             **kwargs: Keyword arguments for the DataLoader. See `torch.utils.data.DataLoader <https://pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader>`_ for details.
-            
+
 
         """
         return DataLoader(self,
@@ -810,7 +812,7 @@ class DatamintBaseDataset:
         if self.exclude_annotators is not None:
             return annotator_id not in self.exclude_annotators
         return True
-    
+
     def _should_include_segmentation(self, segmentation_name: str) -> bool:
         """
         Check if a segmentation should be included based on the filtering settings.
@@ -826,7 +828,7 @@ class DatamintBaseDataset:
         if self.exclude_segmentation_names is not None:
             return segmentation_name not in self.exclude_segmentation_names
         return True
-    
+
     def _should_include_image_label(self, label_name: str) -> bool:
         """
         Check if an image label should be included based on the filtering settings.
@@ -842,7 +844,7 @@ class DatamintBaseDataset:
         if self.exclude_image_label_names is not None:
             return label_name not in self.exclude_image_label_names
         return True
-    
+
     def _should_include_frame_label(self, label_name: str) -> bool:
         """
         Check if a frame label should be included based on the filtering settings.
