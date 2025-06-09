@@ -210,9 +210,28 @@ class DatamintBaseDataset:
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
         self.__logged_uint16_conversion = False
+        if self.discard_without_annotations and self.return_frame_by_frame:
+            # If we are returning frame by frame, we need to filter out frames without segmentations
+            self._filter_unannotated()
 
     def _filter_items(self, images_metainfo: list[dict]) -> list[dict]:
-        return [img for img in self.images_metainfo if len(img.get('annotations', []))]
+        return [img for img in images_metainfo if len(img.get('annotations', []))]
+
+    def _filter_unannotated(self):
+        """Filter out frames that don't have any segmentations."""
+        filtered_indices = []
+        for i in range(len(self.subset_indices)):
+            item_meta = self._get_image_metainfo(i)
+            annotations = item_meta.get('annotations', [])
+
+            # Check if there are any segmentation annotations
+            has_segmentations = any(ann['type'] == 'segmentation' for ann in annotations)
+
+            if has_segmentations:
+                filtered_indices.append(self.subset_indices[i])
+
+        self.subset_indices = filtered_indices
+        print(f"Filtered dataset: {len(self.subset_indices)} frames with segmentations")
 
     def __compute_num_frames_per_resource(self) -> list[int]:
         num_frames_per_dicom = []
