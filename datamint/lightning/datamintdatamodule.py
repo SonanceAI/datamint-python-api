@@ -59,7 +59,7 @@ class DatamintDataModule(L.LightningDataModule):
                 auto_update=False,
                 **self.dataset_kwargs,
             )
-            indices = list(range(len(self.dataset)))
+            indices = list(copy(self.dataset.subset_indices))
             rs = np.random.RandomState(self.seed)
             rs.shuffle(indices)
             train_end = int(self.train_split * len(indices))
