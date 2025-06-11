@@ -1,4 +1,4 @@
-from typing import Optional, IO, Sequence, Literal, Generator, Union
+from typing import Optional, IO, Sequence, Literal, Generator, Union, Any
 import os
 import io
 import pydicom.dataset
@@ -468,7 +468,7 @@ class RootAPIHandler(BaseAPIHandler):
 
         return file_path, is_list
 
-    def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict | Sequence[dict]:
+    def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict[str, Any] | Sequence[dict[str, Any]]:
         """
         Get resources by their unique ids.
 
@@ -657,8 +657,9 @@ class RootAPIHandler(BaseAPIHandler):
     def download_resource_file(self,
                                resource_id: str,
                                save_path: Optional[str] = None,
-                               auto_convert: bool = True
-                               ) -> bytes | pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage:
+                               auto_convert: bool = True,
+                               add_extension: bool = False
+                               ) -> bytes | pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage | tuple[Any, str]:
         """
         Download a resource file.
 
@@ -666,9 +667,11 @@ class RootAPIHandler(BaseAPIHandler):
             resource_id (str): The resource unique id.
             save_path (Optional[str]): The path to save the file.
             auto_convert (bool): Whether to convert the file to a known format or not.
+            add_extension (bool): Whether to add the appropriate file extension to the save_path based on the content type.
 
         Returns:
             The resource content in bytes (if `auto_convert=False`) or the resource object (if `auto_convert=True`).
+            if `add_extension=True`, the function will return a tuple of (resource_data, save_path).
 
         Raises:
             ResourceNotFoundError: If the resource does not exists.
@@ -691,7 +694,9 @@ class RootAPIHandler(BaseAPIHandler):
                 resource_info = self.get_resources_by_ids(resource_id)
                 mimetype = resource_info['mimetype']
                 try:
-                    resource_file = BaseAPIHandler.convert_format(response.content, mimetype, save_path)
+                    resource_file = BaseAPIHandler.convert_format(response.content,
+                                                                  mimetype,
+                                                                  save_path)
                 except ValueError as e:
                     _LOGGER.warning(f"Could not convert file to a known format: {e}")
                     resource_file = response.content
@@ -706,9 +711,15 @@ class RootAPIHandler(BaseAPIHandler):
             raise e
 
         if save_path is not None:
+            if add_extension:
+                ext = mimetypes.guess_extension(mimetype)
+                if ext is not None and not save_path.endswith(ext):
+                    save_path += ext
             with open(save_path, 'wb') as f:
                 f.write(response.content)
 
+        if add_extension:
+            return resource_file, save_path
         return resource_file
 
     def download_resource_frame(self,
@@ -729,6 +740,15 @@ class RootAPIHandler(BaseAPIHandler):
             ResourceNotFoundError: If the resource does not exists.
             DatamintException: If the resource is not a video or dicom.
         """
+        # check if the resource is an single frame image (png,jpeg,...) first.
+        # If so, download the whole resource file and return the image.
+        resource_info = self.get_resources_by_ids(resource_id)
+        if resource_info['mimetype'].startswith('image/') or resource_info.get('storage') == 'ImageResource':
+            if frame_index != 0:
+                raise DatamintException(f"Resource {resource_id} is a single frame image, "
+                                        f"but frame_index is {frame_index}.")
+            return self.download_resource_file(resource_id, auto_convert=True)
+
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/frames/{frame_index}"
         request_params = {'method': 'GET',
                           'headers': {'accept': 'image/png'},
