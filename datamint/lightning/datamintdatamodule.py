@@ -22,6 +22,7 @@ class DatamintDataModule(L.LightningDataModule):
         train_split: float = 0.9,
         val_split: float = 0.1,
         seed: int = 42,
+        num_workers: int = 4,
         **dataset_kwargs: Any,
     ):
         super().__init__()
@@ -34,6 +35,7 @@ class DatamintDataModule(L.LightningDataModule):
         self.val_split = val_split
         self.seed = seed
         self.dataset_kwargs = dataset_kwargs
+        self.num_workers = num_workers
 
         self.dataset = None
 
@@ -70,15 +72,15 @@ class DatamintDataModule(L.LightningDataModule):
             self.val_dataset = copy(self.dataset).subset(val_idx)
 
     def train_dataloader(self) -> DataLoader:
-        return self.train_dataset.get_dataloader(batch_size=self.batch_size, num_workers=4, shuffle=True)
+        return self.train_dataset.get_dataloader(batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True)
 
     def val_dataloader(self) -> DataLoader:
-        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=4, shuffle=False)
+        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
     def test_dataloader(self):
         # Use the same dataloader as validation for testing, because we have so few samples
-        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=4, shuffle=False)
+        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)
 
     def predict_dataloader(self):
         # Use the same dataloader as validation for testing, because we have so few samples
-        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=4, shuffle=False)
+        return self.val_dataset.get_dataloader(batch_size=self.batch_size, num_workers=self.num_workers, shuffle=False)

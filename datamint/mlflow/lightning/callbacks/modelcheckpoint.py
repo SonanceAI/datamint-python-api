@@ -186,7 +186,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                     rep = get_artifact_repository(artifact_uri)
                     rep.delete_artifacts(f'model/{Path(filepath).stem}')
 
-    def register_model(self, trainer):
+    def register_model(self, trainer=None):
         # mlflow_client = self._get_MLFlowLogger(trainer)._mlflow_client
         return mlflow.register_model(
             model_uri=self._last_model_uri,
