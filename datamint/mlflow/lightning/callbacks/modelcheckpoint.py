@@ -125,6 +125,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             return ()
 
     def _save_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
+        _LOGGER.debug(f"Saving checkpoint to {filepath}...")
         trainer.save_checkpoint(filepath, self.save_weights_only)
 
         self._last_global_step_saved = trainer.global_step
@@ -137,6 +138,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                 if isinstance(logger, MLFlowLogger) and not self.log_model_at_end_only:
                     mlflow_client = logger._mlflow_client
 
+                    _LOGGER.debug(f"_save_checkpoint: Logging model to MLFlow at {filepath}...")
                     modelinfo = mlflow.pytorch.log_model(
                         pytorch_model=trainer.model.cpu(),
                         artifact_path=f'model/{Path(filepath).stem}',
@@ -163,6 +165,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if self._last_checkpoint_saved is None or self._last_checkpoint_saved == '':
             return
 
+        _LOGGER.debug(f"_log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
         modelinfo = mlflow.pytorch.log_model(
             pytorch_model=trainer.model.cpu(),
             artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
@@ -304,9 +307,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_test_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_test_end(trainer, pl_module)
 
-        if self.log_model_at_end_only:
-            self._log_model_to_mlflow(trainer)
-
         if self.register_model_on == 'test':
             self._update_signature(trainer)
             self.register_model(trainer)
@@ -314,18 +314,12 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_predict_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_predict_end(trainer, pl_module)
 
-        if self.log_model_at_end_only:
-            self._log_model_to_mlflow(trainer)
-
         if self.register_model_on == 'predict':
             self._update_signature(trainer)
             self.register_model(trainer)
 
     def on_validation_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_validation_end(trainer, pl_module)
-
-        if self.log_model_at_end_only:
-            self._log_model_to_mlflow(trainer)
 
         if self.register_model_on == 'val':
             self._update_signature(trainer)
