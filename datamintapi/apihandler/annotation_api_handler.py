@@ -707,7 +707,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
             f.seek(0)
             yield f
 
-    def delete_annotation(self, annotation_id: str):
+    def delete_annotation(self, annotation_id: str | dict):
+        if isinstance(annotation_id, dict):
+            annotation_id = annotation_id.get('id', None)
+            if annotation_id is None:
+                raise ValueError("annotation_id must be a string or a dict with 'id' key.")
         request_params = {
             'method': 'DELETE',
             'url': f'{self.root_url}/annotations/{annotation_id}',

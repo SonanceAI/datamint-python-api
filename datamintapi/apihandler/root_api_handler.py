@@ -690,9 +690,14 @@ class RootAPIHandler(BaseAPIHandler):
                           'url': url}
         try:
             response = self._run_request(request_params)
-            if auto_convert:
+            
+            # Get mimetype if needed for auto_convert or add_extension
+            mimetype = None
+            if auto_convert or add_extension:
                 resource_info = self.get_resources_by_ids(resource_id)
                 mimetype = resource_info['mimetype']
+            
+            if auto_convert:
                 try:
                     resource_file = BaseAPIHandler.convert_format(response.content,
                                                                   mimetype,
