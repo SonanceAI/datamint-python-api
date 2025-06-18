@@ -10,6 +10,9 @@ import lightning.pytorch as L
 import mlflow
 import logging
 from lightning.pytorch.loggers import MLFlowLogger
+import json
+import os
+from tempfile import TemporaryDirectory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +52,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                  register_model_on: Literal["train", "val", "test", "predict"] | None = None,
                  code_paths: list[str] | None = None,
                  log_model_at_end_only: bool = True,
+                 additional_metadata: dict[str, Any] | None = None,
                  **kwargs):
         """
         MLFlowModelCheckpoint is a custom callback for PyTorch Lightning that integrates with MLFlow to log and register models.
@@ -57,6 +61,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             register_model_on (Literal["train", "val", "test", "predict"] | None): The stage at which to register the model. If None, the model will not be registered.
             code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
             log_model_at_end_only (bool): If True, only log the model at the end of the specified stage instead of after every checkpoint save.
+            additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
             **kwargs: Keyword arguments for ModelCheckpoint.
         """
 
@@ -84,6 +89,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._inferred_signature = None
         self._input_example = None
         self.code_paths = code_paths
+        self.additional_metadata = additional_metadata or {}
 
     def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
         """Extract metadata from the model's forward method signature.
@@ -153,6 +159,47 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                     self._last_model_uri = modelinfo.model_uri
                     self.last_saved_model_info = modelinfo
 
+                    # Log additional metadata after the model is saved
+                    self.log_additional_metadata(logger=logger,
+                                                 additional_metadata=self.additional_metadata)
+
+    def log_additional_metadata(self, logger: MLFlowLogger | L.Trainer,
+                                additional_metadata: dict) -> None:
+        """Log additional metadata as a JSON file to the model artifact.
+
+        Args:
+            logger: The MLFlowLogger instance to use for logging.
+            additional_metadata: A dictionary containing additional metadata to log.
+        """
+        self.additional_metadata = additional_metadata
+        if not self.additional_metadata:
+            return
+
+        if self.last_saved_model_info is None:
+            _LOGGER.warning("No model has been saved yet. Cannot log additional metadata.")
+            return
+
+        if isinstance(logger, L.Trainer):
+            logger = self._get_MLFlowLogger(logger)
+            if logger is None:
+                return
+
+        try:
+            with TemporaryDirectory() as tmpdir:
+                metadata_path = os.path.join(tmpdir, "metadata.json")
+                with open(metadata_path, "w") as f:
+                    json.dump(self.additional_metadata, f, indent=2)
+
+                logger.experiment.log_artifact(
+                    run_id=logger.run_id,
+                    local_path=metadata_path,
+                    artifact_path=self.last_saved_model_info.artifact_path,
+                )
+                _LOGGER.debug(f"Additional metadata logged to {self.last_saved_model_info.artifact_path}/metadata.json")
+
+        except Exception as e:
+            _LOGGER.warning(f"Failed to log additional metadata: {e}")
+
     def _log_model_to_mlflow(self, trainer: L.Trainer) -> None:
         """Log the model to MLflow."""
         if not trainer.is_global_zero:
@@ -179,6 +226,10 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._last_model_uri = modelinfo.model_uri
         self.last_saved_model_info = modelinfo
 
+        # Log additional metadata after the model is saved
+        self.log_additional_metadata(logger=logger,
+                                     additional_metadata=self.additional_metadata)
+
     def _remove_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
         super()._remove_checkpoint(trainer, filepath)
         # remove the checkpoint from mlflow
@@ -190,6 +241,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                     rep.delete_artifacts(f'model/{Path(filepath).stem}')
 
     def register_model(self, trainer=None):
+        """Register the model in MLFlow Model Registry."""
         # mlflow_client = self._get_MLFlowLogger(trainer)._mlflow_client
         return mlflow.register_model(
             model_uri=self._last_model_uri,
