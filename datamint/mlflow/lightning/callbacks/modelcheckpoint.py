@@ -53,15 +53,18 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                  code_paths: list[str] | None = None,
                  log_model_at_end_only: bool = True,
                  additional_metadata: dict[str, Any] | None = None,
+                 extra_pip_requirements: list[str] | None = None,
                  **kwargs):
         """
         MLFlowModelCheckpoint is a custom callback for PyTorch Lightning that integrates with MLFlow to log and register models.
+
         Args:
             register_model_name (str | None): The name to register the model under in MLFlow. If None, the model will not be registered.
             register_model_on (Literal["train", "val", "test", "predict"] | None): The stage at which to register the model. If None, the model will not be registered.
             code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
             log_model_at_end_only (bool): If True, only log the model at the end of the specified stage instead of after every checkpoint save.
             additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
+            extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model. Defaults to ['albumentations'].
             **kwargs: Keyword arguments for ModelCheckpoint.
         """
 
@@ -90,6 +93,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._input_example = None
         self.code_paths = code_paths
         self.additional_metadata = additional_metadata or {}
+        self.extra_pip_requirements = extra_pip_requirements or ['albumentations']
 
     def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
         """Extract metadata from the model's forward method signature.
@@ -142,7 +146,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             for logger in trainer.loggers:
                 logger.after_save_checkpoint(proxy(self))
                 if isinstance(logger, MLFlowLogger) and not self.log_model_at_end_only:
-                    mlflow_client = logger._mlflow_client
+                    # mlflow_client = logger._mlflow_client
 
                     _LOGGER.debug(f"_save_checkpoint: Logging model to MLFlow at {filepath}...")
                     modelinfo = mlflow.pytorch.log_model(
@@ -151,7 +155,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                         signature=self._inferred_signature,
                         # input_example=input_example,
                         run_id=logger.run_id,
-                        extra_pip_requirements=['albumentations'],
+                        extra_pip_requirements=self.extra_pip_requirements,
                         code_paths=self.code_paths
                     )
 
@@ -218,7 +222,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
             signature=self._inferred_signature,
             run_id=logger.run_id,
-            extra_pip_requirements=['albumentations', f'lightning=={L.__version__}'],
+            extra_pip_requirements=self.extra_pip_requirements + [f'lightning=={L.__version__}'],
             code_paths=self.code_paths
         )
 
