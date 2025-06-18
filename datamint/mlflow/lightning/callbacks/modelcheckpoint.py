@@ -13,6 +13,7 @@ from lightning.pytorch.loggers import MLFlowLogger
 import json
 import os
 from tempfile import TemporaryDirectory
+from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,22 +29,6 @@ def help_infer_signature(x):
         return tuple(v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v for v in x)
 
     return x
-
-
-def get_dataset_from_trainer(self, trainer) -> Any:
-    """
-    Retrieve the dataset from the trainer's datamodule.
-
-    Args:
-        trainer: The PyTorch Lightning trainer instance.
-
-    Returns:
-        The dataset attribute from the datamodule, or None if not found.
-    """
-    datamodule = getattr(trainer, "datamodule", None)
-    if datamodule is not None and hasattr(datamodule, "dataset"):
-        return datamodule.dataset
-    return None
 
 
 class MLFlowModelCheckpoint(ModelCheckpoint):
@@ -183,24 +168,10 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.warning("No model has been saved yet. Cannot log additional metadata.")
             return
 
-        if isinstance(logger, L.Trainer):
-            logger = self._get_MLFlowLogger(logger)
-            if logger is None:
-                return
-
         try:
-            with TemporaryDirectory() as tmpdir:
-                metadata_path = os.path.join(tmpdir, "metadata.json")
-                with open(metadata_path, "w") as f:
-                    json.dump(self.additional_metadata, f, indent=2)
-
-                logger.experiment.log_artifact(
-                    run_id=logger.run_id,
-                    local_path=metadata_path,
-                    artifact_path=self.last_saved_model_info.artifact_path,
-                )
-                _LOGGER.debug(f"Additional metadata logged to {self.last_saved_model_info.artifact_path}/metadata.json")
-
+            log_model_metadata(metadata=self.additional_metadata,
+                               logger=logger,
+                               model_path=self.last_saved_model_info.artifact_path)
         except Exception as e:
             _LOGGER.warning(f"Failed to log additional metadata: {e}")
 
@@ -209,7 +180,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if not trainer.is_global_zero:
             return
 
-        logger = self._get_MLFlowLogger(trainer)
+        logger = _get_MLFlowLogger(trainer)
         if logger is None:
             return
 
@@ -246,7 +217,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
     def register_model(self, trainer=None):
         """Register the model in MLFlow Model Registry."""
-        # mlflow_client = self._get_MLFlowLogger(trainer)._mlflow_client
+        # mlflow_client = _get_MLFlowLogger(trainer)._mlflow_client
         return mlflow.register_model(
             model_uri=self._last_model_uri,
             name=self.register_model_name,
@@ -260,7 +231,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.warning("No model URI found. Cannot update signature.")
             return
 
-        mllogger = self._get_MLFlowLogger(trainer)
+        mllogger = _get_MLFlowLogger(trainer)
         mlclient = mllogger._mlflow_client
 
         # check if the model exists
@@ -326,14 +297,8 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if self.register_model_on == 'train':
             self.register_model(trainer)
 
-    def _get_MLFlowLogger(self, trainer: L.Trainer) -> MLFlowLogger:
-        for logger in trainer.loggers:
-            if isinstance(logger, MLFlowLogger):
-                return logger
-        raise ValueError("No MLFlowLogger found in the trainer loggers.")
-
     def _restore_model_uri(self, trainer: L.Trainer) -> None:
-        logger = self._get_MLFlowLogger(trainer)
+        logger = _get_MLFlowLogger(trainer)
         if logger is None:
             _LOGGER.warning("No MLFlowLogger found. Cannot restore model URI.")
             return
