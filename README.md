@@ -1,4 +1,3 @@
-
 # Datamint python API
 
 ![Build Status](https://github.com/SonanceAI/datamint-python-api/actions/workflows/run_test.yaml/badge.svg)
@@ -29,6 +28,7 @@ To use the Datamint API, you need to setup your API key (ask your administrator 
 ### Method 1: Command-line tool (recommended)
 
 Run ``datamint-config`` in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) for more details.
+When you use `datamint-config`, MLflow will be automatically configured for you!
 
 ### Method 2: Environment variable
 
@@ -55,13 +55,26 @@ from datamintapi import APIHandler
 api = APIHandler(api_key='my_api_key')
 ```
 
-## Tutorials
+## MLflow Integration
 
+The Datamint Python API includes seamless MLflow integration! When you import `datamint.mlflow`, it automatically configures MLflow based on your Datamint settings.
+
+```python
+# Simple setup - no manual MLflow configuration needed!
+import datamint.mlflow
+from datamint.mlflow import set_project
+
+# Set your project and start training
+set_project("MyProject")
+```
+
+## Tutorials
 
 You can find example notebooks in the `notebooks` folder:
 
 - [Uploading your resources](notebooks/upload_data.ipynb)
 - [Uploading model segmentations](notebooks/upload_model_segmentations.ipynb)
+- [MLflow Simple Training](notebooks/mlflow_simple_training.ipynb)
 
 and example scripts in [examples](examples) folder:
 

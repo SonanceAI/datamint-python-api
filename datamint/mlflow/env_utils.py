@@ -7,7 +7,7 @@ import os
 import logging
 from typing import Optional
 from datamintapi import configs
-import mlflow
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ def setup_mlflow_environment() -> bool:
     Returns:
         bool: True if MLflow environment was successfully configured, False otherwise.
     """
+    import mlflow
     # Check if MLflow variables are already set
     if os.getenv('MLFLOW_TRACKING_URI') and os.getenv('MLFLOW_TRACKING_TOKEN'):
         _LOGGER.debug("MLflow environment variables already set, skipping auto-configuration")
