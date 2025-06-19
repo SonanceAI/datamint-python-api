@@ -5,6 +5,7 @@ from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
 import os
 from tempfile import TemporaryDirectory
+from torch import nn
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,4 +92,3 @@ def log_model_metadata(metadata: dict,
             artifact_path=artifact_path,
         )
         _LOGGER.debug(f"Additional metadata logged to {artifact_path}/metadata.json")
-

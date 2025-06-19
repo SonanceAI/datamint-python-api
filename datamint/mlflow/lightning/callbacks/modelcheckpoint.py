@@ -10,9 +10,6 @@ import lightning.pytorch as L
 import mlflow
 import logging
 from lightning.pytorch.loggers import MLFlowLogger
-import json
-import os
-from tempfile import TemporaryDirectory
 from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,7 +44,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             register_model_name (str | None): The name to register the model under in MLFlow. If None, the model will not be registered.
             register_model_on (Literal["train", "val", "test", "predict"] | None): The stage at which to register the model. If None, the model will not be registered.
             code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
-            log_model_at_end_only (bool): If True, only log the model at the end of the specified stage instead of after every checkpoint save.
+            log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of the training instead of after every checkpoint save.
             additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
             extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model. Defaults to ['albumentations'].
             **kwargs: Keyword arguments for ModelCheckpoint.
@@ -78,7 +75,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._input_example = None
         self.code_paths = code_paths
         self.additional_metadata = additional_metadata or {}
-        self.extra_pip_requirements = extra_pip_requirements or ['albumentations']
+        self.extra_pip_requirements = extra_pip_requirements or []
 
     def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
         """Extract metadata from the model's forward method signature.
@@ -131,33 +128,15 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             for logger in trainer.loggers:
                 logger.after_save_checkpoint(proxy(self))
                 if isinstance(logger, MLFlowLogger) and not self.log_model_at_end_only:
-                    # mlflow_client = logger._mlflow_client
-
                     _LOGGER.debug(f"_save_checkpoint: Logging model to MLFlow at {filepath}...")
-                    modelinfo = mlflow.pytorch.log_model(
-                        pytorch_model=trainer.model.cpu(),
-                        artifact_path=f'model/{Path(filepath).stem}',
-                        signature=self._inferred_signature,
-                        # input_example=input_example,
-                        run_id=logger.run_id,
-                        extra_pip_requirements=self.extra_pip_requirements,
-                        code_paths=self.code_paths
-                    )
-
-                    trainer.model.cuda()
-                    self._last_model_uri = modelinfo.model_uri
-                    self.last_saved_model_info = modelinfo
-
-                    # Log additional metadata after the model is saved
-                    self.log_additional_metadata(logger=logger,
-                                                 additional_metadata=self.additional_metadata)
+                    self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
 
     def log_additional_metadata(self, logger: MLFlowLogger | L.Trainer,
                                 additional_metadata: dict) -> None:
         """Log additional metadata as a JSON file to the model artifact.
 
         Args:
-            logger: The MLFlowLogger instance to use for logging.
+            logger: The MLFlowLogger or Lightning Trainer instance to use for logging.
             additional_metadata: A dictionary containing additional metadata to log.
         """
         self.additional_metadata = additional_metadata
@@ -175,35 +154,43 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         except Exception as e:
             _LOGGER.warning(f"Failed to log additional metadata: {e}")
 
-    def _log_model_to_mlflow(self, trainer: L.Trainer) -> None:
+    def log_model_to_mlflow(self,
+                            model: nn.Module,
+                            run_id: str | MLFlowLogger
+                            # trainer: L.Trainer
+                            ) -> None:
         """Log the model to MLflow."""
-        if not trainer.is_global_zero:
-            return
-
-        logger = _get_MLFlowLogger(trainer)
-        if logger is None:
-            return
+        if isinstance(run_id, MLFlowLogger):
+            logger = run_id
+            if logger.run_id is None:
+                raise ValueError("MLFlowLogger has no run_id. Cannot log model to MLFlow.")
+            run_id = logger.run_id
 
         if self._last_checkpoint_saved is None or self._last_checkpoint_saved == '':
+            _LOGGER.warning("No checkpoint saved yet. Cannot log model to MLFlow.")
             return
 
-        _LOGGER.debug(f"_log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
+        orig_device = next(model.parameters()).device
+        model = model.cpu()  # Ensure the model is on CPU for logging
+
+        _LOGGER.debug(f"log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
         modelinfo = mlflow.pytorch.log_model(
-            pytorch_model=trainer.model.cpu(),
+            pytorch_model=model,
             artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
             signature=self._inferred_signature,
-            run_id=logger.run_id,
+            run_id=run_id,
             extra_pip_requirements=self.extra_pip_requirements + [f'lightning=={L.__version__}'],
             code_paths=self.code_paths
         )
 
-        trainer.model.cuda()
+        model.to(device=orig_device)  # Move the model back to its original device
         self._last_model_uri = modelinfo.model_uri
         self.last_saved_model_info = modelinfo
 
         # Log additional metadata after the model is saved
-        self.log_additional_metadata(logger=logger,
-                                     additional_metadata=self.additional_metadata)
+        log_model_metadata(self.additional_metadata,
+                           model_path=modelinfo.artifact_path,
+                           run_id=run_id)
 
     def _remove_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
         super()._remove_checkpoint(trainer, filepath)
@@ -289,8 +276,12 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_train_end(trainer, pl_module)
 
-        if self.log_model_at_end_only:
-            self._log_model_to_mlflow(trainer)
+        if self.log_model_at_end_only and trainer.is_global_zero:
+            logger = _get_MLFlowLogger(trainer)
+            if logger is None:
+                _LOGGER.warning("No MLFlowLogger found. Cannot log model to MLFlow.")
+            else:
+                self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
 
         self._update_signature(trainer)
 
