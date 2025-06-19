@@ -1,8 +1,21 @@
-Installation
-===================================
+Getting Started with Datamint Python API
+=========================================
 
-Datamint requires Python 3.10+.
-Install Datamint and its dependencies using pip
+This guide will help you set up and start using the Datamint Python API for your medical imaging projects.
+
+Installation
+------------
+
+System Requirements
+~~~~~~~~~~~~~~~~~~~
+
+- Python 3.10 or higher
+- Operating System: Windows, macOS, or Linux
+
+Install
+~~~~~~~~~~~~~~~~~
+
+The easiest way to install the Datamint Python API:
 
 .. code-block:: bash
 
@@ -19,10 +32,12 @@ You can do this by running:
     pip install git+https://github.com/SonanceAI/datamint-python-api
 
 
+.. include:: setup_api_key.rst
 
 Next Steps
 ------------
-- Setup your API key: :ref:`setup_api_key`
-- Check out our command line tools: :ref:`command_line_tools`
+Now that you have the basics set up, explore these advanced topics:
+
+- Master the command-line interface: :ref:`command_line_tools`
 - Check out our Python API documentation: :ref:`client_python_api`
-- Our Pytorch integration: :ref:`pytorch_integration`
+- Our Pytorch, Lightning and MLflow integration: :ref:`pytorch_integration`
