@@ -5,6 +5,7 @@ from datamint import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 import os
 from datamint.mlflow.env_vars import EnvVars
+from datamint.mlflow.env_utils import ensure_mlflow_configured
 
 _PROJECT_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +49,9 @@ def _find_project_by_name(project_name: str) -> Optional[dict]:
 def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None) -> dict:
     from mlflow.exceptions import MlflowException
     global _ACTIVE_PROJECT_ID
+
+    # Ensure MLflow is properly configured before proceeding
+    ensure_mlflow_configured()
 
     if project_name is None and project_id is None:
         raise MlflowException("You must specify either a project name or a project id")

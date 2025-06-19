@@ -14,6 +14,10 @@ class DatamintStore(RestStore):
     """
 
     def __init__(self, store_uri: str, artifact_uri=None, force_valid=True):
+        # Ensure MLflow environment is configured when store is initialized
+        from datamint.mlflow.env_utils import setup_mlflow_environment
+        setup_mlflow_environment()
+        
         if store_uri.startswith('datamint://') or 'datamint.io' in store_uri or force_valid:
             self.invalid = False
         else:

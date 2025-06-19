@@ -11,6 +11,7 @@ import mlflow
 import logging
 from lightning.pytorch.loggers import MLFlowLogger
 from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
+from datamint.mlflow.env_utils import ensure_mlflow_configured
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,9 +47,11 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
             log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of the training instead of after every checkpoint save.
             additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
-            extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model. Defaults to ['albumentations'].
+            extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model.
             **kwargs: Keyword arguments for ModelCheckpoint.
         """
+        # Ensure MLflow is configured when callback is initialized
+        ensure_mlflow_configured()
 
         super().__init__(*args, **kwargs)
         if self.save_top_k > 1:
@@ -157,7 +160,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def log_model_to_mlflow(self,
                             model: nn.Module,
                             run_id: str | MLFlowLogger
-                            # trainer: L.Trainer
                             ) -> None:
         """Log the model to MLflow."""
         if isinstance(run_id, MLFlowLogger):
@@ -173,13 +175,18 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         orig_device = next(model.parameters()).device
         model = model.cpu()  # Ensure the model is on CPU for logging
 
+        requirements = list(self.extra_pip_requirements)
+        # check if lightning is in the requirements
+        if not any('lightning' in req.lower() for req in requirements):
+            requirements.append(f'lightning=={L.__version__}')
+
         _LOGGER.debug(f"log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
         modelinfo = mlflow.pytorch.log_model(
             pytorch_model=model,
             artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
             signature=self._inferred_signature,
             run_id=run_id,
-            extra_pip_requirements=self.extra_pip_requirements + [f'lightning=={L.__version__}'],
+            extra_pip_requirements=requirements,
             code_paths=self.code_paths
         )
 
@@ -250,13 +257,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             self._inferred_signature = mlflow.models.infer_signature(model_input=x0,
                                                                      params=infered_params)
 
-            # Capture input example (first batch only)
-            # if self._input_example is None:
-            #     if isinstance(x, torch.Tensor):
-            #         # Take first 2 samples from batch for input example
-            #         self._input_example = x[0:2].detach().cpu().numpy()
-            #     else:
-            #         self._input_example = x0
 
             # run once and get back to the original forward
             pl_module.forward = original_forward
