@@ -48,7 +48,10 @@ def _find_project_by_name(project_name: str) -> Optional[dict]:
 
 def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None) -> dict:
     from mlflow.exceptions import MlflowException
+    from datamint.mlflow import setup_mlflow_environment
     global _ACTIVE_PROJECT_ID
+
+    setup_mlflow_environment()
 
     # Ensure MLflow is properly configured before proceeding
     ensure_mlflow_configured()
