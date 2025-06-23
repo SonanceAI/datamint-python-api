@@ -4,8 +4,7 @@ from datamintapi.apihandler.base_api_handler import DatamintException
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union, Any, Tuple, IO, Literal
 from collections import defaultdict
-import torch
-from datamintapi import Dataset as DatamintDataset
+from datamintapi.dataset.dataset import DatamintDataset
 import os
 import numpy as np
 import heapq
@@ -122,6 +121,7 @@ class Experiment:
                  tags: Optional[List[str]] = None,
                  allow_existing: bool = False
                  ) -> None:
+        import torch
         from ._patcher import initialize_automatic_logging
         if auto_log:
             initialize_automatic_logging()
@@ -217,6 +217,7 @@ class Experiment:
         import torchvision
         import psutil
         import socket
+        import torch
 
         # find all ip address, removing localhost
         ip_addresses = [addr.address for iface in psutil.net_if_addrs().values()
@@ -249,7 +250,7 @@ class Experiment:
         return env
 
     def set_model(self,
-                  model: torch.nn.Module,
+                  model,
                   hyper_params: Optional[Dict] = None):
         """
         Set the model and hyper-parameters of the experiment.
@@ -466,7 +467,7 @@ class Experiment:
                                     result_summary=result_summary)
 
     def log_model(self,
-                  model: torch.nn.Module | str | IO[bytes],
+                  model: Any | str | IO[bytes],
                   hyper_params: Optional[Dict] = None,
                   log_model_attributes: bool = True,
                   torch_save_kwargs: Dict = {}):
@@ -485,6 +486,7 @@ class Experiment:
                     exp.log_model(model, hyper_params={"num_layers": 3, "pretrained": True})
 
         """
+        import torch
         if self.model_id is not None:
             raise Exception("Model is already logged. Updating the model is not supported.")
 
