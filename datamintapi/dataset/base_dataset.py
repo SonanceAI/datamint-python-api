@@ -1,7 +1,6 @@
 import os
 import requests
 from tqdm import tqdm
-from requests import Session
 from typing import Optional, Callable, Any, Literal
 import logging
 import shutil
@@ -12,7 +11,6 @@ import numpy as np
 from datamintapi import configs
 from torch.utils.data import DataLoader
 import torch
-from datamintapi.apihandler.api_handler import APIHandler
 from datamintapi.apihandler.base_api_handler import DatamintException
 from datamintapi.utils.dicom_utils import is_dicom
 import cv2
@@ -81,6 +79,8 @@ class DatamintBaseDataset:
                  include_frame_label_names: Optional[list[str]] = None,
                  exclude_frame_label_names: Optional[list[str]] = None
                  ):
+        from datamintapi.apihandler.api_handler import APIHandler
+        
         if project_name is None:
             raise ValueError("project_name is required.")
 

@@ -102,6 +102,7 @@ def main():
 
     no_arguments_provided = args.api_key is None and args.default_url is None
 
+    return
     if no_arguments_provided or args.interactive == True:
         interactive_mode()
 

@@ -1,8 +1,7 @@
 from datamintapi.apihandler.base_api_handler import BaseAPIHandler
-from typing import Optional, Dict, List, Union
+from typing import Optional, Dict, List, Union, Any
 import json
 import logging
-import torch
 from io import BytesIO
 
 _LOGGER = logging.getLogger(__name__)
@@ -142,9 +141,10 @@ class ExperimentAPIHandler(BaseAPIHandler):
 
     def log_model(self,
                   exp_id: str,
-                  model: Union[torch.nn.Module, str, BytesIO],
+                  model: Union[Any, str, BytesIO],
                   hyper_params: Optional[Dict] = None,
                   torch_save_kwargs: Dict = {}) -> Dict:
+        import torch
         if isinstance(model, torch.nn.Module):
             f = BytesIO()
             torch.save(model, f, **torch_save_kwargs)
