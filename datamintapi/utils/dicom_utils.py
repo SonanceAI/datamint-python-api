@@ -13,6 +13,7 @@ import numpy as np
 from collections import defaultdict
 import uuid
 import hashlib
+from tqdm import tqdm
 
 import pydicom.uid
 
@@ -226,7 +227,7 @@ def load_image_normalized(dicom: pydicom.Dataset, index: int = None) -> np.ndarr
     raise ValueError(f"Unsupported DICOM normalization with shape: {shape}, SamplesPerPixel: {c}, NumberOfFrames: {n}")
 
 
-def assemble_dicoms(files_path: list[str | IO] | list[list[str]],
+def assemble_dicoms(files_path: list[str | IO],
                     return_as_IO: bool = False) -> GeneratorWithLength[pydicom.Dataset | IO]:
     """
     Assemble multiple DICOM files into a single multi-frame DICOM file.
@@ -239,18 +240,45 @@ def assemble_dicoms(files_path: list[str | IO] | list[list[str]],
         A generator that yields the merged DICOM files.
     """
     dicoms_map = defaultdict(list)
-    for file_path in files_path:
+    
+    for file_path in tqdm(files_path, desc="Reading DICOMs metadata", unit="file"):
         dicom = pydicom.dcmread(file_path,
-                                specific_tags=['FrameOfReferenceUID', 'InstanceNumber'])
+                                specific_tags=['FrameOfReferenceUID', 'InstanceNumber', 'Rows', 'Columns'])
         fr_uid = dicom.get('FrameOfReferenceUID', None)
         if fr_uid is None:
-            # genereate a random uid
+            # generate a random uid
             fr_uid = pydicom.uid.generate_uid()
         instance_number = dicom.get('InstanceNumber', 0)
-        dicoms_map[fr_uid].append((instance_number, file_path))
+        rows = dicom.get('Rows', None)
+        columns = dicom.get('Columns', None)
+        dicoms_map[fr_uid].append((instance_number, file_path, rows, columns))
         if hasattr(file_path, "seek"):
             file_path.seek(0)
+    
+    # Validate that all DICOMs with the same FrameOfReferenceUID have matching dimensions
+    for fr_uid, dicom_list in dicoms_map.items():
+        if len(dicom_list) <= 1:
+            continue
+            
+        # Get dimensions from first DICOM
+        first_rows = dicom_list[0][2]
+        first_columns = dicom_list[0][3]
+        
+        # Check all other DICOMs have the same dimensions
+        for instance_number, file_path, rows, columns in dicom_list:
+            if rows != first_rows or columns != first_columns:
+                msg = (
+                    f"Dimension mismatch in FrameOfReferenceUID {fr_uid}: "
+                    f"Expected {first_rows}x{first_columns}, got {rows}x{columns} "
+                    f"for file {file_path} and {dicom_list[0][1]}"
+                )
+                _LOGGER.error(msg)
+                raise ValueError(msg)
 
+    # filter out the two last elements of the tuple (rows, columns)
+    dicoms_map = {fr_uid: [(instance_number, file_path) for instance_number, file_path, _, _ in dicoms]
+                  for fr_uid, dicoms in dicoms_map.items()}
+    
     gen = _generate_merged_dicoms(dicoms_map, return_as_IO=return_as_IO)
     return GeneratorWithLength(gen, len(dicoms_map))
 
