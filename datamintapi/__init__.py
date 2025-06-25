@@ -22,4 +22,4 @@ else:
     )
 
 __name__ = "datamintapi"
-__version__ = importlib.metadata.version(__name__)
+__version__ = importlib.metadata.version('datamint')

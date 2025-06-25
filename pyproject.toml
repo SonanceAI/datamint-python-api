@@ -1,15 +1,19 @@
 [project]
-name = "DatamintAPI"
+name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "1.2.3"
+version = "1.2.4"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
 
+[project.scripts]
+datamint-upload = 'datamintapi.client_cmd_tools.datamint_upload:main'
+datamint-config = 'datamintapi.client_cmd_tools.datamint_config:main'
+
 [tool.poetry]
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
 include = [{ path = "datamintapi/logging.yaml", format = ["sdist", "wheel"] }]
-packages = [{ include = "datamintapi" }, { include = "datamint" }]
+packages = [ { include = "datamint" }, { include = "datamintapi" }]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
@@ -60,9 +64,6 @@ docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "setuptools"]
 dev = ["pytest", "pytest-cov", "responses", "aioresponses"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.scripts]
-datamint-upload = 'datamintapi.client_cmd_tools.datamint_upload:main'
-datamint-config = 'datamintapi.client_cmd_tools.datamint_config:main'
