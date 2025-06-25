@@ -256,12 +256,86 @@ def _find_segmentation_files(segmentation_root_path: str,
     return segmentation_files
 
 
-def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
+def _find_json_metadata(file_path: str | Path) -> Optional[str]:
+    """
+    Find a JSON file with the same base name as the given file.
+
+    Args:
+        file_path (str): Path to the main file (e.g., NIFTI file)
+
+    Returns:
+        Optional[str]: Path to the JSON metadata file if found, None otherwise
+    """
+    file_path = Path(file_path)
+    json_path = file_path.with_suffix('.json')
+
+    if json_path.exists() and json_path.is_file():
+        _LOGGER.debug(f"Found JSON metadata file: {json_path}")
+        return str(json_path)
+
+    return None
+
+
+def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tuple[list, list[str]]:
+    """
+    Collect JSON metadata files for the given files and filter them from main files list.
+
+    Args:
+        files_path (list[str]): List of file paths
+        auto_detect_json (bool): Whether to auto-detect JSON metadata files
+
+    Returns:
+        tuple[list[Optional[str]], list[str]]: Tuple of (metadata file paths, filtered files_path)
+            - metadata file paths: List of metadata file paths (None if no metadata found)
+            - filtered files_path: Original files_path with JSON metadata files removed
+    """
+    if not auto_detect_json:
+        return [None] * len(files_path), files_path
+
+    metadata_files = []
+    used_json_files = set()
+    nifti_extensions = ['.nii', '.nii.gz']
+
+    for file_path in files_path:
+        # Check if this is a NIFTI file
+        if any(file_path.endswith(ext) for ext in nifti_extensions):
+            json_file = _find_json_metadata(file_path)
+            metadata_files.append(json_file)
+            if json_file is not None:
+                used_json_files.add(json_file)
+        else:
+            metadata_files.append(None)
+
+    # Filter out JSON files that are being used as metadata from the main files list
+    filtered_files_path = [f for f in files_path if f not in used_json_files]
+
+    # Update metadata_files to match the filtered list
+    if used_json_files:
+        _LOGGER.debug(f"Filtering out {len(used_json_files)} JSON metadata files from main upload list")
+        filtered_metadata_files = []
+        filtered_file_index = 0
+
+        for original_file in files_path:
+            if original_file not in used_json_files:
+                filtered_metadata_files.append(metadata_files[files_path.index(original_file)])
+                filtered_file_index += 1
+
+        metadata_files = filtered_metadata_files
+
+    return metadata_files, filtered_files_path
+
+
+def _parse_args() -> tuple[Any, list, Optional[list[dict]], Optional[list[str]]]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
-    parser.add_argument('--path', type=_is_valid_path_argparse, metavar="FILE",
-                        required=True,
+
+    # Add positional argument for path
+    parser.add_argument('path', nargs='?', type=_is_valid_path_argparse, metavar="PATH",
                         help='Path to the resource file(s) or a directory')
+
+    # Keep the --path option for backward compatibility, but make it optional
+    parser.add_argument('--path', dest='path_flag', type=_is_valid_path_argparse, metavar="FILE",
+                        help='Path to the resource file(s) or a directory (alternative to positional argument)')
     parser.add_argument('-r', '--recursive', nargs='?', const=-1,  # -1 means infinite
                         type=int,
                         help='Recurse folders looking for DICOMs. If a number is passed, recurse that number of levels.')
@@ -302,9 +376,28 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--transpose-segmentation', action='store_true', default=False,
                         help='Transpose the segmentation dimensions to match the image dimensions')
+    parser.add_argument('--auto-detect-json', action='store_true', default=True,
+                        help='Automatically detect and include JSON metadata files with the same base name as NIFTI files')
+    parser.add_argument('--no-auto-detect-json', dest='auto_detect_json', action='store_false',
+                        help='Disable automatic detection of JSON metadata files (default behavior)')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
+
+    # Handle path argument priority: positional takes precedence over --path flag
+    if args.path is not None and args.path_flag is not None:
+        _USER_LOGGER.warning("Both positional path and --path flag provided. Using positional argument.")
+        final_path = args.path
+    elif args.path is not None:
+        final_path = args.path
+    elif args.path_flag is not None:
+        final_path = args.path_flag
+    else:
+        parser.error("Path argument is required. Provide it as a positional argument or use --path flag.")
+
+    # Replace args.path with the final resolved path for consistency
+    args.path = final_path
+
     if args.verbose:
         # Get the console handler and set to debug
         logging.getLogger().handlers[0].setLevel(logging.DEBUG)
@@ -319,7 +412,6 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
         raise ValueError("--include-extensions and --exclude-extensions are mutually exclusive.")
 
     try:
-
         if os.path.isfile(args.path):
             file_path = [args.path]
             if args.recursive is not None:
@@ -336,6 +428,12 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
 
         if len(file_path) == 0:
             raise ValueError(f"No valid file was found in {args.path}")
+
+        # Collect JSON metadata files and filter them from main files list
+        metadata_files, file_path = _collect_metadata_files(file_path, args.auto_detect_json)
+
+        if len(file_path) == 0:
+            raise ValueError(f"No valid non-metadata files found in {args.path}")
 
         if args.segmentation_names is not None:
             with open(args.segmentation_names, 'r') as f:
@@ -360,7 +458,7 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
             raise ValueError("Cannot use both --tag and --label. Use --tag instead. --label is deprecated.")
         args.tag = args.tag if args.tag is not None else args.label
 
-        return args, file_path, segmentation_files
+        return args, file_path, segmentation_files, metadata_files
 
     except Exception as e:
         if args.verbose:
@@ -371,6 +469,7 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]]]:
 def print_input_summary(files_path: list[str],
                         args,
                         segfiles: Optional[list[dict]],
+                        metadata_files: Optional[list[str]] = None,
                         include_extensions=None):
     ### Create a summary of the upload ###
     total_files = len(files_path)
@@ -397,6 +496,7 @@ def print_input_summary(files_path: list[str],
         if ext == '':
             ext = 'no extension'
         _USER_LOGGER.info(f"\t{ext}: {count}")
+    # Check for multiple extensions
     if len(ext_counts) > 1 and include_extensions is None:
         _USER_LOGGER.warning("Multiple file extensions found!" +
                              " Make sure you are uploading the correct files.")
@@ -418,6 +518,13 @@ def print_input_summary(files_path: list[str],
                 _USER_LOGGER.warning(msg)
             else:
                 _USER_LOGGER.info(msg)
+
+    if metadata_files is not None:
+        num_metadata_files = sum([1 if metadata is not None else 0 for metadata in metadata_files])
+        if num_metadata_files > 0:
+            msg = f"Number of files with JSON metadata: {num_metadata_files} ({num_metadata_files / total_files:.0%})"
+            _USER_LOGGER.info(msg)
+            # TODO: Could add validation to ensure JSON metadata files contain valid DICOM metadata structure
 
 
 def print_results_summary(files_path: list[str],
@@ -441,7 +548,7 @@ def main():
     load_cmdline_logging_config()
 
     try:
-        args, files_path, segfiles = _parse_args()
+        args, files_path, segfiles, metadata_files = _parse_args()
     except Exception as e:
         _USER_LOGGER.error(f'Error validating arguments. {e}')
         return
@@ -449,6 +556,7 @@ def main():
     print_input_summary(files_path,
                         args=args,
                         segfiles=segfiles,
+                        metadata_files=metadata_files,
                         include_extensions=args.include_extensions)
 
     if not args.yes:
@@ -471,7 +579,8 @@ def main():
                                            publish=args.publish,
                                            segmentation_files=segfiles,
                                            transpose_segmentation=args.transpose_segmentation,
-                                           assemble_dicoms=True
+                                           assemble_dicoms=True,
+                                           metadata_files=metadata_files
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
