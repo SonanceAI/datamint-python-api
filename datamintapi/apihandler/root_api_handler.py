@@ -63,6 +63,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             session=None,
                                             modality: Optional[str] = None,
                                             publish: bool = False,
+                                            metadata_file: Optional[str] = None,
                                             ) -> str:
         if _is_io_object(file_path):
             name = file_path.name
@@ -97,6 +98,8 @@ class RootAPIHandler(BaseAPIHandler):
             is_a_dicom_file = is_dicom(name) or is_dicom(file_path)
             if is_a_dicom_file:
                 mimetype = 'application/dicom'
+            elif name.endswith('.nii') or name.endswith('.nii.gz'):
+                mimetype = 'application/x-nifti'
 
         filename = os.path.basename(name)
         _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
@@ -115,6 +118,25 @@ class RootAPIHandler(BaseAPIHandler):
             f = _open_io(file_path)
 
         try:
+            metadata_content = None
+            metadata_dict = None
+            if metadata_file is not None:
+                try:
+                    with open(metadata_file, 'r') as metadata_f:
+                        metadata_content = metadata_f.read()
+                        metadata_dict = json.loads(metadata_content)
+                        metadata_dict_lower = {k.lower(): v for k, v in metadata_dict.items() if isinstance(k, str)}
+                        try:
+                            if modality is None:
+                                if 'modality' in metadata_dict_lower:
+                                    modality = metadata_dict_lower['modality']
+                        except Exception as e:
+                            _LOGGER.debug(f"Failed to extract modality from metadata file {metadata_file}: {e}")
+                            _LOGGER.debug(f"Metadata dict: {metadata_dict}")
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to read metadata file {metadata_file}: {e}")
+
+
             form = aiohttp.FormData()
             url = self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)
             file_key = 'resource'
@@ -133,6 +155,14 @@ class RootAPIHandler(BaseAPIHandler):
                 # comma separated list of tags
                 tags = ','.join([l.strip() for l in tags])
                 form.add_field('tags', tags)
+
+            # Add JSON metadata if provided
+            if metadata_content is not None:
+                try:
+                    _LOGGER.debug(f"Adding metadata from {metadata_file}")
+                    form.add_field('metadata', metadata_content, content_type='application/json')
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to read metadata file {metadata_file}: {e}")
 
             request_params = {
                 'method': 'POST',
@@ -170,6 +200,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       publish: bool = False,
                                       segmentation_files: Optional[list[dict]] = None,
                                       transpose_segmentation: bool = False,
+                                      metadata_files: Optional[list[Optional[str]]] = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
@@ -177,8 +208,11 @@ class RootAPIHandler(BaseAPIHandler):
         if segmentation_files is None:
             segmentation_files = _infinite_gen(None)
 
+        if metadata_files is None:
+            metadata_files = _infinite_gen(None)
+
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: dict):
+            async def __upload_single_resource(file_path, segfiles: dict, metadata_file: Optional[str]):
                 async with self.semaphore:
                     rid = await self._upload_single_resource_async(
                         file_path=file_path,
@@ -191,6 +225,7 @@ class RootAPIHandler(BaseAPIHandler):
                         channel=channel,
                         modality=modality,
                         publish=publish,
+                        metadata_file=metadata_file,
                     )
                     if segfiles is not None:
                         fpaths = segfiles['files']
@@ -208,7 +243,8 @@ class RootAPIHandler(BaseAPIHandler):
                                                                        transpose_segmentation=transpose_segmentation)
                     return rid
 
-            tasks = [__upload_single_resource(f, segfiles) for f, segfiles in zip(files_path, segmentation_files)]
+            tasks = [__upload_single_resource(f, segfiles, metadata_file)
+                     for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def _assemble_dicoms(self, files_path: Sequence[str | IO]) -> tuple[Sequence[str | IO], bool]:
@@ -248,7 +284,8 @@ class RootAPIHandler(BaseAPIHandler):
                          segmentation_files: Optional[list[Union[list[str], dict]]] = None,
                          transpose_segmentation: bool = False,
                          modality: Optional[str] = None,
-                         assemble_dicoms: bool = True
+                         assemble_dicoms: bool = True,
+                         metadata_files: Optional[list[Optional[str]]] = None
                          ) -> list[str | Exception] | str | Exception:
         """
         Upload resources.
@@ -274,6 +311,7 @@ class RootAPIHandler(BaseAPIHandler):
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
+            metadata_files (Optional[list[Optional[str]]]): JSON metadata files to include with each resource.
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
@@ -319,6 +357,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             segmentation_files=segmentation_files,
                                             transpose_segmentation=transpose_segmentation,
                                             modality=modality,
+                                            metadata_files=metadata_files,
                                             )
 
         resource_ids = loop.run_until_complete(task)
@@ -690,13 +729,13 @@ class RootAPIHandler(BaseAPIHandler):
                           'url': url}
         try:
             response = self._run_request(request_params)
-            
+
             # Get mimetype if needed for auto_convert or add_extension
             mimetype = None
             if auto_convert or add_extension:
                 resource_info = self.get_resources_by_ids(resource_id)
                 mimetype = resource_info['mimetype']
-            
+
             if auto_convert:
                 try:
                     resource_file = BaseAPIHandler.convert_format(response.content,
