@@ -28,6 +28,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 
 _PAGE_LIMIT = 5000
 
+
 class DatamintException(Exception):
     """
     Base class for exceptions in this module.
@@ -118,6 +119,9 @@ class BaseAPIHandler:
         if method != 'GET':
             curl_command.extend(['-X', method])
 
+        # Add URL
+        curl_command.append(f"'{url}'")
+
         # Add headers
         for key, value in headers.items():
             if key.lower() == 'apikey':
@@ -131,25 +135,37 @@ class BaseAPIHandler:
 
         # Add data
         if data:
-            if isinstance(data, dict):
+            if isinstance(data, aiohttp.FormData):  # Check if it's aiohttp.FormData
+                # Handle FormData by extracting fields
+                form_parts = []
+                for options,headers,value in data._fields:
+                    # get the name from options
+                    name = options.get('name', 'file')
+                    if hasattr(value, 'read'):  # File-like object
+                        filename = getattr(value, 'name', 'file')
+                        form_parts.extend(['-F', f"'{name}=@{filename}'"])
+                    else:
+                        form_parts.extend(['-F', f"'{name}={value}'"])
+                curl_command.extend(form_parts)
+            elif isinstance(data, dict):
                 curl_command.extend(['-d', f"'{json.dumps(data)}'"])
             else:
                 curl_command.extend(['-d', f"'{data}'"])
-
-        # Add URL
-        curl_command.append(f"'{url}'")
 
         return ' '.join(curl_command)
 
     async def _run_request_async(self,
                                  request_args: dict,
-                                 session: aiohttp.ClientSession = None,
+                                 session: aiohttp.ClientSession | None = None,
                                  data_to_get: str = 'json'):
         if session is None:
             async with aiohttp.ClientSession() as s:
                 return await self._run_request_async(request_args, s)
-        _LOGGER.debug(f"Running request to {request_args['url']}")
-        _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
+        try:
+            _LOGGER.debug(f"Running request to {request_args['url']}")
+            _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
+        except Exception as e:
+            _LOGGER.debug(f"Error generating curl command: {e}")
 
         # add apikey to the headers
         if 'headers' not in request_args:
