@@ -17,7 +17,7 @@ class DatamintDataset(DatamintBaseDataset):
     In addition to that, it has functionality to better process annotations and segmentations.
 
     .. note:: 
-        Import using ``from datamintapi import Dataset``.
+        Import using ``from datamint import Dataset``.
 
     Args:
         root: Root directory of dataset where data already exists or will be downloaded.

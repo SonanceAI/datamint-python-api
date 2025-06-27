@@ -1,5 +1,5 @@
 datamint.Experiment
 ===================
 
-.. automodule:: datamintapi.experiment.experiment
+.. automodule:: datamint.experiment.experiment
     :members:

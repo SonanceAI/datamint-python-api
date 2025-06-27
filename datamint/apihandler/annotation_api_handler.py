@@ -541,7 +541,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         Args:
             resource_id (Optional[str]): The resource unique id.
-            annotation_type (Optional[str]): The annotation type. See :class:`~datamintapi.dto.annotation_dto.AnnotationType`.
+            annotation_type (Optional[str]): The annotation type. See :class:`~datamint.dto.annotation_dto.AnnotationType`.
             annotator_email (Optional[str]): The annotator email.
             date_from (Optional[date]): The start date.
             date_to (Optional[date]): The end date.

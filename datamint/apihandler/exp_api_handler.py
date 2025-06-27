@@ -1,4 +1,4 @@
-from datamintapi.apihandler.base_api_handler import BaseAPIHandler
+from datamint.apihandler.base_api_handler import BaseAPIHandler
 from typing import Optional, Dict, List, Union, Any
 import json
 import logging

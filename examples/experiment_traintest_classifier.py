@@ -4,7 +4,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.nn as nn
 import torch
-from datamintapi import Experiment
+from datamint import Experiment
 import logging
 from torchmetrics import Recall, Precision, Specificity, F1Score, Accuracy, MatthewsCorrCoef
 import torchmetrics
@@ -170,6 +170,6 @@ def test_loop(model, criterion, testloader,
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
-    logging.getLogger('datamintapi').setLevel(logging.DEBUG)
+    logging.getLogger('datamint').setLevel(logging.DEBUG)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()

@@ -486,7 +486,7 @@ def initialize_automatic_logging(enable_rich_logging: bool = True):
     # check if RichHandler is already in the handlers
     if enable_rich_logging and not any(isinstance(h, RichHandler) for h in logging.getLogger().handlers):
         logging.getLogger().handlers.append(RichHandler())  # set rich logging handler for the root logger
-    # logging.getLogger("datamintapi").setLevel(logging.INFO)
+    # logging.getLogger("datamint").setLevel(logging.INFO)
 
     pytorch_patcher = PytorchPatcher()
 

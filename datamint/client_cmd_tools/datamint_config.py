@@ -1,7 +1,7 @@
 import argparse
 import logging
-from datamintapi import configs
-from datamintapi.utils.logging_utils import load_cmdline_logging_config
+from datamint import configs
+from datamint.utils.logging_utils import load_cmdline_logging_config
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def configure_api_key():
 def test_connection():
     """Test the API connection with current settings."""
     try:
-        from datamintapi import APIHandler
+        from datamint import APIHandler
         _USER_LOGGER.info("🔄 Testing connection...")
         api = APIHandler()
         # Simple test - try to get projects

@@ -7,7 +7,7 @@ This class is responsible for interacting with the Datamint server.
 Upload resource files
 ++++++++++++++++++++++++++++++++
 
-Use the :py:meth:`upload_resources() <datamintapi.apihandler.api_handler.APIHandler.upload_resources>` method to upload any resource type, such as DICOMs, videos, and image files:
+Use the :py:meth:`upload_resources() <datamint.apihandler.api_handler.APIHandler.upload_resources>` method to upload any resource type, such as DICOMs, videos, and image files:
 
 .. code-block:: python
 
@@ -19,7 +19,7 @@ Use the :py:meth:`upload_resources() <datamintapi.apihandler.api_handler.APIHand
                                                  "/path/to/video.mp4"]
                                                 )
 
-You can see the list of all uploaded resources by calling the :py:meth:`get_resources() <datamintapi.apihandler.api_handler.APIHandler.get_resources>` method:
+You can see the list of all uploaded resources by calling the :py:meth:`get_resources() <datamint.apihandler.api_handler.APIHandler.get_resources>` method:
 
 .. code-block:: python
 
@@ -53,7 +53,7 @@ Upload, anonymize and add a label
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 To anonymize and add labels to a DICOM file, use the parameters `anonymize`
-and `labels` of :py:meth:`upload_resources() <datamintapi.apihandler.api_handler.APIHandler.upload_resources>`.
+and `labels` of :py:meth:`upload_resources() <datamint.apihandler.api_handler.APIHandler.upload_resources>`.
 Adding labels is useful for searching and filtering resources in the Datamint platform later.
 
 .. code-block:: python
@@ -94,7 +94,7 @@ To include the path into the filename, use the `mung_filename` parameter:
 Download resources
 ------------------
 
-To download a resource, use the :py:meth:`~datamintapi.apihandler.api_handler.APIHandler.download_resource_file` method:
+To download a resource, use the :py:meth:`~datamint.apihandler.api_handler.APIHandler.download_resource_file` method:
 
 .. code-block:: python
 
@@ -117,7 +117,7 @@ If you do not want this, but the bytes itself, use the ``auto_convert=False``.
 Publishing resources
 ---------------------
 
-To publish a resource, use :py:meth:`~datamintapi.apihandler.api_handler.APIHandler.publish_resources`:
+To publish a resource, use :py:meth:`~datamint.apihandler.api_handler.APIHandler.publish_resources`:
 
 .. code-block:: python
 
@@ -145,7 +145,7 @@ You can also publish resources while uploading them:
 Upload segmentation
 -------------------
 
-To upload a segmentation, use :py:meth:`upload_segmentations() <datamintapi.apihandler.api_handler.APIHandler.upload_segmentations>`:
+To upload a segmentation, use :py:meth:`upload_segmentations() <datamint.apihandler.api_handler.APIHandler.upload_segmentations>`:
 
 .. code-block:: python
     

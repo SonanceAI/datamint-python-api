@@ -18,7 +18,7 @@ import json
 from typing import Any, TypeAlias, Literal
 import logging
 from enum import Enum
-from datamintapi.utils.dicom_utils import pixel_to_patient
+from datamint.utils.dicom_utils import pixel_to_patient
 import pydicom
 import numpy as np
 

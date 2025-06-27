@@ -30,7 +30,7 @@ jobs:
           pip install .[dev]
       - name: Test with pytest
         run: |
-          pytest tests --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --cov=datamintapi --cov-report=html
+          pytest tests --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --cov=datamint --cov-report=html
         timeout-minutes: 60
       - name: Test datamint-config
         run: |
