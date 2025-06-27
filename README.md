@@ -8,13 +8,12 @@ See the full documentation at https://sonanceai.github.io/datamint-python-api/
 ## Installation
 
 Datamint requires Python 3.10+.
-You can install Datamint and its dependencies using pip
+You can install/update Datamint and its dependencies using pip
 
 ```bash
-pip install git+https://github.com/SonanceAI/datamint-python-api
+pip install -U datamint
 ```
 
-Soon we will be releasing the package on PyPi.
 We recommend that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages.
 Create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
 - `source datamint-env/bin/activate` (Linux/MAC)
@@ -51,7 +50,7 @@ os.environ["DATAMINT_API_KEY"] = "my_api_key"
 Specify API key in the |APIHandlerClass| constructor:
 
 ```python
-from datamintapi import APIHandler
+from datamint import APIHandler
 api = APIHandler(api_key='my_api_key')
 ```
 

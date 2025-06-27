@@ -13,7 +13,7 @@ from io import BytesIO
 import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
-from datamintapi import configs
+from datamint import configs
 from functools import wraps
 
 _LOGGER = logging.getLogger(__name__)

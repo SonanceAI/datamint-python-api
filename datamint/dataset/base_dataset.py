@@ -8,13 +8,13 @@ import json
 import yaml
 import pydicom
 import numpy as np
-from datamintapi import configs
+from datamint import configs
 from torch.utils.data import DataLoader
 import torch
-from datamintapi.apihandler.base_api_handler import DatamintException
-from datamintapi.utils.dicom_utils import is_dicom
+from datamint.apihandler.base_api_handler import DatamintException
+from datamint.utils.dicom_utils import is_dicom
 import cv2
-from datamintapi.utils.io_utils import read_array_normalized
+from datamint.utils.io_utils import read_array_normalized
 from deprecated import deprecated
 from datetime import datetime
 
@@ -79,7 +79,7 @@ class DatamintBaseDataset:
                  include_frame_label_names: Optional[list[str]] = None,
                  exclude_frame_label_names: Optional[list[str]] = None
                  ):
-        from datamintapi.apihandler.api_handler import APIHandler
+        from datamint.apihandler.api_handler import APIHandler
         
         if project_name is None:
             raise ValueError("project_name is required.")

@@ -1,6 +1,6 @@
 import pytest
 import pydicom
-from datamintapi.utils.dicom_utils import anonymize_dicom, CLEARED_STR, is_dicom
+from datamint.utils.dicom_utils import anonymize_dicom, CLEARED_STR, is_dicom
 import pydicom.data
 from io import BytesIO
 

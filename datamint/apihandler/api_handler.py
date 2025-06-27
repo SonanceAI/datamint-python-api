@@ -9,7 +9,7 @@ class APIHandler(RootAPIHandler, ExperimentAPIHandler, AnnotationAPIHandler):
 
     .. code-block:: python
     
-        from datamintapi import APIHandler
+        from datamint import APIHandler
         api = APIHandler()
     """
     pass

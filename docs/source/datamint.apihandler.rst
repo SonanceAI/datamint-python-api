@@ -1,11 +1,11 @@
 datamint.APIHandler
 ===================
 
-.. automodule:: datamintapi.apihandler.api_handler
+.. automodule:: datamint.apihandler.api_handler
    :members:
    :inherited-members:
 
-.. automodule:: datamintapi.apihandler.base_api_handler
+.. automodule:: datamint.apihandler.base_api_handler
     :members:
     :exclude-members: BaseAPIHandler, validate_call
     

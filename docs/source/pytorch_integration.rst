@@ -13,7 +13,7 @@ To use it, import the |DatamintDatasetClass| class and create an instance of it,
 
 .. code-block:: python
 
-    from datamintapi import Dataset
+    from datamint import Dataset
 
     dataset = Dataset('../data',
                       project_name='MyProjectName', # Must exists in the server
@@ -26,13 +26,13 @@ Here is a complete example that inherits |DatamintDatasetClass|:
 
 .. code-block:: python
 
-    import datamintapi
+    import datamint
     import torch
     from torchvision.transforms import ToTensor
     from torch.utils.data import DataLoader
 
 
-    class XrayFractureDataset(datamintapi.Dataset):
+    class XrayFractureDataset(datamint.Dataset):
         def __getitem__(self, idx):
             image, dicom_metainfo, metainfo = super().__getitem__(idx)
 
@@ -68,7 +68,7 @@ Alternative code, if you want to load all the data and metadata:
 
 .. code-block:: python
 
-    import datamintapi
+    import datamint
     import torch
     from torchvision.transforms import ToTensor
     from torch.utils.data import DataLoader
@@ -78,8 +78,8 @@ Alternative code, if you want to load all the data and metadata:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-    # Create an instance of the datamintapi.Dataset
-    dataset = datamintapi.Dataset(root='data',
+    # Create an instance of the datamint.Dataset
+    dataset = datamint.Dataset(root='data',
                                 dataset_name='TestCTdataset',
                                 version='latest',
                                 api_key='my_api_key',

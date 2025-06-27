@@ -1,6 +1,6 @@
 import requests
 import io
-from datamintapi import APIHandler
+from datamint import APIHandler
 import logging
 from PIL import Image
 import numpy as np
