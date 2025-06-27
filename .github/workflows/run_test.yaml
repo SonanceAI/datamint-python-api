@@ -58,19 +58,13 @@ jobs:
         # Install PyTorch CPU version for faster installation and testing
         run: |
           python -m pip install --upgrade pip wheel setuptools
-          pip install "torch${{ env.PYTORCH_VERSION }}" "torchvision${{ env.TORCHVISION_VERSION }}" \
-            --index-url https://download.pytorch.org/whl/cpu
+          pip install "torch${{ env.PYTORCH_VERSION }}" "torchvision${{ env.TORCHVISION_VERSION }}" --index-url https://download.pytorch.org/whl/cpu
           pip install .[dev]
         timeout-minutes: 10
 
       - name: Run tests with pytest
         run: |
-          pytest tests \
-            --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml \
-            --cov=datamint \
-            --cov-report=html \
-            --tb=short \
-            -v
+          pytest tests --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --cov=datamint --cov-report=html --tb=short -v
         timeout-minutes: 45
 
       - name: Test datamint-config CLI
