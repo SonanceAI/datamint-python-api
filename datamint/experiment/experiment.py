@@ -815,22 +815,22 @@ class Experiment:
         Example:
             .. code-block:: python
 
-            resource_id = '123'
-            predictions = np.array([[0.1, 0.4], [0.9, 0.2]])
-            label_name = 'fracture'
-            exp.log_segmentation_predictions(resource_id, predictions, label_name, threshold=0.5)
+                resource_id = '123'
+                predictions = np.array([[0.1, 0.4], [0.9, 0.2]])
+                label_name = 'fracture'
+                exp.log_segmentation_predictions(resource_id, predictions, label_name, threshold=0.5)
 
             .. code-block:: python
 
-            resource_id = '456'
-            predictions = np.array([[0, 1, 2], [1, 2, 0]])  # Multi-class mask with values 0, 1, 2
-            label_name = {1: 'Femur', 2: 'Tibia'}  # Mapping of pixel values to class names
-            exp.log_segmentation_predictions(
-                resource_id, 
-                predictions, 
-                label_name, 
-                predictions_format='multi-class'
-            )
+                resource_id = '456'
+                predictions = np.array([[0, 1, 2], [1, 2, 0]])  # Multi-class mask with values 0, 1, 2
+                label_name = {1: 'Femur', 2: 'Tibia'}  # Mapping of pixel values to class names
+                exp.log_segmentation_predictions(
+                    resource_id, 
+                    predictions, 
+                    label_name, 
+                    predictions_format='multi-class'
+                )
         """
 
         if predictions_format not in ['multi-class', 'probability']:
