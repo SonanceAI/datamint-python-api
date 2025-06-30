@@ -1,14 +1,14 @@
 import logging
-from datamintapi.apihandler.api_handler import APIHandler
-from datamintapi.apihandler.base_api_handler import DatamintException
+from datamint.apihandler.api_handler import APIHandler
+from datamint.apihandler.base_api_handler import DatamintException
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Union, Any, Tuple, IO, Literal
 from collections import defaultdict
-from datamintapi.dataset.dataset import DatamintDataset
+from datamint.dataset.dataset import DatamintDataset
 import os
 import numpy as np
 import heapq
-from datamintapi.utils import io_utils
+from datamint.utils import io_utils
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -570,7 +570,7 @@ class Experiment:
 
         Args:
             split (str): The split of the dataset to get. Can be one of ['all', 'train', 'test', 'val'].
-            **kwargs: Additional arguments to pass to the :py:class:`~datamintapi.dataset.dataset.DatamintDataset` class.
+            **kwargs: Additional arguments to pass to the :py:class:`~datamint.dataset.dataset.DatamintDataset` class.
 
         Returns:
             DatamintDataset: The dataset object.
@@ -815,22 +815,22 @@ class Experiment:
         Example:
             .. code-block:: python
 
-            resource_id = '123'
-            predictions = np.array([[0.1, 0.4], [0.9, 0.2]])
-            label_name = 'fracture'
-            exp.log_segmentation_predictions(resource_id, predictions, label_name, threshold=0.5)
+                resource_id = '123'
+                predictions = np.array([[0.1, 0.4], [0.9, 0.2]])
+                label_name = 'fracture'
+                exp.log_segmentation_predictions(resource_id, predictions, label_name, threshold=0.5)
 
             .. code-block:: python
 
-            resource_id = '456'
-            predictions = np.array([[0, 1, 2], [1, 2, 0]])  # Multi-class mask with values 0, 1, 2
-            label_name = {1: 'Femur', 2: 'Tibia'}  # Mapping of pixel values to class names
-            exp.log_segmentation_predictions(
-                resource_id, 
-                predictions, 
-                label_name, 
-                predictions_format='multi-class'
-            )
+                resource_id = '456'
+                predictions = np.array([[0, 1, 2], [1, 2, 0]])  # Multi-class mask with values 0, 1, 2
+                label_name = {1: 'Femur', 2: 'Tibia'}  # Mapping of pixel values to class names
+                exp.log_segmentation_predictions(
+                    resource_id, 
+                    predictions, 
+                    label_name, 
+                    predictions_format='multi-class'
+                )
         """
 
         if predictions_format not in ['multi-class', 'probability']:

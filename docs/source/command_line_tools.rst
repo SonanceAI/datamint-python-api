@@ -13,7 +13,7 @@ You should see this in the first line:
 
 .. code-block:: bash
 
-    usage: usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
+    usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
     (...)
 
 There are two command-line tools available:

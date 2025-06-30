@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 import torch.optim as optim
 import torch.nn as nn
 import torch
-from datamintapi import Experiment
+from datamint import Experiment
 import logging
 import os
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
@@ -244,6 +244,6 @@ def test_loop(model, criterion,
 if __name__ == "__main__":
     import rich.logging
     LOGGER.setLevel(logging.INFO)
-    logging.getLogger('datamintapi').setLevel(logging.INFO)
+    logging.getLogger('datamint').setLevel(logging.INFO)
     logging.getLogger().addHandler(rich.logging.RichHandler())
     main()

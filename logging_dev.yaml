@@ -13,7 +13,7 @@ handlers:
     level: DEBUG
     show_time: False
   console_user:
-    class: datamintapi.utils.logging_utils.ConditionalRichHandler
+    class: datamint.utils.logging_utils.ConditionalRichHandler
     level: INFO
     show_path: False
     show_time: False
@@ -24,7 +24,7 @@ handlers:
     filename: app.log
 
 loggers:
-  datamintapi:
+  datamint:
     level: DEBUG
     handlers: [console, file]
     propagate: no

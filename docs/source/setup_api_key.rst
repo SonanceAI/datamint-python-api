@@ -31,6 +31,6 @@ Specify API key in the |APIHandlerClass| constructor:
 
 .. code-block:: python
 
-    from datamintapi import APIHandler
+    from datamint import APIHandler
 
     api = APIHandler(api_key='my_api_key')

@@ -6,8 +6,8 @@ from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
-from datamintapi.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
-from datamintapi.utils import dicom_utils
+from datamint.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
+from datamint.utils import dicom_utils
 import pydicom
 from pathlib import Path
 from datetime import date
@@ -15,7 +15,7 @@ import mimetypes
 from PIL import Image
 import cv2
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
-from datamintapi import configs
+from datamint import configs
 from .base_api_handler import BaseAPIHandler, DatamintException, ResourceNotFoundError, ResourceFields, ResourceStatus
 from deprecated.sphinx import deprecated
 import json

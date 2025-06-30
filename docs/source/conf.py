@@ -14,7 +14,7 @@ copyright = '2024, Sonance Team'
 author = 'Sonance Team'
 
 # The full version, including alpha/beta/rc tags
-release = importlib.metadata.version("datamintapi")
+release = importlib.metadata.version("datamint")
 master_doc = "index"
 nitpicky = True
 nitpick_ignore = {
@@ -42,9 +42,9 @@ extensions = [
 ]
 
 rst_prolog = """
-.. |ExperimentClass| replace:: :py:class:`~datamintapi.experiment.experiment.Experiment`
-.. |DatamintDatasetClass| replace:: :py:class:`~datamintapi.dataset.dataset.DatamintDataset`
-.. |APIHandlerClass| replace:: :py:class:`~datamintapi.apihandler.api_handler.APIHandler`
+.. |ExperimentClass| replace:: :py:class:`~datamint.experiment.experiment.Experiment`
+.. |DatamintDatasetClass| replace:: :py:class:`~datamint.dataset.dataset.DatamintDataset`
+.. |APIHandlerClass| replace:: :py:class:`~datamint.apihandler.api_handler.APIHandler`
 """
 
 napoleon_google_docstring = True

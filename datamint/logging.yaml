@@ -7,13 +7,13 @@ handlers:
     level: WARNING
     show_time: False
   console_user:
-    class: datamintapi.utils.logging_utils.ConditionalRichHandler
+    class: datamint.utils.logging_utils.ConditionalRichHandler
     level: INFO
     show_path: False
     show_time: False
 
 loggers:
-  datamintapi:
+  datamint:
     level: ERROR
     handlers: [console]
     propagate: no

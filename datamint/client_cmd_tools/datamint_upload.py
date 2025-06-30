@@ -1,18 +1,18 @@
 import argparse
-from datamintapi.apihandler.api_handler import APIHandler
+from datamint.apihandler.api_handler import APIHandler
 import os
 from humanize import naturalsize
 import logging
 from pathlib import Path
 import sys
-from datamintapi.utils.dicom_utils import is_dicom
+from datamint.utils.dicom_utils import is_dicom
 import fnmatch
 from typing import Sequence, Generator, Optional, Any
 from collections import defaultdict
-from datamintapi import __version__ as datamintapi_version
-from datamintapi import configs
-from datamintapi.client_cmd_tools.datamint_config import ask_api_key
-from datamintapi.utils.logging_utils import load_cmdline_logging_config
+from datamint import __version__ as datamint_version
+from datamint import configs
+from datamint.client_cmd_tools.datamint_config import ask_api_key
+from datamint.utils.logging_utils import load_cmdline_logging_config
 import yaml
 
 # Create two loggings: one for the user and one for the developer
@@ -380,7 +380,7 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]], Optional[list[str]]]
                         help='Automatically detect and include JSON metadata files with the same base name as NIFTI files')
     parser.add_argument('--no-auto-detect-json', dest='auto_detect_json', action='store_false',
                         help='Disable automatic detection of JSON metadata files (default behavior)')
-    parser.add_argument('--version', action='version', version=f'%(prog)s {datamintapi_version}')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {datamint_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
 

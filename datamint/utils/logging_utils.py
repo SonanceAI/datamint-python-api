@@ -45,7 +45,7 @@ def load_cmdline_logging_config():
             with open('logging_dev.yaml', 'r') as f:
                 config = yaml.safe_load(f)
         except:
-            with importlib.resources.open_text('datamintapi', 'logging.yaml') as f:
+            with importlib.resources.open_text('datamint', 'logging.yaml') as f:
                 config = yaml.safe_load(f.read())
 
         logging.config.dictConfig(config)
