@@ -97,6 +97,56 @@ class LineGeometry(Geometry):
         return LineGeometry(new_point1, new_point2)
 
 
+class BoxGeometry(Geometry):
+    def __init__(self, point1: tuple[float, float, float],
+                 point2: tuple[float, float, float]):
+        """
+        Create a box geometry from two diagonal corner points.
+
+        Args:
+            point1: First corner point (x, y, z) or (x, y, frame_index)
+            point2: Opposite diagonal corner point (x, y, z) or (x, y, frame_index)
+        """
+        super().__init__(AnnotationType.SQUARE)  # Using SQUARE as the box type
+        if isinstance(point1, np.ndarray):
+            point1 = point1.tolist()
+        if isinstance(point2, np.ndarray):
+            point2 = point2.tolist()
+        self.point1 = point1
+        self.point2 = point2
+
+    def to_dict(self) -> dict:
+        return {
+            'points': [self.point1, self.point2],
+        }
+
+    @staticmethod
+    def from_dicom(ds: pydicom.Dataset,
+                   point1: tuple[int, int],
+                   point2: tuple[int, int],
+                   slice_index: int | None = None) -> 'BoxGeometry':
+        """
+        Create a box geometry from DICOM pixel coordinates.
+
+        Args:
+            ds: DICOM dataset containing spatial metadata
+            point1: First corner in pixel coordinates (x, y)
+            point2: Opposite corner in pixel coordinates (x, y)
+            slice_index: The slice/frame index for 3D positioning
+
+        Returns:
+            BoxGeometry with patient coordinate points
+        """
+        pixel_x1, pixel_y1 = point1
+        pixel_x2, pixel_y2 = point2
+
+        new_point1 = pixel_to_patient(ds, pixel_x1, pixel_y1,
+                                      slice_index=slice_index)
+        new_point2 = pixel_to_patient(ds, pixel_x2, pixel_y2,
+                                      slice_index=slice_index)
+        return BoxGeometry(new_point1, new_point2)
+
+
 class CreateAnnotationDto:
     def __init__(self,
                  type: AnnotationType | str,

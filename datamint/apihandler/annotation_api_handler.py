@@ -11,7 +11,7 @@ import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
-from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, CoordinateSystem, AnnotationType
+from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, AnnotationType
 import pydicom
 
 _LOGGER = logging.getLogger(__name__)
@@ -353,7 +353,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         author_email: Optional[str] = None,
                         model_id: Optional[str] = None,
                         project: Optional[str] = None,
-                        ):
+                        ) -> list[str]:
         """
         Add annotations to a resource.
 
@@ -415,6 +415,66 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
+        return resp.json()
+
+    def _create_geometry_annotation(self,
+                                    geometry: LineGeometry | BoxGeometry,
+                                    resource_id: str,
+                                    identifier: str,
+                                    frame_index: int | None = None,
+                                    project: Optional[str] = None,
+                                    worklist_id: Optional[str] = None,
+                                    imported_from: Optional[str] = None,
+                                    author_email: Optional[str] = None,
+                                    model_id: Optional[str] = None) -> list[str]:
+        """
+        Common method for creating geometry-based annotations.
+        
+        Args:
+            geometry: The geometry object (LineGeometry or BoxGeometry)
+            resource_id: The resource unique id
+            identifier: The annotation identifier
+            frame_index: The frame index of the annotation
+            project: The project unique id or name
+            worklist_id: The annotation worklist unique id
+            imported_from: The imported from source value
+            author_email: The email to consider as the author of the annotation
+            model_id: The model unique id
+        """
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+
+        if project is not None:
+            proj = self.get_project_by_name(project)
+            if 'error' in proj.keys():
+                raise DatamintException(f"Project {project} not found.")
+            worklist_id = proj['worklist_id']
+
+        anndto = CreateAnnotationDto(
+            type=geometry.type,
+            identifier=identifier,
+            scope='frame',
+            annotation_worklist_id=worklist_id,
+            value=None,
+            imported_from=imported_from,
+            import_author=author_email,
+            frame_index=frame_index,
+            geometry=geometry,
+            model_id=model_id,
+            is_model=model_id is not None,
+        )
+
+        json_data = anndto.to_dict()
+
+        request_params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/annotations/{resource_id}/annotations',
+            'json': [json_data]
+        }
+
+        resp = self._run_request(request_params)
+        self._check_errors_response_json(resp)
+        return resp.json()
 
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],
@@ -428,7 +488,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                             worklist_id: Optional[str] = None,
                             imported_from: Optional[str] = None,
                             author_email: Optional[str] = None,
-                            model_id: Optional[str] = None):
+                            model_id: Optional[str] = None) -> list[str]:
         """
         Add a line annotation to a resource.
 
@@ -466,12 +526,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
         if project is not None and worklist_id is not None:
             raise ValueError('Only one of project or worklist_id can be provided.')
 
-        if project is not None:
-            proj = self.get_project_by_name(project)
-            if 'error' in proj.keys():
-                raise DatamintException(f"Project {project} not found.")
-            worklist_id = proj['worklist_id']
-
         if coords_system == 'pixel':
             if dicom_metadata is None:
                 point1 = (point1[0], point1[1], frame_index)
@@ -486,30 +540,87 @@ class AnnotationAPIHandler(BaseAPIHandler):
         else:
             raise ValueError(f"Unknown coordinate system: {coords_system}")
 
-        anndto = CreateAnnotationDto(
-            type=AnnotationType.LINE,
-            identifier=identifier,
-            scope='frame',
-            annotation_worklist_id=worklist_id,
-            value=None,
-            imported_from=imported_from,
-            import_author=author_email,
-            frame_index=frame_index,
+        return self._create_geometry_annotation(
             geometry=geom,
-            model_id=model_id,
-            is_model=model_id is not None,
+            resource_id=resource_id,
+            identifier=identifier,
+            frame_index=frame_index,
+            project=project,
+            worklist_id=worklist_id,
+            imported_from=imported_from,
+            author_email=author_email,
+            model_id=model_id
         )
 
-        json_data = anndto.to_dict()
+    def add_box_annotation(self,
+                           point1: tuple[int, int] | tuple[float, float, float],
+                           point2: tuple[int, int] | tuple[float, float, float],
+                           resource_id: str,
+                           identifier: str,
+                           frame_index: int | None = None,
+                           dicom_metadata: pydicom.Dataset | str | None = None,
+                           coords_system: CoordinateSystem = 'pixel',
+                           project: Optional[str] = None,
+                           worklist_id: Optional[str] = None,
+                           imported_from: Optional[str] = None,
+                           author_email: Optional[str] = None,
+                           model_id: Optional[str] = None):
+        """
+        Add a box annotation to a resource.
 
-        request_params = {
-            'method': 'POST',
-            'url': f'{self.root_url}/annotations/{resource_id}/annotations',
-            'json': [json_data]
-        }
+        Args:
+            point1: The first corner point of the box. Can be a 2d or 3d point.
+                If `coords_system` is 'pixel', it must be a 2d point representing pixel coordinates.
+                If `coords_system` is 'patient', it must be a 3d point representing patient coordinates.
+            point2: The opposite diagonal corner point of the box. See `point1` for more details.
+            resource_id: The resource unique id.
+            identifier: The annotation identifier, also known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            dicom_metadata: The DICOM metadata of the image. If provided, coordinates will be converted
+                automatically using the DICOM metadata.
+            coords_system: The coordinate system of the points. Can be 'pixel' or 'patient'.
+                If 'pixel', points are in pixel coordinates. If 'patient', points are in patient coordinates.
+            project: The project unique id or name.
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, uses the API key customer.
+            model_id: The model unique id. Optional.
 
-        resp = self._run_request(request_params)
-        self._check_errors_response_json(resp)
+        Example:
+            .. code-block:: python
+
+                res_id = 'aa93813c-cef0-4edd-a45c-85d4a8f1ad0d'
+                api.add_box_annotation([10, 10], (50, 40),
+                                       resource_id=res_id,
+                                       identifier='BoundingBox1',
+                                       frame_index=2,
+                                       project='Example Project')
+        """
+        if coords_system == 'pixel':
+            if dicom_metadata is None:
+                point1 = (point1[0], point1[1], frame_index)
+                point2 = (point2[0], point2[1], frame_index)
+                geom = BoxGeometry(point1, point2)
+            else:
+                if isinstance(dicom_metadata, str):
+                    dicom_metadata = pydicom.dcmread(dicom_metadata)
+                geom = BoxGeometry.from_dicom(dicom_metadata, point1, point2, slice_index=frame_index)
+        elif coords_system == 'patient':
+            geom = BoxGeometry(point1, point2)
+        else:
+            raise ValueError(f"Unknown coordinate system: {coords_system}")
+
+        return self._create_geometry_annotation(
+            geometry=geom,
+            resource_id=resource_id,
+            identifier=identifier,
+            frame_index=frame_index,
+            project=project,
+            worklist_id=worklist_id,
+            imported_from=imported_from,
+            author_email=author_email,
+            model_id=model_id
+        )
 
     @deprecated(version='0.12.1', reason='Use :meth:`~get_annotations` instead with `resource_id` parameter.')
     def get_resource_annotations(self,
