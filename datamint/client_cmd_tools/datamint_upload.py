@@ -267,7 +267,13 @@ def _find_json_metadata(file_path: str | Path) -> Optional[str]:
         Optional[str]: Path to the JSON metadata file if found, None otherwise
     """
     file_path = Path(file_path)
-    json_path = file_path.with_suffix('.json')
+    
+    # Handle .nii.gz files specially - need to remove both extensions
+    if file_path.name.endswith('.nii.gz'):
+        base_name = file_path.name[:-7]  # Remove .nii.gz
+        json_path = file_path.parent / f"{base_name}.json"
+    else:
+        json_path = file_path.with_suffix('.json')
 
     if json_path.exists() and json_path.is_file():
         _LOGGER.debug(f"Found JSON metadata file: {json_path}")
@@ -313,12 +319,11 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
     if used_json_files:
         _LOGGER.debug(f"Filtering out {len(used_json_files)} JSON metadata files from main upload list")
         filtered_metadata_files = []
-        filtered_file_index = 0
-
+        
         for original_file in files_path:
             if original_file not in used_json_files:
-                filtered_metadata_files.append(metadata_files[files_path.index(original_file)])
-                filtered_file_index += 1
+                original_index = files_path.index(original_file)
+                filtered_metadata_files.append(metadata_files[original_index])
 
         metadata_files = filtered_metadata_files
 

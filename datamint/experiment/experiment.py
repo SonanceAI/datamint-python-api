@@ -803,7 +803,7 @@ class Experiment:
         Args:
             resource_id: The resource ID of the sample.
             predictions: The predictions of the model. One binary mask for each class. Can be a numpy array of shape (H, W) or (N,H,W);
-                Or a path to a png file; Or a path to a .nii.gz file.
+                Or a path to a png file; Or a path to a .nii/.nii.gz file.
             label_name: The name of the class or a dictionary mapping pixel values to names.
                 Example: ``{1: 'Femur', 2: 'Tibia'}`` means that pixel value 1 is 'Femur' and pixel value 2 is 'Tibia'.
             frame_index: The frame index of the prediction or a list of frame indexes.

@@ -54,17 +54,32 @@ def read_video(file_path: str, index: int = None) -> np.ndarray:
 
 
 def read_nifti(file_path: str) -> np.ndarray:
-    imgs = nib.load(file_path).get_fdata()  # shape: (W, H, #frame) or (W, H)
-    if imgs.ndim == 2:
-        imgs = imgs.transpose(1, 0)
-        imgs = imgs[np.newaxis, np.newaxis]
-    elif imgs.ndim == 3:
-        imgs = imgs.transpose(2, 1, 0)
-        imgs = imgs[:, np.newaxis]
-    else:
-        raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
+    """
+    Read a NIfTI file and return the image data in standardized format.
+    
+    Args:
+        file_path: Path to the NIfTI file (.nii or .nii.gz)
+        
+    Returns:
+        np.ndarray: Image data with shape (#frames, C, H, W)
+    """
+    try:
+        nii_img = nib.load(file_path)
+        imgs = nii_img.get_fdata()  # shape: (W, H, #frame) or (W, H)
+        
+        if imgs.ndim == 2:
+            imgs = imgs.transpose(1, 0)  # (W, H) -> (H, W)
+            imgs = imgs[np.newaxis, np.newaxis]  # -> (1, 1, H, W)
+        elif imgs.ndim == 3:
+            imgs = imgs.transpose(2, 1, 0)  # (W, H, #frame) -> (#frame, H, W)
+            imgs = imgs[:, np.newaxis]  # -> (#frame, 1, H, W)
+        else:
+            raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
 
-    return imgs
+        return imgs
+    except Exception as e:
+        _LOGGER.error(f"Failed to read NIfTI file '{file_path}': {e}")
+        raise e
 
 
 def read_image(file_path: str) -> np.ndarray:
@@ -123,6 +138,18 @@ def read_array_normalized(file_path: str,
             else:
                 if mime_type == 'image/x.nifti' or file_path.endswith(NII_EXTS):
                     imgs = read_nifti(file_path)
+                    # For NIfTI files, try to load associated JSON metadata
+                    if return_metainfo:
+                        json_path = file_path.replace('.nii.gz', '.json').replace('.nii', '.json')
+                        if os.path.exists(json_path):
+                            try:
+                                import json
+                                with open(json_path, 'r') as f:
+                                    metainfo = json.load(f)
+                                _LOGGER.debug(f"Loaded JSON metadata from {json_path}")
+                            except Exception as e:
+                                _LOGGER.warning(f"Failed to load JSON metadata from {json_path}: {e}")
+                                metainfo = None
                 elif mime_type.startswith('image/') or file_path.endswith(IMAGE_EXTS):
                     imgs = read_image(file_path)
                 elif file_path.endswith('.npy') or mime_type == 'application/x-numpy-data':
