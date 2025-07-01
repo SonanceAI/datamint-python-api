@@ -88,41 +88,39 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 raise DatamintException(r['error'])
         return resp
 
-    async def _upload_segmentations_async(self,
-                                          resource_id: str,
-                                          frame_index: int | None,
-                                          file_path: str | np.ndarray | None = None,
-                                          fio: IO | None = None,
-                                          name: Optional[str | dict[int, str]] = None,
-                                          imported_from: Optional[str] = None,
-                                          author_email: Optional[str] = None,
-                                          discard_empty_segmentations: bool = True,
-                                          worklist_id: Optional[str] = None,
-                                          model_id: Optional[str] = None,
-                                          transpose_segmentation: bool = False
-                                          ) -> list[str]:
-        if file_path is not None:
-            nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path,
-                                                                             transpose_segmentation=transpose_segmentation)
-            if frame_index is None:
-                frame_index = list(range(nframes))
-            annotids = []
-            for fidx, f in zip(frame_index, fios):
-                reti = await self._upload_segmentations_async(resource_id,
-                                                              fio=f,
-                                                              name=name,
-                                                              frame_index=fidx,
-                                                              imported_from=imported_from,
-                                                              author_email=author_email,
-                                                              discard_empty_segmentations=discard_empty_segmentations,
-                                                              worklist_id=worklist_id,
-                                                              model_id=model_id)
-                annotids.extend(reti)
-            return annotids
+    async def _upload_single_frame_segmentation_async(self,
+                                                      resource_id: str,
+                                                      frame_index: int,
+                                                      fio: IO,
+                                                      name: Optional[str | dict[int, str]] = None,
+                                                      imported_from: Optional[str] = None,
+                                                      author_email: Optional[str] = None,
+                                                      discard_empty_segmentations: bool = True,
+                                                      worklist_id: Optional[str] = None,
+                                                      model_id: Optional[str] = None
+                                                      ) -> list[str]:
+        """
+        Upload a single frame segmentation asynchronously.
+
+        Args:
+            resource_id: The resource unique id.
+            frame_index: The frame index for the segmentation.
+            fio: File-like object containing the segmentation image.
+            name: The name of the segmentation or a dictionary mapping pixel values to names.
+            imported_from: The imported from value.
+            author_email: The author email.
+            discard_empty_segmentations: Whether to discard empty segmentations.
+            worklist_id: The annotation worklist unique id.
+            model_id: The model unique id.
+
+        Returns:
+            List of annotation IDs created.
+        """
         try:
             try:
                 img = np.array(Image.open(fio))
-                ### Check that frame is not empty ###
+                
+                # Check that frame is not empty
                 uniq_vals = np.unique(img)
                 if discard_empty_segmentations:
                     if len(uniq_vals) == 1 and uniq_vals[0] == 0:
@@ -135,31 +133,38 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
                 segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
                 segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
+                
+                # Create annotations
                 annotations: list[CreateAnnotationDto] = []
                 for segname in segnames:
-                    ann = CreateAnnotationDto(type='segmentation',
-                                              identifier=segname,
-                                              scope='frame',
-                                              frame_index=frame_index,
-                                              imported_from=imported_from,
-                                              import_author=author_email,
-                                              model_id=model_id,
-                                              annotation_worklist_id=worklist_id)
+                    ann = CreateAnnotationDto(
+                        type='segmentation',
+                        identifier=segname,
+                        scope='frame',
+                        frame_index=frame_index,
+                        imported_from=imported_from,
+                        import_author=author_email,
+                        model_id=model_id,
+                        annotation_worklist_id=worklist_id
+                    )
                     annotations.append(ann)
-                # raise ValueError if there is multiple annotations with the same identifier, frame_index, scope and author
+                
+                # Validate unique identifiers
                 if len(annotations) != len(set([a.identifier for a in annotations])):
                     raise ValueError(
-                        "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet.")
+                        "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
+                    )
 
                 annotids = await self._upload_annotations_async(resource_id, annotations)
 
-                ### Upload segmentation ###
+                # Upload segmentation files
                 if len(annotids) != len(segnames):
                     _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
                                     f" does not match the number of annotations ({len(segnames)})")
-                for annotid, segname, fio in zip(annotids, segnames, segs_generator):
+                
+                for annotid, segname, fio_seg in zip(annotids, segnames, segs_generator):
                     form = aiohttp.FormData()
-                    form.add_field('file', fio, filename=segname, content_type='image/png')
+                    form.add_field('file', fio_seg, filename=segname, content_type='image/png')
                     request_params = dict(
                         method='POST',
                         url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
@@ -168,19 +173,226 @@ class AnnotationAPIHandler(BaseAPIHandler):
                     resp = await self._run_request_async(request_params)
                     if 'error' in resp:
                         raise DatamintException(resp['error'])
-                #######
+                
+                return annotids
             finally:
                 fio.close()
-            _USER_LOGGER.info(f'Segmentations uploaded for resource {resource_id}')
-            return annotids
         except ResourceNotFoundError:
             raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+
+    async def _upload_volume_segmentation_async(self,
+                                                resource_id: str,
+                                                file_path: str | np.ndarray,
+                                                name: Optional[str] = None,
+                                                imported_from: Optional[str] = None,
+                                                author_email: Optional[str] = None,
+                                                worklist_id: Optional[str] = None,
+                                                model_id: Optional[str] = None,
+                                                transpose_segmentation: bool = False
+                                                ) -> list[str]:
+        """
+        Upload a volume segmentation as a single file asynchronously.
+
+        Args:
+            resource_id: The resource unique id.
+            file_path: Path to segmentation file or numpy array.
+            name: The name of the segmentation (string only for volumes).
+            imported_from: The imported from value.
+            author_email: The author email.
+            worklist_id: The annotation worklist unique id.
+            model_id: The model unique id.
+            transpose_segmentation: Whether to transpose the segmentation.
+
+        Returns:
+            List of annotation IDs created.
+
+        Raises:
+            ValueError: If name is not a string or file format is unsupported for volume upload.
+        """
+        if isinstance(name, dict):
+            raise ValueError("Volume uploads only support string names, not dictionaries.")
+        
+        if name is None:
+            name = 'volume_segmentation'
+
+        # Create volume annotation
+        ann = CreateAnnotationDto(
+            type='segmentation',
+            identifier=name,
+            scope='frame',  # Volume segmentations use image scope
+            imported_from=imported_from,
+            import_author=author_email,
+            model_id=model_id,
+            annotation_worklist_id=worklist_id
+        )
+
+        annotids = await self._upload_annotations_async(resource_id, [ann])
+        _LOGGER.debug(f"Created volume annotation with ID: {annotids}")
+        
+        if not annotids:
+            raise DatamintException("Failed to create volume annotation")
+        
+        annotid = annotids[0]
+
+        # Prepare file for upload
+        if isinstance(file_path, str):
+            if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
+                content_type = 'application/x-nifti'
+                # Upload NIfTI file directly
+                with open(file_path, 'rb') as f:
+                    filename = os.path.basename(file_path)
+                    form = aiohttp.FormData()
+                    form.add_field('file', f, filename=filename, content_type='application/x-nifti')
+                    
+                    request_params = dict(
+                        method='POST',
+                        url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
+                        data=form,
+                    )
+                    resp = await self._run_request_async(request_params)
+                    if 'error' in resp:
+                        raise DatamintException(resp['error'])
+            else:
+                raise ValueError(f"Volume upload not supported for file format: {file_path}")
+        elif isinstance(file_path, np.ndarray):
+            # Convert numpy array to NIfTI and upload
+            # TODO: Consider supporting direct numpy array upload or convert to a supported format
+            if transpose_segmentation:
+                volume_data = file_path.transpose(1, 0, 2) if file_path.ndim == 3 else file_path.transpose(1, 0)
+            else:
+                volume_data = file_path
+            
+            # Create temporary NIfTI file
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as tmp_file:
+                nii_img = nib.Nifti1Image(volume_data.astype(np.uint8), np.eye(4))
+                nib.save(nii_img, tmp_file.name)
+                
+                try:
+                    with open(tmp_file.name, 'rb') as f:
+                        form = aiohttp.FormData()
+                        form.add_field('file', f, filename=f'{name}.nii.gz', content_type='application/x-nifti')
+                        
+                        request_params = dict(
+                            method='POST',
+                            url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
+                            data=form,
+                        )
+                        resp = await self._run_request_async(request_params)
+                        if 'error' in resp:
+                            raise DatamintException(resp['error'])
+                finally:
+                    os.unlink(tmp_file.name)  # Clean up temporary file
+        else:
+            raise ValueError(f"Unsupported file_path type for volume upload: {type(file_path)}")
+
+        _USER_LOGGER.info(f'Volume segmentation uploaded for resource {resource_id}')
+        return annotids
+
+    async def _upload_segmentations_async(self,
+                                          resource_id: str,
+                                          frame_index: int | None,
+                                          file_path: str | np.ndarray | None = None,
+                                          fio: IO | None = None,
+                                          name: Optional[str | dict[int, str]] = None,
+                                          imported_from: Optional[str] = None,
+                                          author_email: Optional[str] = None,
+                                          discard_empty_segmentations: bool = True,
+                                          worklist_id: Optional[str] = None,
+                                          model_id: Optional[str] = None,
+                                          transpose_segmentation: bool = False,
+                                          upload_volume: bool | str = 'auto'
+                                          ) -> list[str]:
+        """
+        Upload segmentations asynchronously.
+
+        Args:
+            resource_id: The resource unique id.
+            frame_index: The frame index or None for multiple frames.
+            file_path: Path to segmentation file or numpy array.
+            fio: File-like object containing segmentation data.
+            name: The name of the segmentation or mapping of pixel values to names.
+            imported_from: The imported from value.
+            author_email: The author email.
+            discard_empty_segmentations: Whether to discard empty segmentations.
+            worklist_id: The annotation worklist unique id.
+            model_id: The model unique id.
+            transpose_segmentation: Whether to transpose the segmentation.
+            upload_volume: Whether to upload the volume as a single file or split into frames.
+
+        Returns:
+            List of annotation IDs created.
+        """
+        if upload_volume == 'auto':
+            if file_path is not None and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+                upload_volume = True
+            else:
+                upload_volume = False
+
+        if file_path is not None:
+            # Handle volume upload
+            if upload_volume:
+                if frame_index is not None:
+                    _LOGGER.warning("frame_index parameter ignored when upload_volume=True")
+                
+                return await self._upload_volume_segmentation_async(
+                    resource_id=resource_id,
+                    file_path=file_path,
+                    name=name if isinstance(name, str) else None,
+                    imported_from=imported_from,
+                    author_email=author_email,
+                    worklist_id=worklist_id,
+                    model_id=model_id,
+                    transpose_segmentation=transpose_segmentation
+                )
+            
+            # Handle frame-by-frame upload (existing logic)
+            nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(
+                file_path, transpose_segmentation=transpose_segmentation
+            )
+            if frame_index is None:
+                frame_index = list(range(nframes))
+            
+            annotids = []
+            for fidx, f in zip(frame_index, fios):
+                frame_annotids = await self._upload_single_frame_segmentation_async(
+                    resource_id=resource_id,
+                    frame_index=fidx,
+                    fio=f,
+                    name=name,
+                    imported_from=imported_from,
+                    author_email=author_email,
+                    discard_empty_segmentations=discard_empty_segmentations,
+                    worklist_id=worklist_id,
+                    model_id=model_id
+                )
+                annotids.extend(frame_annotids)
+            return annotids
+        
+        # Handle single file-like object
+        if fio is not None:
+            if upload_volume:
+                raise ValueError("upload_volume=True is not supported when providing fio parameter")
+            
+            return await self._upload_single_frame_segmentation_async(
+                resource_id=resource_id,
+                frame_index=frame_index,
+                fio=fio,
+                name=name,
+                imported_from=imported_from,
+                author_email=author_email,
+                discard_empty_segmentations=discard_empty_segmentations,
+                worklist_id=worklist_id,
+                model_id=model_id
+            )
+        
+        raise ValueError("Either file_path or fio must be provided")
 
     def upload_segmentations(self,
                              resource_id: str,
                              file_path: str | np.ndarray,
                              name: Optional[str | dict[int, str]] = None,
-                             frame_index: int | list[int] = None,
+                             frame_index: int | list[int] | None = None,
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
                              discard_empty_segmentations: bool = True,
@@ -195,13 +407,15 @@ class AnnotationAPIHandler(BaseAPIHandler):
             resource_id (str): The resource unique id.
             file_path (str|np.ndarray): The path to the segmentation file or a numpy array.
                 If a numpy array is provided, it must have the shape (height, width, #frames) or (height, width).
+                For NIfTI files (.nii/.nii.gz), the entire volume is uploaded as a single segmentation.
             name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
-                example: {1: 'Femur', 2: 'Tibia'}.
+                example: {1: 'Femur', 2: 'Tibia'}. For NIfTI files, only string names are supported.
             frame_index (int | list[int]): The frame index of the segmentation. 
                 If a list, it must have the same length as the number of frames in the segmentation.
                 If None, it is assumed that the segmentations are in sequential order starting from 0.
-
+                This parameter is ignored for NIfTI files as they are treated as volume segmentations.
             discard_empty_segmentations (bool): Whether to discard empty segmentations or not.
+                This is ignored for NIfTI files.
 
         Returns:
             str: The segmentation unique id.
@@ -211,9 +425,32 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         Example:
             >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
+            >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
         """
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
+        
+        # Handle NIfTI files specially - upload as single volume
+        if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+            _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
+            if frame_index is not None:
+                raise ValueError("Do not provide frame_index for NIfTI segmentations.")
+            loop = asyncio.get_event_loop()
+            task = self._upload_segmentations_async(
+                resource_id=resource_id,
+                frame_index=None,
+                file_path=file_path,
+                name=name,
+                imported_from=imported_from,
+                author_email=author_email,
+                discard_empty_segmentations=False,
+                worklist_id=worklist_id,
+                model_id=model_id,
+                transpose_segmentation=transpose_segmentation,
+                upload_volume=True
+            )
+            return loop.run_until_complete(task)
+        # All other file types are converted to multiple PNGs and uploaded frame by frame.
         if isinstance(frame_index, int):
             frame_index = [frame_index]
 

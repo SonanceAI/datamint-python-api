@@ -189,7 +189,6 @@ class RootAPIHandler(BaseAPIHandler):
     async def _upload_resources_async(self,
                                       files_path: Sequence[str | IO],
                                       mimetype: Optional[str] = None,
-                                      batch_id: Optional[str] = None,
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
                                       on_error: Literal['raise', 'skip'] = 'raise',
@@ -233,7 +232,6 @@ class RootAPIHandler(BaseAPIHandler):
                         if isinstance(names, dict):
                             names = _infinite_gen(names)
                         frame_indices = segfiles.get('frame_index', _infinite_gen(None))
-                        _LOGGER.debug(f"Segmentation files: {fpaths}")
                         for f, name, frame_index in zip(fpaths, names, frame_indices):
                             if f is not None:
                                 await self._upload_segmentations_async(rid,
