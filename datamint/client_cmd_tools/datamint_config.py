@@ -1,48 +1,88 @@
 import argparse
 import logging
+import os
+import platform
 from datamint import configs
 from datamint.utils.logging_utils import load_cmdline_logging_config
 from rich.prompt import Prompt, Confirm
 from rich.console import Console
+from rich.theme import Theme
 
-# Create console for user output and logger for developer debugging
-console = Console()
+# Create a custom theme that works well on both dark and blue backgrounds
+def _create_console_theme() -> Theme:
+    """Create a custom Rich theme optimized for cross-platform terminals."""
+    # Detect if we're likely on PowerShell (Windows + PowerShell)
+    is_powershell = (
+        platform.system() == "Windows" and 
+        os.environ.get("PSModulePath") is not None
+    )
+    
+    if is_powershell:
+        # PowerShell blue background - use high contrast colors
+        return Theme({
+            "info": "bright_white",
+            "warning": "bright_yellow",
+            "error": "bright_red on white",
+            "success": "bright_green",
+            "prompt": "bright_white",
+            "key": "bright_magenta",
+            "dim": "bright_black",
+            "accent": "bright_cyan",
+            "title": "bright_white bold"
+        })
+    else:
+        # Linux/Unix terminals - standard colors
+        return Theme({
+            "info": "blue",
+            "warning": "yellow",
+            "error": "red",
+            "success": "green",
+            "prompt": "cyan",
+            "key": "cyan",
+            "dim": "dim",
+            "accent": "bright_blue",
+            "title": "blue bold"
+        })
+
+# Create console with custom theme
+console = Console(theme=_create_console_theme())
 _LOGGER = logging.getLogger(__name__)
 
 
 def configure_default_url():
     """Configure the default API URL interactively."""
-    console.print(f"Current default URL: [cyan]{configs.get_value(configs.APIURL_KEY, 'Not set')}[/cyan]")
-    url = Prompt.ask("Enter the default API URL (leave empty to abort)").strip()
+    current_url = configs.get_value(configs.APIURL_KEY, 'Not set')
+    console.print(f"Current default URL: [key]{current_url}[/key]")
+    url = Prompt.ask("[prompt]Enter the default API URL (leave empty to abort)[/prompt]").strip()
     if url == '':
         return
 
     # Basic URL validation
     if not (url.startswith('http://') or url.startswith('https://')):
-        console.print("[yellow]⚠️  URL should start with http:// or https://[/yellow]")
+        console.print("[warning]⚠️  URL should start with http:// or https://[/warning]")
         return
 
     configs.set_value(configs.APIURL_KEY, url)
-    console.print("[green]✅ Default API URL set successfully.[/green]")
+    console.print("[success]✅ Default API URL set successfully.[/success]")
 
 
 def ask_api_key(ask_to_save: bool) -> str | None:
     """Ask user for API key with improved guidance."""
-    console.print("💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)")
+    console.print("[info]💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)[/info]")
 
-    api_key = Prompt.ask('API key (leave empty to abort)').strip()
+    api_key = Prompt.ask('[prompt]API key (leave empty to abort)[/prompt]').strip()
     if api_key == '':
         return None
 
     if ask_to_save:
-        ans = Confirm.ask("Save the API key so it automatically loads next time? (y/n): ",
+        ans = Confirm.ask("[prompt]Save the API key so it automatically loads next time? (y/n)[/prompt]: ",
                           default=True)
         try:
             if ans:
                 configs.set_value(configs.APIKEY_KEY, api_key)
-                console.print("[green]✅ API key saved.[/green]")
+                console.print("[success]✅ API key saved.[/success]")
         except Exception as e:
-            console.print("[red]❌ Error saving API key.[/red]")
+            console.print("[error]❌ Error saving API key.[/error]")
             _LOGGER.exception(e)
     return api_key
 
@@ -51,86 +91,93 @@ def show_all_configurations():
     """Display all current configurations in a user-friendly format."""
     config = configs.read_config()
     if config is not None and len(config) > 0:
-        console.print("[bold]📋 Current configurations:[/bold]")
+        console.print("[title]📋 Current configurations:[/title]")
         for key, value in config.items():
             # Mask API key for security
             if key == configs.APIKEY_KEY and value:
                 masked_value = f"{value[:3]}...{value[-3:]}" if len(value) > 6 else value
-                console.print(f"  [cyan]{key}[/cyan]: [dim]{masked_value}[/dim]")
+                console.print(f"  [key]{key}[/key]: [dim]{masked_value}[/dim]")
             else:
-                console.print(f"  [cyan]{key}[/cyan]: {value}")
+                console.print(f"  [key]{key}[/key]: {value}")
     else:
         console.print("[dim]No configurations found.[/dim]")
 
 
 def clear_all_configurations():
     """Clear all configurations with confirmation."""
-    yesno = Confirm.ask('Are you sure you want to clear all configurations?',
+    yesno = Confirm.ask('[warning]Are you sure you want to clear all configurations?[/warning]',
                         default=True)
     if yesno:
         configs.clear_all_configurations()
-        console.print("[green]✅ All configurations cleared.[/green]")
+        console.print("[success]✅ All configurations cleared.[/success]")
 
 
 def configure_api_key():
+    """Configure API key interactively."""
     api_key = ask_api_key(ask_to_save=False)
     if api_key is None:
         return
     configs.set_value(configs.APIKEY_KEY, api_key)
-    console.print("[green]✅ API key saved.[/green]")
+    console.print("[success]✅ API key saved.[/success]")
 
 
 def test_connection():
     """Test the API connection with current settings."""
     try:
         from datamint import APIHandler
-        console.print("[blue]🔄 Testing connection...[/blue]")
+        console.print("[accent]🔄 Testing connection...[/accent]")
         api = APIHandler()
         # Simple test - try to get projects
         projects = api.get_projects()
-        console.print(f"[green]✅ Connection successful! Found {len(projects)} projects.[/green]")
+        console.print(f"[success]✅ Connection successful! Found {len(projects)} projects.[/success]")
     except ImportError:
-        console.print("[red]❌ Full API not available. Install with: pip install datamint-python-api[full][/red]")
+        console.print("[error]❌ Full API not available. Install with: pip install datamint-python-api[full][/error]")
     except Exception as e:
-        console.print(f"[red]❌ Connection failed: {e}[/red]")
+        console.print(f"[error]❌ Connection failed: {e}[/error]")
         console.print("[dim]💡 Check your API key and URL settings[/dim]")
 
 
 def interactive_mode():
-    console.print("[bold blue]🔧 Datamint Configuration Tool[/bold blue]")
+    """Run the interactive configuration mode."""
+    console.print("[title]🔧 Datamint Configuration Tool[/title]")
 
     if len(configs.read_config()) == 0:
-        console.print("[yellow]👋 Welcome! Let's set up your API key first.[/yellow]")
+        console.print("[warning]👋 Welcome! Let's set up your API key first.[/warning]")
         configure_api_key()
 
     while True:
-        console.print("\n[bold]📋 Select the action you want to perform:[/bold]")
-        console.print(" [cyan](1)[/cyan] Configure the API key")
-        console.print(" [cyan](2)[/cyan] Configure the default URL")
-        console.print(" [cyan](3)[/cyan] Show all configuration settings")
-        console.print(" [cyan](4)[/cyan] Clear all configuration settings")
-        console.print(" [cyan](5)[/cyan] Test connection")
-        console.print(" [cyan](q)[/cyan] Exit")
-        choice = Prompt.ask("Enter your choice").lower().strip()
+        try:
+            console.print("\n[title]📋 Select the action you want to perform:[/title]")
+            console.print(" [accent](1)[/accent] Configure the API key")
+            console.print(" [accent](2)[/accent] Configure the default URL")
+            console.print(" [accent](3)[/accent] Show all configuration settings")
+            console.print(" [accent](4)[/accent] Clear all configuration settings")
+            console.print(" [accent](5)[/accent] Test connection")
+            console.print(" [accent](q)[/accent] Exit")
+            choice = Prompt.ask("[prompt]Enter your choice[/prompt]").lower().strip()
 
-        if choice == '1':
-            configure_api_key()
-        elif choice == '2':
-            configure_default_url()
-        elif choice == '3':
-            show_all_configurations()
-        elif choice == '4':
-            clear_all_configurations()
-        elif choice == '5':
-            test_connection()
-        elif choice in ('q', 'exit', 'quit'):
-            console.print("[green]👋 Goodbye![/green]")
+            if choice == '1':
+                configure_api_key()
+            elif choice == '2':
+                configure_default_url()
+            elif choice == '3':
+                show_all_configurations()
+            elif choice == '4':
+                clear_all_configurations()
+            elif choice == '5':
+                test_connection()
+            elif choice in ('q', 'exit', 'quit'):
+                break
+            else:
+                console.print("[error]❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.[/error]")
+        except KeyboardInterrupt:
+            console.print('')
             break
-        else:
-            console.print("[red]❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.[/red]")
 
+    console.print("[success]👋 Goodbye![/success]")
 
 def main():
+    """Main entry point for the configuration tool."""
     load_cmdline_logging_config()
     parser = argparse.ArgumentParser(
         description='🔧 Datamint API Configuration Tool',
@@ -152,15 +199,15 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
 
     if args.api_key is not None:
         configs.set_value(configs.APIKEY_KEY, args.api_key)
-        console.print("[green]✅ API key saved.[/green]")
+        console.print("[success]✅ API key saved.[/success]")
 
     if args.default_url is not None:
         # Basic URL validation
         if not (args.default_url.startswith('http://') or args.default_url.startswith('https://')):
-            console.print("[red]❌ URL must start with http:// or https://[/red]")
+            console.print("[error]❌ URL must start with http:// or https://[/error]")
             return
         configs.set_value(configs.APIURL_KEY, args.default_url)
-        console.print("[green]✅ Default URL saved.[/green]")
+        console.print("[success]✅ Default URL saved.[/success]")
 
     no_arguments_provided = args.api_key is None and args.default_url is None
 
