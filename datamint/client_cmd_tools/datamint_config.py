@@ -2,44 +2,47 @@ import argparse
 import logging
 from datamint import configs
 from datamint.utils.logging_utils import load_cmdline_logging_config
+from rich.prompt import Prompt, Confirm
+from rich.console import Console
 
-# Create two loggings: one for the user and one for the developer
+# Create console for user output and logger for developer debugging
+console = Console()
 _LOGGER = logging.getLogger(__name__)
-_USER_LOGGER = logging.getLogger('user_logger')
 
 
 def configure_default_url():
     """Configure the default API URL interactively."""
-    _USER_LOGGER.info("Current default URL: %s", configs.get_value(configs.APIURL_KEY, 'Not set'))
-    url = input("Enter the default API URL (leave empty to abort): ").strip()
+    console.print(f"Current default URL: [cyan]{configs.get_value(configs.APIURL_KEY, 'Not set')}[/cyan]")
+    url = Prompt.ask("Enter the default API URL (leave empty to abort)").strip()
     if url == '':
         return
 
     # Basic URL validation
     if not (url.startswith('http://') or url.startswith('https://')):
-        _USER_LOGGER.warning("URL should start with http:// or https://")
+        console.print("[yellow]⚠️  URL should start with http:// or https://[/yellow]")
         return
 
     configs.set_value(configs.APIURL_KEY, url)
-    _USER_LOGGER.info("Default API URL set successfully.")
+    console.print("[green]✅ Default API URL set successfully.[/green]")
 
 
 def ask_api_key(ask_to_save: bool) -> str | None:
     """Ask user for API key with improved guidance."""
-    _USER_LOGGER.info("💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)")
+    console.print("💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)")
 
-    api_key = input('API key (leave empty to abort): ').strip()
+    api_key = Prompt.ask('API key (leave empty to abort)').strip()
     if api_key == '':
         return None
 
     if ask_to_save:
-        ans = input("Save the API key so it automatically loads next time? (y/n): ")
+        ans = Confirm.ask("Save the API key so it automatically loads next time? (y/n): ",
+                          default=True)
         try:
-            if ans.lower() == 'y':
+            if ans:
                 configs.set_value(configs.APIKEY_KEY, api_key)
-                _USER_LOGGER.info("✅ API key saved.")
+                console.print("[green]✅ API key saved.[/green]")
         except Exception as e:
-            _USER_LOGGER.error("❌ Error saving API key.")
+            console.print("[red]❌ Error saving API key.[/red]")
             _LOGGER.exception(e)
     return api_key
 
@@ -48,24 +51,25 @@ def show_all_configurations():
     """Display all current configurations in a user-friendly format."""
     config = configs.read_config()
     if config is not None and len(config) > 0:
-        _USER_LOGGER.info("📋 Current configurations:")
+        console.print("[bold]📋 Current configurations:[/bold]")
         for key, value in config.items():
             # Mask API key for security
             if key == configs.APIKEY_KEY and value:
                 masked_value = f"{value[:3]}...{value[-3:]}" if len(value) > 6 else value
-                _USER_LOGGER.info(f"  {key}: {masked_value}")
+                console.print(f"  [cyan]{key}[/cyan]: [dim]{masked_value}[/dim]")
             else:
-                _USER_LOGGER.info(f"  {key}: {value}")
+                console.print(f"  [cyan]{key}[/cyan]: {value}")
     else:
-        _USER_LOGGER.info("No configurations found.")
+        console.print("[dim]No configurations found.[/dim]")
 
 
 def clear_all_configurations():
     """Clear all configurations with confirmation."""
-    yesno = input('Are you sure you want to clear all configurations? (y/n): ')
-    if yesno.lower() == 'y':
+    yesno = Confirm.ask('Are you sure you want to clear all configurations?',
+                        default=True)
+    if yesno:
         configs.clear_all_configurations()
-        _USER_LOGGER.info("All configurations cleared.")
+        console.print("[green]✅ All configurations cleared.[/green]")
 
 
 def configure_api_key():
@@ -73,41 +77,41 @@ def configure_api_key():
     if api_key is None:
         return
     configs.set_value(configs.APIKEY_KEY, api_key)
-    _USER_LOGGER.info("✅ API key saved.")
+    console.print("[green]✅ API key saved.[/green]")
 
 
 def test_connection():
     """Test the API connection with current settings."""
     try:
         from datamint import APIHandler
-        _USER_LOGGER.info("🔄 Testing connection...")
+        console.print("[blue]🔄 Testing connection...[/blue]")
         api = APIHandler()
         # Simple test - try to get projects
         projects = api.get_projects()
-        _USER_LOGGER.info(f"✅ Connection successful! Found {len(projects)} projects.")
+        console.print(f"[green]✅ Connection successful! Found {len(projects)} projects.[/green]")
     except ImportError:
-        _USER_LOGGER.error("❌ Full API not available. Install with: pip install datamint-python-api[full]")
+        console.print("[red]❌ Full API not available. Install with: pip install datamint-python-api[full][/red]")
     except Exception as e:
-        _USER_LOGGER.error(f"❌ Connection failed: {e}")
-        _USER_LOGGER.info("💡 Check your API key and URL settings")
+        console.print(f"[red]❌ Connection failed: {e}[/red]")
+        console.print("[dim]💡 Check your API key and URL settings[/dim]")
 
 
 def interactive_mode():
-    _USER_LOGGER.info("🔧 Datamint Configuration Tool")
+    console.print("[bold blue]🔧 Datamint Configuration Tool[/bold blue]")
 
     if len(configs.read_config()) == 0:
-        _USER_LOGGER.info("👋 Welcome! Let's set up your API key first.")
+        console.print("[yellow]👋 Welcome! Let's set up your API key first.[/yellow]")
         configure_api_key()
 
     while True:
-        _USER_LOGGER.info("\n📋 Select the action you want to perform:")
-        _USER_LOGGER.info(" (1) Configure the API key")
-        _USER_LOGGER.info(" (2) Configure the default URL")
-        _USER_LOGGER.info(" (3) Show all configuration settings")
-        _USER_LOGGER.info(" (4) Clear all configuration settings")
-        _USER_LOGGER.info(" (5) Test connection")
-        _USER_LOGGER.info(" (q) Exit")
-        choice = input("Enter your choice: ").lower().strip()
+        console.print("\n[bold]📋 Select the action you want to perform:[/bold]")
+        console.print(" [cyan](1)[/cyan] Configure the API key")
+        console.print(" [cyan](2)[/cyan] Configure the default URL")
+        console.print(" [cyan](3)[/cyan] Show all configuration settings")
+        console.print(" [cyan](4)[/cyan] Clear all configuration settings")
+        console.print(" [cyan](5)[/cyan] Test connection")
+        console.print(" [cyan](q)[/cyan] Exit")
+        choice = Prompt.ask("Enter your choice").lower().strip()
 
         if choice == '1':
             configure_api_key()
@@ -120,10 +124,10 @@ def interactive_mode():
         elif choice == '5':
             test_connection()
         elif choice in ('q', 'exit', 'quit'):
-            _USER_LOGGER.info("👋 Goodbye!")
+            console.print("[green]👋 Goodbye![/green]")
             break
         else:
-            _USER_LOGGER.info("❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.")
+            console.print("[red]❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.[/red]")
 
 
 def main():
@@ -148,15 +152,15 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
 
     if args.api_key is not None:
         configs.set_value(configs.APIKEY_KEY, args.api_key)
-        _USER_LOGGER.info("✅ API key saved.")
+        console.print("[green]✅ API key saved.[/green]")
 
     if args.default_url is not None:
         # Basic URL validation
         if not (args.default_url.startswith('http://') or args.default_url.startswith('https://')):
-            _USER_LOGGER.error("❌ URL must start with http:// or https://")
+            console.print("[red]❌ URL must start with http:// or https://[/red]")
             return
         configs.set_value(configs.APIURL_KEY, args.default_url)
-        _USER_LOGGER.info("✅ Default URL saved.")
+        console.print("[green]✅ Default URL saved.[/green]")
 
     no_arguments_provided = args.api_key is None and args.default_url is None
 
