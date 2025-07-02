@@ -20,28 +20,22 @@ def _create_console_theme() -> Theme:
     if is_powershell:
         # PowerShell blue background - use high contrast colors
         return Theme({
-            "info": "bright_white",
             "warning": "bright_yellow",
             "error": "bright_red on white",
             "success": "bright_green",
-            "prompt": "bright_white",
-            "key": "bright_magenta",
-            "dim": "bright_black",
+            "key": "bright_cyan",
             "accent": "bright_cyan",
-            "title": "bright_white bold"
+            "title": "bold"
         })
     else:
         # Linux/Unix terminals - standard colors
         return Theme({
-            "info": "blue",
             "warning": "yellow",
             "error": "red",
             "success": "green",
-            "prompt": "cyan",
             "key": "cyan",
-            "dim": "dim",
             "accent": "bright_blue",
-            "title": "blue bold"
+            "title": "bold"
         })
 
 # Create console with custom theme
@@ -53,7 +47,7 @@ def configure_default_url():
     """Configure the default API URL interactively."""
     current_url = configs.get_value(configs.APIURL_KEY, 'Not set')
     console.print(f"Current default URL: [key]{current_url}[/key]")
-    url = Prompt.ask("[prompt]Enter the default API URL (leave empty to abort)[/prompt]").strip()
+    url = Prompt.ask("Enter the default API URL (leave empty to abort)", console=console).strip()
     if url == '':
         return
 
@@ -70,13 +64,13 @@ def ask_api_key(ask_to_save: bool) -> str | None:
     """Ask user for API key with improved guidance."""
     console.print("[info]💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)[/info]")
 
-    api_key = Prompt.ask('[prompt]API key (leave empty to abort)[/prompt]').strip()
+    api_key = Prompt.ask('API key (leave empty to abort)', console=console).strip()
     if api_key == '':
         return None
 
     if ask_to_save:
-        ans = Confirm.ask("[prompt]Save the API key so it automatically loads next time? (y/n)[/prompt]: ",
-                          default=True)
+        ans = Confirm.ask("Save the API key so it automatically loads next time? (y/n): ",
+                          default=True, console=console)
         try:
             if ans:
                 configs.set_value(configs.APIKEY_KEY, api_key)
@@ -105,8 +99,8 @@ def show_all_configurations():
 
 def clear_all_configurations():
     """Clear all configurations with confirmation."""
-    yesno = Confirm.ask('[warning]Are you sure you want to clear all configurations?[/warning]',
-                        default=True)
+    yesno = Confirm.ask('Are you sure you want to clear all configurations?',
+                        default=True, console=console)
     if yesno:
         configs.clear_all_configurations()
         console.print("[success]✅ All configurations cleared.[/success]")
@@ -134,7 +128,6 @@ def test_connection():
         console.print("[error]❌ Full API not available. Install with: pip install datamint-python-api[full][/error]")
     except Exception as e:
         console.print(f"[error]❌ Connection failed: {e}[/error]")
-        console.print("[dim]💡 Check your API key and URL settings[/dim]")
 
 
 def interactive_mode():
@@ -154,7 +147,7 @@ def interactive_mode():
             console.print(" [accent](4)[/accent] Clear all configuration settings")
             console.print(" [accent](5)[/accent] Test connection")
             console.print(" [accent](q)[/accent] Exit")
-            choice = Prompt.ask("[prompt]Enter your choice[/prompt]").lower().strip()
+            choice = Prompt.ask("Enter your choice", console=console).lower().strip()
 
             if choice == '1':
                 configure_api_key()
