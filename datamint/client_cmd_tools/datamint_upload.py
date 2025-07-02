@@ -7,13 +7,14 @@ from pathlib import Path
 import sys
 from datamint.utils.dicom_utils import is_dicom
 import fnmatch
-from typing import Sequence, Generator, Optional, Any
+from typing import Generator, Optional, Any
 from collections import defaultdict
 from datamint import __version__ as datamint_version
 from datamint import configs
 from datamint.client_cmd_tools.datamint_config import ask_api_key
 from datamint.utils.logging_utils import load_cmdline_logging_config
 import yaml
+from collections.abc import Sequence, Iterable
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -86,9 +87,9 @@ def _is_system_file(path: Path) -> bool:
     return any(fnmatch.fnmatch(path.name, pattern) for pattern in ignored_patterns)
 
 
-def walk_to_depth(path: str,
+def walk_to_depth(path: str | Path,
                   depth: int,
-                  exclude_pattern: str = None) -> Generator[Path, None, None]:
+                  exclude_pattern: str | None = None) -> Generator[Path, None, None]:
     path = Path(path)
     for child in path.iterdir():
         if _is_system_file(child):
@@ -104,7 +105,7 @@ def walk_to_depth(path: str,
             yield child
 
 
-def filter_files(files_path: Sequence[Path],
+def filter_files(files_path: Iterable[Path],
                  include_extensions,
                  exclude_extensions) -> list[Path]:
     def fix_extension(ext: str) -> str:
@@ -112,7 +113,7 @@ def filter_files(files_path: Sequence[Path],
             return ext
         return '.' + ext
 
-    def normalize_extensions(exts_list: Sequence[str]) -> list[str]:
+    def normalize_extensions(exts_list: Iterable[str]) -> list[str]:
         # explodes the extensions if they are separated by commas
         exts_list = [ext.split(',') for ext in exts_list]
         exts_list = [item for sublist in exts_list for item in sublist]
@@ -140,7 +141,7 @@ def filter_files(files_path: Sequence[Path],
     return files_path
 
 
-def handle_api_key() -> str:
+def handle_api_key() -> str | None:
     """
     Checks for API keys.
     If it does not exist, it asks the user to input it.
@@ -330,7 +331,7 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
     return metadata_files, filtered_files_path
 
 
-def _parse_args() -> tuple[Any, list, Optional[list[dict]], Optional[list[str]]]:
+def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[str]]]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
 
@@ -391,11 +392,11 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]], Optional[list[str]]]
 
     # Handle path argument priority: positional takes precedence over --path flag
     if args.path is not None and args.path_flag is not None:
-        _USER_LOGGER.warning("Both positional path and --path flag provided. Using positional argument.")
+        _USER_LOGGER.warning("Both positional path and --path flag provided.")
+        raise ValueError("Both positional path and --path flag provided.")
+    elif args.path is not None and isinstance(args.path, (str, Path)):
         final_path = args.path
-    elif args.path is not None:
-        final_path = args.path
-    elif args.path_flag is not None:
+    elif args.path_flag is not None and isinstance(args.path_flag, (str, Path)):
         final_path = args.path_flag
     else:
         parser.error("Path argument is required. Provide it as a positional argument or use --path flag.")
@@ -424,6 +425,10 @@ def _parse_args() -> tuple[Any, list, Optional[list[dict]], Optional[list[str]]]
         else:
             try:
                 recursive_depth = 0 if args.recursive is None else args.recursive
+                if recursive_depth < 0:
+                    recursive_depth = MAX_RECURSION_LIMIT
+                else:
+                    recursive_depth = min(MAX_RECURSION_LIMIT, recursive_depth)
                 file_path = walk_to_depth(args.path, recursive_depth, args.exclude)
                 file_path = filter_files(file_path, args.include_extensions, args.exclude_extensions)
                 file_path = list(map(str, file_path))  # from Path to str

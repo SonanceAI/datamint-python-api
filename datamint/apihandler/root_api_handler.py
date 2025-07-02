@@ -57,8 +57,8 @@ class RootAPIHandler(BaseAPIHandler):
                                             mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            tags: list[str] = None,
-                                            mung_filename: Sequence[int] | Literal['all'] = None,
+                                            tags: list[str] = [],
+                                            mung_filename: Sequence[int] | Literal['all'] | None = None,
                                             channel: Optional[str] = None,
                                             session=None,
                                             modality: Optional[str] = None,
@@ -153,8 +153,7 @@ class RootAPIHandler(BaseAPIHandler):
             # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
             if tags is not None and len(tags) > 0:
                 # comma separated list of tags
-                tags = ','.join([l.strip() for l in tags])
-                form.add_field('tags', tags)
+                form.add_field('tags', ','.join([l.strip() for l in tags]))
 
             # Add JSON metadata if provided
             if metadata_content is not None:
