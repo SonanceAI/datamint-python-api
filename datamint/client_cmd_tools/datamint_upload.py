@@ -14,7 +14,7 @@ from datamint import configs
 from datamint.client_cmd_tools.datamint_config import ask_api_key
 from datamint.utils.logging_utils import load_cmdline_logging_config
 import yaml
-from collections.abc import Sequence, Iterable
+from collections.abc import Iterable
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
