@@ -538,7 +538,7 @@ def print_input_summary(files_path: list[str],
 
 
 def print_results_summary(files_path: list[str],
-                          results: list[str | Exception]):
+                          results: list[str | Exception]) -> int:
     # Check for failed uploads
     failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
     _USER_LOGGER.info(f"\nUpload summary:")
@@ -546,12 +546,13 @@ def print_results_summary(files_path: list[str],
     _USER_LOGGER.info(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
     _USER_LOGGER.info(f"\tFailed uploads: {len(failure_files)}")
     if len(failure_files) > 0:
-        _USER_LOGGER.warning(f"\tFailed files: {failure_files}")
+        _USER_LOGGER.warning(f"\tFailed files: {[os.path.basename(f) for f in failure_files]}")
         _USER_LOGGER.warning(f"\nFailures:")
         for f, r in zip(files_path, results):
             _LOGGER.debug(f"Failure: {f} - {r}")
             if isinstance(r, Exception):
                 _USER_LOGGER.warning(f"\t{os.path.basename(f)}: {r}")
+    return len(failure_files)
 
 
 def main():
@@ -561,7 +562,7 @@ def main():
         args, files_path, segfiles, metadata_files = _parse_args()
     except Exception as e:
         _USER_LOGGER.error(f'Error validating arguments. {e}')
-        return
+        sys.exit(1)
 
     print_input_summary(files_path,
                         args=args,
@@ -595,7 +596,9 @@ def main():
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 
-    print_results_summary(files_path, results)
+    num_failures = print_results_summary(files_path, results)
+    if num_failures > 0:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
