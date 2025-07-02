@@ -134,12 +134,12 @@ def interactive_mode():
     """Run the interactive configuration mode."""
     console.print("[title]🔧 Datamint Configuration Tool[/title]")
 
-    if len(configs.read_config()) == 0:
-        console.print("[warning]👋 Welcome! Let's set up your API key first.[/warning]")
-        configure_api_key()
+    try:
+        if len(configs.read_config()) == 0:
+            console.print("[warning]👋 Welcome! Let's set up your API key first.[/warning]")
+            configure_api_key()
 
-    while True:
-        try:
+        while True:
             console.print("\n[title]📋 Select the action you want to perform:[/title]")
             console.print(" [accent](1)[/accent] Configure the API key")
             console.print(" [accent](2)[/accent] Configure the default URL")
@@ -163,9 +163,8 @@ def interactive_mode():
                 break
             else:
                 console.print("[error]❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.[/error]")
-        except KeyboardInterrupt:
-            console.print('')
-            break
+    except KeyboardInterrupt:
+        console.print('')
 
     console.print("[success]👋 Goodbye![/success]")
 
