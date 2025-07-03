@@ -591,7 +591,7 @@ def main():
                                            segmentation_files=segfiles,
                                            transpose_segmentation=args.transpose_segmentation,
                                            assemble_dicoms=True,
-                                           metadata_files=metadata_files
+                                           metadata=metadata_files
                                            )
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
