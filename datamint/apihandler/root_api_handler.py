@@ -297,7 +297,7 @@ class RootAPIHandler(BaseAPIHandler):
                         metadata: dict | str | None = None
                         ) -> str | Exception:
         """
-        Uploads a single resource.
+        Uploads a single resource (examples: DICOM file, NIfTI file, pydicom object)
 
         Args:
             file_path: The path to the resource file or a list of paths to resources files.
@@ -498,7 +498,7 @@ class RootAPIHandler(BaseAPIHandler):
                           project_name: Optional[str] = None,
                           ) -> None:
         """
-        Publish a resource, chaging its status to 'published'.
+        Publish a resource, changing its status to 'published'.
 
         Args:
             resource_ids (str|Sequence[str]): The resource unique id or a list of resource unique ids.
@@ -806,17 +806,15 @@ class RootAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params,
                                                 return_field='data')
 
-    def set_resource_tags(self, resource_id: str,
-                          tags: Sequence[str] = None,
-                          frame_labels: Sequence[dict] = None
+    def set_resource_tags(self, 
+                          resource_id: str,
+                          tags: Sequence[str],
                           ):
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/tags"
         data = {}
 
         if tags is not None:
             data['tags'] = tags
-        if frame_labels is not None:
-            data['frame_labels'] = frame_labels
 
         request_params = {'method': 'PUT',
                           'url': url,
@@ -1086,12 +1084,18 @@ class RootAPIHandler(BaseAPIHandler):
                        name: str,
                        description: str,
                        resources_ids: list[str],
-                       is_active_learning: bool = False) -> dict:
+                       is_active_learning: bool = False,
+                       two_up_display: bool = False,
+                       ) -> dict:
         """
         Create a new project.
 
         Args:
             name (str): The name of the project.
+            description (str): The description of the project.
+            resources_ids (list[str]): The list of resource ids to be included in the project.
+            is_active_learning (bool): Whether the project is an active learning project or not.
+            two_up_display (bool): allow annotators to display multiple resources for annotation.
 
         Returns:
             dict: The created project.
@@ -1099,6 +1103,7 @@ class RootAPIHandler(BaseAPIHandler):
         Raises:
             DatamintException: If the project could not be created.
         """
+
         request_args = {
             'url': self._get_endpoint_url('projects'),
             'method': 'POST',
@@ -1112,7 +1117,7 @@ class RootAPIHandler(BaseAPIHandler):
                          "frame_labels": [],
                          "image_labels": [],
                      },
-                     "two_up_display": False,
+                     "two_up_display": two_up_display,
                      "require_review": False,
                      'description': description}
         }
@@ -1135,7 +1140,8 @@ class RootAPIHandler(BaseAPIHandler):
                           'url': url
                           }
         try:
-            print(self._run_request(request_params))
+            resp = self._run_request(request_params)
+            _LOGGER.debug(resp)
         except ResourceNotFoundError as e:
             e.set_params('project', {'project_id': project_id})
             raise e
@@ -1151,6 +1157,9 @@ class RootAPIHandler(BaseAPIHandler):
         Args:
             project_id (str): The project id.
             outpath (str): The path to save the project zip file.
+            all_annotations (bool): Whether to include all annotations in the downloaded dataset, 
+                even those not made by the provided project.
+            include_unannotated (bool): Whether to include unannotated resources in the downloaded dataset.
 
         Example:
             >>> api_handler.download_project('project_id', 'path/to/project.zip')
