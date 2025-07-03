@@ -158,7 +158,7 @@ class RootAPIHandler(BaseAPIHandler):
                 form.add_field('channel', channel)
             if modality is not None:
                 form.add_field('modality', modality)
-            # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
+            form.add_field('bypass_inbox', 'true' if publish else 'false')
             if tags is not None and len(tags) > 0:
                 # comma separated list of tags
                 form.add_field('tags', ','.join([l.strip() for l in tags]))
@@ -445,13 +445,13 @@ class RootAPIHandler(BaseAPIHandler):
         resource_ids = loop.run_until_complete(task)
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
 
-        if publish_to is not None or publish:
-            _USER_LOGGER.info('Publishing resources')
+        if publish_to is not None:
+            _USER_LOGGER.info('Adding resources to project')
             resource_ids_succ = [rid for rid in resource_ids if not isinstance(rid, Exception)]
             try:
-                self.publish_resources(resource_ids_succ, publish_to)
+                self.add_to_project(resource_ids_succ, publish_to)
             except Exception as e:
-                _LOGGER.error(f"Error publishing resources: {e}")
+                _LOGGER.error(f"Error adding resources to project: {e}")
                 if on_error == 'raise':
                     raise e
 
@@ -460,7 +460,7 @@ class RootAPIHandler(BaseAPIHandler):
         return resource_ids[0]
 
     def publish_resources(self,
-                          resource_ids: Union[str, Sequence[str]],
+                          resource_ids: str | Sequence[str],
                           project_name: Optional[str] = None,
                           ) -> None:
         """
@@ -496,6 +496,39 @@ class RootAPIHandler(BaseAPIHandler):
 
         if project_name is None:
             return
+
+        # get the project id by its name
+        project = self.get_project_by_name(project_name)
+        if 'error' in project:
+            raise ResourceNotFoundError('project', {'project_name': project_name})
+
+        dataset_id = project['dataset_id']
+
+        params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/datasets/{dataset_id}/resources',
+            'json': {'resource_ids_to_add': resource_ids, 'all_files_selected': False}
+        }
+
+        self._run_request(params)
+
+    def add_to_project(self,
+                       resource_ids: str | Sequence[str],
+                       project_name: str,
+                       ) -> None:
+        """
+        Add resources to a project.
+
+        Args:
+            resource_ids (str|Sequence[str]): The resource unique id or a list of resource unique ids.
+            project_name (str): The project name or id to add the resource to.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists or the project does not exists.
+
+        """
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids]
 
         # get the project id by its name
         project = self.get_project_by_name(project_name)
