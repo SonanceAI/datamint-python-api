@@ -57,13 +57,13 @@ class RootAPIHandler(BaseAPIHandler):
                                             mimetype: Optional[str] = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            tags: list[str] = None,
-                                            mung_filename: Sequence[int] | Literal['all'] = None,
+                                            tags: list[str] = [],
+                                            mung_filename: Sequence[int] | Literal['all'] | None = None,
                                             channel: Optional[str] = None,
                                             session=None,
                                             modality: Optional[str] = None,
                                             publish: bool = False,
-                                            metadata_file: Optional[str] = None,
+                                            metadata_file: Optional[str | dict] = None,
                                             ) -> str:
         if _is_io_object(file_path):
             name = file_path.name
@@ -121,21 +121,29 @@ class RootAPIHandler(BaseAPIHandler):
             metadata_content = None
             metadata_dict = None
             if metadata_file is not None:
-                try:
-                    with open(metadata_file, 'r') as metadata_f:
-                        metadata_content = metadata_f.read()
-                        metadata_dict = json.loads(metadata_content)
-                        metadata_dict_lower = {k.lower(): v for k, v in metadata_dict.items() if isinstance(k, str)}
-                        try:
-                            if modality is None:
-                                if 'modality' in metadata_dict_lower:
-                                    modality = metadata_dict_lower['modality']
-                        except Exception as e:
-                            _LOGGER.debug(f"Failed to extract modality from metadata file {metadata_file}: {e}")
-                            _LOGGER.debug(f"Metadata dict: {metadata_dict}")
-                except Exception as e:
-                    _LOGGER.warning(f"Failed to read metadata file {metadata_file}: {e}")
+                if isinstance(metadata_file, dict):
+                    # Metadata is already a dictionary
+                    metadata_dict = metadata_file
+                    metadata_content = json.dumps(metadata_dict)
+                    _LOGGER.debug("Using provided metadata dictionary")
+                else:
+                    # Metadata is a file path
+                    try:
+                        with open(metadata_file, 'r') as metadata_f:
+                            metadata_content = metadata_f.read()
+                            metadata_dict = json.loads(metadata_content)
+                    except Exception as e:
+                        _LOGGER.warning(f"Failed to read metadata file {metadata_file}: {e}")
 
+                # Extract modality from metadata if available
+                if metadata_dict is not None:
+                    metadata_dict_lower = {k.lower(): v for k, v in metadata_dict.items() if isinstance(k, str)}
+                    try:
+                        if modality is None:
+                            if 'modality' in metadata_dict_lower:
+                                modality = metadata_dict_lower['modality']
+                    except Exception as e:
+                        _LOGGER.debug(f"Failed to extract modality from metadata: {e}")
 
             form = aiohttp.FormData()
             url = self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)
@@ -150,19 +158,18 @@ class RootAPIHandler(BaseAPIHandler):
                 form.add_field('channel', channel)
             if modality is not None:
                 form.add_field('modality', modality)
-            # form.add_field('bypass_inbox', 'true' if publish else 'false') # Does not work!
+            form.add_field('bypass_inbox', 'true' if publish else 'false')
             if tags is not None and len(tags) > 0:
                 # comma separated list of tags
-                tags = ','.join([l.strip() for l in tags])
-                form.add_field('tags', tags)
+                form.add_field('tags', ','.join([l.strip() for l in tags]))
 
             # Add JSON metadata if provided
             if metadata_content is not None:
                 try:
-                    _LOGGER.debug(f"Adding metadata from {metadata_file}")
+                    _LOGGER.debug("Adding metadata to form data")
                     form.add_field('metadata', metadata_content, content_type='application/json')
                 except Exception as e:
-                    _LOGGER.warning(f"Failed to read metadata file {metadata_file}: {e}")
+                    _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
             request_params = {
                 'method': 'POST',
@@ -199,7 +206,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       publish: bool = False,
                                       segmentation_files: Optional[list[dict]] = None,
                                       transpose_segmentation: bool = False,
-                                      metadata_files: Optional[list[Optional[str]]] = None,
+                                      metadata_files: Optional[list[str | dict | None]] = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
@@ -211,7 +218,7 @@ class RootAPIHandler(BaseAPIHandler):
             metadata_files = _infinite_gen(None)
 
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: dict, metadata_file: Optional[str]):
+            async def __upload_single_resource(file_path, segfiles: dict, metadata_file: str | dict | None):
                 async with self.semaphore:
                     rid = await self._upload_single_resource_async(
                         file_path=file_path,
@@ -267,6 +274,73 @@ class RootAPIHandler(BaseAPIHandler):
 
         return files_path, assembled
 
+    def upload_resource(self,
+                        file_path: str | IO | pydicom.dataset.Dataset,
+                        mimetype: Optional[str] = None,
+                        anonymize: bool = False,
+                        anonymize_retain_codes: Sequence[tuple] = [],
+                        on_error: Literal['raise', 'skip'] = 'raise',
+                        tags: Optional[Sequence[str]] = None,
+                        mung_filename: Sequence[int] | Literal['all'] | None = None,
+                        channel: Optional[str] = None,
+                        publish: bool = False,
+                        publish_to: Optional[str] = None,
+                        segmentation_files: list[str] | dict | None = None,
+                        transpose_segmentation: bool = False,
+                        modality: Optional[str] = None,
+                        assemble_dicoms: bool = True,
+                        metadata: dict | str | None = None
+                        ) -> str | Exception:
+        """
+        Uploads a single resource.
+
+        Args:
+            file_path: The path to the resource file or a list of paths to resources files.
+            mimetype: The mimetype of the resources. If None, it will be guessed.
+            anonymize: Whether to anonymize the dicoms or not.
+            anonymize_retain_codes: The tags to retain when anonymizing the dicoms.
+            on_error: Whether to raise an exception when an error occurs or to skip the error.
+            tags: The tags to add to the resources.
+            mung_filename: The parts of the filepath to keep when renaming the resource file.
+                ''all'' keeps all parts.
+            channel: The channel to upload the resources to. An arbitrary name to group the resources.
+            publish: Whether to directly publish the resources or not. They will have the 'published' status.
+            publish_to: The project name or id to publish the resources to.
+                They will have the 'published' status and will be added to the project.
+                If this is set, `publish` parameter is ignored.
+            segmentation_files: The segmentation files to upload.
+            transpose_segmentation: Whether to transpose the segmentation files or not.
+            modality: The modality of the resources.
+            assemble_dicoms: Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
+            metadata: JSON metadata to include with each resource.
+                Can be a file path (str) or an already loaded dictionary (dict).
+
+        Raises:
+            ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
+
+        Returns:
+            str | Exception: A resource ID or an error.
+        """
+        result = self.upload_resources(
+            files_path=[file_path],
+            mimetype=mimetype,
+            anonymize=anonymize,
+            anonymize_retain_codes=anonymize_retain_codes,
+            on_error=on_error,
+            tags=tags,
+            mung_filename=mung_filename,
+            channel=channel,
+            publish=publish,
+            publish_to=publish_to,
+            segmentation_files=[segmentation_files] if segmentation_files is not None else None,
+            transpose_segmentation=transpose_segmentation,
+            modality=modality,
+            assemble_dicoms=assemble_dicoms,
+            metadata=metadata
+        )
+
+        return result[0]
+
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
                          mimetype: Optional[str] = None,
@@ -275,7 +349,7 @@ class RootAPIHandler(BaseAPIHandler):
                          on_error: Literal['raise', 'skip'] = 'raise',
                          labels=None,
                          tags: Optional[Sequence[str]] = None,
-                         mung_filename: Sequence[int] | Literal['all'] = None,
+                         mung_filename: Sequence[int] | Literal['all'] | None = None,
                          channel: Optional[str] = None,
                          publish: bool = False,
                          publish_to: Optional[str] = None,
@@ -283,7 +357,7 @@ class RootAPIHandler(BaseAPIHandler):
                          transpose_segmentation: bool = False,
                          modality: Optional[str] = None,
                          assemble_dicoms: bool = True,
-                         metadata_files: Optional[list[Optional[str]]] = None
+                         metadata: list[str | dict | None] | dict | str | None = None
                          ) -> list[str | Exception] | str | Exception:
         """
         Upload resources.
@@ -309,13 +383,15 @@ class RootAPIHandler(BaseAPIHandler):
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
-            metadata_files (Optional[list[Optional[str]]]): JSON metadata files to include with each resource.
+            metadatas (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
+                Must have the same length as `files_path`.
+                Can be file paths (str) or already loaded dictionaries (dict).
 
         Raises:
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
 
         Returns:
-            list[str]: The list of new created dicom_ids.
+            list[str | Exception]: A list of resource IDs or errors.
         """
 
         if on_error not in ['raise', 'skip']:
@@ -323,7 +399,13 @@ class RootAPIHandler(BaseAPIHandler):
         if labels is not None and tags is None:
             tags = labels
 
-        files_path, is_list = RootAPIHandler.__process_files_parameter(files_path)
+        files_path, is_multiple_resources = RootAPIHandler.__process_files_parameter(files_path)
+        if isinstance(metadata, (str, dict)):
+            _LOGGER.debug("Converting metadatas to a list")
+            metadata = [metadata]
+
+        if metadata is not None and len(metadata) != len(files_path):
+            raise ValueError("The number of metadata files must match the number of resources.")
         if assemble_dicoms:
             files_path, assembled = self._assemble_dicoms(files_path)
             assemble_dicoms = assembled
@@ -331,7 +413,7 @@ class RootAPIHandler(BaseAPIHandler):
         if segmentation_files is not None:
             if assemble_dicoms:
                 raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
-            if is_list:
+            if is_multiple_resources:
                 if len(segmentation_files) != len(files_path):
                     raise ValueError("The number of segmentation files must match the number of resources.")
             else:
@@ -355,28 +437,28 @@ class RootAPIHandler(BaseAPIHandler):
                                             segmentation_files=segmentation_files,
                                             transpose_segmentation=transpose_segmentation,
                                             modality=modality,
-                                            metadata_files=metadata_files,
+                                            metadata_files=metadata,
                                             )
 
         resource_ids = loop.run_until_complete(task)
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
 
-        if publish_to is not None or publish:
-            _USER_LOGGER.info('Publishing resources')
+        if publish_to is not None:
+            _USER_LOGGER.info('Adding resources to project')
             resource_ids_succ = [rid for rid in resource_ids if not isinstance(rid, Exception)]
             try:
-                self.publish_resources(resource_ids_succ, publish_to)
+                self.add_to_project(resource_ids_succ, publish_to)
             except Exception as e:
-                _LOGGER.error(f"Error publishing resources: {e}")
+                _LOGGER.error(f"Error adding resources to project: {e}")
                 if on_error == 'raise':
                     raise e
 
-        if is_list:
+        if is_multiple_resources:
             return resource_ids
         return resource_ids[0]
 
     def publish_resources(self,
-                          resource_ids: Union[str, Sequence[str]],
+                          resource_ids: str | Sequence[str],
                           project_name: Optional[str] = None,
                           ) -> None:
         """
@@ -412,6 +494,39 @@ class RootAPIHandler(BaseAPIHandler):
 
         if project_name is None:
             return
+
+        # get the project id by its name
+        project = self.get_project_by_name(project_name)
+        if 'error' in project:
+            raise ResourceNotFoundError('project', {'project_name': project_name})
+
+        dataset_id = project['dataset_id']
+
+        params = {
+            'method': 'POST',
+            'url': f'{self.root_url}/datasets/{dataset_id}/resources',
+            'json': {'resource_ids_to_add': resource_ids, 'all_files_selected': False}
+        }
+
+        self._run_request(params)
+
+    def add_to_project(self,
+                       resource_ids: str | Sequence[str],
+                       project_name: str,
+                       ) -> None:
+        """
+        Add resources to a project.
+
+        Args:
+            resource_ids (str|Sequence[str]): The resource unique id or a list of resource unique ids.
+            project_name (str): The project name or id to add the resource to.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists or the project does not exists.
+
+        """
+        if isinstance(resource_ids, str):
+            resource_ids = [resource_ids]
 
         # get the project id by its name
         project = self.get_project_by_name(project_name)
@@ -479,31 +594,34 @@ class RootAPIHandler(BaseAPIHandler):
 
     @staticmethod
     def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset) -> tuple[Sequence[str | IO], bool]:
+        """
+        Process the file_path parameter to ensure it is a list of file paths or IO objects.
+        """
         if isinstance(file_path, pydicom.dataset.Dataset):
             file_path = to_bytesio(file_path, file_path.filename)
 
         if isinstance(file_path, str):
             if os.path.isdir(file_path):
                 is_list = True
-                file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
+                new_file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
             else:
                 is_list = False
-                file_path = [file_path]
+                new_file_path = [file_path]
         # Check if is an IO object
         elif _is_io_object(file_path):
             is_list = False
-            file_path = [file_path]
+            new_file_path = [file_path]
         elif not hasattr(file_path, '__len__'):
             if hasattr(file_path, '__iter__'):
                 is_list = True
-                file_path = list(file_path)
+                new_file_path = list(file_path)
             else:
                 is_list = False
-                file_path = [file_path]
+                new_file_path = [file_path]
         else:
             is_list = True
-
-        return file_path, is_list
+            new_file_path = file_path
+        return new_file_path, is_list
 
     def get_resources_by_ids(self, ids: str | Sequence[str]) -> dict[str, Any] | Sequence[dict[str, Any]]:
         """

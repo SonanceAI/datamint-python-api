@@ -1,45 +1,82 @@
 import argparse
 import logging
+import os
+import platform
 from datamint import configs
 from datamint.utils.logging_utils import load_cmdline_logging_config
+from rich.prompt import Prompt, Confirm
+from rich.console import Console
+from rich.theme import Theme
 
-# Create two loggings: one for the user and one for the developer
+# Create a custom theme that works well on both dark and blue backgrounds
+def _create_console_theme() -> Theme:
+    """Create a custom Rich theme optimized for cross-platform terminals."""
+    # Detect if we're likely on PowerShell (Windows + PowerShell)
+    is_powershell = (
+        platform.system() == "Windows" and 
+        os.environ.get("PSModulePath") is not None
+    )
+    
+    if is_powershell:
+        # PowerShell blue background - use high contrast colors
+        return Theme({
+            "warning": "bright_yellow",
+            "error": "bright_red on white",
+            "success": "bright_green",
+            "key": "bright_cyan",
+            "accent": "bright_cyan",
+            "title": "bold"
+        })
+    else:
+        # Linux/Unix terminals - standard colors
+        return Theme({
+            "warning": "yellow",
+            "error": "red",
+            "success": "green",
+            "key": "cyan",
+            "accent": "bright_blue",
+            "title": "bold"
+        })
+
+# Create console with custom theme
+console = Console(theme=_create_console_theme())
 _LOGGER = logging.getLogger(__name__)
-_USER_LOGGER = logging.getLogger('user_logger')
 
 
 def configure_default_url():
     """Configure the default API URL interactively."""
-    _USER_LOGGER.info("Current default URL: %s", configs.get_value(configs.APIURL_KEY, 'Not set'))
-    url = input("Enter the default API URL (leave empty to abort): ").strip()
+    current_url = configs.get_value(configs.APIURL_KEY, 'Not set')
+    console.print(f"Current default URL: [key]{current_url}[/key]")
+    url = Prompt.ask("Enter the default API URL (leave empty to abort)", console=console).strip()
     if url == '':
         return
 
     # Basic URL validation
     if not (url.startswith('http://') or url.startswith('https://')):
-        _USER_LOGGER.warning("URL should start with http:// or https://")
+        console.print("[warning]⚠️  URL should start with http:// or https://[/warning]")
         return
 
     configs.set_value(configs.APIURL_KEY, url)
-    _USER_LOGGER.info("Default API URL set successfully.")
+    console.print("[success]✅ Default API URL set successfully.[/success]")
 
 
 def ask_api_key(ask_to_save: bool) -> str | None:
     """Ask user for API key with improved guidance."""
-    _USER_LOGGER.info("💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)")
+    console.print("[info]💡 Get your API key from your Datamint administrator or the web app (https://app.datamint.io/team)[/info]")
 
-    api_key = input('API key (leave empty to abort): ').strip()
+    api_key = Prompt.ask('API key (leave empty to abort)', console=console).strip()
     if api_key == '':
         return None
 
     if ask_to_save:
-        ans = input("Save the API key so it automatically loads next time? (y/n): ")
+        ans = Confirm.ask("Save the API key so it automatically loads next time? (y/n): ",
+                          default=True, console=console)
         try:
-            if ans.lower() == 'y':
+            if ans:
                 configs.set_value(configs.APIKEY_KEY, api_key)
-                _USER_LOGGER.info("✅ API key saved.")
+                console.print("[success]✅ API key saved.[/success]")
         except Exception as e:
-            _USER_LOGGER.error("❌ Error saving API key.")
+            console.print("[error]❌ Error saving API key.[/error]")
             _LOGGER.exception(e)
     return api_key
 
@@ -48,85 +85,91 @@ def show_all_configurations():
     """Display all current configurations in a user-friendly format."""
     config = configs.read_config()
     if config is not None and len(config) > 0:
-        _USER_LOGGER.info("📋 Current configurations:")
+        console.print("[title]📋 Current configurations:[/title]")
         for key, value in config.items():
             # Mask API key for security
             if key == configs.APIKEY_KEY and value:
                 masked_value = f"{value[:3]}...{value[-3:]}" if len(value) > 6 else value
-                _USER_LOGGER.info(f"  {key}: {masked_value}")
+                console.print(f"  [key]{key}[/key]: [dim]{masked_value}[/dim]")
             else:
-                _USER_LOGGER.info(f"  {key}: {value}")
+                console.print(f"  [key]{key}[/key]: {value}")
     else:
-        _USER_LOGGER.info("No configurations found.")
+        console.print("[dim]No configurations found.[/dim]")
 
 
 def clear_all_configurations():
     """Clear all configurations with confirmation."""
-    yesno = input('Are you sure you want to clear all configurations? (y/n): ')
-    if yesno.lower() == 'y':
+    yesno = Confirm.ask('Are you sure you want to clear all configurations?',
+                        default=True, console=console)
+    if yesno:
         configs.clear_all_configurations()
-        _USER_LOGGER.info("All configurations cleared.")
+        console.print("[success]✅ All configurations cleared.[/success]")
 
 
 def configure_api_key():
+    """Configure API key interactively."""
     api_key = ask_api_key(ask_to_save=False)
     if api_key is None:
         return
     configs.set_value(configs.APIKEY_KEY, api_key)
-    _USER_LOGGER.info("✅ API key saved.")
+    console.print("[success]✅ API key saved.[/success]")
 
 
 def test_connection():
     """Test the API connection with current settings."""
     try:
         from datamint import APIHandler
-        _USER_LOGGER.info("🔄 Testing connection...")
+        console.print("[accent]🔄 Testing connection...[/accent]")
         api = APIHandler()
         # Simple test - try to get projects
         projects = api.get_projects()
-        _USER_LOGGER.info(f"✅ Connection successful! Found {len(projects)} projects.")
+        console.print(f"[success]✅ Connection successful! Found {len(projects)} projects.[/success]")
     except ImportError:
-        _USER_LOGGER.error("❌ Full API not available. Install with: pip install datamint-python-api[full]")
+        console.print("[error]❌ Full API not available. Install with: pip install datamint-python-api[full][/error]")
     except Exception as e:
-        _USER_LOGGER.error(f"❌ Connection failed: {e}")
-        _USER_LOGGER.info("💡 Check your API key and URL settings")
+        console.print(f"[error]❌ Connection failed: {e}[/error]")
 
 
 def interactive_mode():
-    _USER_LOGGER.info("🔧 Datamint Configuration Tool")
+    """Run the interactive configuration mode."""
+    console.print("[title]🔧 Datamint Configuration Tool[/title]")
 
-    if len(configs.read_config()) == 0:
-        _USER_LOGGER.info("👋 Welcome! Let's set up your API key first.")
-        configure_api_key()
-
-    while True:
-        _USER_LOGGER.info("\n📋 Select the action you want to perform:")
-        _USER_LOGGER.info(" (1) Configure the API key")
-        _USER_LOGGER.info(" (2) Configure the default URL")
-        _USER_LOGGER.info(" (3) Show all configuration settings")
-        _USER_LOGGER.info(" (4) Clear all configuration settings")
-        _USER_LOGGER.info(" (5) Test connection")
-        _USER_LOGGER.info(" (q) Exit")
-        choice = input("Enter your choice: ").lower().strip()
-
-        if choice == '1':
+    try:
+        if len(configs.read_config()) == 0:
+            console.print("[warning]👋 Welcome! Let's set up your API key first.[/warning]")
             configure_api_key()
-        elif choice == '2':
-            configure_default_url()
-        elif choice == '3':
-            show_all_configurations()
-        elif choice == '4':
-            clear_all_configurations()
-        elif choice == '5':
-            test_connection()
-        elif choice in ('q', 'exit', 'quit'):
-            _USER_LOGGER.info("👋 Goodbye!")
-            break
-        else:
-            _USER_LOGGER.info("❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.")
 
+        while True:
+            console.print("\n[title]📋 Select the action you want to perform:[/title]")
+            console.print(" [accent](1)[/accent] Configure the API key")
+            console.print(" [accent](2)[/accent] Configure the default URL")
+            console.print(" [accent](3)[/accent] Show all configuration settings")
+            console.print(" [accent](4)[/accent] Clear all configuration settings")
+            console.print(" [accent](5)[/accent] Test connection")
+            console.print(" [accent](q)[/accent] Exit")
+            choice = Prompt.ask("Enter your choice", console=console).lower().strip()
+
+            if choice == '1':
+                configure_api_key()
+            elif choice == '2':
+                configure_default_url()
+            elif choice == '3':
+                show_all_configurations()
+            elif choice == '4':
+                clear_all_configurations()
+            elif choice == '5':
+                test_connection()
+            elif choice in ('q', 'exit', 'quit'):
+                break
+            else:
+                console.print("[error]❌ Invalid choice. Please enter a number between 1 and 5 or 'q' to quit.[/error]")
+    except KeyboardInterrupt:
+        console.print('')
+
+    console.print("[success]👋 Goodbye![/success]")
 
 def main():
+    """Main entry point for the configuration tool."""
     load_cmdline_logging_config()
     parser = argparse.ArgumentParser(
         description='🔧 Datamint API Configuration Tool',
@@ -148,15 +191,15 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
 
     if args.api_key is not None:
         configs.set_value(configs.APIKEY_KEY, args.api_key)
-        _USER_LOGGER.info("✅ API key saved.")
+        console.print("[success]✅ API key saved.[/success]")
 
     if args.default_url is not None:
         # Basic URL validation
         if not (args.default_url.startswith('http://') or args.default_url.startswith('https://')):
-            _USER_LOGGER.error("❌ URL must start with http:// or https://")
+            console.print("[error]❌ URL must start with http:// or https://[/error]")
             return
         configs.set_value(configs.APIURL_KEY, args.default_url)
-        _USER_LOGGER.info("✅ Default URL saved.")
+        console.print("[success]✅ Default URL saved.[/success]")
 
     no_arguments_provided = args.api_key is None and args.default_url is None
 

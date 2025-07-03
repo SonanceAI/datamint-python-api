@@ -243,20 +243,20 @@ def assemble_dicoms(files_path: list[str | IO],
     
     for file_path in tqdm(files_path, desc="Reading DICOMs metadata", unit="file"):
         dicom = pydicom.dcmread(file_path,
-                                specific_tags=['FrameOfReferenceUID', 'InstanceNumber', 'Rows', 'Columns'])
-        fr_uid = dicom.get('FrameOfReferenceUID', None)
-        if fr_uid is None:
+                                specific_tags=['SeriesInstanceUID', 'InstanceNumber', 'Rows', 'Columns'])
+        series_uid = dicom.get('SeriesInstanceUID', None)
+        if series_uid is None:
             # generate a random uid
-            fr_uid = pydicom.uid.generate_uid()
+            series_uid = pydicom.uid.generate_uid()
         instance_number = dicom.get('InstanceNumber', 0)
         rows = dicom.get('Rows', None)
         columns = dicom.get('Columns', None)
-        dicoms_map[fr_uid].append((instance_number, file_path, rows, columns))
+        dicoms_map[series_uid].append((instance_number, file_path, rows, columns))
         if hasattr(file_path, "seek"):
             file_path.seek(0)
     
-    # Validate that all DICOMs with the same FrameOfReferenceUID have matching dimensions
-    for fr_uid, dicom_list in dicoms_map.items():
+    # Validate that all DICOMs with the same SeriesInstanceUID have matching dimensions
+    for series_uid, dicom_list in dicoms_map.items():
         if len(dicom_list) <= 1:
             continue
             
@@ -268,7 +268,7 @@ def assemble_dicoms(files_path: list[str | IO],
         for instance_number, file_path, rows, columns in dicom_list:
             if rows != first_rows or columns != first_columns:
                 msg = (
-                    f"Dimension mismatch in FrameOfReferenceUID {fr_uid}: "
+                    f"Dimension mismatch in SeriesInstanceUID {series_uid}: "
                     f"Expected {first_rows}x{first_columns}, got {rows}x{columns} "
                     f"for file {file_path} and {dicom_list[0][1]}"
                 )
@@ -360,11 +360,11 @@ def _generate_dicom_name(ds: pydicom.Dataset) -> str:
     #     components.append(os.path.basename(ds.filename))
     if hasattr(ds, 'SeriesDescription'):
         components.append(ds.SeriesDescription)
-    if hasattr(ds, 'SeriesNumber'):
+    if len(components) == 0 and hasattr(ds, 'SeriesNumber'):
         components.append(f"ser{ds.SeriesNumber}")
     if hasattr(ds, 'StudyDescription'):
         components.append(ds.StudyDescription)
-    if hasattr(ds, 'StudyID'):
+    elif hasattr(ds, 'StudyID'):
         components.append(ds.StudyID)
 
     # Join components and add extension
@@ -375,8 +375,8 @@ def _generate_dicom_name(ds: pydicom.Dataset) -> str:
         if len(description) > 0:
             return description
 
-    if hasattr(ds, 'FrameOfReferenceUID'):
-        return ds.FrameOfReferenceUID + ".dcm"
+    if hasattr(ds, 'SeriesInstanceUID'):
+        return ds.SeriesInstanceUID + ".dcm"
 
     # Fallback to generic name if no attributes found
     return ds.filename if hasattr(ds, 'filename') else f"merged_dicom_{uuid.uuid4()}.dcm"
