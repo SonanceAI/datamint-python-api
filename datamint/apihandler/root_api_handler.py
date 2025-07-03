@@ -324,7 +324,7 @@ class RootAPIHandler(BaseAPIHandler):
             str | Exception: A resource ID or an error.
         """
         result = self.upload_resources(
-            files_path=file_path,
+            files_path=[file_path],
             mimetype=mimetype,
             anonymize=anonymize,
             anonymize_retain_codes=anonymize_retain_codes,
@@ -341,7 +341,7 @@ class RootAPIHandler(BaseAPIHandler):
             metadata=metadata
         )
 
-        return result
+        return result[0]
 
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
