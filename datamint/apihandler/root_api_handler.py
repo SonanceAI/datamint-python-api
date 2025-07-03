@@ -218,7 +218,7 @@ class RootAPIHandler(BaseAPIHandler):
             metadata_files = _infinite_gen(None)
 
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: dict, metadata_file: str | dict | None):
+            async def __upload_single_resource(file_path, segfiles: dict[str, list | dict], metadata_file: str | dict | None):
                 async with self.semaphore:
                     rid = await self._upload_single_resource_async(
                         file_path=file_path,
@@ -239,7 +239,9 @@ class RootAPIHandler(BaseAPIHandler):
                         if isinstance(names, dict):
                             names = _infinite_gen(names)
                         frame_indices = segfiles.get('frame_index', _infinite_gen(None))
-                        for f, name, frame_index in zip(fpaths, names, frame_indices):
+                        for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
+                                                         desc=f"Uploading segmentations for {file_path}",
+                                                         total=len(fpaths)):
                             if f is not None:
                                 await self._upload_segmentations_async(rid,
                                                                        file_path=f,
@@ -262,6 +264,9 @@ class RootAPIHandler(BaseAPIHandler):
                 other_files_path.append(f)
 
         orig_len = len(dicoms_files_path)
+        if orig_len == 0:
+            _LOGGER.debug("No DICOM files found to assemble.")
+            return files_path, False
         dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
 
         new_len = len(dicoms_files_path)
@@ -308,7 +313,10 @@ class RootAPIHandler(BaseAPIHandler):
             publish_to: The project name or id to publish the resources to.
                 They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
-            segmentation_files: The segmentation files to upload.
+            segmentation_files: The segmentation files to upload. 
+                If it is a dict, it should have two keys: 'files' and 'names'.
+                    - files: A list of paths to the segmentation files. Example: ['seg1.nii.gz', 'seg2.nii.gz'].
+                    - names: Can be a list (same size of `files`) of labels for the segmentation files. Example: ['Brain', 'Lung']. Or a dictionary mapping a pixel value to a label. Example: {'1': 'Brain', '2': 'Lung'}.
             transpose_segmentation: Whether to transpose the segmentation files or not.
             modality: The modality of the resources.
             assemble_dicoms: Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
@@ -320,7 +328,23 @@ class RootAPIHandler(BaseAPIHandler):
 
         Returns:
             str | Exception: A resource ID or an error.
+
+        Example:
+            .. code-block:: python
+
+                file_path = '/path/to/resource.dcm'
+                segfiles = {'files': ['/path/to/seg_brain.nii.gz', '/path/to/seg_lung.nii.gz'],
+                            'names': ['Brain', 'Lung']}
+                result = api_handler.upload_resource(
+                    file_path=file_path,
+                    mimetype='application/dicom',
+                    anonymize=True,
+                    tags=['example', 'dicom'],
+                    segmentation_files=segfiles,
+                    metadata={'PatientID': '12345'}
+                )
         """
+
         result = self.upload_resources(
             files_path=[file_path],
             mimetype=mimetype,
@@ -380,6 +404,9 @@ class RootAPIHandler(BaseAPIHandler):
                 They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
             segmentation_files (Optional[list[Union[list[str], dict]]]): The segmentation files to upload.
+                If each element is a dict, it should have two keys: 'files' and 'names'.
+                    - files: A list of paths to the segmentation files. Example: ['seg1.nii.gz', 'seg2.nii.gz'].
+                    - names: Can be a list (same size of `files`) of labels for the segmentation files. Example: ['Brain', 'Lung']. 
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
@@ -424,6 +451,15 @@ class RootAPIHandler(BaseAPIHandler):
 
             segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
                                   for segfiles in segmentation_files]
+            
+            for segfiles in segmentation_files:
+                if 'files' not in segfiles:
+                    raise ValueError("segmentation_files must contain a 'files' key with a list of file paths.")
+                if 'names' in segfiles:
+                    # same length as files
+                    if isinstance(segfiles['names'], (list, tuple)) and len(segfiles['names']) != len(segfiles['files']):
+                        raise ValueError("segmentation_files['names'] must have the same length as segmentation_files['files'].")
+
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
                                             mimetype=mimetype,
@@ -636,9 +672,6 @@ class RootAPIHandler(BaseAPIHandler):
         Raises:
             ResourceNotFoundError: If the resource does not exists.
 
-        Example:
-            >>> api_handler.get_resources_by_ids('resource_id')
-            >>> api_handler.get_resources_by_ids(['resource_id1', 'resource_id2'])
         """
         input_is_a_string = isinstance(ids, str)  # used later to return a single object or a list of objects
         if input_is_a_string:
@@ -663,7 +696,6 @@ class RootAPIHandler(BaseAPIHandler):
                       status: Optional[ResourceStatus] = None,
                       from_date: Optional[date] = None,
                       to_date: Optional[date] = None,
-                      labels=None,
                       tags: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
@@ -671,7 +703,6 @@ class RootAPIHandler(BaseAPIHandler):
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
                       channel: Optional[str] = None,
-                      project_id: Optional[str] = None,
                       project_name: Optional[str] = None,
                       filename: Optional[str] = None
                       ) -> Generator[dict, None, None]:
@@ -684,9 +715,6 @@ class RootAPIHandler(BaseAPIHandler):
             status (ResourceStatus): The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
             from_date (Optional[date]): The start date.
             to_date (Optional[date]): The end date.
-            labels: 
-                .. deprecated:: 0.11.0
-                    Use `tags` instead.
             tags (Optional[list[str]]): The tags to filter the resources.
             modality (Optional[str]): The modality of the resources.
             mimetype (Optional[str]): The mimetype of the resources.
@@ -701,12 +729,6 @@ class RootAPIHandler(BaseAPIHandler):
             >>> for resource in api_handler.get_resources(status='inbox'):
             >>>     print(resource)
         """
-        if labels is not None and tags is None:
-            tags = labels
-
-        if project_id is not None and project_name is not None:
-            _LOGGER.warning("Both project_id and project_name were provided.")
-
         # Convert datetime objects to ISO format
         if from_date:
             from_date = from_date.isoformat()
@@ -724,7 +746,6 @@ class RootAPIHandler(BaseAPIHandler):
             "order_field": order_field,
             "order_by_asc": order_ascending,
             "channel_name": channel,
-            "projectId": project_id,
             "filename": filename,
         }
         if project_name is not None:
@@ -996,8 +1017,6 @@ class RootAPIHandler(BaseAPIHandler):
         Returns:
             list[dict]: A list of dictionaries with the users information.
 
-        Example:
-            >>> api_handler.get_users()
         """
         request_params = {
             'method': 'GET',
@@ -1021,6 +1040,7 @@ class RootAPIHandler(BaseAPIHandler):
             password (Optional[str]): The user password.
             firstname (Optional[str]): The user first name.
             lastname (Optional[str]): The user last name.
+            roles (Optional[list[str]]): The user roles. If None, the user will be created with the default role.
 
         Returns:
             dict: The user information.
@@ -1048,32 +1068,19 @@ class RootAPIHandler(BaseAPIHandler):
 
         Example:
             >>> api_handler.get_projects()
+            [{'id': '15ab9105-6e92-48c0-bb21-8e1325ec4305',
+            'name': 'Example Project',
+            'description': 'this is an example project',
+            'created_at': '2025-04-23T14:41:03.475Z',
+            'created_by': 'user@mail.com',
+            (...)}
+            ]
         """
         request_params = {
             'method': 'GET',
             'url': f'{self.root_url}/projects'
         }
         return self._run_request(request_params).json()['data']
-
-    @deprecated(version='0.12.0', reason="Use :meth:`~get_resources` with project_id parameter instead.")
-    def get_resources_by_project(self, project_id: str) -> Generator[dict, None, None]:
-        """
-        Get the resources by project.
-
-        Args:
-            project_id (str): The project id.
-
-        Returns:
-            list[dict]: The list of resources.
-
-        Example:
-            >>> api_handler.get_resources_by_project('project_id')
-        """
-        request_params = {
-            'method': 'GET',
-            'url': f'{self.root_url}/projects/{project_id}/resources'
-        }
-        return self._run_pagination_request(request_params)
 
     def create_project(self,
                        name: str,
