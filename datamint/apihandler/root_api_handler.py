@@ -319,7 +319,7 @@ class RootAPIHandler(BaseAPIHandler):
                     - names: Can be a list (same size of `files`) of labels for the segmentation files. Example: ['Brain', 'Lung']. Or a dictionary mapping a pixel value to a label. Example: {'1': 'Brain', '2': 'Lung'}.
             transpose_segmentation: Whether to transpose the segmentation files or not.
             modality: The modality of the resources.
-            assemble_dicoms: Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
+            assemble_dicoms: Whether to assemble the dicom files or not based on the SeriesInstanceUID and InstanceNumber attributes.
             metadata: JSON metadata to include with each resource.
                 Can be a file path (str) or an already loaded dictionary (dict).
 
@@ -371,7 +371,6 @@ class RootAPIHandler(BaseAPIHandler):
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         labels=None,
                          tags: Optional[Sequence[str]] = None,
                          mung_filename: Sequence[int] | Literal['all'] | None = None,
                          channel: Optional[str] = None,
@@ -392,9 +391,6 @@ class RootAPIHandler(BaseAPIHandler):
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
             on_error (Literal['raise', 'skip']): Whether to raise an exception when an error occurs or to skip the error.
-            labels: 
-                .. deprecated:: 0.11.0
-                    Use `tags` instead.
             tags (Optional[Sequence[str]]): The tags to add to the resources.
             mung_filename (Sequence[int] | Literal['all']): The parts of the filepath to keep when renaming the resource file.
                 ''all'' keeps all parts.
@@ -409,7 +405,7 @@ class RootAPIHandler(BaseAPIHandler):
                     - names: Can be a list (same size of `files`) of labels for the segmentation files. Example: ['Brain', 'Lung']. 
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
-            assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SOPInstanceUID and InstanceNumber attributes.
+            assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SeriesInstanceUID and InstanceNumber attributes.
             metadatas (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
                 Must have the same length as `files_path`.
                 Can be file paths (str) or already loaded dictionaries (dict).
@@ -423,8 +419,6 @@ class RootAPIHandler(BaseAPIHandler):
 
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
-        if labels is not None and tags is None:
-            tags = labels
 
         files_path, is_multiple_resources = RootAPIHandler.__process_files_parameter(files_path)
         if isinstance(metadata, (str, dict)):

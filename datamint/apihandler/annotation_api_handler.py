@@ -859,20 +859,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
             model_id=model_id
         )
 
-    @deprecated(version='0.12.1', reason='Use :meth:`~get_annotations` instead with `resource_id` parameter.')
-    def get_resource_annotations(self,
-                                 resource_id: str,
-                                 annotation_type: Optional[str] = None,
-                                 annotator_email: Optional[str] = None,
-                                 date_from: Optional[date] = None,
-                                 date_to: Optional[date] = None) -> Generator[dict, None, None]:
-
-        return self.get_annotations(resource_id=resource_id,
-                                    annotation_type=annotation_type,
-                                    annotator_email=annotator_email,
-                                    date_from=date_from,
-                                    date_to=date_to)
-
     def get_annotations(self,
                         resource_id: Optional[str] = None,
                         annotation_type: AnnotationType | str | None = None,
