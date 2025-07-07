@@ -106,8 +106,8 @@ def walk_to_depth(path: str | Path,
 
 
 def filter_files(files_path: Iterable[Path],
-                 include_extensions,
-                 exclude_extensions) -> list[Path]:
+                 include_extensions: Optional[list[str]] = None,
+                 exclude_extensions: Optional[list[str]] = None) -> list[Path]:
     def fix_extension(ext: str) -> str:
         if ext == "" or ext[0] == '.':
             return ext
