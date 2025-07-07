@@ -13,6 +13,7 @@ from requests.exceptions import HTTPError
 from deprecated.sphinx import deprecated
 from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, AnnotationType
 import pydicom
+import json
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -119,7 +120,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         try:
             try:
                 img = np.array(Image.open(fio))
-                
+
                 # Check that frame is not empty
                 uniq_vals = np.unique(img)
                 if discard_empty_segmentations:
@@ -133,7 +134,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
                 segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
                 segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
-                
+
                 # Create annotations
                 annotations: list[CreateAnnotationDto] = []
                 for segname in segnames:
@@ -148,7 +149,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         annotation_worklist_id=worklist_id
                     )
                     annotations.append(ann)
-                
+
                 # Validate unique identifiers
                 if len(annotations) != len(set([a.identifier for a in annotations])):
                     raise ValueError(
@@ -161,7 +162,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 if len(annotids) != len(segnames):
                     _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
                                     f" does not match the number of annotations ({len(segnames)})")
-                
+
                 for annotid, segname, fio_seg in zip(annotids, segnames, segs_generator):
                     form = aiohttp.FormData()
                     form.add_field('file', fio_seg, filename=segname, content_type='image/png')
@@ -173,7 +174,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                     resp = await self._run_request_async(request_params)
                     if 'error' in resp:
                         raise DatamintException(resp['error'])
-                
+
                 return annotids
             finally:
                 fio.close()
@@ -183,7 +184,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     async def _upload_volume_segmentation_async(self,
                                                 resource_id: str,
                                                 file_path: str | np.ndarray,
-                                                name: Optional[str] = None,
+                                                name: str | dict[int, str] | None = None,
                                                 imported_from: Optional[str] = None,
                                                 author_email: Optional[str] = None,
                                                 worklist_id: Optional[str] = None,
@@ -209,85 +210,41 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Raises:
             ValueError: If name is not a string or file format is unsupported for volume upload.
         """
-        if isinstance(name, dict):
-            raise ValueError("Volume uploads only support string names, not dictionaries.")
-        
         if name is None:
             name = 'volume_segmentation'
-
-        # Create volume annotation
-        ann = CreateAnnotationDto(
-            type='segmentation',
-            identifier=name,
-            scope='frame',  # Volume segmentations use image scope
-            imported_from=imported_from,
-            import_author=author_email,
-            model_id=model_id,
-            annotation_worklist_id=worklist_id
-        )
-
-        annotids = await self._upload_annotations_async(resource_id, [ann])
-        _LOGGER.debug(f"Created volume annotation with ID: {annotids}")
-        
-        if not annotids:
-            raise DatamintException("Failed to create volume annotation")
-        
-        annotid = annotids[0]
 
         # Prepare file for upload
         if isinstance(file_path, str):
             if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
-                content_type = 'application/x-nifti'
                 # Upload NIfTI file directly
                 with open(file_path, 'rb') as f:
                     filename = os.path.basename(file_path)
                     form = aiohttp.FormData()
                     form.add_field('file', f, filename=filename, content_type='application/x-nifti')
-                    
+                    model_id = 'c9daf156-5335-4cb3-b374-5b3a776e0025'
+                    if model_id is not None:
+                        form.add_field('model_id', model_id)  # Add model_id if provided
+                    if worklist_id is not None:
+                        form.add_field('annotation_worklist_id', worklist_id)
+                    form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
+
                     request_params = dict(
                         method='POST',
-                        url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
+                        url=f'{self.root_url}/annotations/{resource_id}/segmentations/file',
                         data=form,
                     )
                     resp = await self._run_request_async(request_params)
                     if 'error' in resp:
                         raise DatamintException(resp['error'])
+                    return resp
             else:
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
         elif isinstance(file_path, np.ndarray):
-            # Convert numpy array to NIfTI and upload
-            # TODO: Consider supporting direct numpy array upload or convert to a supported format
-            if transpose_segmentation:
-                volume_data = file_path.transpose(1, 0, 2) if file_path.ndim == 3 else file_path.transpose(1, 0)
-            else:
-                volume_data = file_path
-            
-            # Create temporary NIfTI file
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as tmp_file:
-                nii_img = nib.Nifti1Image(volume_data.astype(np.uint8), np.eye(4))
-                nib.save(nii_img, tmp_file.name)
-                
-                try:
-                    with open(tmp_file.name, 'rb') as f:
-                        form = aiohttp.FormData()
-                        form.add_field('file', f, filename=f'{name}.nii.gz', content_type='application/x-nifti')
-                        
-                        request_params = dict(
-                            method='POST',
-                            url=f'{self.root_url}/annotations/{resource_id}/annotations/{annotid}/file',
-                            data=form,
-                        )
-                        resp = await self._run_request_async(request_params)
-                        if 'error' in resp:
-                            raise DatamintException(resp['error'])
-                finally:
-                    os.unlink(tmp_file.name)  # Clean up temporary file
+            raise NotImplementedError
         else:
             raise ValueError(f"Unsupported file_path type for volume upload: {type(file_path)}")
 
         _USER_LOGGER.info(f'Volume segmentation uploaded for resource {resource_id}')
-        return annotids
 
     async def _upload_segmentations_async(self,
                                           resource_id: str,
@@ -334,25 +291,25 @@ class AnnotationAPIHandler(BaseAPIHandler):
             if upload_volume:
                 if frame_index is not None:
                     _LOGGER.warning("frame_index parameter ignored when upload_volume=True")
-                
+
                 return await self._upload_volume_segmentation_async(
                     resource_id=resource_id,
                     file_path=file_path,
-                    name=name if isinstance(name, str) else None,
+                    name=name,
                     imported_from=imported_from,
                     author_email=author_email,
                     worklist_id=worklist_id,
                     model_id=model_id,
                     transpose_segmentation=transpose_segmentation
                 )
-            
+
             # Handle frame-by-frame upload (existing logic)
             nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(
                 file_path, transpose_segmentation=transpose_segmentation
             )
             if frame_index is None:
                 frame_index = list(range(nframes))
-            
+
             annotids = []
             for fidx, f in zip(frame_index, fios):
                 frame_annotids = await self._upload_single_frame_segmentation_async(
@@ -368,12 +325,12 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 )
                 annotids.extend(frame_annotids)
             return annotids
-        
+
         # Handle single file-like object
         if fio is not None:
             if upload_volume:
                 raise ValueError("upload_volume=True is not supported when providing fio parameter")
-            
+
             return await self._upload_single_frame_segmentation_async(
                 resource_id=resource_id,
                 frame_index=frame_index,
@@ -385,7 +342,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 worklist_id=worklist_id,
                 model_id=model_id
             )
-        
+
         raise ValueError("Either file_path or fio must be provided")
 
     def upload_segmentations(self,
@@ -429,7 +386,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         """
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
-        
+
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
             _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
@@ -666,7 +623,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                                     model_id: Optional[str] = None) -> list[str]:
         """
         Common method for creating geometry-based annotations.
-        
+
         Args:
             geometry: The geometry object (LineGeometry or BoxGeometry)
             resource_id: The resource unique id
