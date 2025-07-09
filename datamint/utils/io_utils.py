@@ -53,33 +53,42 @@ def read_video(file_path: str, index: int = None) -> np.ndarray:
     return imgs
 
 
-def read_nifti(file_path: str) -> np.ndarray:
+def read_nifti(file_path: str, mimetype: str | None = None) -> np.ndarray:
     """
     Read a NIfTI file and return the image data in standardized format.
     
     Args:
         file_path: Path to the NIfTI file (.nii or .nii.gz)
+        mimetype: Optional MIME type of the file. If provided, it can help in determining how to read the file.
         
     Returns:
         np.ndarray: Image data with shape (#frames, C, H, W)
     """
+    from nibabel.filebasedimages import ImageFileError
     try:
-        nii_img = nib.load(file_path)
-        imgs = nii_img.get_fdata()  # shape: (W, H, #frame) or (W, H)
-        
-        if imgs.ndim == 2:
-            imgs = imgs.transpose(1, 0)  # (W, H) -> (H, W)
-            imgs = imgs[np.newaxis, np.newaxis]  # -> (1, 1, H, W)
-        elif imgs.ndim == 3:
-            imgs = imgs.transpose(2, 1, 0)  # (W, H, #frame) -> (#frame, H, W)
-            imgs = imgs[:, np.newaxis]  # -> (#frame, 1, H, W)
+        imgs = nib.load(file_path).get_fdata()  # shape: (W, H, #frame) or (W, H)
+    except ImageFileError as e:
+        if mimetype is None:
+            raise e
+        # has_ext = os.path.splitext(file_path)[1] != ''
+        if mimetype == 'application/gzip':
+            with gzip.open(file_path, 'rb') as f:
+                imgs = nib.Nifti1Image.from_stream(f).get_fdata()
+        elif mimetype in ('image/x.nifti', 'application/x-nifti'):
+            with open(file_path, 'rb') as f:
+                imgs = nib.Nifti1Image.from_stream(f).get_fdata()
         else:
-            raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
+            raise e
+    if imgs.ndim == 2:
+        imgs = imgs.transpose(1, 0)
+        imgs = imgs[np.newaxis, np.newaxis]
+    elif imgs.ndim == 3:
+        imgs = imgs.transpose(2, 1, 0)
+        imgs = imgs[:, np.newaxis]
+    else:
+        raise ValueError(f"Unsupported number of dimensions in '{file_path}': {imgs.ndim}")
 
-        return imgs
-    except Exception as e:
-        _LOGGER.error(f"Failed to read NIfTI file '{file_path}': {e}")
-        raise e
+    return imgs
 
 
 def read_image(file_path: str) -> np.ndarray:
@@ -94,7 +103,7 @@ def read_image(file_path: str) -> np.ndarray:
 
 
 def read_array_normalized(file_path: str,
-                          index: int = None,
+                          index: int | None = None,
                           return_metainfo: bool = False,
                           use_magic=False) -> np.ndarray | tuple[np.ndarray, Any]:
     """
@@ -102,6 +111,8 @@ def read_array_normalized(file_path: str,
 
     Args:
         file_path: The path to the file.
+        index: If specified, read only the frame at this index (0-based).
+            If None, read all frames.
         Supported file formats are NIfTI (.nii, .nii.gz), PNG (.png), JPEG (.jpg, .jpeg) and npy (.npy).
 
     Returns:
@@ -136,8 +147,8 @@ def read_array_normalized(file_path: str,
             if mime_type.startswith('video/') or file_path.endswith(VIDEO_EXTS):
                 imgs = read_video(file_path, index)
             else:
-                if mime_type == 'image/x.nifti' or file_path.endswith(NII_EXTS):
-                    imgs = read_nifti(file_path)
+                if mime_type in ('image/x.nifti', 'application/x-nifti') or mime_type == 'application/gzip' or file_path.endswith(NII_EXTS):
+                    imgs = read_nifti(file_path, mimetype=mime_type)
                     # For NIfTI files, try to load associated JSON metadata
                     if return_metainfo:
                         json_path = file_path.replace('.nii.gz', '.json').replace('.nii', '.json')

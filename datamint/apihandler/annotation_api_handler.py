@@ -221,7 +221,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
                     filename = os.path.basename(file_path)
                     form = aiohttp.FormData()
                     form.add_field('file', f, filename=filename, content_type='application/x-nifti')
-                    model_id = 'c9daf156-5335-4cb3-b374-5b3a776e0025'
                     if model_id is not None:
                         form.add_field('model_id', model_id)  # Add model_id if provided
                     if worklist_id is not None:
