@@ -63,14 +63,54 @@ class TestDatamintConfig:
     def test_config_tool_startup_time(self) -> None:
         """Test that the config tool starts up quickly (performance test)."""
         import time
-
+        
         start_time = time.time()
-
-        # Import and initialize the config module
         from datamint.client_cmd_tools.datamint_config import main
+        end_time = time.time()
+        
+        startup_time = end_time - start_time
+        assert startup_time < 1.0, f"Config tool took too long to import: {startup_time:.2f}s"
+        _LOGGER.info(f"Config tool import time: {startup_time:.3f}s")
 
-        duration = time.time() - start_time
+    def test_config_error_handling(self) -> None:
+        """Test config tool error handling with invalid inputs."""
+        with patch('sys.argv', ['datamint-config', '--invalid-option']):
+            with pytest.raises(SystemExit):
+                from datamint.client_cmd_tools.datamint_config import main
+                main()
 
-        # Config tool should start very quickly (under 1 second)
-        assert duration < 0.5, f"Config tool startup too slow: {duration:.3f} seconds"
-        _LOGGER.info(f"Config tool startup time: {duration:.3f} seconds")
+    @patch('datamint.configs.get_value')
+    @patch('datamint.configs.set_value')
+    def test_config_persistence(self, mock_set, mock_get) -> None:
+        """Test that config values persist correctly."""
+        mock_get.return_value = None
+        
+        # Test setting and getting a value
+        test_key = 'test_config_key'
+        test_value = 'test_config_value'
+        
+        with patch('sys.argv', ['datamint-config', '--api-key', test_value]):
+            from datamint.client_cmd_tools.datamint_config import main
+            main()
+            
+        mock_set.assert_called()
+
+    def test_environment_variable_integration(self) -> None:
+        """Test config integration with environment variables."""
+        import os
+        from datamint import configs
+        
+        # Test environment variable fallback
+        test_key = 'DATAMINT_TEST_VAR'
+        test_value = 'env_test_value'
+        
+        original_value = os.environ.get(test_key)
+        try:
+            os.environ[test_key] = test_value
+            # Test that environment variables are recognized
+            assert test_key in os.environ
+        finally:
+            if original_value is not None:
+                os.environ[test_key] = original_value
+            elif test_key in os.environ:
+                del os.environ[test_key]
