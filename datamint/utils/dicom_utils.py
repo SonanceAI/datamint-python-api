@@ -638,3 +638,70 @@ def pixel_to_patient(ds: pydicom.Dataset,
     patient_coords = image_position + pixel_x * pixel_spacing[0] * row_vector + pixel_y * pixel_spacing[1] * col_vector
 
     return patient_coords
+
+
+def determine_anatomical_plane(ds: pydicom.Dataset,
+                               slice_axis: int,
+                               alignment_threshold: float = 0.95) -> str:
+    """
+    Determine the anatomical plane of a DICOM slice (Axial, Sagittal, Coronal, Oblique, or Unknown).
+
+    Args:
+        ds (pydicom.Dataset): The DICOM dataset containing the image metadata.
+        slice_axis (int): The axis of the slice to analyze (0, 1, or 2).
+        alignment_threshold (float): Threshold for considering alignment with anatomical axes.
+
+    Returns:
+        str: The name of the anatomical plane ('Axial', 'Sagittal', 'Coronal', 'Oblique', or 'Unknown').
+
+    Raises:
+        ValueError: If `slice_index` is not 0, 1, or 2.
+    """
+
+    if slice_axis not in [0, 1, 2]:
+        raise ValueError("slice_index must be 0, 1 or 2")
+    # Check if Image Orientation Patient exists
+    if not hasattr(ds, 'ImageOrientationPatient') or ds.ImageOrientationPatient is None:
+        return "Unknown"
+    # Get the Image Orientation Patient (IOP) - 6 values defining row and column directions
+    iop = np.array(ds.ImageOrientationPatient, dtype=float)
+    if len(iop) != 6:
+        return "Unknown"
+    # Extract row and column direction vectors
+    row_dir = iop[:3]  # First 3 values: row direction cosines
+    col_dir = iop[3:]  # Last 3 values: column direction cosines
+    # Calculate the normal vector (slice direction) using cross product
+    normal = np.cross(row_dir, col_dir)
+    normal = normal / np.linalg.norm(normal)  # Normalize
+    # Define standard anatomical axes
+    # LPS coordinate system: L = Left, P = Posterior, S = Superior
+    axes = {
+        'sagittal': np.array([1, 0, 0]),   # L-R axis (left-right)
+        'coronal': np.array([0, 1, 0]),    # A-P axis (anterior-posterior)
+        'axial': np.array([0, 0, 1])       # S-I axis (superior-inferior)
+    }
+    # For each slice_index, determine which axis we're examining
+    if slice_axis == 0:
+        # ds.pixel_array[0,:,:] - slicing along first dimension
+        # The normal vector corresponds to the direction we're slicing through
+        examine_vector = normal
+    elif slice_axis == 1:
+        # ds.pixel_array[:,0,:] - slicing along second dimension
+        # This corresponds to the row direction
+        examine_vector = row_dir
+    elif slice_axis == 2:
+        # ds.pixel_array[:,:,0] - slicing along third dimension
+        # This corresponds to the column direction
+        examine_vector = col_dir
+    # Find which anatomical axis is most aligned with our examine_vector
+    max_dot = 0
+    best_axis = "Unknown"
+    for axis_name, axis_vector in axes.items():
+        dot_product = abs(np.dot(examine_vector, axis_vector))
+        if dot_product > max_dot:
+            max_dot = dot_product
+            best_axis = axis_name
+    if max_dot >= alignment_threshold:
+        return best_axis.capitalize()
+    else:
+        return "Oblique"
