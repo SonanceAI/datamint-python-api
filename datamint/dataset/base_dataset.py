@@ -7,10 +7,12 @@ import shutil
 import json
 import yaml
 import pydicom
+from pydicom.dataset import FileDataset
 import numpy as np
 from datamint import configs
 from torch.utils.data import DataLoader
 import torch
+from torch import Tensor
 from datamint.apihandler.base_api_handler import DatamintException
 from datamint.utils.dicom_utils import is_dicom
 import cv2
@@ -80,7 +82,7 @@ class DatamintBaseDataset:
                  exclude_frame_label_names: Optional[list[str]] = None
                  ):
         from datamint.apihandler.api_handler import APIHandler
-        
+
         if project_name is None:
             raise ValueError("project_name is required.")
 
@@ -591,7 +593,8 @@ class DatamintBaseDataset:
         with open(datasetjson, 'w') as file:
             json.dump(self.metainfo, file)
 
-    def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
+    def _load_image(self, filepath: str,
+                    index: int | None = None) -> tuple[Tensor, FileDataset | None]:
         if os.path.isdir(filepath):
             raise NotImplementedError("Loading a image from a directory is not supported yet.")
 
@@ -608,7 +611,8 @@ class DatamintBaseDataset:
 
             # min-max normalization
             img = img.astype(np.float32)
-            img = (img - img.min()) / (img.max() - img.min()) * 255
+            mn = img.min()
+            img = (img - mn) / (img.max() - mn) * 255
             img = img.astype(np.uint8)
 
         img = torch.from_numpy(img).contiguous()
@@ -645,7 +649,8 @@ class DatamintBaseDataset:
 
         return i, frame_index
 
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> dict[str, Any]:
+    def __getitem_internal(self, index: int,
+                           only_load_metainfo=False) -> dict[str, Tensor | FileDataset | dict | list]:
         if self.return_frame_by_frame:
             resource_index, frame_idx = self.__find_index(index)
         else:
@@ -711,7 +716,7 @@ class DatamintBaseDataset:
 
         return filtered_annotations
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
+    def __getitem__(self, index: int) -> dict[str, Tensor | FileDataset | dict | list]:
         """
         Args:
             index (int): Index
