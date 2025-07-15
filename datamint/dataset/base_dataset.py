@@ -206,6 +206,9 @@ class DatamintBaseDataset:
             self.dataset_length = len(self.images_metainfo)
 
         self.num_frames_per_resource = self.__compute_num_frames_per_resource()
+        
+        # Precompute cumulative frame counts for faster index lookup
+        self._cumulative_frames = np.cumsum([0] + self.num_frames_per_resource)
 
         self.subset_indices = list(range(self.dataset_length))
         # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
@@ -311,7 +314,7 @@ class DatamintBaseDataset:
             scope (str): The scope of the annotations. It can be 'frame', 'image' or 'all'.
 
         Returns:
-            List[Dict]: The annotations of the image.
+            list[dict]: The annotations of the image.
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
@@ -639,15 +642,18 @@ class DatamintBaseDataset:
         return img_metainfo
 
     def __find_index(self, index: int) -> tuple[int, int]:
-        frame_index = index
-        for i, num_frames in enumerate(self.num_frames_per_resource):
-            if frame_index < num_frames:
-                break
-            frame_index -= num_frames
-        else:
-            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
-
-        return i, frame_index
+        """
+        Find the resource index and frame index for a given global frame index.
+        
+        """
+        if index < 0 or index >= self.dataset_length:
+            raise IndexError(f"Index {index} out of bounds for dataset of length {self.dataset_length}")
+        
+        # Use binary search to find the resource containing this frame
+        resource_index = np.searchsorted(self._cumulative_frames[1:], index, side='right')
+        frame_index = index - self._cumulative_frames[resource_index]
+        
+        return resource_index, frame_index
 
     def __getitem_internal(self, index: int,
                            only_load_metainfo=False) -> dict[str, Tensor | FileDataset | dict | list]:
