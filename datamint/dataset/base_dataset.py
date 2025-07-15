@@ -17,7 +17,6 @@ from datamint.apihandler.base_api_handler import DatamintException
 from datamint.utils.dicom_utils import is_dicom
 import cv2
 from datamint.utils.io_utils import read_array_normalized
-from deprecated import deprecated
 from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
@@ -607,8 +606,7 @@ class DatamintBaseDataset:
             img, ds = read_array_normalized(filepath, return_metainfo=True)
 
         if img.dtype == np.uint16:
-            # Pytorch doesn't support uint16
-            if self.__logged_uint16_conversion == False:
+            if not self.__logged_uint16_conversion:
                 _LOGGER.info("Original image is uint16, converting to uint8")
                 self.__logged_uint16_conversion = True
 
@@ -625,7 +623,7 @@ class DatamintBaseDataset:
         return img, ds
 
     def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> dict[str, Any]:
-        if bypass_subset_indices == False:
+        if not bypass_subset_indices:
             index = self.subset_indices[index]
         if self.return_frame_by_frame:
             # Find the correct filepath and index
@@ -646,9 +644,6 @@ class DatamintBaseDataset:
         Find the resource index and frame index for a given global frame index.
         
         """
-        if index < 0 or index >= self.dataset_length:
-            raise IndexError(f"Index {index} out of bounds for dataset of length {self.dataset_length}")
-        
         # Use binary search to find the resource containing this frame
         resource_index = np.searchsorted(self._cumulative_frames[1:], index, side='right')
         frame_index = index - self._cumulative_frames[resource_index]
@@ -736,8 +731,8 @@ class DatamintBaseDataset:
         return self.__getitem_internal(self.subset_indices[index])
 
     def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
+        for index in self.subset_indices:
+            yield self.__getitem_internal(index)
 
     def __len__(self) -> int:
         return len(self.subset_indices)
