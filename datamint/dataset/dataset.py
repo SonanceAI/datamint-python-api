@@ -287,7 +287,7 @@ class DatamintDataset(DatamintBaseDataset):
         if len(all_masks_list) != 0:
             all_masks_list = torch.concatenate(all_masks_list).numpy().astype(np.uint8)
         else:
-            all_masks_list = None#np.empty((0,img.shape[-2], img.shape[-1]), dtype=np.uint8)
+            all_masks_list = None  # np.empty((0,img.shape[-2], img.shape[-1]), dtype=np.uint8)
 
         augmented = self.alb_transform(image=img.numpy().transpose(1, 2, 0),
                                        masks=all_masks_list)
@@ -307,6 +307,36 @@ class DatamintDataset(DatamintBaseDataset):
                     new_segmentations[author_name].append(masks_i)
 
         return augmented['image'], new_segmentations
+
+    def _seg_labels_to_names(self, seg_labels: dict | list | None) -> dict | list | None:
+        """
+        Convert segmentation label codes to label names.
+
+        Args:
+            seg_labels: Segmentation labels in various formats:
+                - dict[str, list[Tensor]]: author -> list of frame tensors with label codes
+                - dict[str, Tensor]: author -> tensor with label codes
+                - list[Tensor]: list of frame tensors with label codes
+                - Tensor: tensor with label codes
+                - None: when no segmentation labels are available
+
+        Returns:
+            Same structure as input but with label codes converted to label names.
+            Returns None if input is None.
+        """
+        if seg_labels is None:
+            return None
+
+        code_to_name = self.segmentation_labels_set
+        if isinstance(seg_labels, dict):
+            # author -> list of frame tensors
+            return {author: [code_to_name[code.item()] for code in labels] for author, labels in seg_labels.items()}
+        elif isinstance(seg_labels, list):
+            # list of frame tensors
+            return [[code_to_name[code.item()] for code in labels] for labels in seg_labels]
+
+        _LOGGER.warning(f"Unexpected segmentation labels format: {type(seg_labels)}. Returning None")
+        return None
 
     def __getitem__(self, index) -> dict[str, Any]:
         """
@@ -401,6 +431,9 @@ class DatamintDataset(DatamintBaseDataset):
                             seg_labels = seg_labels[0]
                 new_item['segmentations'] = segmentations
                 new_item['seg_labels'] = seg_labels
+                # process seg_labels to convert from code to label names
+                new_item['seg_labels_names'] = self._seg_labels_to_names(seg_labels)
+
         except Exception:
             _LOGGER.error(f'Error in loading/processing segmentations of {metainfo}')
             raise

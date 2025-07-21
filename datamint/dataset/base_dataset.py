@@ -7,15 +7,16 @@ import shutil
 import json
 import yaml
 import pydicom
+from pydicom.dataset import FileDataset
 import numpy as np
 from datamint import configs
 from torch.utils.data import DataLoader
 import torch
+from torch import Tensor
 from datamint.apihandler.base_api_handler import DatamintException
 from datamint.utils.dicom_utils import is_dicom
 import cv2
 from datamint.utils.io_utils import read_array_normalized
-from deprecated import deprecated
 from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ class DatamintBaseDataset:
                  exclude_frame_label_names: Optional[list[str]] = None
                  ):
         from datamint.apihandler.api_handler import APIHandler
-        
+
         if project_name is None:
             raise ValueError("project_name is required.")
 
@@ -204,6 +205,9 @@ class DatamintBaseDataset:
             self.dataset_length = len(self.images_metainfo)
 
         self.num_frames_per_resource = self.__compute_num_frames_per_resource()
+        
+        # Precompute cumulative frame counts for faster index lookup
+        self._cumulative_frames = np.cumsum([0] + self.num_frames_per_resource)
 
         self.subset_indices = list(range(self.dataset_length))
         # self.labels_set, self.label2code, self.segmentation_labels, self.segmentation_label2code = self.get_labels_set()
@@ -309,7 +313,7 @@ class DatamintBaseDataset:
             scope (str): The scope of the annotations. It can be 'frame', 'image' or 'all'.
 
         Returns:
-            List[Dict]: The annotations of the image.
+            list[dict]: The annotations of the image.
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
@@ -591,7 +595,8 @@ class DatamintBaseDataset:
         with open(datasetjson, 'w') as file:
             json.dump(self.metainfo, file)
 
-    def _load_image(self, filepath: str, index: int = None) -> tuple[torch.Tensor, pydicom.FileDataset]:
+    def _load_image(self, filepath: str,
+                    index: int | None = None) -> tuple[Tensor, FileDataset | None]:
         if os.path.isdir(filepath):
             raise NotImplementedError("Loading a image from a directory is not supported yet.")
 
@@ -601,14 +606,14 @@ class DatamintBaseDataset:
             img, ds = read_array_normalized(filepath, return_metainfo=True)
 
         if img.dtype == np.uint16:
-            # Pytorch doesn't support uint16
-            if self.__logged_uint16_conversion == False:
+            if not self.__logged_uint16_conversion:
                 _LOGGER.info("Original image is uint16, converting to uint8")
                 self.__logged_uint16_conversion = True
 
             # min-max normalization
             img = img.astype(np.float32)
-            img = (img - img.min()) / (img.max() - img.min()) * 255
+            mn = img.min()
+            img = (img - mn) / (img.max() - mn) * 255
             img = img.astype(np.uint8)
 
         img = torch.from_numpy(img).contiguous()
@@ -618,7 +623,7 @@ class DatamintBaseDataset:
         return img, ds
 
     def _get_image_metainfo(self, index: int, bypass_subset_indices=False) -> dict[str, Any]:
-        if bypass_subset_indices == False:
+        if not bypass_subset_indices:
             index = self.subset_indices[index]
         if self.return_frame_by_frame:
             # Find the correct filepath and index
@@ -635,17 +640,18 @@ class DatamintBaseDataset:
         return img_metainfo
 
     def __find_index(self, index: int) -> tuple[int, int]:
-        frame_index = index
-        for i, num_frames in enumerate(self.num_frames_per_resource):
-            if frame_index < num_frames:
-                break
-            frame_index -= num_frames
-        else:
-            raise IndexError(f"Index {index} out of bounds for dataset of length {len(self)}")
+        """
+        Find the resource index and frame index for a given global frame index.
+        
+        """
+        # Use binary search to find the resource containing this frame
+        resource_index = np.searchsorted(self._cumulative_frames[1:], index, side='right')
+        frame_index = index - self._cumulative_frames[resource_index]
+        
+        return resource_index, frame_index
 
-        return i, frame_index
-
-    def __getitem_internal(self, index: int, only_load_metainfo=False) -> dict[str, Any]:
+    def __getitem_internal(self, index: int,
+                           only_load_metainfo=False) -> dict[str, Tensor | FileDataset | dict | list]:
         if self.return_frame_by_frame:
             resource_index, frame_idx = self.__find_index(index)
         else:
@@ -711,7 +717,7 @@ class DatamintBaseDataset:
 
         return filtered_annotations
 
-    def __getitem__(self, index: int) -> dict[str, Any]:
+    def __getitem__(self, index: int) -> dict[str, Tensor | FileDataset | dict | list]:
         """
         Args:
             index (int): Index
@@ -725,8 +731,8 @@ class DatamintBaseDataset:
         return self.__getitem_internal(self.subset_indices[index])
 
     def __iter__(self):
-        for i in range(len(self)):
-            yield self[i]
+        for index in self.subset_indices:
+            yield self.__getitem_internal(index)
 
     def __len__(self) -> int:
         return len(self.subset_indices)
