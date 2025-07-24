@@ -14,9 +14,9 @@ from torch.utils.data import DataLoader
 import torch
 from torch import Tensor
 from datamint.apihandler.base_api_handler import DatamintException
-from datamint.utils.dicom_utils import is_dicom
+from medimgkit.dicom_utils import is_dicom
 import cv2
-from datamint.utils.io_utils import read_array_normalized
+from medimgkit.io_utils import read_array_normalized
 from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.data import get_testdata_files
 import datamint.configs
-from datamint.utils.dicom_utils import to_bytesio
+from medimgkit.dicom_utils import to_bytesio
 from datamint.apihandler.base_api_handler import DatamintException
 import json
 from aiohttp import FormData

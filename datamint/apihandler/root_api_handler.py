@@ -6,8 +6,8 @@ from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
-from datamint.utils.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
-from datamint.utils import dicom_utils
+from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
+from medimgkit import dicom_utils
 import pydicom
 from pathlib import Path
 from datetime import date

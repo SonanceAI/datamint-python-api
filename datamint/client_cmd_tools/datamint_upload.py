@@ -5,7 +5,7 @@ from humanize import naturalsize
 import logging
 from pathlib import Path
 import sys
-from datamint.utils.dicom_utils import is_dicom
+from medimgkit.dicom_utils import is_dicom
 import fnmatch
 from typing import Generator, Optional, Any
 from collections import defaultdict

@@ -86,7 +86,7 @@ class TestImports:
 
         # Test IO utils
         try:
-            from datamint.utils.io_utils import read_array_normalized
+            from medimgkit.io_utils import read_array_normalized
             assert read_array_normalized is not None
             _LOGGER.info("Successfully imported io_utils")
         except ImportError as e:
@@ -94,7 +94,7 @@ class TestImports:
 
         # Test DICOM utils (if available)
         try:
-            from datamint.utils.dicom_utils import is_dicom
+            from medimgkit.dicom_utils import is_dicom
             assert is_dicom is not None
             _LOGGER.info("Successfully imported dicom_utils")
         except ImportError as e:
