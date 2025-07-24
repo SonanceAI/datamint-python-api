@@ -17,25 +17,57 @@ import json
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+MAX_NUMBER_DISTINCT_COLORS = 2048  # Maximum number of distinct colors in a segmentation image
 
 
 class AnnotationAPIHandler(BaseAPIHandler):
     @staticmethod
+    def _normalize_segmentation_array(seg_imgs: np.ndarray) -> np.ndarray:
+        """
+        Normalize segmentation array to a consistent format.
+
+        Args:
+            seg_imgs: Input segmentation array in various formats: (height, width, #frames), (height, width), (3, height, width, #frames).
+
+        Returns:
+            np.ndarray: Shape (#channels, height, width, #frames)
+        """
+        if seg_imgs.ndim == 4:
+            return seg_imgs  # .transpose(1, 2, 0, 3)
+
+        # Handle grayscale segmentations
+        if seg_imgs.ndim == 2:
+            # Add frame dimension: (height, width) -> (height, width, 1)
+            seg_imgs = seg_imgs[..., None]
+        if seg_imgs.ndim == 3:
+            # (height, width, #frames)
+            seg_imgs = seg_imgs[np.newaxis, ...]  # Add channel dimension: (1, height, width, #frames)
+
+        return seg_imgs
+
+    @staticmethod
     def _numpy_to_bytesio_png(seg_imgs: np.ndarray) -> Generator[BinaryIO, None, None]:
         """
+        Convert normalized segmentation images to PNG BytesIO objects.
+
         Args:
-            seg_img (np.ndarray): The segmentation image with dimensions (height, width, #frames).
+            seg_imgs: Normalized segmentation array in shape (channels, height, width, frames).
+
+        Yields:
+            BinaryIO: PNG image data as BytesIO objects
         """
-
-        if seg_imgs.ndim == 2:
-            seg_imgs = seg_imgs[..., None]
-
-        seg_imgs = seg_imgs.astype(np.uint8)
-        for i in range(seg_imgs.shape[2]):
-            img = seg_imgs[:, :, i]
-            img = Image.fromarray(img).convert('L')
+        # PIL RGB format is: (height, width, channels)
+        if seg_imgs.shape[0] not in [1, 3, 4]:
+            raise ValueError(f"Unsupported number of channels: {seg_imgs.shape[0]}. Expected 1 or 3")
+        nframes = seg_imgs.shape[3]
+        for i in range(nframes):
+            img = seg_imgs[:, :, :, i].astype(np.uint8)
+            if img.shape[0] == 1:
+                pil_img = Image.fromarray(img[0]).convert('RGB')
+            else:
+                pil_img = Image.fromarray(img.transpose(1, 2, 0))
             img_bytes = BytesIO()
-            img.save(img_bytes, format='PNG')
+            pil_img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
             yield img_bytes
 
@@ -46,29 +78,42 @@ class AnnotationAPIHandler(BaseAPIHandler):
             raise ValueError(f"Unsupported file type: {type(file_path)}")
 
         if isinstance(file_path, np.ndarray):
-            segs_imgs = file_path  # (#frames, height, width) or (height, width)
+            normalized_imgs = AnnotationAPIHandler._normalize_segmentation_array(file_path)
+            # normalized_imgs shape: (3, height, width, #frames)
+
+            # Apply transpose if requested
             if transpose_segmentation:
-                segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
-            nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
-            fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
+                # (channels, height, width, frames) -> (channels, width, height, frames)
+                normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
+
+            nframes = normalized_imgs.shape[3]
+            fios = AnnotationAPIHandler._numpy_to_bytesio_png(normalized_imgs)
+
         elif file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
             segs_imgs = nib.load(file_path).get_fdata()
             if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
                 raise ValueError(f"Invalid segmentation shape: {segs_imgs.shape}")
-            if not transpose_segmentation:
-                # The if is correct. The image is already in a different shape than nifty images.
-                segs_imgs = segs_imgs.transpose(1, 0, 2) if segs_imgs.ndim == 3 else segs_imgs.transpose(1, 0)
 
-            fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
-            nframes = segs_imgs.shape[2] if segs_imgs.ndim == 3 else 1
+            # Normalize and apply transpose
+            normalized_imgs = AnnotationAPIHandler._normalize_segmentation_array(segs_imgs)
+            if not transpose_segmentation:
+                # Apply default NIfTI transpose
+                # (channels, width, height, frames) -> (channels, height, width, frames)
+                normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
+
+            nframes = normalized_imgs.shape[3]
+            fios = AnnotationAPIHandler._numpy_to_bytesio_png(normalized_imgs)
+
         elif file_path.endswith('.png'):
-            if transpose_segmentation:
-                with Image.open(file_path) as img:
-                    segs_imgs = np.array(img).transpose(1, 0)
-                fios = AnnotationAPIHandler._numpy_to_bytesio_png(segs_imgs)
-            else:
-                fios = (open(file_path, 'rb') for _ in range(1))
-            nframes = 1
+            with Image.open(file_path) as img:
+                img_array = np.array(img)
+                normalized_imgs = AnnotationAPIHandler._normalize_segmentation_array(img_array)
+
+                if transpose_segmentation:
+                    normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
+
+                fios = AnnotationAPIHandler._numpy_to_bytesio_png(normalized_imgs)
+                nframes = 1
         else:
             raise ValueError(f"Unsupported file format of '{file_path}'")
 
@@ -91,9 +136,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     async def _upload_single_frame_segmentation_async(self,
                                                       resource_id: str,
-                                                      frame_index: int,
+                                                      frame_index: int | None,
                                                       fio: IO,
-                                                      name: Optional[str | dict[int, str]] = None,
+                                                      name: dict[int, str] | dict[tuple, str],
                                                       imported_from: Optional[str] = None,
                                                       author_email: Optional[str] = None,
                                                       discard_empty_segmentations: bool = True,
@@ -107,7 +152,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
             resource_id: The resource unique id.
             frame_index: The frame index for the segmentation.
             fio: File-like object containing the segmentation image.
-            name: The name of the segmentation or a dictionary mapping pixel values to names.
+            name: The name of the segmentation, a dictionary mapping pixel values to names,
+                  or a dictionary mapping RGB tuples to names.
             imported_from: The imported from value.
             author_email: The author email.
             discard_empty_segmentations: Whether to discard empty segmentations.
@@ -119,21 +165,29 @@ class AnnotationAPIHandler(BaseAPIHandler):
         """
         try:
             try:
-                img = np.array(Image.open(fio))
+                img_pil = Image.open(fio)
+                img_array = np.array(img_pil)  # shape: (height, width, channels)
+                # Returns a list of (count, color) tuples
+                unique_vals = img_pil.getcolors(maxcolors=MAX_NUMBER_DISTINCT_COLORS)
+                # convert to list of RGB tuples
+                if unique_vals is None:
+                    raise ValueError(f'Number of unique colors exceeds {MAX_NUMBER_DISTINCT_COLORS}.')
+                unique_vals = [color for count, color in unique_vals]
+                # Remove black/transparent pixels
+                black_pixel = (0, 0, 0)
+                unique_vals = [rgb for rgb in unique_vals if rgb != black_pixel]
 
-                # Check that frame is not empty
-                uniq_vals = np.unique(img)
                 if discard_empty_segmentations:
-                    if len(uniq_vals) == 1 and uniq_vals[0] == 0:
-                        msg = f"Discarding empty segmentation for frame {frame_index}"
+                    if len(unique_vals) == 0:
+                        msg = f"Discarding empty RGB segmentation for frame {frame_index}"
                         _LOGGER.debug(msg)
                         _USER_LOGGER.debug(msg)
                         return []
-                    fio.seek(0)
-                    # TODO: Optimize this. It is not necessary to open the image twice.
+                segnames = AnnotationAPIHandler._get_segmentation_names_rgb(unique_vals, names=name)
+                segs_generator = AnnotationAPIHandler._split_rgb_segmentations(img_array, unique_vals)
 
-                segnames = AnnotationAPIHandler._get_segmentation_names(uniq_vals, names=name)
-                segs_generator = AnnotationAPIHandler._split_segmentations(img, uniq_vals, fio)
+                fio.seek(0)
+                # TODO: Optimize this. It is not necessary to open the image twice.
 
                 # Create annotations
                 annotations: list[CreateAnnotationDto] = []
@@ -174,7 +228,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
                     resp = await self._run_request_async(request_params)
                     if 'error' in resp:
                         raise DatamintException(resp['error'])
-
                 return annotids
             finally:
                 fio.close()
@@ -184,7 +237,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     async def _upload_volume_segmentation_async(self,
                                                 resource_id: str,
                                                 file_path: str | np.ndarray,
-                                                name: str | dict[int, str] | None = None,
+                                                name: dict[int, str] | dict[tuple, str],
                                                 imported_from: Optional[str] = None,
                                                 author_email: Optional[str] = None,
                                                 worklist_id: Optional[str] = None,
@@ -210,9 +263,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Raises:
             ValueError: If name is not a string or file format is unsupported for volume upload.
         """
-        if name is None:
-            name = 'volume_segmentation'
-
         # Prepare file for upload
         if isinstance(file_path, str):
             if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
@@ -248,9 +298,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
     async def _upload_segmentations_async(self,
                                           resource_id: str,
                                           frame_index: int | None,
-                                          file_path: str | np.ndarray | None = None,
-                                          fio: IO | None = None,
-                                          name: Optional[str | dict[int, str]] = None,
+                                          file_path: str | np.ndarray,
+                                          name: dict[int, str] | dict[tuple, str],
                                           imported_from: Optional[str] = None,
                                           author_email: Optional[str] = None,
                                           discard_empty_segmentations: bool = True,
@@ -266,7 +315,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
             resource_id: The resource unique id.
             frame_index: The frame index or None for multiple frames.
             file_path: Path to segmentation file or numpy array.
-            fio: File-like object containing segmentation data.
             name: The name of the segmentation or mapping of pixel values to names.
             imported_from: The imported from value.
             author_email: The author email.
@@ -280,60 +328,44 @@ class AnnotationAPIHandler(BaseAPIHandler):
             List of annotation IDs created.
         """
         if upload_volume == 'auto':
-            if file_path is not None and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+            if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
                 upload_volume = True
             else:
                 upload_volume = False
 
-        if file_path is not None:
-            # Handle volume upload
-            if upload_volume:
-                if frame_index is not None:
-                    _LOGGER.warning("frame_index parameter ignored when upload_volume=True")
+        # Handle volume upload
+        if upload_volume:
+            if frame_index is not None:
+                _LOGGER.warning("frame_index parameter ignored when upload_volume=True")
 
-                return await self._upload_volume_segmentation_async(
-                    resource_id=resource_id,
-                    file_path=file_path,
-                    name=name,
-                    imported_from=imported_from,
-                    author_email=author_email,
-                    worklist_id=worklist_id,
-                    model_id=model_id,
-                    transpose_segmentation=transpose_segmentation
-                )
-
-            # Handle frame-by-frame upload (existing logic)
-            nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(
-                file_path, transpose_segmentation=transpose_segmentation
-            )
-            if frame_index is None:
-                frame_index = list(range(nframes))
-
-            annotids = []
-            for fidx, f in zip(frame_index, fios):
-                frame_annotids = await self._upload_single_frame_segmentation_async(
-                    resource_id=resource_id,
-                    frame_index=fidx,
-                    fio=f,
-                    name=name,
-                    imported_from=imported_from,
-                    author_email=author_email,
-                    discard_empty_segmentations=discard_empty_segmentations,
-                    worklist_id=worklist_id,
-                    model_id=model_id
-                )
-                annotids.extend(frame_annotids)
-            return annotids
-
-        # Handle single file-like object
-        if fio is not None:
-            if upload_volume:
-                raise ValueError("upload_volume=True is not supported when providing fio parameter")
-
-            return await self._upload_single_frame_segmentation_async(
+            return await self._upload_volume_segmentation_async(
                 resource_id=resource_id,
-                frame_index=frame_index,
-                fio=fio,
+                file_path=file_path,
+                name=name,
+                imported_from=imported_from,
+                author_email=author_email,
+                worklist_id=worklist_id,
+                model_id=model_id,
+                transpose_segmentation=transpose_segmentation
+            )
+
+        # Handle frame-by-frame upload (existing logic)
+        nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(
+            file_path, transpose_segmentation=transpose_segmentation
+        )
+        if frame_index is None:
+            frames_indices = list(range(nframes))
+        elif isinstance(frame_index, int):
+            frames_indices = [frame_index]
+        else:
+            raise ValueError("frame_index must be an int or None")
+
+        annotids = []
+        for fidx, f in zip(frames_indices, fios):
+            frame_annotids = await self._upload_single_frame_segmentation_async(
+                resource_id=resource_id,
+                frame_index=fidx,
+                fio=f,
                 name=name,
                 imported_from=imported_from,
                 author_email=author_email,
@@ -341,13 +373,30 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 worklist_id=worklist_id,
                 model_id=model_id
             )
+            annotids.extend(frame_annotids)
+        return annotids
 
-        raise ValueError("Either file_path or fio must be provided")
+    @staticmethod
+    def standardize_segmentation_names(name: str | dict[int, str] | dict[tuple, str] | None) -> dict[tuple[int, int, int], str]:
+        if name is None:
+            return {}
+        elif isinstance(name, str):
+            return {'default': name}
+        elif isinstance(name, dict):
+            name = {
+                tuple(k) if isinstance(k, (list, tuple)) else k if isinstance(k, str) else (k, k, k): v
+                for k, v in name.items()
+            }
+            if 'default' not in name:
+                name['default'] = None
+            return name
+        else:
+            raise ValueError("Invalid name format")
 
     def upload_segmentations(self,
                              resource_id: str,
                              file_path: str | np.ndarray,
-                             name: Optional[str | dict[int, str]] = None,
+                             name: str | dict[int, str] | dict[tuple, str] | None = None,
                              frame_index: int | list[int] | None = None,
                              imported_from: Optional[str] = None,
                              author_email: Optional[str] = None,
@@ -362,29 +411,45 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Args:
             resource_id (str): The resource unique id.
             file_path (str|np.ndarray): The path to the segmentation file or a numpy array.
-                If a numpy array is provided, it must have the shape (height, width, #frames) or (height, width).
+                If a numpy array is provided, it can have the shape:
+                - (height, width, #frames) or (height, width) for grayscale segmentations
+                - (3, height, width, #frames) for RGB segmentations
                 For NIfTI files (.nii/.nii.gz), the entire volume is uploaded as a single segmentation.
-            name (Optional[Union[str, Dict[int, str]]]): The name of the segmentation or a dictionary mapping pixel values to names.
-                example: {1: 'Femur', 2: 'Tibia'}. For NIfTI files, only string names are supported.
+            name: The name of the segmentation.
+                Can be:
+                - str: Single name for all segmentations
+                - dict[int, str]: Mapping pixel values to names for grayscale segmentations
+                - dict[tuple[int, int, int], str]: Mapping RGB tuples to names for RGB segmentations
+                Example: {(255, 0, 0): 'Red_Region', (0, 255, 0): 'Green_Region'}
             frame_index (int | list[int]): The frame index of the segmentation. 
                 If a list, it must have the same length as the number of frames in the segmentation.
                 If None, it is assumed that the segmentations are in sequential order starting from 0.
                 This parameter is ignored for NIfTI files as they are treated as volume segmentations.
             discard_empty_segmentations (bool): Whether to discard empty segmentations or not.
-                This is ignored for NIfTI files.
 
         Returns:
-            str: The segmentation unique id.
+            List[str]: List of segmentation unique ids.
 
         Raises:
             ResourceNotFoundError: If the resource does not exists or the segmentation is invalid.
 
         Example:
+            >>> # Grayscale segmentation
             >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.png', 'SegmentationName')
+            >>> 
+            >>> # RGB segmentation with numpy array
+            >>> seg_data = np.random.randint(0, 3, size=(3, 2140, 1760, 1), dtype=np.uint8)
+            >>> rgb_names = {(1, 0, 0): 'Red_Region', (0, 1, 0): 'Green_Region', (0, 0, 1): 'Blue_Region'}
+            >>> api_handler.upload_segmentation(resource_id, seg_data, rgb_names)
+            >>>
+            >>> # Volume segmentation
             >>> api_handler.upload_segmentation(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
         """
+
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
+
+        name = AnnotationAPIHandler.standardize_segmentation_names(name)
 
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
@@ -407,33 +472,32 @@ class AnnotationAPIHandler(BaseAPIHandler):
             )
             return loop.run_until_complete(task)
         # All other file types are converted to multiple PNGs and uploaded frame by frame.
-        if isinstance(frame_index, int):
-            frame_index = [frame_index]
 
-        loop = asyncio.get_event_loop()
         to_run = []
         # Generate IOs for the segmentations.
         nframes, fios = AnnotationAPIHandler._generate_segmentations_ios(file_path,
                                                                          transpose_segmentation=transpose_segmentation)
         if frame_index is None:
             frame_index = list(range(nframes))
-        elif len(frame_index) != nframes:
-            raise ValueError("Do not provide frame_index for images of multiple frames.")
-        #######
+        elif isinstance(frame_index, int):
+            frame_index = [frame_index]
+        if len(frame_index) != nframes:
+            raise ValueError(f'Expected {nframes} frame_index values, but got {len(frame_index)}.')
 
         # For each frame, create the annotations and upload the segmentations.
         for fidx, f in zip(frame_index, fios):
-            task = self._upload_segmentations_async(resource_id,
-                                                    fio=f,
-                                                    name=name,
-                                                    frame_index=fidx,
-                                                    imported_from=imported_from,
-                                                    author_email=author_email,
-                                                    discard_empty_segmentations=discard_empty_segmentations,
-                                                    worklist_id=worklist_id,
-                                                    model_id=model_id)
+            task = self._upload_single_frame_segmentation_async(resource_id,
+                                                                fio=f,
+                                                                name=name,
+                                                                frame_index=fidx,
+                                                                imported_from=imported_from,
+                                                                author_email=author_email,
+                                                                discard_empty_segmentations=discard_empty_segmentations,
+                                                                worklist_id=worklist_id,
+                                                                model_id=model_id)
             to_run.append(task)
 
+        loop = asyncio.get_event_loop()
         ret = loop.run_until_complete(asyncio.gather(*to_run))
         # merge the results in a single list
         ret = [item for sublist in ret for item in sublist]
@@ -831,7 +895,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
         Args:
             resource_id (Optional[str]): The resource unique id.
-            annotation_type (Optional[str]): The annotation type. See :class:`~datamint.dto.annotation_dto.AnnotationType`.
+            annotation_type (AnnotationType | str | None): The annotation type. See :class:`~datamint.dto.annotation_dto.AnnotationType`.
             annotator_email (Optional[str]): The annotator email.
             date_from (Optional[date]): The start date.
             date_to (Optional[date]): The end date.
@@ -843,7 +907,6 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Returns:
             Generator[dict, None, None]: A generator of dictionaries with the annotations information.
         """
-        # TODO: create annotation_type enum
 
         if annotation_type is not None and isinstance(annotation_type, AnnotationType):
             annotation_type = annotation_type.value
@@ -962,40 +1025,61 @@ class AnnotationAPIHandler(BaseAPIHandler):
         self._run_request(request_params)
 
     @staticmethod
-    def _get_segmentation_names(uniq_vals: np.ndarray,
-                                names: Optional[str | dict[int, str]] = None
-                                ) -> list[str]:
-        uniq_vals = uniq_vals[uniq_vals != 0]
-        if names is None:
-            names = 'seg'
-        if isinstance(names, str):
-            if len(uniq_vals) == 1:
-                return [names]
-            return [f'{names}_{v}' for v in uniq_vals]
-        if isinstance(names, dict):
-            for v in uniq_vals:
-                new_name = names.get(v, names.get('default', None))
-                if new_name is None:
-                    raise ValueError(f"Value {v} not found in names dictionary." +
-                                     f" Provide a name for {v} or use 'default' key to provide a prefix.")
-            return [names.get(v, names.get('default', '')+'_'+str(v)) for v in uniq_vals]
-        raise ValueError("names must be a string or a dictionary.")
+    def _get_segmentation_names_rgb(uniq_rgb_vals: list[tuple[int, int, int]],
+                                    names: dict[tuple[int, int, int], str]
+                                    ) -> list[str]:
+        """
+        Generate segmentation names for RGB combinations.
+
+        Args:
+            uniq_rgb_vals: List of unique RGB combinations as (R,G,B) tuples
+            names: Name mapping for RGB combinations
+
+        Returns:
+            List of segmentation names
+        """
+        result = []
+        for rgb_tuple in uniq_rgb_vals:
+            seg_name = names.get(rgb_tuple, names.get('default', f'seg_{'_'.join(map(str, rgb_tuple))}'))
+            if seg_name is None:
+                if rgb_tuple[0] == rgb_tuple[1] and rgb_tuple[1] == rgb_tuple[2]:
+                    msg = f"Provide a name for {rgb_tuple} or {rgb_tuple[0]} or use 'default' key."
+                else:
+                    msg = f"Provide a name for {rgb_tuple} or use 'default' key."
+                raise ValueError(f"RGB combination {rgb_tuple} not found in names dictionary. " +
+                                 msg)
+            # If using default prefix, append RGB values
+            # if rgb_tuple not in names and 'default' in names:
+            #     seg_name = f"{seg_name}_{'_'.join(map(str, rgb_tuple))}"
+            result.append(seg_name)
+        return result
 
     @staticmethod
-    def _split_segmentations(img: np.ndarray,
-                             uniq_vals: np.ndarray,
-                             f: IO,
-                             ) -> Generator[BytesIO, None, None]:
-        # remove zero from uniq_vals
-        uniq_vals = uniq_vals[uniq_vals != 0]
+    def _split_rgb_segmentations(img: np.ndarray,
+                                 uniq_rgb_vals: list[tuple[int, int, int]]
+                                 ) -> Generator[BytesIO, None, None]:
+        """
+        Split RGB segmentations into individual binary masks.
 
-        for v in uniq_vals:
-            img_v = (img == v).astype(np.uint8)
+        Args:
+            img: RGB image array of shape (height, width, channels)
+            uniq_rgb_vals: List of unique RGB combinations as (R,G,B) tuples
 
-            f = BytesIO()
-            Image.fromarray(img_v*255).convert('RGB').save(f, format='PNG')
-            f.seek(0)
-            yield f
+        Yields:
+            BytesIO objects containing individual segmentation masks
+        """
+        for rgb_tuple in uniq_rgb_vals:
+            # Create binary mask for this RGB combination
+            rgb_array = np.array(rgb_tuple[:3])  # Ensure only R,G,B values
+            mask = np.all(img[:, :, :3] == rgb_array, axis=2)
+
+            # Convert to uint8 and create PNG
+            mask_img = (mask * 255).astype(np.uint8)
+
+            f_out = BytesIO()
+            Image.fromarray(mask_img).convert('L').save(f_out, format='PNG')
+            f_out.seek(0)
+            yield f_out
 
     def delete_annotation(self, annotation_id: str | dict):
         if isinstance(annotation_id, dict):
