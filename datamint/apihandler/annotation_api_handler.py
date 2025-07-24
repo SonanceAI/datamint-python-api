@@ -1040,7 +1040,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
         """
         result = []
         for rgb_tuple in uniq_rgb_vals:
-            seg_name = names.get(rgb_tuple, names.get('default', f'seg_{'_'.join(map(str, rgb_tuple))}'))
+            seg_name = names.get(rgb_tuple, names.get('default', f'seg_{"_".join(map(str, rgb_tuple))}'))
             if seg_name is None:
                 if rgb_tuple[0] == rgb_tuple[1] and rgb_tuple[1] == rgb_tuple[2]:
                     msg = f"Provide a name for {rgb_tuple} or {rgb_tuple[0]} or use 'default' key."
