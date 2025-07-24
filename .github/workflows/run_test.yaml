@@ -22,8 +22,8 @@ jobs:
       # Fail fast to save CI resources
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.10", "3.12"]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        python-version: ${{ github.event_name == 'pull_request' && fromJSON('["3.10"]') || fromJSON('["3.10", "3.12"]') }}
 
     steps:
       - name: Checkout code
