@@ -41,7 +41,7 @@ def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
                          index_col=0,
                          sep='\t')
         df = df.rename(columns={1: 'r', 2: 'g', 3: 'b', df.columns[-1]: 'name'})
-        df = df.set_index(['r', 'g', 'b'])
+        # df = df.set_index(['r', 'g', 'b'])
         metadata = {'class_names': df['name'].to_dict()}
     else:
         raise ValueError(f"Unsupported file format: {segmentation_names_path.suffix}")
