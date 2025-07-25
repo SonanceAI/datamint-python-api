@@ -15,12 +15,45 @@ from datamint.client_cmd_tools.datamint_config import ask_api_key
 from datamint.utils.logging_utils import load_cmdline_logging_config
 import yaml
 from collections.abc import Iterable
+import pandas as pd
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
 MAX_RECURSION_LIMIT = 1000
+
+
+def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
+    """
+    Read a segmentation names file (yaml or csv) and return its content as a dictionary.
+    If the file is a YAML file, it should contain two keys: "segmentation_names" and "class_names".
+    If the file is a CSV file, it should contain the following columns:
+    index, r, g, b, ..., name
+    """
+    segmentation_names_path = Path(segmentation_names_path)
+    if segmentation_names_path.suffix in ['.yaml', '.yml']:
+        with open(segmentation_names_path, 'r') as f:
+            metadata = yaml.safe_load(f)
+    elif segmentation_names_path.suffix in ['.csv', '.tsv']:
+        df = pd.read_csv(segmentation_names_path,
+                         header=None,
+                         index_col=0,
+                         sep=None,  # use sep=None to automatically detect the separator
+                         engine='python'
+                         )
+        df = df.rename(columns={1: 'r', 2: 'g', 3: 'b', df.columns[-1]: 'name'})
+        # df = df.set_index(['r', 'g', 'b'])
+        metadata = {'class_names': df['name'].to_dict()}
+    else:
+        raise ValueError(f"Unsupported file format: {segmentation_names_path.suffix}")
+
+    if 'segmentation_names' in metadata:
+        segnames = sorted(metadata['segmentation_names'],
+                          key=lambda x: len(x))
+        metadata['segmentation_names'] = segnames
+
+    return metadata
 
 
 def _is_valid_path_argparse(x):
@@ -101,7 +134,6 @@ def walk_to_depth(path: str | Path,
                     continue
                 yield from walk_to_depth(child, depth-1, exclude_pattern)
         else:
-            _LOGGER.debug(f"yielding {child} from {path}")
             yield child
 
 
@@ -157,30 +189,31 @@ def handle_api_key() -> str | None:
 
 def _find_segmentation_files(segmentation_root_path: str,
                              images_files: list[str],
-                             segmentation_metainfo: dict = None
-                             ) -> Optional[list[dict]]:
+                             segmentation_metainfo: dict | None = None
+                             ) -> list[dict]:
     """
     Find the segmentation files that match the images files based on the same folder structure
     """
 
-    if segmentation_root_path is None:
-        return None
-
-    if len(images_files) == 1 and os.path.isfile(images_files[0]) and os.path.isfile(segmentation_root_path):
-        return [{'files': [segmentation_root_path]}]
-
-    segmentation_files = []
-    acceptable_extensions = ['.nii.gz', '.nii', '.png']
-
+    segnames = None
+    classnames = None
     if segmentation_metainfo is not None:
         if 'segmentation_names' in segmentation_metainfo:
             segnames = sorted(segmentation_metainfo['segmentation_names'],
                               key=lambda x: len(x))
-        else:
-            segnames = None
         classnames = segmentation_metainfo.get('class_names', None)
         if classnames is not None:
             _LOGGER.debug(f"Number of class names: {len(classnames)}")
+
+    if len(images_files) == 1 and os.path.isfile(images_files[0]) and os.path.isfile(segmentation_root_path):
+        ret = [{'files': [segmentation_root_path]}]
+        if classnames is not None:
+            ret[0]['names'] = classnames
+        _LOGGER.debug(f"Returning segmentation files: {ret}")
+        return ret
+
+    segmentation_files = []
+    acceptable_extensions = ['.nii.gz', '.nii', '.png']
 
     segmentation_root_path = Path(segmentation_root_path).absolute()
 
@@ -197,7 +230,6 @@ def _find_segmentation_files(segmentation_root_path: str,
         else:
             common_parent = Path(*common_parent)
 
-        _LOGGER.debug(f"_find_segmentation_files::common_parent: {common_parent}")
         path_structure = imgpath_parent.relative_to(common_parent).parts[1:]
 
         # path_structure = imgpath_parent.relative_to(root_path).parts[1:]
@@ -230,24 +262,47 @@ def _find_segmentation_files(segmentation_root_path: str,
             if len(frame_indices) > 0:
                 seginfo['frame_index'] = frame_indices
 
-            if segmentation_metainfo is not None:
-                snames_associated = []
-                for segfile in seg_files:
-                    if segnames is None:
-                        snames_associated.append(classnames)
+            snames_associated = []
+            for segfile in seg_files:
+                # check if there is a metadata file associated, besides json, with the segmentation
+                for ext in ['.yaml', '.yml', '.csv']:
+                    if str(segfile).endswith('nii.gz'):
+                        # has two extensions, so we need to remove both
+                        metadata_file = segfile.with_suffix('').with_suffix(ext)
+                        if not metadata_file.exists():
+                            metadata_file = segfile.with_suffix(ext)
                     else:
-                        for segname in segnames:
-                            if segname in str(segfile):
-                                if classnames is not None:
-                                    new_segname = {cid: f'{segname}_{cname}' for cid, cname in classnames.items()}
-                                    new_segname.update({'default': segname})
-                                else:
-                                    new_segname = segname
-                                snames_associated.append(new_segname)
-                                break
-                        else:
-                            _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
-                            snames_associated.append(None)
+                        metadata_file = segfile.with_suffix(ext)
+                    if metadata_file.exists():
+                        _LOGGER.debug(f"Found metadata file: {metadata_file}")
+                        try:
+                            new_segmentation_metainfo = _read_segmentation_names(metadata_file)
+                            cur_segnames = new_segmentation_metainfo.get('segmentation_names', segnames)
+                            cur_classnames = new_segmentation_metainfo.get('class_names', classnames)
+                            break
+                        except Exception as e:
+                            _LOGGER.warning(f"Error reading metadata file {metadata_file}: {e}")
+                else:
+                    cur_segnames = segnames
+                    cur_classnames = classnames
+
+                if cur_segnames is None:
+                    _LOGGER.debug(f'adding {cur_classnames}')
+                    snames_associated.append(cur_classnames)
+                else:
+                    for segname in cur_segnames:
+                        if segname in str(segfile):
+                            if cur_classnames is not None:
+                                new_segname = {cid: f'{segname}_{cname}' for cid, cname in cur_classnames.items()}
+                                new_segname.update({'default': segname})
+                            else:
+                                new_segname = segname
+                            snames_associated.append(new_segname)
+                            break
+                    else:
+                        _USER_LOGGER.warning(f"Segmentation file {segfile} does not match any segmentation name.")
+                        snames_associated.append(None)
+            if len(snames_associated) > 0:
                 seginfo['names'] = snames_associated
 
             segmentation_files.append(seginfo)
@@ -268,7 +323,7 @@ def _find_json_metadata(file_path: str | Path) -> Optional[str]:
         Optional[str]: Path to the JSON metadata file if found, None otherwise
     """
     file_path = Path(file_path)
-    
+
     # Handle .nii.gz files specially - need to remove both extensions
     if file_path.name.endswith('.nii.gz'):
         base_name = file_path.name[:-7]  # Remove .nii.gz
@@ -320,7 +375,7 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
     if used_json_files:
         _LOGGER.debug(f"Filtering out {len(used_json_files)} JSON metadata files from main upload list")
         filtered_metadata_files = []
-        
+
         for original_file in files_path:
             if original_file not in used_json_files:
                 original_index = files_path.index(original_file)
@@ -376,8 +431,10 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         help='Path to the segmentation file(s) or a directory')
     parser.add_argument('--segmentation_names', type=_is_valid_path_argparse, metavar="FILE",
                         required=False,
-                        help='Path to a yaml file containing the segmentation names.' +
-                        ' The file may contain two keys: "segmentation_names" and "class_names".')
+                        help='Path to a yaml or csv file containing the segmentation names.' +
+                        ' If yaml, the file may contain two keys: "segmentation_names" and "class_names".'
+                        ' If csv, the file should contain the following columns:'
+                        ' index, r, g, b, ..., name')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--transpose-segmentation', action='store_true', default=False,
@@ -446,15 +503,17 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
             raise ValueError(f"No valid non-metadata files found in {args.path}")
 
         if args.segmentation_names is not None:
-            with open(args.segmentation_names, 'r') as f:
-                segmentation_names = yaml.safe_load(f)
+            segmentation_names = _read_segmentation_names(args.segmentation_names)
         else:
             segmentation_names = None
 
         _LOGGER.debug(f'finding segmentations at {args.segmentation_path}')
-        segmentation_files = _find_segmentation_files(args.segmentation_path,
-                                                      file_path,
-                                                      segmentation_metainfo=segmentation_names)
+        if args.segmentation_path is None:
+            segmentation_files = None
+        else:
+            segmentation_files = _find_segmentation_files(args.segmentation_path,
+                                                          file_path,
+                                                          segmentation_metainfo=segmentation_names)
 
         _LOGGER.info(f"args parsed: {args}")
 
