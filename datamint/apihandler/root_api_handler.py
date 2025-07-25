@@ -447,6 +447,8 @@ class RootAPIHandler(BaseAPIHandler):
                                   for segfiles in segmentation_files]
             
             for segfiles in segmentation_files:
+                if segfiles is None:
+                    continue
                 if 'files' not in segfiles:
                     raise ValueError("segmentation_files must contain a 'files' key with a list of file paths.")
                 if 'names' in segfiles:
