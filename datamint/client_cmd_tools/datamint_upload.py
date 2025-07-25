@@ -39,7 +39,9 @@ def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
         df = pd.read_csv(segmentation_names_path,
                          header=None,
                          index_col=0,
-                         sep='\t')
+                         sep=None,  # use sep=None to automatically detect the separator
+                         engine='python'
+                         )
         df = df.rename(columns={1: 'r', 2: 'g', 3: 'b', df.columns[-1]: 'name'})
         # df = df.set_index(['r', 'g', 'b'])
         metadata = {'class_names': df['name'].to_dict()}
@@ -298,7 +300,7 @@ def _find_segmentation_files(segmentation_root_path: str,
                             snames_associated.append(new_segname)
                             break
                     else:
-                        _USER_LOGGER.warning(f"Segmentation file {segname} does not match any segmentation name.")
+                        _USER_LOGGER.warning(f"Segmentation file {segfile} does not match any segmentation name.")
                         snames_associated.append(None)
             if len(snames_associated) > 0:
                 seginfo['names'] = snames_associated
