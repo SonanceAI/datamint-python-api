@@ -10,7 +10,6 @@ import os
 import asyncio
 import aiohttp
 from requests.exceptions import HTTPError
-from deprecated.sphinx import deprecated
 from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, AnnotationType
 import pydicom
 import json
@@ -237,7 +236,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
     async def _upload_volume_segmentation_async(self,
                                                 resource_id: str,
                                                 file_path: str | np.ndarray,
-                                                name: dict[int, str] | dict[tuple, str],
+                                                name: str | dict[int, str] | dict[tuple, str] | None,
                                                 imported_from: Optional[str] = None,
                                                 author_email: Optional[str] = None,
                                                 worklist_id: Optional[str] = None,
@@ -263,6 +262,13 @@ class AnnotationAPIHandler(BaseAPIHandler):
         Raises:
             ValueError: If name is not a string or file format is unsupported for volume upload.
         """
+
+        if isinstance(name, str):
+            raise NotImplementedError("`name=string` is not supported yet for volume segmentation.")
+        if isinstance(name, dict):
+            if any(isinstance(k, tuple) for k in name.keys()):
+                raise NotImplementedError("For volume segmentations, `name` must be a dictionary with integer keys only.") 
+                
         # Prepare file for upload
         if isinstance(file_path, str):
             if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
@@ -275,7 +281,8 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         form.add_field('model_id', model_id)  # Add model_id if provided
                     if worklist_id is not None:
                         form.add_field('annotation_worklist_id', worklist_id)
-                    form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
+                    if name is not None:
+                        form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
                     request_params = dict(
                         method='POST',
@@ -449,29 +456,26 @@ class AnnotationAPIHandler(BaseAPIHandler):
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
-        name = AnnotationAPIHandler.standardize_segmentation_names(name)
-
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
             _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
             if frame_index is not None:
                 raise ValueError("Do not provide frame_index for NIfTI segmentations.")
             loop = asyncio.get_event_loop()
-            task = self._upload_segmentations_async(
+            task = self._upload_volume_segmentation_async(
                 resource_id=resource_id,
-                frame_index=None,
                 file_path=file_path,
                 name=name,
                 imported_from=imported_from,
                 author_email=author_email,
-                discard_empty_segmentations=False,
                 worklist_id=worklist_id,
                 model_id=model_id,
-                transpose_segmentation=transpose_segmentation,
-                upload_volume=True
+                transpose_segmentation=transpose_segmentation
             )
             return loop.run_until_complete(task)
         # All other file types are converted to multiple PNGs and uploaded frame by frame.
+
+        name = AnnotationAPIHandler.standardize_segmentation_names(name)
 
         to_run = []
         # Generate IOs for the segmentations.
