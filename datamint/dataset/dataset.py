@@ -308,7 +308,9 @@ class DatamintDataset(DatamintBaseDataset):
 
         return augmented['image'], new_segmentations
 
-    def _seg_labels_to_names(self, seg_labels: dict | list | None) -> dict | list | None:
+    def _seg_labels_to_names(self,
+                             seg_labels: dict | list | None
+                             ) -> dict | list | None:
         """
         Convert segmentation label codes to label names.
 
@@ -330,10 +332,23 @@ class DatamintDataset(DatamintBaseDataset):
         code_to_name = self.segmentation_labels_set
         if isinstance(seg_labels, dict):
             # author -> list of frame tensors
-            return {author: [code_to_name[code.item()] for code in labels] for author, labels in seg_labels.items()}
+            seg_names = {}
+            for author, labels in seg_labels.items():
+                if isinstance(labels, Tensor):
+                    # single tensor for the author
+                    seg_names[author] = [code_to_name[code.item()-1] for code in labels]
+                elif isinstance(labels, list):
+                    # list of frame tensors
+                    seg_names[author] = [[code_to_name[code.item()-1] for code in frame_labels]
+                                         for frame_labels in labels]
+                else:
+                    _LOGGER.warning(
+                        f"Unexpected segmentation labels format for author {author}: {type(labels)}. Returning None")
+                    return None
+            return seg_names
         elif isinstance(seg_labels, list):
             # list of frame tensors
-            return [[code_to_name[code.item()] for code in labels] for labels in seg_labels]
+            return [[code_to_name[code.item()-1] for code in labels] for labels in seg_labels]
 
         _LOGGER.warning(f"Unexpected segmentation labels format: {type(seg_labels)}. Returning None")
         return None
@@ -388,6 +403,7 @@ class DatamintDataset(DatamintBaseDataset):
         try:
             if self.return_segmentations:
                 segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
+                # seg_labels can be dict[str, list[Tensor]]
                 # apply mask transform
                 if self.mask_transform is not None:
                     for seglist in segmentations.values():

@@ -892,7 +892,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                         dataset_id: Optional[str] = None,
                         worklist_id: Optional[str] = None,
                         status: Optional[Literal['new', 'published']] = None,
-                        load_ai_segmentations: bool = None,
+                        load_ai_segmentations: bool | None = None,
                         ) -> Generator[dict, None, None]:
         """
         Get annotations for a resource.

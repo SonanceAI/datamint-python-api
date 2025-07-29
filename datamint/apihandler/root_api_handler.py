@@ -445,7 +445,7 @@ class RootAPIHandler(BaseAPIHandler):
 
             segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
                                   for segfiles in segmentation_files]
-            
+
             for segfiles in segmentation_files:
                 if segfiles is None:
                     continue
@@ -454,7 +454,8 @@ class RootAPIHandler(BaseAPIHandler):
                 if 'names' in segfiles:
                     # same length as files
                     if isinstance(segfiles['names'], (list, tuple)) and len(segfiles['names']) != len(segfiles['files']):
-                        raise ValueError("segmentation_files['names'] must have the same length as segmentation_files['files'].")
+                        raise ValueError(
+                            "segmentation_files['names'] must have the same length as segmentation_files['files'].")
 
         loop = asyncio.get_event_loop()
         task = self._upload_resources_async(files_path=files_path,
@@ -699,7 +700,7 @@ class RootAPIHandler(BaseAPIHandler):
                       order_field: Optional[ResourceFields] = None,
                       order_ascending: Optional[bool] = None,
                       channel: Optional[str] = None,
-                      project_name: Optional[str] = None,
+                      project_name: str | list[str] | None = None,
                       filename: Optional[str] = None
                       ) -> Generator[dict, None, None]:
         """
@@ -717,6 +718,8 @@ class RootAPIHandler(BaseAPIHandler):
             return_ids_only (bool): Whether to return only the ids of the resources.
             order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~.base_api_handler.ResourceFields`.
             order_ascending (Optional[bool]): Whether to order the resources in ascending order.
+            project_name (str | list[str] | None): The project name or a list of project names to filter resources by project.
+                If multiple projects are provided, resources will be filtered to include only those belonging to ALL of the specified projects.
 
         Returns:
             Generator[dict, None, None]: A generator of dictionaries with the resources information.
@@ -745,7 +748,10 @@ class RootAPIHandler(BaseAPIHandler):
             "filename": filename,
         }
         if project_name is not None:
-            payload["project"] = json.dumps({'items': [project_name], 'filterType': 'union'})
+            if isinstance(project_name, str):
+                project_name = [project_name]
+            payload["project"] = json.dumps({'items': project_name,
+                                             'filterType': 'intersection'})  # union or intersection
 
         if tags is not None:
             if isinstance(tags, str):
@@ -802,7 +808,7 @@ class RootAPIHandler(BaseAPIHandler):
         yield from self._run_pagination_request(request_params,
                                                 return_field='data')
 
-    def set_resource_tags(self, 
+    def set_resource_tags(self,
                           resource_id: str,
                           tags: Sequence[str],
                           ):
