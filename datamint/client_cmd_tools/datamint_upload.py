@@ -464,6 +464,7 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
     if args.verbose:
         # Get the console handler and set to debug
         logging.getLogger().handlers[0].setLevel(logging.DEBUG)
+        logging.getLogger('datamint').handlers[0].setLevel(logging.DEBUG)
         _LOGGER.setLevel(logging.DEBUG)
         _USER_LOGGER.setLevel(logging.DEBUG)
 
