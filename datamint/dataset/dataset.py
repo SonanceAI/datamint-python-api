@@ -148,7 +148,7 @@ class DatamintDataset(DatamintBaseDataset):
             if ann.file is None:
                 _LOGGER.warning(f"Segmentation annotation without file in annotations {ann}")
                 continue
-            author = ann.added_by
+            author = ann.created_by
 
             segfilepath = ann.file  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
@@ -506,7 +506,7 @@ class DatamintDataset(DatamintBaseDataset):
         if len(annotations) == 0:
             return frame_labels_byuser
         for ann in annotations:
-            user_id = ann.added_by
+            user_id = ann.created_by
 
             frame_idx = ann.index
 

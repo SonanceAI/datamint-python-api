@@ -233,12 +233,6 @@ class DatamintBaseDataset:
                 self._check_version()
         else:
             self._check_version()
-            # if self.api_key is None:
-            #     raise DatamintDatasetException("API key is required to download the dataset.")
-            # self.project_info = self.get_info()
-            # self.dataset_id = self.project_info['dataset_id']
-            # _LOGGER.info(f"No data found at {self.dataset_dir}. Downloading...")
-            # self.download_project()
 
     def _load_metadata(self) -> bool:
         """Load and process dataset metadata."""

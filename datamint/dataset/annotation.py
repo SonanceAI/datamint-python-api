@@ -142,7 +142,7 @@ class Annotation:
                 value = str(value)
             
             result[key] = value
-        if 'file' not in result:
+        if self.annotation_type == 'segmentation' and 'file' not in result:
             raise ValueError(f"Segmentation annotations must have an associated file. {self}")
         return result
 
