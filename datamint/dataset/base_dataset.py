@@ -924,8 +924,12 @@ class DatamintBaseDataset:
                 annotations_by_resource[resource_id] = []
             annotations_by_resource[resource_id].append(ann)
 
+        # Collect all segmentation annotations that need to be downloaded
+        segmentations_to_download = []
+        segmentation_paths = []
+
         # update annotations in resources
-        for resource in tqdm(self.images_metainfo, desc="Updating annotations"):
+        for resource in self.images_metainfo:
             resource_id = resource['id']
             new_resource_annotations = annotations_by_resource.get(resource_id, [])
             old_resource_annotations = resource.get('annotations', [])
@@ -944,10 +948,11 @@ class DatamintBaseDataset:
             for ann in annotations_to_add:
                 filepath = self._get_annotation_file_path(ann)
                 if filepath is not None:  # None means it is not a segmentation
-                    # download
+                    # Collect for batch download
                     filepath = Path(self.dataset_dir) / filepath
                     filepath.parent.mkdir(parents=True, exist_ok=True)
-                    self.api_handler.download_segmentation_file(ann, fpath_out=filepath)
+                    segmentations_to_download.append(ann)
+                    segmentation_paths.append(filepath)
 
             # Process annotation changes
             for ann in annotations_to_remove:
@@ -966,6 +971,13 @@ class DatamintBaseDataset:
 
             # Update resource annotations list - convert to Annotation objects
             resource['annotations'] = [Annotation.from_dict(ann) for ann in new_resource_annotations]
+
+        # Batch download all segmentation files
+        if segmentations_to_download:
+            _LOGGER.info(f"Downloading {len(segmentations_to_download)} segmentation files...")
+            self.api_handler.download_multiple_segmentations(segmentations_to_download, segmentation_paths)
+            _LOGGER.info(f"Downloaded {len(segmentations_to_download)} segmentation files.")
+
         ###################
         # save updated metadata
         datasetjson_path = os.path.join(self.dataset_dir, 'dataset.json')
