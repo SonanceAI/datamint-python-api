@@ -897,14 +897,15 @@ class DatamintBaseDataset:
         new_resources = self._fetch_new_resources(all_uptodate_resources)
         deleted_resources = self._fetch_deleted_resources(all_uptodate_resources)
 
-        for r in new_resources:
-            self._new_resource_created(r)
-        new_resources_path = [Path(self.dataset_dir) / r['file'] for r in new_resources]
-        new_resources_ids = [r['id'] for r in new_resources]
-        _LOGGER.info(f"Downloading {len(new_resources)} new resources...")
-        self.api_handler.download_multiple_resources(new_resources_ids,
-                                                     save_path=new_resources_path)
-        _LOGGER.info(f"Downloaded {len(new_resources)} new resources.")
+        if new_resources:
+            for r in new_resources:
+                self._new_resource_created(r)
+            new_resources_path = [Path(self.dataset_dir) / r['file'] for r in new_resources]
+            new_resources_ids = [r['id'] for r in new_resources]
+            _LOGGER.info(f"Downloading {len(new_resources)} new resources...")
+            self.api_handler.download_multiple_resources(new_resources_ids,
+                                                        save_path=new_resources_path)
+            _LOGGER.info(f"Downloaded {len(new_resources)} new resources.")
 
         for r in deleted_resources:
             self._resource_deleted(r)
@@ -1043,13 +1044,13 @@ class DatamintBaseDataset:
 
         # delete from system file
         if os.path.exists(deleted_metainfo['file']):
-            os.remove(deleted_metainfo['file'])
+            os.remove(os.path.join(self.dataset_dir, deleted_metainfo['file']))
 
         # delete associated annotations
         for ann in deleted_metainfo.get('annotations', []):
             ann_file = getattr(ann, 'file', None) if hasattr(ann, 'file') else ann.get('file', None)
             if ann_file is not None:
-                os.remove(ann_file)
+                os.remove(os.path.join(self.dataset_dir, ann_file))
 
     def __add__(self, other):
         """Concatenate datasets."""
