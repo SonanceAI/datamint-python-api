@@ -85,7 +85,7 @@ class BaseAPIHandler:
             msg = f"API key not provided! Use the environment variable " + \
                 f"{BaseAPIHandler.DATAMINT_API_VENV_NAME} or pass it as an argument."
             raise DatamintException(msg)
-        self.semaphore = asyncio.Semaphore(10)  # Limit to 10 parallel requests
+        self.semaphore = asyncio.Semaphore(20)
 
         if check_connection:
             self.check_connection()
@@ -157,30 +157,34 @@ class BaseAPIHandler:
     async def _run_request_async(self,
                                  request_args: dict,
                                  session: aiohttp.ClientSession | None = None,
-                                 data_to_get: str = 'json'):
+                                 data_to_get: Literal['json', 'text', 'content'] = 'json'):
         if session is None:
             async with aiohttp.ClientSession() as s:
-                return await self._run_request_async(request_args, s)
-        try:
-            _LOGGER.debug(f"Running request to {request_args['url']}")
-            _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
-        except Exception as e:
-            _LOGGER.debug(f"Error generating curl command: {e}")
+                return await self._run_request_async(request_args, s, data_to_get)
+            
+        async with self.semaphore:
+            try:
+                _LOGGER.debug(f"Running request to {request_args['url']}")
+                _LOGGER.debug(f'Equivalent curl command: "{self._generate_curl_command(request_args)}"')
+            except Exception as e:
+                _LOGGER.debug(f"Error generating curl command: {e}")
 
-        # add apikey to the headers
-        if 'headers' not in request_args:
-            request_args['headers'] = {}
+            # add apikey to the headers
+            if 'headers' not in request_args:
+                request_args['headers'] = {}
 
-        request_args['headers']['apikey'] = self.api_key
+            request_args['headers']['apikey'] = self.api_key
 
-        async with session.request(**request_args) as response:
-            self._check_errors_response(response, request_args)
-            if data_to_get == 'json':
-                return await response.json()
-            elif data_to_get == 'text':
-                return await response.text()
-            else:
-                raise ValueError("data_to_get must be either 'json' or 'text'")
+            async with session.request(**request_args) as response:
+                self._check_errors_response(response, request_args)
+                if data_to_get == 'json':
+                    return await response.json()
+                elif data_to_get == 'text':
+                    return await response.text()
+                elif data_to_get == 'content':
+                    return await response.read()
+                else:
+                    raise ValueError("data_to_get must be either 'json' or 'text'")
 
     def _check_errors_response(self,
                                response,
@@ -237,9 +241,9 @@ class BaseAPIHandler:
         return f'{self.root_url}/{endpoint}'
 
     def _run_pagination_request(self,
-                                request_params: Dict,
-                                return_field: Optional[Union[str, List]] = None
-                                ) -> Generator[Dict, None, None]:
+                                request_params: dict,
+                                return_field: str | list | None = None
+                                ) -> Generator[dict | list, None, None]:
         offset = 0
         params = request_params.get('params', {})
         while True:

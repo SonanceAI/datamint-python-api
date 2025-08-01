@@ -219,36 +219,35 @@ class RootAPIHandler(BaseAPIHandler):
 
         async with aiohttp.ClientSession() as session:
             async def __upload_single_resource(file_path, segfiles: dict[str, list | dict], metadata_file: str | dict | None):
-                async with self.semaphore:
-                    rid = await self._upload_single_resource_async(
-                        file_path=file_path,
-                        mimetype=mimetype,
-                        anonymize=anonymize,
-                        anonymize_retain_codes=anonymize_retain_codes,
-                        tags=tags,
-                        session=session,
-                        mung_filename=mung_filename,
-                        channel=channel,
-                        modality=modality,
-                        publish=publish,
-                        metadata_file=metadata_file,
-                    )
-                    if segfiles is not None:
-                        fpaths = segfiles['files']
-                        names = segfiles.get('names', _infinite_gen(None))
-                        if isinstance(names, dict):
-                            names = _infinite_gen(names)
-                        frame_indices = segfiles.get('frame_index', _infinite_gen(None))
-                        for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
-                                                         desc=f"Uploading segmentations for {file_path}",
-                                                         total=len(fpaths)):
-                            if f is not None:
-                                await self._upload_segmentations_async(rid,
-                                                                       file_path=f,
-                                                                       name=name,
-                                                                       frame_index=frame_index,
-                                                                       transpose_segmentation=transpose_segmentation)
-                    return rid
+                rid = await self._upload_single_resource_async(
+                    file_path=file_path,
+                    mimetype=mimetype,
+                    anonymize=anonymize,
+                    anonymize_retain_codes=anonymize_retain_codes,
+                    tags=tags,
+                    session=session,
+                    mung_filename=mung_filename,
+                    channel=channel,
+                    modality=modality,
+                    publish=publish,
+                    metadata_file=metadata_file,
+                )
+                if segfiles is not None:
+                    fpaths = segfiles['files']
+                    names = segfiles.get('names', _infinite_gen(None))
+                    if isinstance(names, dict):
+                        names = _infinite_gen(names)
+                    frame_indices = segfiles.get('frame_index', _infinite_gen(None))
+                    for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
+                                                        desc=f"Uploading segmentations for {file_path}",
+                                                        total=len(fpaths)):
+                        if f is not None:
+                            await self._upload_segmentations_async(rid,
+                                                                    file_path=f,
+                                                                    name=name,
+                                                                    frame_index=frame_index,
+                                                                    transpose_segmentation=transpose_segmentation)
+                return rid
 
             tasks = [__upload_single_resource(f, segfiles, metadata_file)
                      for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
@@ -830,6 +829,62 @@ class RootAPIHandler(BaseAPIHandler):
     def _has_status_code(e, status_code: int) -> bool:
         return hasattr(e, 'response') and (e.response is not None) and e.response.status_code == status_code
 
+    async def _async_download_file(self,
+                                   resource_id: str,
+                                   save_path: str,
+                                   session: aiohttp.ClientSession | None = None,
+                                   progress_bar: tqdm | None = None):
+        """
+        Asynchronously download a file from the server.
+
+        Args:
+            resource_id (str): The resource unique id.
+            save_path (str): The path to save the file.
+            session (aiohttp.ClientSession): The aiohttp session to use for the request.
+            progress_bar (tqdm | None): Optional progress bar to update after download completion.
+        """
+        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
+        request_params = {
+            'method': 'GET',
+            'headers': {'accept': 'application/octet-stream'},
+            'url': url
+        }
+        try:
+            data_bytes = await self._run_request_async(request_params, session, 'content')
+            with open(save_path, 'wb') as f:
+                f.write(data_bytes)
+            if progress_bar:
+                progress_bar.update(1)
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource_id})
+            raise e
+
+    def download_multiple_resources(self,
+                                    resource_ids: list[str],
+                                    save_path: list[str] | str
+                                    ) -> None:
+        """
+        Download multiple resources and save them to the specified paths.
+        
+        Args:
+            resource_ids (list[str]): A list of resource unique ids.
+            save_path (list[str] | str): A list of paths to save the files or a directory path.
+        """
+        async def _download_all_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._async_download_file(resource_id, save_path=path, session=session, progress_bar=progress_bar)
+                    for resource_id, path in zip(resource_ids, save_path)
+                ]
+                await asyncio.gather(*tasks)
+
+        if isinstance(save_path, str):
+            save_path = [os.path.join(save_path, r) for r in resource_ids]
+
+        with tqdm(total=len(resource_ids), desc="Downloading resources", unit="file") as progress_bar:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(_download_all_async())
+
     def download_resource_file(self,
                                resource_id: str,
                                save_path: Optional[str] = None,
@@ -988,6 +1043,7 @@ class RootAPIHandler(BaseAPIHandler):
         response = self._run_request(request_params)
         return response.json()['data']
 
+    @deprecated(version='1.7')
     def get_datasetsinfo_by_name(self, dataset_name: str) -> list[dict]:
         request_params = {
             'method': 'GET',
@@ -1081,6 +1137,30 @@ class RootAPIHandler(BaseAPIHandler):
             'url': f'{self.root_url}/projects'
         }
         return self._run_request(request_params).json()['data']
+
+    def get_project_resources(self, project_id: str) -> list[dict]:
+        """
+        Get the resources of a project by its id.
+
+        Args:
+            project_id (str): The project id.
+
+        Returns:
+            list[dict]: The list of resources in the project.
+
+        Raises:
+            ResourceNotFoundError: If the project does not exists.
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/projects/{project_id}/resources'
+        }
+        try:
+            return self._run_request(request_params).json()
+        except HTTPError as e:
+            if e.response is not None and e.response.status_code == 500:
+                raise ResourceNotFoundError('project', {'project_id': project_id})
+            raise e
 
     def create_project(self,
                        name: str,

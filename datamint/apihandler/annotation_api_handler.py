@@ -13,6 +13,9 @@ from requests.exceptions import HTTPError
 from .dto.annotation_dto import CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, AnnotationType
 import pydicom
 import json
+from deprecated import deprecated
+from pathlib import Path
+from tqdm.auto import tqdm
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -267,8 +270,9 @@ class AnnotationAPIHandler(BaseAPIHandler):
             raise NotImplementedError("`name=string` is not supported yet for volume segmentation.")
         if isinstance(name, dict):
             if any(isinstance(k, tuple) for k in name.keys()):
-                raise NotImplementedError("For volume segmentations, `name` must be a dictionary with integer keys only.") 
-                
+                raise NotImplementedError(
+                    "For volume segmentations, `name` must be a dictionary with integer keys only.")
+
         # Prepare file for upload
         if isinstance(file_path, str):
             if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
@@ -1098,6 +1102,29 @@ class AnnotationAPIHandler(BaseAPIHandler):
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
 
+    def get_annotation_by_id(self, annotation_id: str) -> dict:
+        """
+        Get an annotation by its unique id.
+
+        Args:
+            annotation_id (str): The annotation unique id.
+
+        Returns:
+            dict: The annotation information.
+        """
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/annotations/{annotation_id}',
+        }
+
+        try:
+            resp = self._run_request(request_params)
+            return resp.json()
+        except HTTPError as e:
+            _LOGGER.error(f"Error getting annotation by id {annotation_id}: {e}")
+            raise
+
+    @deprecated(reason="Use download_segmentation_file instead")
     def get_segmentation_file(self, resource_id: str, annotation_id: str) -> bytes:
         request_params = {
             'method': 'GET',
@@ -1105,6 +1132,35 @@ class AnnotationAPIHandler(BaseAPIHandler):
         }
 
         resp = self._run_request(request_params)
+        return resp.content
+
+    def download_segmentation_file(self, annotation: str | dict, fpath_out: str | Path | None) -> bytes:
+        """
+        Download the segmentation file for a given resource and annotation.
+
+        Args:
+            annotation (str | dict): The annotation unique id or an annotation object.
+            fpath_out (str | None): (Optional) The file path to save the downloaded segmentation file.
+
+        Returns:
+            bytes: The content of the downloaded segmentation file in bytes format.
+        """
+        if isinstance(annotation, dict):
+            annotation_id = annotation['id']
+            resource_id = annotation['resource_id']
+        else:
+            annotation_id = annotation
+            resource_id = self.get_annotation_by_id(annotation_id)['resource_id']
+
+        request_params = {
+            'method': 'GET',
+            'url': f'{self.root_url}/annotations/{resource_id}/annotations/{annotation_id}/file',
+        }
+
+        resp = self._run_request(request_params)
+        if fpath_out is not None:
+            with open(str(fpath_out), 'wb') as f:
+                f.write(resp.content)
         return resp.content
 
     def set_annotation_status(self,
@@ -1124,3 +1180,69 @@ class AnnotationAPIHandler(BaseAPIHandler):
         }
         resp = self._run_request(request_params)
         self._check_errors_response_json(resp)
+
+
+    async def _async_download_segmentation_file(self,
+                                                annotation: str | dict,
+                                                save_path: str | Path,
+                                                session: aiohttp.ClientSession | None = None,
+                                                progress_bar: tqdm | None = None):
+        """
+        Asynchronously download a segmentation file.
+
+        Args:
+            annotation (str | dict): The annotation unique id or an annotation object.
+            save_path (str | Path): The path to save the file.
+            session (aiohttp.ClientSession): The aiohttp session to use for the request.
+            progress_bar (tqdm | None): Optional progress bar to update after download completion.
+        """
+        if isinstance(annotation, dict):
+            annotation_id = annotation['id']
+            resource_id = annotation['resource_id']
+        else:
+            annotation_id = annotation
+            # TODO: This is inefficient as it requires an extra API call per annotation
+            # Consider passing resource_id separately or caching annotation info
+            resource_id = self.get_annotation_by_id(annotation_id)['resource_id']
+
+        url = f'{self.root_url}/annotations/{resource_id}/annotations/{annotation_id}/file'
+        request_params = {
+            'method': 'GET',
+            'url': url
+        }
+        
+        try:
+            data_bytes = await self._run_request_async(request_params, session, 'content')
+            with open(save_path, 'wb') as f:
+                f.write(data_bytes)
+            if progress_bar:
+                progress_bar.update(1)
+        except ResourceNotFoundError as e:
+            e.set_params('annotation', {'annotation_id': annotation_id})
+            raise e
+
+    def download_multiple_segmentations(self,
+                                        annotations: list[str | dict],
+                                        save_paths: list[str | Path] | str
+                                        ) -> None:
+        """
+        Download multiple segmentation files and save them to the specified paths.
+        
+        Args:
+            annotations (list[str | dict]): A list of annotation unique ids or annotation objects.
+            save_paths (list[str | Path] | str): A list of paths to save the files or a directory path.
+        """
+        async def _download_all_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._async_download_segmentation_file(annotation, save_path=path, session=session, progress_bar=progress_bar)
+                    for annotation, path in zip(annotations, save_paths)
+                ]
+                await asyncio.gather(*tasks)
+
+        if isinstance(save_paths, str):
+            save_paths = [os.path.join(save_paths, f"{ann['id'] if isinstance(ann, dict) else ann}") for ann in annotations]
+
+        with tqdm(total=len(annotations), desc="Downloading segmentations", unit="file") as progress_bar:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(_download_all_async())
