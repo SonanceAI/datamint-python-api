@@ -7,6 +7,7 @@ import numpy as np
 import logging
 from PIL import Image
 import albumentations
+from datamint.dataset.annotation import Annotation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -116,12 +117,12 @@ class DatamintDataset(DatamintBaseDataset):
         if semantic_seg_merge_strategy is not None and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
 
-    def _load_segmentations(self, annotations: list[dict], img_shape) -> tuple[dict[str, list], dict[str, list]]:
+    def _load_segmentations(self, annotations: list[Annotation], img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
         Load segmentations from annotations.
 
         Args:
-            annotations: list of annotations. Each annotation is a dictionary with keys 'type', 'file', 'added_by', 'name', 'index'.
+            annotations: list of Annotation objects
             img_shape: shape of the image (#frames, C, H, W)
 
         Returns:
@@ -142,14 +143,14 @@ class DatamintDataset(DatamintBaseDataset):
 
         # Load segmentation annotations
         for ann in annotations:
-            if ann['type'] != 'segmentation':
+            if ann.type != 'segmentation':
                 continue
-            if 'file' not in ann:
+            if ann.file is None:
                 _LOGGER.warning(f"Segmentation annotation without file in annotations {ann}")
                 continue
-            author = ann['added_by']
+            author = ann.added_by
 
-            segfilepath = ann['file']  # png file
+            segfilepath = ann.file  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
             # FIXME: avoid enforcing resizing the mask
             seg = (Image.open(segfilepath)
@@ -161,11 +162,11 @@ class DatamintDataset(DatamintBaseDataset):
             seg = torch.from_numpy(seg)
             seg = seg == 255   # binary mask
             # map the segmentation label to the code
-            seg_code = self.frame_lcodes['segmentation'][ann['name']]
+            seg_code = self.frame_lcodes['segmentation'][ann.name]
             if self.return_frame_by_frame:
                 frame_index = 0
             else:
-                frame_index = ann['index']
+                frame_index = ann.index
 
             if author not in segmentations.keys():
                 segmentations[author] = [None] * nframes
@@ -476,14 +477,14 @@ class DatamintDataset(DatamintBaseDataset):
         return new_item
 
     def _convert_labels_annotations(self,
-                                    annotations: list[dict],
+                                    annotations: list[Annotation],
                                     num_frames: int = None) -> dict[str, torch.Tensor]:
         """
         Converts the annotations, of the same type and scope, to tensor of shape (num_frames, num_labels)
         for each annotator.
 
         Args:
-            annotations: list of annotations
+            annotations: list of Annotation objects
             num_frames: number of frames in the video
 
         Returns:
@@ -505,14 +506,14 @@ class DatamintDataset(DatamintBaseDataset):
         if len(annotations) == 0:
             return frame_labels_byuser
         for ann in annotations:
-            user_id = ann['added_by']
+            user_id = ann.added_by
 
-            frame_idx = ann.get('index', None)
+            frame_idx = ann.index
 
             if user_id not in frame_labels_byuser.keys():
                 frame_labels_byuser[user_id] = torch.zeros(size=labels_ret_size, dtype=torch.int32)
             labels_onehot_i = frame_labels_byuser[user_id]
-            code = label2code[ann['name']]
+            code = label2code[ann.name]
             if frame_idx is None:
                 labels_onehot_i[code] = 1
             else:
