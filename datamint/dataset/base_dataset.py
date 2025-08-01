@@ -811,7 +811,8 @@ class DatamintBaseDataset:
     def __iter__(self):
         """Iterate over dataset items."""
         for index in self.subset_indices:
-            yield self.__getitem_internal(index)
+            yield self.__getitem__(index)
+            # do not use __getitem_internal__ here, so subclass only need to implement __getitem__
 
     def __len__(self) -> int:
         """Return dataset length."""
@@ -979,6 +980,9 @@ class DatamintBaseDataset:
             _LOGGER.info(f"Downloaded {len(segmentations_to_download)} segmentation files.")
 
         ###################
+        # update metadata
+        self.metainfo['updated_at'] = self._get_datasetinfo()['updated_at']
+        self.metainfo['all_annotations'] = self.all_annotations
         # save updated metadata
         datasetjson_path = os.path.join(self.dataset_dir, 'dataset.json')
         with open(datasetjson_path, 'w') as file:
