@@ -380,6 +380,8 @@ class RootAPIHandler(BaseAPIHandler):
                 return False
             
             ds = pydicom.dcmread(file_path, stop_before_pixels=True)
+            if hasattr(file_path, 'seek'):
+                file_path.seek(0)
             modality = getattr(ds, 'Modality', None)
             
             # Common report modalities
@@ -387,7 +389,7 @@ class RootAPIHandler(BaseAPIHandler):
             
             return modality in report_modalities
         except Exception as e:
-            _LOGGER.debug(f"Error checking if DICOM is a report: {e}")
+            _LOGGER.warning(f"Error checking if DICOM is a report: {e}")
             return False
 
     def upload_resources(self,
