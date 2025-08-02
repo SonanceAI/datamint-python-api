@@ -364,6 +364,32 @@ class RootAPIHandler(BaseAPIHandler):
 
         return result[0]
 
+    @staticmethod
+    def _is_dicom_report(file_path: str | IO) -> bool:
+        """
+        Check if a DICOM file is a report (e.g., Structured Report).
+        
+        Args:
+            file_path: Path to the DICOM file or file-like object.
+            
+        Returns:
+            bool: True if the DICOM file is a report, False otherwise.
+        """
+        try:
+            if not is_dicom(file_path):
+                return False
+            
+            ds = pydicom.dcmread(file_path, stop_before_pixels=True)
+            modality = getattr(ds, 'Modality', None)
+            
+            # Common report modalities
+            report_modalities = {'SR', 'DOC', 'KO', 'PR', 'ESR'}  # SR=Structured Report, DOC=Document, KO=Key Object, PR=Presentation State
+            
+            return modality in report_modalities
+        except Exception as e:
+            _LOGGER.debug(f"Error checking if DICOM is a report: {e}")
+            return False
+
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
                          mimetype: Optional[str] = None,
@@ -379,7 +405,8 @@ class RootAPIHandler(BaseAPIHandler):
                          transpose_segmentation: bool = False,
                          modality: Optional[str] = None,
                          assemble_dicoms: bool = True,
-                         metadata: list[str | dict | None] | dict | str | None = None
+                         metadata: list[str | dict | None] | dict | str | None = None,
+                         discard_dicom_reports: bool = True
                          ) -> list[str | Exception] | str | Exception:
         """
         Upload resources.
@@ -415,6 +442,17 @@ class RootAPIHandler(BaseAPIHandler):
         Returns:
             list[str | Exception]: A list of resource IDs or errors.
         """
+
+        if discard_dicom_reports:
+            if isinstance(files_path, (str, Path)):
+                files_path = [files_path]
+            elif isinstance(files_path, pydicom.dataset.Dataset):
+                files_path = [files_path]
+
+            old_size = len(files_path)
+            files_path = [f for f in files_path if not RootAPIHandler._is_dicom_report(f)]
+            if old_size != len(files_path):
+                _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
 
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
