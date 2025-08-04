@@ -12,11 +12,9 @@ from datamint.apihandler.base_api_handler import DatamintException
 import json
 from aiohttp import FormData
 from typing import IO
-import requests
 import os
 import numpy as np
 from copy import deepcopy
-import logging
 
 # pytest tests --log-cli-level=INFO
 

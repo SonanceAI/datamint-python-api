@@ -239,14 +239,14 @@ class RootAPIHandler(BaseAPIHandler):
                         names = _infinite_gen(names)
                     frame_indices = segfiles.get('frame_index', _infinite_gen(None))
                     for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
-                                                        desc=f"Uploading segmentations for {file_path}",
-                                                        total=len(fpaths)):
+                                                     desc=f"Uploading segmentations for {file_path}",
+                                                     total=len(fpaths)):
                         if f is not None:
                             await self._upload_segmentations_async(rid,
-                                                                    file_path=f,
-                                                                    name=name,
-                                                                    frame_index=frame_index,
-                                                                    transpose_segmentation=transpose_segmentation)
+                                                                   file_path=f,
+                                                                   name=name,
+                                                                   frame_index=frame_index,
+                                                                   transpose_segmentation=transpose_segmentation)
                 return rid
 
             tasks = [__upload_single_resource(f, segfiles, metadata_file)
@@ -368,25 +368,26 @@ class RootAPIHandler(BaseAPIHandler):
     def _is_dicom_report(file_path: str | IO) -> bool:
         """
         Check if a DICOM file is a report (e.g., Structured Report).
-        
+
         Args:
             file_path: Path to the DICOM file or file-like object.
-            
+
         Returns:
             bool: True if the DICOM file is a report, False otherwise.
         """
         try:
             if not is_dicom(file_path):
                 return False
-            
+
             ds = pydicom.dcmread(file_path, stop_before_pixels=True)
             if hasattr(file_path, 'seek'):
                 file_path.seek(0)
             modality = getattr(ds, 'Modality', None)
-            
+
             # Common report modalities
-            report_modalities = {'SR', 'DOC', 'KO', 'PR', 'ESR'}  # SR=Structured Report, DOC=Document, KO=Key Object, PR=Presentation State
-            
+            # SR=Structured Report, DOC=Document, KO=Key Object, PR=Presentation State
+            report_modalities = {'SR', 'DOC', 'KO', 'PR', 'ESR'}
+
             return modality in report_modalities
         except Exception as e:
             _LOGGER.warning(f"Error checking if DICOM is a report: {e}")
@@ -445,21 +446,18 @@ class RootAPIHandler(BaseAPIHandler):
             list[str | Exception]: A list of resource IDs or errors.
         """
 
-        if discard_dicom_reports:
-            if isinstance(files_path, (str, Path)):
-                files_path = [files_path]
-            elif isinstance(files_path, pydicom.dataset.Dataset):
-                files_path = [files_path]
-
-            old_size = len(files_path)
-            files_path = [f for f in files_path if not RootAPIHandler._is_dicom_report(f)]
-            if old_size != len(files_path):
-                _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
-
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
         files_path, is_multiple_resources = RootAPIHandler.__process_files_parameter(files_path)
+
+        ### Discard DICOM reports
+        if discard_dicom_reports:
+            files_path = [f for f in files_path if not RootAPIHandler._is_dicom_report(f)]
+            old_size = len(files_path)
+            if old_size is not None and old_size != len(files_path):
+                _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
+
         if isinstance(metadata, (str, dict)):
             _LOGGER.debug("Converting metadatas to a list")
             metadata = [metadata]
@@ -905,7 +903,7 @@ class RootAPIHandler(BaseAPIHandler):
                                     ) -> None:
         """
         Download multiple resources and save them to the specified paths.
-        
+
         Args:
             resource_ids (list[str]): A list of resource unique ids.
             save_path (list[str] | str): A list of paths to save the files or a directory path.
