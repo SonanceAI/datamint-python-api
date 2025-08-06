@@ -283,10 +283,12 @@ class DatamintBaseDataset:
         """Post-process data after loading metadata."""
         self._check_integrity()
         self._calculate_dataset_length()
-        self._precompute_frame_data()
+        if self.return_frame_by_frame:
+            self._precompute_frame_data()
+        self.subset_indices = list(range(self.dataset_length))
         self._setup_labels()
 
-        if self.discard_without_annotations and self.return_frame_by_frame:
+        if self.discard_without_annotations:
             self._filter_unannotated()
 
     def _calculate_dataset_length(self) -> None:
@@ -301,9 +303,8 @@ class DatamintBaseDataset:
 
     def _precompute_frame_data(self) -> None:
         """Precompute frame-related data for efficient indexing."""
-        self.num_frames_per_resource = self.__compute_num_frames_per_resource()
-        self._cumulative_frames = np.cumsum([0] + self.num_frames_per_resource)
-        self.subset_indices = list(range(self.dataset_length))
+        num_frames_per_resource = self.__compute_num_frames_per_resource()
+        self._cumulative_frames = np.cumsum([0] + num_frames_per_resource)
 
     def _setup_labels(self) -> None:
         """Setup label sets and mappings."""
@@ -989,9 +990,11 @@ class DatamintBaseDataset:
             return Path(resource['file'])
         else:
             ext = guess_extension(resource['mimetype'], strict=False)
+            _LOGGER.debug(f"Guessed extension for resource {resource['id']}|{resource['mimetype']}: {ext}")
             if ext is None:
                 _LOGGER.warning(f"Could not guess extension for resource {resource['id']}.")
                 ext = ''
+                raise Exception
             return Path('images', f"{resource['id']}{ext}")
 
     def _get_annotation_file_path(self, annotation: dict | Annotation) -> Path | None:
