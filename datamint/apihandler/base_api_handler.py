@@ -138,7 +138,7 @@ class BaseAPIHandler:
             if isinstance(data, aiohttp.FormData):  # Check if it's aiohttp.FormData
                 # Handle FormData by extracting fields
                 form_parts = []
-                for options,headers,value in data._fields:
+                for options, headers, value in data._fields:
                     # get the name from options
                     name = options.get('name', 'file')
                     if hasattr(value, 'read'):  # File-like object
@@ -161,7 +161,7 @@ class BaseAPIHandler:
         if session is None:
             async with aiohttp.ClientSession() as s:
                 return await self._run_request_async(request_args, s, data_to_get)
-            
+
         async with self.semaphore:
             try:
                 _LOGGER.debug(f"Running request to {request_args['url']}")
@@ -222,7 +222,7 @@ class BaseAPIHandler:
 
     def _run_request(self,
                      request_args: dict,
-                     session: Session = None):
+                     session: Session | None = None):
         if session is None:
             with Session() as s:
                 return self._run_request(request_args, s)
@@ -281,24 +281,25 @@ class BaseAPIHandler:
     @staticmethod
     def convert_format(bytes_array: bytes,
                        mimetype: str,
-                       file_path: str = None
+                       file_path: str | None = None
                        ) -> pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | bytes | nib_FileBasedImage:
+        """ Convert the bytes array to the appropriate format based on the mimetype."""
         content_io = BytesIO(bytes_array)
-        if mimetype == 'application/dicom':
+        if mimetype.endswith('/dicom'):
             return pydicom.dcmread(content_io)
-        elif mimetype in ('image/jpeg', 'image/png', 'image/tiff'):
+        elif mimetype.startswith('image/'):
             return Image.open(content_io)
-        elif mimetype == 'video/mp4':
+        elif mimetype.startswith('video/'):
             if file_path is None:
-                raise NotImplementedError("file_path=None is not implemented yet for video/mp4.")
+                raise NotImplementedError("file_path=None is not implemented yet for video/* mimetypes.")
             return cv2.VideoCapture(file_path)
         elif mimetype == 'application/json':
             return json.loads(bytes_array)
         elif mimetype == 'application/octet-stream':
             return bytes_array
-        elif mimetype == 'application/nifti':
+        elif mimetype.endswith('nifti'):
             if file_path is None:
-                raise NotImplementedError("file_path=None is not implemented yet for application/nifti.")
+                raise NotImplementedError(f"file_path=None is not implemented yet for {mimetype}.")
             return nib.load(file_path)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")

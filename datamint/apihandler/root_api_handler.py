@@ -8,10 +8,11 @@ import asyncio
 import aiohttp
 from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
 from medimgkit import dicom_utils
+from medimgkit.io_utils import is_io_object
+from medimgkit.format_detection import guess_type, guess_extension
 import pydicom
 from pathlib import Path
 from datetime import date
-import mimetypes
 from PIL import Image
 import cv2
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
@@ -24,13 +25,6 @@ from tqdm.auto import tqdm
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
-
-
-def _is_io_object(obj):
-    """
-    Check if an object is a file-like object.
-    """
-    return callable(getattr(obj, "read", None))
 
 
 def _infinite_gen(x):
@@ -65,7 +59,7 @@ class RootAPIHandler(BaseAPIHandler):
                                             publish: bool = False,
                                             metadata_file: Optional[str | dict] = None,
                                             ) -> str:
-        if _is_io_object(file_path):
+        if is_io_object(file_path):
             name = file_path.name
         else:
             name = file_path
@@ -91,15 +85,12 @@ class RootAPIHandler(BaseAPIHandler):
             name = new_file_path
             _LOGGER.debug(f"New file path: {name}")
 
-        if mimetype is None:
-            mimetype = mimetypes.guess_type(name)[0]
         is_a_dicom_file = None
         if mimetype is None:
-            is_a_dicom_file = is_dicom(name) or is_dicom(file_path)
-            if is_a_dicom_file:
-                mimetype = 'application/dicom'
-            elif name.endswith('.nii') or name.endswith('.nii.gz'):
-                mimetype = 'application/x-nifti'
+            mimetype, _ = guess_type(file_path, use_magic=True)
+            if mimetype == 'application/gzip' and name.lower().endswith('nii.gz'):
+                # Special case for gzipped NIfTI files
+                mimetype = 'image/x.nifti'
 
         filename = os.path.basename(name)
         _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
@@ -451,7 +442,7 @@ class RootAPIHandler(BaseAPIHandler):
 
         files_path, is_multiple_resources = RootAPIHandler.__process_files_parameter(files_path)
 
-        ### Discard DICOM reports
+        # Discard DICOM reports
         if discard_dicom_reports:
             files_path = [f for f in files_path if not RootAPIHandler._is_dicom_report(f)]
             old_size = len(files_path)
@@ -678,7 +669,7 @@ class RootAPIHandler(BaseAPIHandler):
                 is_list = False
                 new_file_path = [file_path]
         # Check if is an IO object
-        elif _is_io_object(file_path):
+        elif is_io_object(file_path):
             is_list = False
             new_file_path = [file_path]
         elif not hasattr(file_path, '__len__'):
@@ -728,8 +719,8 @@ class RootAPIHandler(BaseAPIHandler):
 
     def get_resources(self,
                       status: Optional[ResourceStatus] = None,
-                      from_date: Optional[date] = None,
-                      to_date: Optional[date] = None,
+                      from_date: date | str | None = None,
+                      to_date: date | str | None = None,
                       tags: Optional[Sequence[str]] = None,
                       modality: Optional[str] = None,
                       mimetype: Optional[str] = None,
@@ -747,8 +738,8 @@ class RootAPIHandler(BaseAPIHandler):
 
         Args:
             status (ResourceStatus): The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
-            from_date (Optional[date]): The start date.
-            to_date (Optional[date]): The end date.
+            from_date (date | str | None): The start date.
+            to_date (date | str | None): The end date.
             tags (Optional[list[str]]): The tags to filter the resources.
             modality (Optional[str]): The modality of the resources.
             mimetype (Optional[str]): The mimetype of the resources.
@@ -767,9 +758,15 @@ class RootAPIHandler(BaseAPIHandler):
         """
         # Convert datetime objects to ISO format
         if from_date:
-            from_date = from_date.isoformat()
+            if isinstance(from_date, str):
+                date.fromisoformat(from_date)
+            else:
+                from_date = from_date.isoformat()
         if to_date:
-            to_date = to_date.isoformat()
+            if isinstance(to_date, str):
+                date.fromisoformat(to_date)
+            else:
+                to_date = to_date.isoformat()
 
         # Prepare the payload
         payload = {
@@ -953,6 +950,9 @@ class RootAPIHandler(BaseAPIHandler):
             >>> api_handler.download_resource_file('resource_id', save_path='path/to/dicomfile.dcm')
                 saves the file in the specified path.
         """
+        if save_path is None and add_extension:
+            raise ValueError("If add_extension is True, save_path must be provided.")
+
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
         request_params = {'method': 'GET',
                           'headers': {'accept': 'application/octet-stream'},
@@ -964,7 +964,8 @@ class RootAPIHandler(BaseAPIHandler):
             mimetype = None
             if auto_convert or add_extension:
                 resource_info = self.get_resources_by_ids(resource_id)
-                mimetype = resource_info['mimetype']
+                mimetype = resource_info.get('mimetype', guess_type(response.content)[0])
+                
 
             if auto_convert:
                 try:
@@ -985,15 +986,15 @@ class RootAPIHandler(BaseAPIHandler):
             raise e
 
         if save_path is not None:
-            if add_extension:
-                ext = mimetypes.guess_extension(mimetype)
+            if add_extension and mimetype is not None:
+                ext = guess_extension(mimetype)
                 if ext is not None and not save_path.endswith(ext):
                     save_path += ext
             with open(save_path, 'wb') as f:
                 f.write(response.content)
 
-        if add_extension:
-            return resource_file, save_path
+            if add_extension:
+                return resource_file, save_path
         return resource_file
 
     def download_resource_frame(self,
