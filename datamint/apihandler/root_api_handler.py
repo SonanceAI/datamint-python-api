@@ -6,7 +6,7 @@ from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
-from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom
+from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
 from medimgkit import dicom_utils
 from medimgkit.io_utils import is_io_object
 from medimgkit.format_detection import guess_type, guess_extension
@@ -355,35 +355,6 @@ class RootAPIHandler(BaseAPIHandler):
 
         return result[0]
 
-    @staticmethod
-    def _is_dicom_report(file_path: str | IO) -> bool:
-        """
-        Check if a DICOM file is a report (e.g., Structured Report).
-
-        Args:
-            file_path: Path to the DICOM file or file-like object.
-
-        Returns:
-            bool: True if the DICOM file is a report, False otherwise.
-        """
-        try:
-            if not is_dicom(file_path):
-                return False
-
-            ds = pydicom.dcmread(file_path, stop_before_pixels=True)
-            if hasattr(file_path, 'seek'):
-                file_path.seek(0)
-            modality = getattr(ds, 'Modality', None)
-
-            # Common report modalities
-            # SR=Structured Report, DOC=Document, KO=Key Object, PR=Presentation State
-            report_modalities = {'SR', 'DOC', 'KO', 'PR', 'ESR'}
-
-            return modality in report_modalities
-        except Exception as e:
-            _LOGGER.warning(f"Error checking if DICOM is a report: {e}")
-            return False
-
     def upload_resources(self,
                          files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
                          mimetype: Optional[str] = None,
@@ -444,7 +415,7 @@ class RootAPIHandler(BaseAPIHandler):
 
         # Discard DICOM reports
         if discard_dicom_reports:
-            files_path = [f for f in files_path if not RootAPIHandler._is_dicom_report(f)]
+            files_path = [f for f in files_path if not is_dicom_report(f)]
             old_size = len(files_path)
             if old_size is not None and old_size != len(files_path):
                 _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
@@ -965,7 +936,6 @@ class RootAPIHandler(BaseAPIHandler):
             if auto_convert or add_extension:
                 resource_info = self.get_resources_by_ids(resource_id)
                 mimetype = resource_info.get('mimetype', guess_type(response.content)[0])
-                
 
             if auto_convert:
                 try:

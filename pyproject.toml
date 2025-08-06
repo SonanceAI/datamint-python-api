@@ -40,7 +40,7 @@ matplotlib = "*"
 lightning = "*"
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
-medimgkit = ">=0.2.0"
+medimgkit = ">=0.2.1"
 # For compatibility with the datamintapi package
 datamintapi = "0.0.*"
 # Extra dependencies for docs
