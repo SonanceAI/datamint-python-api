@@ -205,7 +205,7 @@ class TestAPIHandler:
         from builtins import open
 
         def my_open_mock(file, *args, **kwargs):
-            if file.endswith('.dcm'):
+            if str(file).endswith('.dcm'):
                 return to_bytesio(sample_dicom1, file)
             return open(file, *args, **kwargs)
 

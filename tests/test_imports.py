@@ -86,7 +86,7 @@ class TestImports:
 
         # Test IO utils
         try:
-            from medimgkit.io_utils import read_array_normalized
+            from medimgkit.readers import read_array_normalized
             assert read_array_normalized is not None
             _LOGGER.info("Successfully imported io_utils")
         except ImportError as e:
