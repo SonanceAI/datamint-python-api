@@ -9,7 +9,7 @@ import aiohttp
 from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
 from medimgkit import dicom_utils
 from medimgkit.io_utils import is_io_object
-from medimgkit.format_detection import guess_type, guess_extension
+from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
 import pydicom
 from pathlib import Path
 from datetime import date
@@ -87,10 +87,12 @@ class RootAPIHandler(BaseAPIHandler):
 
         is_a_dicom_file = None
         if mimetype is None:
-            mimetype, _ = guess_type(file_path, use_magic=True)
-            if mimetype == 'application/gzip' and name.lower().endswith('nii.gz'):
+            mimetype_list, ext = guess_typez(file_path, use_magic=True)
+            mimetype = mimetype_list[-1]
+            if mimetype == 'application/gzip':
                 # Special case for gzipped NIfTI files
-                mimetype = 'image/x.nifti'
+                if ext == '.nii.gz' or name.lower().endswith('nii.gz'):
+                    mimetype = 'image/x.nifti'
 
         filename = os.path.basename(name)
         _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
@@ -837,9 +839,10 @@ class RootAPIHandler(BaseAPIHandler):
 
     async def _async_download_file(self,
                                    resource_id: str,
-                                   save_path: str,
+                                   save_path: str | Path,
                                    session: aiohttp.ClientSession | None = None,
-                                   progress_bar: tqdm | None = None):
+                                   progress_bar: tqdm | None = None,
+                                   add_extension: bool = False) -> str:
         """
         Asynchronously download a file from the server.
 
@@ -848,6 +851,10 @@ class RootAPIHandler(BaseAPIHandler):
             save_path (str): The path to save the file.
             session (aiohttp.ClientSession): The aiohttp session to use for the request.
             progress_bar (tqdm | None): Optional progress bar to update after download completion.
+            add_extension (bool): Whether to add the appropriate file extension based on content type.
+
+        Returns:
+            str: The actual path where the file was saved (important when add_extension=True).
         """
         url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}/file"
         request_params = {
@@ -855,41 +862,90 @@ class RootAPIHandler(BaseAPIHandler):
             'headers': {'accept': 'application/octet-stream'},
             'url': url
         }
+        save_path = str(save_path)  # Ensure save_path is a string for file operations
         try:
             data_bytes = await self._run_request_async(request_params, session, 'content')
-            with open(save_path, 'wb') as f:
-                f.write(data_bytes)
+
+            final_save_path = save_path
+            if add_extension:
+                # Save to temporary file first to determine mimetype from content
+                temp_path = f"{save_path}.tmp"
+                with open(temp_path, 'wb') as f:
+                    f.write(data_bytes)
+
+                # Determine mimetype from file content
+                mimetype_list, ext = guess_typez(temp_path, use_magic=True)
+                mimetype = mimetype_list[-1]
+
+                # get mimetype from resource info if not detected
+                if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
+                    resource_info = self.get_resources_by_ids(resource_id)
+                    mimetype = resource_info.get('mimetype', mimetype)
+
+                # Generate final path with extension if needed
+                if mimetype is not None and mimetype != DEFAULT_MIME_TYPE:
+                    if ext is None:
+                        ext = guess_extension(mimetype)
+                    if ext is not None and not save_path.endswith(ext):
+                        final_save_path = save_path + ext
+
+                # Move file to final location
+                os.rename(temp_path, final_save_path)
+            else:
+                # Standard save without extension detection
+                with open(final_save_path, 'wb') as f:
+                    f.write(data_bytes)
+
             if progress_bar:
                 progress_bar.update(1)
+
+            return final_save_path
+
         except ResourceNotFoundError as e:
             e.set_params('resource', {'resource_id': resource_id})
             raise e
 
     def download_multiple_resources(self,
                                     resource_ids: list[str],
-                                    save_path: list[str] | str
-                                    ) -> None:
+                                    save_path: list[str] | str,
+                                    add_extension: bool = False,
+                                    ) -> list[str]:
         """
         Download multiple resources and save them to the specified paths.
 
         Args:
             resource_ids (list[str]): A list of resource unique ids.
             save_path (list[str] | str): A list of paths to save the files or a directory path.
+            add_extension (bool): Whether to add the appropriate file extension to the save_path based on the content type.
+
+        Returns:
+            list[str]: A list of paths where the files were saved. Important if `add_extension=True`.
         """
+        if isinstance(resource_ids, str):
+            raise ValueError("resource_ids must be a list of strings.")
+
         async def _download_all_async():
             async with aiohttp.ClientSession() as session:
                 tasks = [
-                    self._async_download_file(resource_id, save_path=path, session=session, progress_bar=progress_bar)
+                    self._async_download_file(
+                        resource_id=resource_id,
+                        save_path=path,
+                        session=session,
+                        progress_bar=progress_bar,
+                        add_extension=add_extension
+                    )
                     for resource_id, path in zip(resource_ids, save_path)
                 ]
-                await asyncio.gather(*tasks)
+                return await asyncio.gather(*tasks)
 
         if isinstance(save_path, str):
             save_path = [os.path.join(save_path, r) for r in resource_ids]
 
         with tqdm(total=len(resource_ids), desc="Downloading resources", unit="file") as progress_bar:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(_download_all_async())
+            final_save_paths = loop.run_until_complete(_download_all_async())
+
+        return final_save_paths
 
     def download_resource_file(self,
                                resource_id: str,
@@ -933,9 +989,14 @@ class RootAPIHandler(BaseAPIHandler):
 
             # Get mimetype if needed for auto_convert or add_extension
             mimetype = None
+            mimetype_list = []
+            ext = None
             if auto_convert or add_extension:
-                resource_info = self.get_resources_by_ids(resource_id)
-                mimetype = resource_info.get('mimetype', guess_type(response.content)[0])
+                mimetype_list, ext = guess_typez(response.content)
+                mimetype = mimetype_list[-1]
+                if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
+                    resource_info = self.get_resources_by_ids(resource_id)
+                    mimetype = resource_info.get('mimetype', None)
 
             if auto_convert:
                 try:
@@ -957,7 +1018,8 @@ class RootAPIHandler(BaseAPIHandler):
 
         if save_path is not None:
             if add_extension and mimetype is not None:
-                ext = guess_extension(mimetype)
+                if ext is None:
+                    ext = guess_extension(mimetype)
                 if ext is not None and not save_path.endswith(ext):
                     save_path += ext
             with open(save_path, 'wb') as f:

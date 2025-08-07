@@ -14,7 +14,7 @@ import cv2
 import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamint import configs
-from functools import wraps
+import gzip
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -298,8 +298,15 @@ class BaseAPIHandler:
         elif mimetype == 'application/octet-stream':
             return bytes_array
         elif mimetype.endswith('nifti'):
-            if file_path is None:
-                raise NotImplementedError(f"file_path=None is not implemented yet for {mimetype}.")
-            return nib.load(file_path)
+            try:
+                return nib.Nifti1Image.from_stream(content_io)
+            except Exception as e:
+                if file_path is not None:
+                    return nib.load(file_path)
+                raise e
+        elif mimetype == 'application/gzip':
+            # let's hope it's a .nii.gz
+            with gzip.open(content_io, 'rb') as f:
+                return nib.Nifti1Image.from_stream(f)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
