@@ -15,10 +15,10 @@ import torch
 from torch import Tensor
 from datamint.apihandler.base_api_handler import DatamintException
 from medimgkit.dicom_utils import is_dicom
-from medimgkit.io_utils import read_array_normalized
+from medimgkit.readers import read_array_normalized
+from medimgkit.format_detection import guess_extension
 from datetime import datetime
 from pathlib import Path
-from mimetypes import guess_extension
 from datamint.dataset.annotation import Annotation
 import cv2
 
@@ -898,8 +898,11 @@ class DatamintBaseDataset:
             new_resources_path = [Path(self.dataset_dir) / r['file'] for r in new_resources]
             new_resources_ids = [r['id'] for r in new_resources]
             _LOGGER.info(f"Downloading {len(new_resources)} new resources...")
-            self.api_handler.download_multiple_resources(new_resources_ids,
-                                                        save_path=new_resources_path)
+            new_res_paths = self.api_handler.download_multiple_resources(new_resources_ids,
+                                                                         save_path=new_resources_path,
+                                                                         add_extension=True)
+            for new_rpath, r in zip(new_res_paths, new_resources):
+                r['file'] = str(Path(new_rpath).relative_to(self.dataset_dir))
             _LOGGER.info(f"Downloaded {len(new_resources)} new resources.")
 
         for r in deleted_resources:
@@ -989,13 +992,13 @@ class DatamintBaseDataset:
         if 'file' in resource and resource['file'] is not None:
             return Path(resource['file'])
         else:
-            ext = guess_extension(resource['mimetype'], strict=False)
-            _LOGGER.debug(f"Guessed extension for resource {resource['id']}|{resource['mimetype']}: {ext}")
-            if ext is None:
-                _LOGGER.warning(f"Could not guess extension for resource {resource['id']}.")
-                ext = ''
-                raise Exception
-            return Path('images', f"{resource['id']}{ext}")
+            # ext = guess_extension(resource['mimetype'])
+            # _LOGGER.debug(f"Guessed extension for resource {resource['id']}|{resource['mimetype']}: {ext}")
+            # if ext is None:
+            #     _LOGGER.warning(f"Could not guess extension for resource {resource['id']}.")
+            #     ext = ''
+            # return Path('images', f"{resource['id']}{ext}")
+            return Path('images', resource['id'])
 
     def _get_annotation_file_path(self, annotation: dict | Annotation) -> Path | None:
         """Get the local file path for an annotation."""

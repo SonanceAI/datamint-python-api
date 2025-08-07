@@ -478,7 +478,7 @@ class DatamintDataset(DatamintBaseDataset):
 
     def _convert_labels_annotations(self,
                                     annotations: list[Annotation],
-                                    num_frames: int = None) -> dict[str, torch.Tensor]:
+                                    num_frames: int | None = None) -> dict[str, torch.Tensor]:
         """
         Converts the annotations, of the same type and scope, to tensor of shape (num_frames, num_labels)
         for each annotator.
