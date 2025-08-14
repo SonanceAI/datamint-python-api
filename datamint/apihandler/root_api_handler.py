@@ -10,7 +10,7 @@ from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dico
 from medimgkit import dicom_utils, standardize_mimetype
 from medimgkit.io_utils import is_io_object
 from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
-from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
+from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME, NIFTI_MIMES
 import pydicom
 from pathlib import Path
 from datetime import date
@@ -89,11 +89,15 @@ class RootAPIHandler(BaseAPIHandler):
         is_a_dicom_file = None
         if mimetype is None:
             mimetype_list, ext = guess_typez(file_path, use_magic=True)
-            mimetype = mimetype_list[-1]
-            if mimetype == 'application/gzip':
-                # Special case for gzipped NIfTI files
+            for mime in mimetype_list:
+                if mime in NIFTI_MIMES:
+                    mimetype = DEFAULT_NIFTI_MIME
+                    break
+            else:
                 if ext == '.nii.gz' or name.lower().endswith('nii.gz'):
                     mimetype = DEFAULT_NIFTI_MIME
+                else:
+                    mimetype = mimetype_list[-1] if mimetype_list else DEFAULT_MIME_TYPE
 
         mimetype = standardize_mimetype(mimetype)
         filename = os.path.basename(name)
