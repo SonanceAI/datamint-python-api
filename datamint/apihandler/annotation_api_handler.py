@@ -16,6 +16,7 @@ import json
 from deprecated import deprecated
 from pathlib import Path
 from tqdm.auto import tqdm
+from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -280,7 +281,7 @@ class AnnotationAPIHandler(BaseAPIHandler):
                 with open(file_path, 'rb') as f:
                     filename = os.path.basename(file_path)
                     form = aiohttp.FormData()
-                    form.add_field('file', f, filename=filename, content_type='application/x-nifti')
+                    form.add_field('file', f, filename=filename, content_type=DEFAULT_NIFTI_MIME)
                     if model_id is not None:
                         form.add_field('model_id', model_id)  # Add model_id if provided
                     if worklist_id is not None:

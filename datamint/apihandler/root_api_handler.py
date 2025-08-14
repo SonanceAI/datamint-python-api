@@ -7,9 +7,10 @@ import logging
 import asyncio
 import aiohttp
 from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
-from medimgkit import dicom_utils
+from medimgkit import dicom_utils, standardize_mimetype
 from medimgkit.io_utils import is_io_object
 from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
+from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
 import pydicom
 from pathlib import Path
 from datetime import date
@@ -92,8 +93,9 @@ class RootAPIHandler(BaseAPIHandler):
             if mimetype == 'application/gzip':
                 # Special case for gzipped NIfTI files
                 if ext == '.nii.gz' or name.lower().endswith('nii.gz'):
-                    mimetype = 'image/x.nifti'
+                    mimetype = DEFAULT_NIFTI_MIME
 
+        mimetype = standardize_mimetype(mimetype)
         filename = os.path.basename(name)
         _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
 
