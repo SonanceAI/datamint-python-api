@@ -35,7 +35,7 @@ def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
     if segmentation_names_path.suffix in ['.yaml', '.yml']:
         with open(segmentation_names_path, 'r') as f:
             metadata = yaml.safe_load(f)
-    elif segmentation_names_path.suffix in ['.csv', '.tsv']:
+    elif segmentation_names_path.suffix in ['.csv', '.tsv', '.txt']:
         df = pd.read_csv(segmentation_names_path,
                          header=None,
                          index_col=0,
@@ -433,7 +433,7 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         required=False,
                         help='Path to a yaml or csv file containing the segmentation names.' +
                         ' If yaml, the file may contain two keys: "segmentation_names" and "class_names".'
-                        ' If csv, the file should contain the following columns:'
+                        ' If csv, the file should be in itk-snap label export format, i.e, it should contain the following columns (with no header):'
                         ' index, r, g, b, ..., name')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
