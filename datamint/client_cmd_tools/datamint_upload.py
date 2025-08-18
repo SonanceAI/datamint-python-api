@@ -5,7 +5,7 @@ from humanize import naturalsize
 import logging
 from pathlib import Path
 import sys
-from medimgkit.dicom_utils import is_dicom
+from medimgkit.dicom_utils import is_dicom, detect_dicomdir, parse_dicomdir_files
 import fnmatch
 from typing import Generator, Optional, Any
 from collections import defaultdict
@@ -124,6 +124,22 @@ def walk_to_depth(path: str | Path,
                   depth: int,
                   exclude_pattern: str | None = None) -> Generator[Path, None, None]:
     path = Path(path)
+    
+    # Check for DICOMDIR first at current directory level
+    dicomdir_path = detect_dicomdir(path)
+    if dicomdir_path is not None:
+        try:
+            _USER_LOGGER.info(f"Found DICOMDIR file at {path}. Using it as authoritative source for file listing.")
+            dicom_files = parse_dicomdir_files(dicomdir_path)
+            # Yield all DICOM files from DICOMDIR and return early
+            for dicom_file in dicom_files:
+                yield dicom_file
+            return
+        except Exception as e:
+            _USER_LOGGER.warning(f"Failed to parse DICOMDIR at {path}: {e}. Falling back to directory scan.")
+            # Continue with regular directory scanning below
+    
+    # Regular directory scanning
     for child in path.iterdir():
         if _is_system_file(child):
             continue
@@ -386,6 +402,46 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
     return metadata_files, filtered_files_path
 
 
+def _get_files_from_path(path: str | Path,
+                         recursive_depth: Optional[int] = None,
+                         exclude_pattern: Optional[str] = None,
+                         include_extensions: Optional[list[str]] = None,
+                         exclude_extensions: Optional[list[str]] = None) -> list[str]:
+    """
+    Get files from a path with recursive DICOMDIR detection and parsing.
+
+    Args:
+        path: Path to search for files
+        recursive_depth: Depth for recursive search (None for no recursion, -1 for unlimited)
+        exclude_pattern: Pattern to exclude directories
+        include_extensions: File extensions to include
+        exclude_extensions: File extensions to exclude
+
+    Returns:
+        List of file paths as strings
+    """
+    path = Path(path)
+
+    if path.is_file():
+        return [str(path)]
+
+    try:
+        if recursive_depth is None:
+            recursive_depth = 0
+        elif recursive_depth < 0:
+            recursive_depth = MAX_RECURSION_LIMIT
+        else:
+            recursive_depth = min(MAX_RECURSION_LIMIT, recursive_depth)
+
+        file_paths = walk_to_depth(path, recursive_depth, exclude_pattern)
+        filtered_files = filter_files(file_paths, include_extensions, exclude_extensions)
+        return [str(f) for f in filtered_files]
+
+    except Exception as e:
+        _LOGGER.error(f'Error in recursive search: {e}')
+        raise
+
+
 def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[str]]]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
@@ -482,18 +538,13 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
             if args.recursive is not None:
                 _USER_LOGGER.warning("Recursive flag ignored. Specified path is a file.")
         else:
-            try:
-                recursive_depth = 0 if args.recursive is None else args.recursive
-                if recursive_depth < 0:
-                    recursive_depth = MAX_RECURSION_LIMIT
-                else:
-                    recursive_depth = min(MAX_RECURSION_LIMIT, recursive_depth)
-                file_path = walk_to_depth(args.path, recursive_depth, args.exclude)
-                file_path = filter_files(file_path, args.include_extensions, args.exclude_extensions)
-                file_path = list(map(str, file_path))  # from Path to str
-            except Exception as e:
-                _LOGGER.error(f'Error in recursive search: {e}')
-                raise e
+            file_path = _get_files_from_path(
+                path=args.path,
+                recursive_depth=args.recursive,
+                exclude_pattern=args.exclude,
+                include_extensions=args.include_extensions,
+                exclude_extensions=args.exclude_extensions
+            )
 
         if len(file_path) == 0:
             raise ValueError(f"No valid file was found in {args.path}")
