@@ -119,9 +119,6 @@ class BaseAPIHandler:
         if method != 'GET':
             curl_command.extend(['-X', method])
 
-        # Add URL
-        curl_command.append(f"'{url}'")
-
         # Add headers
         for key, value in headers.items():
             if key.lower() == 'apikey':
@@ -132,6 +129,8 @@ class BaseAPIHandler:
         if params:
             param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
             url = f"{url}?{param_str}"
+        # Add URL
+        curl_command.append(f"'{url}'")
 
         # Add data
         if data:
