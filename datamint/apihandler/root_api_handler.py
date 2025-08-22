@@ -8,7 +8,7 @@ import asyncio
 import aiohttp
 from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
 from medimgkit import dicom_utils, standardize_mimetype
-from medimgkit.io_utils import is_io_object
+from medimgkit.io_utils import is_io_object, peek
 from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
 from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME, NIFTI_MIMES
 import pydicom
@@ -103,16 +103,22 @@ class RootAPIHandler(BaseAPIHandler):
         filename = os.path.basename(name)
         _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
 
-        if anonymize:
-            if is_a_dicom_file == True or is_dicom(file_path):
-                ds = pydicom.dcmread(file_path)
+        if is_a_dicom_file == True or is_dicom(file_path):
+            if tags is None:
+                tags = []
+            else:
+                tags = list(tags)
+            ds = pydicom.dcmread(file_path)
+            if anonymize:
                 _LOGGER.info(f"Anonymizing {file_path}")
                 ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
-                # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-                f = to_bytesio(ds, name)
-            else:
-                _LOGGER.warning(f"File {file_path} is not a dicom file. Skipping anonymization.")
-                f = _open_io(file_path)
+            lat = dicom_utils.get_dicom_laterality(ds)
+            if lat == 'L':
+                tags.append("left")
+            elif lat == 'R':
+                tags.append("right")
+            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
+            f = to_bytesio(ds, name)
         else:
             f = _open_io(file_path)
 
@@ -437,7 +443,7 @@ class RootAPIHandler(BaseAPIHandler):
         if assemble_dicoms:
             files_path, assembled = self._assemble_dicoms(files_path)
             assemble_dicoms = assembled
-
+        
         if segmentation_files is not None:
             if assemble_dicoms:
                 raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
