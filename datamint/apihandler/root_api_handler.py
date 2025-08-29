@@ -223,7 +223,8 @@ class RootAPIHandler(BaseAPIHandler):
             metadata_files = _infinite_gen(None)
 
         async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: dict[str, list | dict], metadata_file: str | dict | None):
+            async def __upload_single_resource(file_path, segfiles: dict[str, list | dict],
+                                               metadata_file: str | dict | None):
                 rid = await self._upload_single_resource_async(
                     file_path=file_path,
                     mimetype=mimetype,
@@ -433,17 +434,17 @@ class RootAPIHandler(BaseAPIHandler):
             # Create filtered lists maintaining index correspondence
             filtered_files = []
             filtered_metadata = []
-            
+
             for i, f in enumerate(files_path):
                 if not is_dicom_report(f):
                     filtered_files.append(f)
                     if metadata is not None:
                         filtered_metadata.append(metadata[i])
-            
+
             files_path = filtered_files
             if metadata is not None:
                 metadata = filtered_metadata
-                
+
             if old_size is not None and old_size != len(files_path):
                 _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
 
@@ -456,7 +457,7 @@ class RootAPIHandler(BaseAPIHandler):
         if assemble_dicoms:
             files_path, assembled = self._assemble_dicoms(files_path)
             assemble_dicoms = assembled
-        
+
         if segmentation_files is not None:
             if assemble_dicoms:
                 raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
@@ -1123,11 +1124,10 @@ class RootAPIHandler(BaseAPIHandler):
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(_delete_all_resources_async())
-            
-    
+
     async def _delete_resource_async(self,
-                                   resource_id: str,
-                                   session: aiohttp.ClientSession | None = None) -> None:
+                                     resource_id: str,
+                                     session: aiohttp.ClientSession | None = None) -> None:
         """
         Asynchronously delete a resource by its unique id.
 

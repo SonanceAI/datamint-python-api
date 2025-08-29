@@ -1,4 +1,4 @@
-from typing import Optional, Literal, Generator, TypeAlias, Dict, Union, List
+from typing import Optional, Literal, Generator, TypeAlias
 import pydicom.dataset
 from requests import Session
 from requests.exceptions import HTTPError
@@ -15,6 +15,7 @@ import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamint import configs
 import gzip
+from datamint.exceptions import DatamintException
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -27,13 +28,6 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 _PAGE_LIMIT = 5000
-
-
-class DatamintException(Exception):
-    """
-    Base class for exceptions in this module.
-    """
-    pass
 
 
 class ResourceNotFoundError(DatamintException):
@@ -196,10 +190,10 @@ class BaseAPIHandler:
                 _LOGGER.error(f"Error in request to {request_args['url']}: {e}")
             if status_code >= 400 and status_code < 500:
                 try:
-                    _LOGGER.error(f"Error response: {response.text}")
+                    _LOGGER.info(f"Error response: {response.text}")
                     error_data = response.json()
                 except Exception as e2:
-                    _LOGGER.error(f"Error parsing the response. {e2}")
+                    _LOGGER.info(f"Error parsing the response. {e2}")
                 else:
                     if isinstance(error_data['message'], str) and ' not found' in error_data['message'].lower():
                         # Will be caught by the caller and properly initialized:

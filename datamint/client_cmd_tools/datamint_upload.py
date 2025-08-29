@@ -1,3 +1,4 @@
+from datamint.exceptions import DatamintException
 import argparse
 from datamint.apihandler.api_handler import APIHandler
 import os
@@ -16,6 +17,7 @@ from datamint.utils.logging_utils import load_cmdline_logging_config
 import yaml
 from collections.abc import Iterable
 import pandas as pd
+import pydicom.errors
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -124,7 +126,7 @@ def walk_to_depth(path: str | Path,
                   depth: int,
                   exclude_pattern: str | None = None) -> Generator[Path, None, None]:
     path = Path(path)
-    
+
     # Check for DICOMDIR first at current directory level
     dicomdir_path = detect_dicomdir(path)
     if dicomdir_path is not None:
@@ -138,7 +140,7 @@ def walk_to_depth(path: str | Path,
         except Exception as e:
             _USER_LOGGER.warning(f"Failed to parse DICOMDIR at {path}: {e}. Falling back to directory scan.")
             # Continue with regular directory scanning below
-    
+
     # Regular directory scanning
     for child in path.iterdir():
         if _is_system_file(child):
@@ -691,20 +693,28 @@ def main():
 
     has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
-    api_handler = APIHandler()
-    results = api_handler.upload_resources(channel=args.channel,
-                                           files_path=files_path,
-                                           tags=args.tag,
-                                           on_error='skip',
-                                           anonymize=args.retain_pii == False and has_a_dicom_file,
-                                           anonymize_retain_codes=args.retain_attribute,
-                                           mung_filename=args.mungfilename,
-                                           publish=args.publish,
-                                           segmentation_files=segfiles,
-                                           transpose_segmentation=args.transpose_segmentation,
-                                           assemble_dicoms=True,
-                                           metadata=metadata_files
-                                           )
+    try:
+        api_handler = APIHandler(check_connection=True)
+    except DatamintException as e:
+        _USER_LOGGER.error(f'❌ Connection failed: {e}')
+        return
+    try:
+        results = api_handler.upload_resources(channel=args.channel,
+                                               files_path=files_path,
+                                               tags=args.tag,
+                                               on_error='skip',
+                                               anonymize=args.retain_pii == False and has_a_dicom_file,
+                                               anonymize_retain_codes=args.retain_attribute,
+                                               mung_filename=args.mungfilename,
+                                               publish=args.publish,
+                                               segmentation_files=segfiles,
+                                               transpose_segmentation=args.transpose_segmentation,
+                                               assemble_dicoms=True,
+                                               metadata=metadata_files
+                                               )
+    except pydicom.errors.InvalidDicomError as e:
+        _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')
+        return
     _USER_LOGGER.info('Upload finished!')
     _LOGGER.debug(f"Number of results: {len(results)}")
 

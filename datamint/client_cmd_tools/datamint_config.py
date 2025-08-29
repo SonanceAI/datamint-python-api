@@ -125,7 +125,7 @@ def test_connection():
         projects = api.get_projects()
         console.print(f"[success]✅ Connection successful! Found {len(projects)} projects.[/success]")
     except ImportError:
-        console.print("[error]❌ Full API not available. Install with: pip install datamint-python-api[full][/error]")
+        console.print("[error]❌ Full API not available. Install with: pip install datamint[/error]")
     except Exception as e:
         console.print(f"[error]❌ Connection failed: {e}[/error]")
 
