@@ -429,8 +429,21 @@ class RootAPIHandler(BaseAPIHandler):
 
         # Discard DICOM reports
         if discard_dicom_reports:
-            files_path = [f for f in files_path if not is_dicom_report(f)]
             old_size = len(files_path)
+            # Create filtered lists maintaining index correspondence
+            filtered_files = []
+            filtered_metadata = []
+            
+            for i, f in enumerate(files_path):
+                if not is_dicom_report(f):
+                    filtered_files.append(f)
+                    if metadata is not None:
+                        filtered_metadata.append(metadata[i])
+            
+            files_path = filtered_files
+            if metadata is not None:
+                metadata = filtered_metadata
+                
             if old_size is not None and old_size != len(files_path):
                 _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
 
@@ -1099,16 +1112,46 @@ class RootAPIHandler(BaseAPIHandler):
         """
         if isinstance(resource_ids, str):
             resource_ids = [resource_ids]
-        for rid in resource_ids:
-            url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{rid}"
-            request_params = {'method': 'DELETE',
-                              'url': url
-                              }
-            try:
-                self._run_request(request_params)
-            except ResourceNotFoundError as e:
-                e.set_params('resource', {'resource_id': rid})
-                raise e
+
+        async def _delete_all_resources_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._delete_resource_async(resource_id, session)
+                    for resource_id in resource_ids
+                ]
+                await asyncio.gather(*tasks)
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(_delete_all_resources_async())
+            
+    
+    async def _delete_resource_async(self,
+                                   resource_id: str,
+                                   session: aiohttp.ClientSession | None = None) -> None:
+        """
+        Asynchronously delete a resource by its unique id.
+
+        Args:
+            resource_id (str): The resource unique id.
+            session (aiohttp.ClientSession | None): The aiohttp session to use for the request.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exist.
+        """
+        if session is not None and not isinstance(session, aiohttp.ClientSession):
+            raise ValueError("session must be an aiohttp.ClientSession object.")
+
+        url = f"{self._get_endpoint_url(RootAPIHandler.ENDPOINT_RESOURCES)}/{resource_id}"
+        request_params = {
+            'method': 'DELETE',
+            'url': url
+        }
+
+        try:
+            await self._run_request_async(request_params, session)
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource_id})
+            raise e
 
     def get_datasets(self) -> list[dict]:
         """
