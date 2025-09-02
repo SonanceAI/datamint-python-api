@@ -12,8 +12,8 @@ from typing import Generator, Optional, Any
 from collections import defaultdict
 from datamint import __version__ as datamint_version
 from datamint import configs
-from datamint.client_cmd_tools.datamint_config import ask_api_key
-from datamint.utils.logging_utils import load_cmdline_logging_config
+from datamint.utils.logging_utils import load_cmdline_logging_config, ConsoleWrapperHandler
+from rich.console import Console
 import yaml
 from collections.abc import Iterable
 import pandas as pd
@@ -22,6 +22,7 @@ import pydicom.errors
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+CONSOLE: Console
 
 MAX_RECURSION_LIMIT = 1000
 
@@ -29,25 +30,25 @@ MAX_RECURSION_LIMIT = 1000
 def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
     """
     Generate minimal distinguishing paths for files to avoid ambiguity when multiple files have the same name.
-    
+
     Args:
         file_paths: List of file paths
-        
+
     Returns:
         Dictionary mapping full path to minimal distinguishing path
     """
     if not file_paths:
         return {}
-    
+
     # Convert to Path objects and get absolute paths
     paths = [Path(fp).resolve() for fp in file_paths]
     result = {}
-    
+
     # Group files by basename
     basename_groups = defaultdict(list)
     for i, path in enumerate(paths):
         basename_groups[path.name].append((i, path))
-    
+
     for basename, path_list in basename_groups.items():
         if len(path_list) == 1:
             # Only one file with this name, use just the basename
@@ -56,7 +57,7 @@ def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
         else:
             # Multiple files with same name, need to distinguish them
             path_parts_list = [path.parts for _, path in path_list]
-            
+
             # Find the minimum number of parent directories needed to distinguish
             max_depth_needed = 1
             for depth in range(1, max(len(parts) for parts in path_parts_list) + 1):
@@ -67,12 +68,12 @@ def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
                         suffixes.append('/'.join(parts))
                     else:
                         suffixes.append('/'.join(parts[-depth:]))
-                
+
                 if len(set(suffixes)) == len(suffixes):
                     # All suffixes are unique at this depth
                     max_depth_needed = depth
                     break
-            
+
             # Apply the minimal distinguishing paths
             for (idx, path), parts in zip(path_list, path_parts_list):
                 if max_depth_needed >= len(parts):
@@ -80,10 +81,8 @@ def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
                 else:
                     distinguishing_path = '/'.join(parts[-max_depth_needed:])
                 result[file_paths[idx]] = distinguishing_path
-    
+
     return result
-
-
 
 
 def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
@@ -257,6 +256,7 @@ def handle_api_key() -> str | None:
     If it does not exist, it asks the user to input it.
     Then, it asks the user if he wants to save the API key at a proper location in the machine
     """
+    from datamint.client_cmd_tools.datamint_config import ask_api_key
     api_key = configs.get_value(configs.APIKEY_KEY)
     if api_key is None:
         _USER_LOGGER.info("API key not found. Please provide it:")
@@ -581,7 +581,6 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
 
     if args.verbose:
         # Get the console handler and set to debug
-        print(logging.getLogger().handlers)
         logging.getLogger().handlers[0].setLevel(logging.DEBUG)
         logging.getLogger('datamint').setLevel(logging.DEBUG)
         _LOGGER.setLevel(logging.DEBUG)
@@ -720,24 +719,26 @@ def print_results_summary(files_path: list[str],
     failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
     # Get distinguishing paths for better error reporting
     distinguishing_paths = _get_minimal_distinguishing_paths(files_path)
-    
+
     _USER_LOGGER.info(f"\nUpload summary:")
     _USER_LOGGER.info(f"\tTotal files: {len(files_path)}")
     _USER_LOGGER.info(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
     if len(failure_files) > 0:
-        _USER_LOGGER.info(f"\t❌ Failed uploads: {len(failure_files)}")
+        _USER_LOGGER.warning(f"\tFailed uploads: {len(failure_files)}")
         _USER_LOGGER.warning(f"\tFailed files: {[distinguishing_paths[f] for f in failure_files]}")
         _USER_LOGGER.warning(f"\nFailures:")
         for f, r in zip(files_path, results):
             if isinstance(r, Exception):
                 _USER_LOGGER.warning(f"\t{distinguishing_paths[f]}: {r}")
     else:
-        _USER_LOGGER.info(f'✅ All uploads successful!')
+        CONSOLE.print(f'✅ All uploads successful!', style='success')
     return len(failure_files)
 
 
 def main():
+    global CONSOLE
     load_cmdline_logging_config()
+    CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
 
     try:
         args, files_path, segfiles, metadata_files = _parse_args()

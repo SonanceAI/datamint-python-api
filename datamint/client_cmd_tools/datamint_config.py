@@ -1,46 +1,13 @@
 import argparse
 import logging
-import os
-import platform
 from datamint import configs
-from datamint.utils.logging_utils import load_cmdline_logging_config
+from datamint.utils.logging_utils import load_cmdline_logging_config, ConsoleWrapperHandler
 from rich.prompt import Prompt, Confirm
 from rich.console import Console
-from rich.theme import Theme
 
-# Create a custom theme that works well on both dark and blue backgrounds
-def _create_console_theme() -> Theme:
-    """Create a custom Rich theme optimized for cross-platform terminals."""
-    # Detect if we're likely on PowerShell (Windows + PowerShell)
-    is_powershell = (
-        platform.system() == "Windows" and 
-        os.environ.get("PSModulePath") is not None
-    )
-    
-    if is_powershell:
-        # PowerShell blue background - use high contrast colors
-        return Theme({
-            "warning": "bright_yellow",
-            "error": "bright_red on white",
-            "success": "bright_green",
-            "key": "bright_cyan",
-            "accent": "bright_cyan",
-            "title": "bold"
-        })
-    else:
-        # Linux/Unix terminals - standard colors
-        return Theme({
-            "warning": "yellow",
-            "error": "red",
-            "success": "green",
-            "key": "cyan",
-            "accent": "bright_blue",
-            "title": "bold"
-        })
-
-# Create console with custom theme
-console = Console(theme=_create_console_theme())
 _LOGGER = logging.getLogger(__name__)
+_USER_LOGGER = logging.getLogger('user_logger')
+console: Console
 
 
 def configure_default_url():
@@ -170,7 +137,9 @@ def interactive_mode():
 
 def main():
     """Main entry point for the configuration tool."""
+    global console
     load_cmdline_logging_config()
+    console = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
     parser = argparse.ArgumentParser(
         description='🔧 Datamint API Configuration Tool',
         epilog="""

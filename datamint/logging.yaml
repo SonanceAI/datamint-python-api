@@ -7,7 +7,7 @@ handlers:
     level: WARNING
     show_time: False
   console_user:
-    class: datamint.utils.logging_utils.ConditionalRichHandler
+    class: datamint.utils.logging_utils.ConsoleWrapperHandler
     level: INFO
     show_path: False
     show_time: False
