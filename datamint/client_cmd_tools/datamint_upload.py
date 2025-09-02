@@ -26,6 +26,66 @@ _USER_LOGGER = logging.getLogger('user_logger')
 MAX_RECURSION_LIMIT = 1000
 
 
+def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
+    """
+    Generate minimal distinguishing paths for files to avoid ambiguity when multiple files have the same name.
+    
+    Args:
+        file_paths: List of file paths
+        
+    Returns:
+        Dictionary mapping full path to minimal distinguishing path
+    """
+    if not file_paths:
+        return {}
+    
+    # Convert to Path objects and get absolute paths
+    paths = [Path(fp).resolve() for fp in file_paths]
+    result = {}
+    
+    # Group files by basename
+    basename_groups = defaultdict(list)
+    for i, path in enumerate(paths):
+        basename_groups[path.name].append((i, path))
+    
+    for basename, path_list in basename_groups.items():
+        if len(path_list) == 1:
+            # Only one file with this name, use just the basename
+            idx, path = path_list[0]
+            result[file_paths[idx]] = basename
+        else:
+            # Multiple files with same name, need to distinguish them
+            path_parts_list = [path.parts for _, path in path_list]
+            
+            # Find the minimum number of parent directories needed to distinguish
+            max_depth_needed = 1
+            for depth in range(1, max(len(parts) for parts in path_parts_list) + 1):
+                # Check if this depth is enough to distinguish all files
+                suffixes = []
+                for parts in path_parts_list:
+                    if depth >= len(parts):
+                        suffixes.append('/'.join(parts))
+                    else:
+                        suffixes.append('/'.join(parts[-depth:]))
+                
+                if len(set(suffixes)) == len(suffixes):
+                    # All suffixes are unique at this depth
+                    max_depth_needed = depth
+                    break
+            
+            # Apply the minimal distinguishing paths
+            for (idx, path), parts in zip(path_list, path_parts_list):
+                if max_depth_needed >= len(parts):
+                    distinguishing_path = '/'.join(parts)
+                else:
+                    distinguishing_path = '/'.join(parts[-max_depth_needed:])
+                result[file_paths[idx]] = distinguishing_path
+    
+    return result
+
+
+
+
 def _read_segmentation_names(segmentation_names_path: str | Path) -> dict:
     """
     Read a segmentation names file (yaml or csv) and return its content as a dictionary.
@@ -608,12 +668,15 @@ def print_input_summary(files_path: list[str],
     ext_counts = [(ext, count) for ext, count in ext_dict.items()]
     ext_counts.sort(key=lambda x: x[1], reverse=True)
 
+    # Get distinguishing paths for better display
+    distinguishing_paths = _get_minimal_distinguishing_paths(files_path)
+
     _USER_LOGGER.info(f"Number of files to be uploaded: {total_files}")
-    _USER_LOGGER.info(f"\t{files_path[0]}")
+    _USER_LOGGER.info(f"\t{distinguishing_paths[files_path[0]]}")
     if total_files >= 2:
         if total_files >= 3:
             _USER_LOGGER.info("\t(...)")
-        _USER_LOGGER.info(f"\t{files_path[-1]}")
+        _USER_LOGGER.info(f"\t{distinguishing_paths[files_path[-1]]}")
     _USER_LOGGER.info(f"Total size of the upload: {naturalsize(total_size)}")
     _USER_LOGGER.info(f"Number of files per extension:")
     for ext, count in ext_counts:
@@ -655,17 +718,21 @@ def print_results_summary(files_path: list[str],
                           results: list[str | Exception]) -> int:
     # Check for failed uploads
     failure_files = [f for f, r in zip(files_path, results) if isinstance(r, Exception)]
+    # Get distinguishing paths for better error reporting
+    distinguishing_paths = _get_minimal_distinguishing_paths(files_path)
+    
     _USER_LOGGER.info(f"\nUpload summary:")
     _USER_LOGGER.info(f"\tTotal files: {len(files_path)}")
     _USER_LOGGER.info(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
-    _USER_LOGGER.info(f"\tFailed uploads: {len(failure_files)}")
     if len(failure_files) > 0:
-        _USER_LOGGER.warning(f"\tFailed files: {[os.path.basename(f) for f in failure_files]}")
+        _USER_LOGGER.info(f"\t❌ Failed uploads: {len(failure_files)}")
+        _USER_LOGGER.warning(f"\tFailed files: {[distinguishing_paths[f] for f in failure_files]}")
         _USER_LOGGER.warning(f"\nFailures:")
         for f, r in zip(files_path, results):
-            _LOGGER.debug(f"Failure: {f} - {r}")
             if isinstance(r, Exception):
-                _USER_LOGGER.warning(f"\t{os.path.basename(f)}: {r}")
+                _USER_LOGGER.warning(f"\t{distinguishing_paths[f]}: {r}")
+    else:
+        _USER_LOGGER.info(f'✅ All uploads successful!')
     return len(failure_files)
 
 

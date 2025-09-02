@@ -259,30 +259,56 @@ class RootAPIHandler(BaseAPIHandler):
                      for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
-    def _assemble_dicoms(self, files_path: Sequence[str | IO]) -> tuple[Sequence[str | IO], bool]:
+    def _assemble_dicoms(self, files_path: Sequence[str | IO]
+                         ) -> tuple[Sequence[str | IO], bool, Sequence[int]]:
+        """
+        Assembles DICOM files into a single file.
+
+        Args:
+            files_path: The paths to the DICOM files to assemble.
+
+        Returns:
+            A tuple containing:
+                - The paths to the assembled DICOM files.
+                - A boolean indicating whether the assembly was successful.
+                - same length as the output assembled DICOMs, mapping assembled DICOM to original DICOMs.
+        """
         dicoms_files_path = []
         other_files_path = []
-        for f in files_path:
+        dicom_original_idxs = []
+        others_original_idxs = []
+        for i, f in enumerate(files_path):
             if is_dicom(f):
                 dicoms_files_path.append(f)
+                dicom_original_idxs.append(i)
             else:
                 other_files_path.append(f)
+                others_original_idxs.append(i)
 
         orig_len = len(dicoms_files_path)
         if orig_len == 0:
             _LOGGER.debug("No DICOM files found to assemble.")
-            return files_path, False
+            return files_path, False, []
         dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
 
         new_len = len(dicoms_files_path)
         if new_len != orig_len:
             _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
+            mapping_idx = [None] * len(files_path)
             files_path = itertools.chain(dicoms_files_path, other_files_path)
             assembled = True
+            for orig_idx, value in zip(dicom_original_idxs, dicoms_files_path.inverse_mapping_idx):
+                mapping_idx[orig_idx] = value
+            for i, orig_idx in enumerate(others_original_idxs):
+                mapping_idx[orig_idx] = new_len + i
+            # mapping_idx = [[dicom_original_idxs[i] for i in idxlist]
+            #                for idxlist in dicoms_files_path.mapping_idx]
+            # mapping_idx += [[i] for i in others_original_idxs]
         else:
             assembled = False
+            # mapping_idx = [[i] for i in range(len(files_path))]
 
-        return files_path, assembled
+        return files_path, assembled, mapping_idx
 
     def upload_resource(self,
                         file_path: str | IO | pydicom.dataset.Dataset,
@@ -455,8 +481,10 @@ class RootAPIHandler(BaseAPIHandler):
         if metadata is not None and len(metadata) != len(files_path):
             raise ValueError("The number of metadata files must match the number of resources.")
         if assemble_dicoms:
-            files_path, assembled = self._assemble_dicoms(files_path)
+            files_path, assembled, mapping_idx = self._assemble_dicoms(files_path)
             assemble_dicoms = assembled
+        else:
+            mapping_idx = [i for i in range(len(files_path))]
 
         if segmentation_files is not None:
             if assemble_dicoms:
@@ -512,6 +540,10 @@ class RootAPIHandler(BaseAPIHandler):
                 _LOGGER.error(f"Error adding resources to project: {e}")
                 if on_error == 'raise':
                     raise e
+
+        if mapping_idx:
+            _LOGGER.debug(f"Mapping indices for DICOM files: {mapping_idx}")
+            resource_ids = [resource_ids[idx] for idx in mapping_idx]
 
         if is_multiple_resources:
             return resource_ids
@@ -653,7 +685,8 @@ class RootAPIHandler(BaseAPIHandler):
             raise e
 
     @staticmethod
-    def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset) -> tuple[Sequence[str | IO], bool]:
+    def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset
+                                  ) -> tuple[Sequence[str | IO], bool]:
         """
         Process the file_path parameter to ensure it is a list of file paths or IO objects.
         """
