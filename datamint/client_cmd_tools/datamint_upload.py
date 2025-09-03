@@ -27,6 +27,14 @@ CONSOLE: Console
 
 MAX_RECURSION_LIMIT = 1000
 
+# Default extensions to exclude when --include-extensions is not specified
+DEFAULT_EXCLUDED_EXTENSIONS = [
+    '.txt', '.json', '.xml', '.docx', '.doc', '.pdf', '.xlsx', '.xls', '.csv', '.tsv',
+    '.log', '.ini', '.cfg', '.conf', '.yaml', '.yml', '.md', '.rst', '.html', '.htm',
+    '.exe', '.bat', '.sh', '.py', '.js', '.css',
+    '.sql', '.bak', '.tmp', '.temp', '.lock', '.DS_Store', '.gitignore'
+]
+
 
 def _get_minimal_distinguishing_paths(file_paths: list[str]) -> dict[str, str]:
     """
@@ -542,7 +550,8 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         help='File extensions to be considered for uploading. Default: all file extensions.' +
                         ' Example: --include-extensions dcm jpg png')
     parser.add_argument('--exclude-extensions', type=str, nargs='+',
-                        help='File extensions to be excluded from uploading. Default: none.' +
+                        help='File extensions to be excluded from uploading. ' +
+                        'Default: common non-medical file extensions (.txt, .json, .xml, .docx, etc.) when --include-extensions is not specified.' +
                         ' Example: --exclude-extensions txt csv'
                         )
     parser.add_argument('--segmentation_path', type=_is_valid_path_argparse, metavar="FILE",
@@ -593,6 +602,11 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
     # include-extensions and exclude-extensions are mutually exclusive
     if args.include_extensions is not None and args.exclude_extensions is not None:
         raise ValueError("--include-extensions and --exclude-extensions are mutually exclusive.")
+
+    # Apply default excluded extensions if neither include nor exclude extensions are specified
+    if args.include_extensions is None and args.exclude_extensions is None:
+        args.exclude_extensions = DEFAULT_EXCLUDED_EXTENSIONS
+        _LOGGER.debug(f"Applied default excluded extensions: {args.exclude_extensions}")
 
     try:
         if os.path.isfile(args.path):
@@ -770,19 +784,19 @@ def main():
             return
         try:
             results = api_handler.upload_resources(channel=args.channel,
-                                                files_path=files_path,
-                                                tags=args.tag,
-                                                on_error='skip',
-                                                anonymize=args.retain_pii == False and has_a_dicom_file,
-                                                anonymize_retain_codes=args.retain_attribute,
-                                                mung_filename=args.mungfilename,
-                                                publish=args.publish,
-                                                segmentation_files=segfiles,
-                                                transpose_segmentation=args.transpose_segmentation,
-                                                assemble_dicoms=True,
-                                                metadata=metadata_files,
-                                                progress_bar=True
-                                                )
+                                                   files_path=files_path,
+                                                   tags=args.tag,
+                                                   on_error='skip',
+                                                   anonymize=args.retain_pii == False and has_a_dicom_file,
+                                                   anonymize_retain_codes=args.retain_attribute,
+                                                   mung_filename=args.mungfilename,
+                                                   publish=args.publish,
+                                                   segmentation_files=segfiles,
+                                                   transpose_segmentation=args.transpose_segmentation,
+                                                   assemble_dicoms=True,
+                                                   metadata=metadata_files,
+                                                   progress_bar=True
+                                                   )
         except pydicom.errors.InvalidDicomError as e:
             _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')
             return
