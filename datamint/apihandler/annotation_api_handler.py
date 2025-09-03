@@ -995,11 +995,11 @@ class AnnotationAPIHandler(BaseAPIHandler):
 
     def update_annotation_worklist(self,
                                    worklist_id: str,
-                                   frame_labels: list[str] = None,
-                                   image_labels: list[str] = None,
-                                   annotations: list[dict] = None,
-                                   status: Literal['new', 'updating', 'active', 'completed'] = None,
-                                   name: str = None,
+                                   frame_labels: list[str] | None = None,
+                                   image_labels: list[str] | None = None,
+                                   annotations: list[dict] | None = None,
+                                   status: Literal['new', 'updating', 'active', 'completed'] | None = None,
+                                   name: str | None = None,
                                    ):
         """
         Update the status of an annotation worklist.

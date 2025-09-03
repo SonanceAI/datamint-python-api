@@ -22,6 +22,7 @@ import pydicom.errors
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
+logging.getLogger('pydicom').setLevel(logging.ERROR)
 CONSOLE: Console
 
 MAX_RECURSION_LIMIT = 1000
@@ -778,7 +779,8 @@ def main():
                                                segmentation_files=segfiles,
                                                transpose_segmentation=args.transpose_segmentation,
                                                assemble_dicoms=True,
-                                               metadata=metadata_files
+                                               metadata=metadata_files,
+                                               progress_bar=True
                                                )
     except pydicom.errors.InvalidDicomError as e:
         _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')

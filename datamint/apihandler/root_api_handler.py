@@ -6,7 +6,7 @@ from requests.exceptions import HTTPError
 import logging
 import asyncio
 import aiohttp
-from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
+from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report, GeneratorWithLength
 from medimgkit import dicom_utils, standardize_mimetype
 from medimgkit.io_utils import is_io_object, peek
 from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
@@ -185,9 +185,7 @@ class RootAPIHandler(BaseAPIHandler):
             resp_data = await self._run_request_async(request_params, session)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
-            _LOGGER.info(f"Response on uploading {name}: {resp_data}")
-
-            _USER_LOGGER.info(f'"{name}" uploaded')
+            _LOGGER.debug(f"Response on uploading {name}: {resp_data}")
             return resp_data['id']
         except Exception as e:
             if 'name' in locals():
@@ -212,6 +210,7 @@ class RootAPIHandler(BaseAPIHandler):
                                       segmentation_files: Optional[list[dict]] = None,
                                       transpose_segmentation: bool = False,
                                       metadata_files: Optional[list[str | dict | None]] = None,
+                                      progress_bar: tqdm | None = None,
                                       ) -> list[str]:
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
@@ -225,6 +224,8 @@ class RootAPIHandler(BaseAPIHandler):
         async with aiohttp.ClientSession() as session:
             async def __upload_single_resource(file_path, segfiles: dict[str, list | dict],
                                                metadata_file: str | dict | None):
+                name = file_path.name if is_io_object(file_path) else file_path
+                name = os.path.basename(name)
                 rid = await self._upload_single_resource_async(
                     file_path=file_path,
                     mimetype=mimetype,
@@ -238,6 +239,12 @@ class RootAPIHandler(BaseAPIHandler):
                     publish=publish,
                     metadata_file=metadata_file,
                 )
+                if progress_bar:
+                    progress_bar.update(1)
+                    progress_bar.set_postfix(file=name)
+                else:
+                    _USER_LOGGER.info(f'"{name}" uploaded')
+
                 if segfiles is not None:
                     fpaths = segfiles['files']
                     names = segfiles.get('names', _infinite_gen(None))
@@ -295,7 +302,9 @@ class RootAPIHandler(BaseAPIHandler):
         if new_len != orig_len:
             _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
             mapping_idx = [None] * len(files_path)
-            files_path = itertools.chain(dicoms_files_path, other_files_path)
+            
+            files_path = GeneratorWithLength(itertools.chain(dicoms_files_path, other_files_path), 
+                                             length=new_len + len(other_files_path))
             assembled = True
             for orig_idx, value in zip(dicom_original_idxs, dicoms_files_path.inverse_mapping_idx):
                 mapping_idx[orig_idx] = value
@@ -391,7 +400,8 @@ class RootAPIHandler(BaseAPIHandler):
             transpose_segmentation=transpose_segmentation,
             modality=modality,
             assemble_dicoms=assemble_dicoms,
-            metadata=metadata
+            metadata=metadata,
+            progress_bar=False
         )
 
         return result[0]
@@ -412,7 +422,8 @@ class RootAPIHandler(BaseAPIHandler):
                          modality: Optional[str] = None,
                          assemble_dicoms: bool = True,
                          metadata: list[str | dict | None] | dict | str | None = None,
-                         discard_dicom_reports: bool = True
+                         discard_dicom_reports: bool = True,
+                         progress_bar: bool = False
                          ) -> list[str | Exception] | str | Exception:
         """
         Upload resources.
@@ -485,6 +496,11 @@ class RootAPIHandler(BaseAPIHandler):
             assemble_dicoms = assembled
         else:
             mapping_idx = [i for i in range(len(files_path))]
+        n_files = len(files_path)
+
+        if n_files <= 1:
+            # Disable progress bar for single file uploads
+            progress_bar = False
 
         if segmentation_files is not None:
             if assemble_dicoms:
@@ -513,22 +529,32 @@ class RootAPIHandler(BaseAPIHandler):
                             "segmentation_files['names'] must have the same length as segmentation_files['files'].")
 
         loop = asyncio.get_event_loop()
-        task = self._upload_resources_async(files_path=files_path,
-                                            mimetype=mimetype,
-                                            anonymize=anonymize,
-                                            anonymize_retain_codes=anonymize_retain_codes,
-                                            on_error=on_error,
-                                            tags=tags,
-                                            mung_filename=mung_filename,
-                                            channel=channel,
-                                            publish=publish,
-                                            segmentation_files=segmentation_files,
-                                            transpose_segmentation=transpose_segmentation,
-                                            modality=modality,
-                                            metadata_files=metadata,
-                                            )
+        pbar = None
+        try:
+            if progress_bar:
+                pbar = tqdm(total=n_files, desc="Uploading resources", unit="file")
 
-        resource_ids = loop.run_until_complete(task)
+            task = self._upload_resources_async(files_path=files_path,
+                                                mimetype=mimetype,
+                                                anonymize=anonymize,
+                                                anonymize_retain_codes=anonymize_retain_codes,
+                                                on_error=on_error,
+                                                tags=tags,
+                                                mung_filename=mung_filename,
+                                                channel=channel,
+                                                publish=publish,
+                                                segmentation_files=segmentation_files,
+                                                transpose_segmentation=transpose_segmentation,
+                                                modality=modality,
+                                                metadata_files=metadata,
+                                                progress_bar=pbar
+                                                )
+
+            resource_ids = loop.run_until_complete(task)
+        finally:
+            if pbar:
+                pbar.close()
+        
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
 
         if publish_to is not None:
