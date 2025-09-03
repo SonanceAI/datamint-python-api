@@ -747,49 +747,53 @@ def main():
         _USER_LOGGER.error(f'Error validating arguments. {e}')
         sys.exit(1)
 
-    print_input_summary(files_path,
-                        args=args,
-                        segfiles=segfiles,
-                        metadata_files=metadata_files,
-                        include_extensions=args.include_extensions)
+    try:
+        print_input_summary(files_path,
+                            args=args,
+                            segfiles=segfiles,
+                            metadata_files=metadata_files,
+                            include_extensions=args.include_extensions)
 
-    if not args.yes:
-        confirmation = input("Do you want to proceed with the upload? (y/n): ")
-        if confirmation.lower() != "y":
-            _USER_LOGGER.info("Upload cancelled.")
+        if not args.yes:
+            confirmation = input("Do you want to proceed with the upload? (y/n): ")
+            if confirmation.lower() != "y":
+                _USER_LOGGER.info("Upload cancelled.")
+                return
+        #######################################
+
+        has_a_dicom_file = any(is_dicom(f) for f in files_path)
+
+        try:
+            api_handler = APIHandler(check_connection=True)
+        except DatamintException as e:
+            _USER_LOGGER.error(f'❌ Connection failed: {e}')
             return
-    #######################################
+        try:
+            results = api_handler.upload_resources(channel=args.channel,
+                                                files_path=files_path,
+                                                tags=args.tag,
+                                                on_error='skip',
+                                                anonymize=args.retain_pii == False and has_a_dicom_file,
+                                                anonymize_retain_codes=args.retain_attribute,
+                                                mung_filename=args.mungfilename,
+                                                publish=args.publish,
+                                                segmentation_files=segfiles,
+                                                transpose_segmentation=args.transpose_segmentation,
+                                                assemble_dicoms=True,
+                                                metadata=metadata_files,
+                                                progress_bar=True
+                                                )
+        except pydicom.errors.InvalidDicomError as e:
+            _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')
+            return
+        _USER_LOGGER.info('Upload finished!')
+        _LOGGER.debug(f"Number of results: {len(results)}")
 
-    has_a_dicom_file = any(is_dicom(f) for f in files_path)
-
-    try:
-        api_handler = APIHandler(check_connection=True)
-    except DatamintException as e:
-        _USER_LOGGER.error(f'❌ Connection failed: {e}')
-        return
-    try:
-        results = api_handler.upload_resources(channel=args.channel,
-                                               files_path=files_path,
-                                               tags=args.tag,
-                                               on_error='skip',
-                                               anonymize=args.retain_pii == False and has_a_dicom_file,
-                                               anonymize_retain_codes=args.retain_attribute,
-                                               mung_filename=args.mungfilename,
-                                               publish=args.publish,
-                                               segmentation_files=segfiles,
-                                               transpose_segmentation=args.transpose_segmentation,
-                                               assemble_dicoms=True,
-                                               metadata=metadata_files,
-                                               progress_bar=True
-                                               )
-    except pydicom.errors.InvalidDicomError as e:
-        _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')
-        return
-    _USER_LOGGER.info('Upload finished!')
-    _LOGGER.debug(f"Number of results: {len(results)}")
-
-    num_failures = print_results_summary(files_path, results)
-    if num_failures > 0:
+        num_failures = print_results_summary(files_path, results)
+        if num_failures > 0:
+            sys.exit(1)
+    except KeyboardInterrupt:
+        CONSOLE.print("\nUpload cancelled by user.", style='warning')
         sys.exit(1)
 
 
