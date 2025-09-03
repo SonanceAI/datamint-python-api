@@ -310,12 +310,9 @@ class RootAPIHandler(BaseAPIHandler):
                 mapping_idx[orig_idx] = value
             for i, orig_idx in enumerate(others_original_idxs):
                 mapping_idx[orig_idx] = new_len + i
-            # mapping_idx = [[dicom_original_idxs[i] for i in idxlist]
-            #                for idxlist in dicoms_files_path.mapping_idx]
-            # mapping_idx += [[i] for i in others_original_idxs]
         else:
             assembled = False
-            # mapping_idx = [[i] for i in range(len(files_path))]
+            mapping_idx = [i for i in range(len(files_path))]
 
         return files_path, assembled, mapping_idx
 
@@ -649,7 +646,9 @@ class RootAPIHandler(BaseAPIHandler):
         # get the project id by its name
         project = self.get_project_by_name(project_name)
         if 'error' in project:
-            raise ResourceNotFoundError('project', {'project_name': project_name})
+            project = self.get_project_by_id(project_name)
+            if 'error' in project:
+                raise ResourceNotFoundError('project', {'project_name': project_name})
 
         dataset_id = project['dataset_id']
 

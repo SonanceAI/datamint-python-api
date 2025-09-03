@@ -533,6 +533,8 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
     parser.add_argument('--channel', '--name', type=str, required=False,
                         help='Channel name (arbritary) to upload the resources to. \
                             Useful for organizing the resources in the platform.')
+    parser.add_argument('--project', type=str, required=False,
+                        help='Project name to add the uploaded resources to after successful upload.')
     parser.add_argument('--retain-pii', action='store_true', help='Do not anonymize DICOMs')
     parser.add_argument('--retain-attribute', type=_tuple_int_type, action='append',
                         default=[],
@@ -802,6 +804,20 @@ def main():
             return
         _USER_LOGGER.info('Upload finished!')
         _LOGGER.debug(f"Number of results: {len(results)}")
+
+        # Add resources to project if specified
+        if args.project is not None:
+            _USER_LOGGER.info(f"Adding uploaded resources to project '{args.project}'...")
+            try:
+                # Filter successful uploads to get resource IDs
+                successful_resource_ids = [r for r in results if not isinstance(r, Exception)]
+                if successful_resource_ids:
+                    api_handler.add_to_project(project_name=args.project, resource_ids=successful_resource_ids)
+                    _USER_LOGGER.info(f"✅ Successfully added {len(successful_resource_ids)} resources to project '{args.project}'")
+                else:
+                    _USER_LOGGER.warning("No successful uploads to add to project")
+            except Exception as e:
+                _USER_LOGGER.error(f"❌ Failed to add resources to project '{args.project}': {e}")
 
         num_failures = print_results_summary(files_path, results)
         if num_failures > 0:
