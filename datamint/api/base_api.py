@@ -1,9 +1,11 @@
 import logging
-from typing import Any, TypeVar, Generic, Type, Sequence, Generator
+from typing import Any, TypeVar, Generic, Type, Sequence, Generator, Literal
 import httpx
 from dataclasses import dataclass
 from datamint.entities.base_entity import BaseEntity
 from datamint.exceptions import DatamintException, ResourceNotFoundError
+import aiohttp
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,166 @@ class BaseApi:
             logger.error(f"Request error for {method} {endpoint}: {e}")
             raise
 
+    def _generate_curl_command(self, request_args: dict) -> str:
+        """
+        Generate a curl command for debugging purposes.
+
+        Args:
+            request_args (dict): Request arguments dictionary containing method, url, headers, etc.
+
+        Returns:
+            str: Equivalent curl command
+        """
+        method = request_args.get('method', 'GET').upper()
+        url = request_args['url']
+        headers = request_args.get('headers', {})
+        data = request_args.get('json') or request_args.get('data')
+        params = request_args.get('params')
+
+        curl_command = ['curl']
+
+        # Add method if not GET
+        if method != 'GET':
+            curl_command.extend(['-X', method])
+
+        # Add headers
+        for key, value in headers.items():
+            if key.lower() == 'apikey':
+                value = '<YOUR-API-KEY>'  # Mask API key for security
+            curl_command.extend(['-H', f"'{key}: {value}'"])
+
+        # Add query parameters
+        if params:
+            param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
+            url = f"{url}?{param_str}"
+        # Add URL
+        curl_command.append(f"'{url}'")
+
+        # Add data
+        if data:
+            if isinstance(data, aiohttp.FormData):  # Check if it's aiohttp.FormData
+                # Handle FormData by extracting fields
+                form_parts = []
+                for options, headers, value in data._fields:
+                    # get the name from options
+                    name = options.get('name', 'file')
+                    if hasattr(value, 'read'):  # File-like object
+                        filename = getattr(value, 'name', 'file')
+                        form_parts.extend(['-F', f"'{name}=@{filename}'"])
+                    else:
+                        form_parts.extend(['-F', f"'{name}={value}'"])
+                curl_command.extend(form_parts)
+            elif isinstance(data, dict):
+                curl_command.extend(['-d', f"'{json.dumps(data)}'"])
+            else:
+                curl_command.extend(['-d', f"'{data}'"])
+
+        return ' '.join(curl_command)
+
+    @staticmethod
+    def get_status_code(e) -> int:
+        if not hasattr(e, 'response') or e.response is None:
+            return -1
+        return e.response.status_code
+
+    def _check_errors_response(self,
+                               response,
+                               url: str):
+        try:
+            if hasattr(response, 'raise_for_status'):
+                response.raise_for_status()
+        except Exception as e:
+            status_code = BaseApi.get_status_code(e)
+            if status_code >= 500 and status_code < 600:
+                logger.error(f"Error in request to {url}: {e}")
+            if status_code >= 400 and status_code < 500:
+                try:
+                    logger.info(f"Error response: {response.text}")
+                    error_data = response.json()
+                except Exception as e2:
+                    logger.info(f"Error parsing the response. {e2}")
+                else:
+                    if isinstance(error_data['message'], str) and ' not found' in error_data['message'].lower():
+                        # Will be caught by the caller and properly initialized:
+                        raise ResourceNotFoundError('unknown', {})
+
+            raise
+
+    async def _make_request_async(self,
+                                  method: str,
+                                  endpoint: str,
+                                  session: aiohttp.ClientSession | None = None,
+                                  data_to_get: Literal['json', 'text', 'content'] = 'json',
+                                  **kwargs) -> aiohttp.ClientResponse:
+        """Make asynchronous HTTP request with error handling.
+
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE)
+            endpoint: API endpoint path
+            session: Optional aiohttp session. If None, a new one will be created.
+            **kwargs: Additional arguments for the request
+
+        Returns:
+            HTTP response object
+
+        Raises:
+            aiohttp.ClientError: If the request fails
+        """
+        url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+
+        # Prepare headers
+        headers = kwargs.pop('headers', {})
+        if self.config.api_key:
+            headers['apikey'] = self.config.api_key
+
+        # Set timeout
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+
+        async def make_request(client_session: aiohttp.ClientSession) -> aiohttp.ClientResponse | Any:
+            try:
+                # logger.debug(f"Making async {method} request to {url} with headers {headers} and kwargs:\n {kwargs}")
+                try:
+                    logger.debug(f"Running request to {url}")
+                    logger.debug(f'Equivalent curl command: "{self._generate_curl_command({"method": method,
+                                                                                           "url": url,
+                                                                                           "headers": headers,
+                                                                                           **kwargs})}"'
+                                 )
+                except Exception as e:
+                    logger.debug(f"Error generating curl command: {e}")
+                async with client_session.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    timeout=timeout,
+                    **kwargs
+                ) as response:
+                    # Check for HTTP errors
+                    # if response.status >= 400:
+                    #     error_text = await response.text()
+                    #     logger.error(f"HTTP error {response.status} for {method} {endpoint}: {error_text}")
+                    self._check_errors_response(response, url=url)
+
+                    if data_to_get == 'json':
+                        return await response.json()
+                    elif data_to_get == 'text':
+                        return await response.text()
+                    elif data_to_get == 'content':
+                        return await response.read()
+                    else:
+                        raise ValueError("data_to_get must be either 'json', 'text', or 'content'")
+
+                    return response
+            except aiohttp.ClientError as e:
+                logger.error(f"Request error for {method} {endpoint}: {e}")
+                raise
+
+        if session is not None:
+            return await make_request(session)
+        else:
+            async with aiohttp.ClientSession() as temp_session:
+                return await make_request(temp_session)
+
     def _make_request_with_pagination(self,
                                       method: str,
                                       endpoint: str,
@@ -213,10 +375,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
             raise
 
     def _stream_entity_request(self,
-                             method: str,
-                             entity_id: str,
-                             add_path: str = '',
-                             **kwargs):
+                               method: str,
+                               entity_id: str,
+                               add_path: str = '',
+                               **kwargs):
         try:
             add_path = '/'.join(add_path.strip().strip('/').split('/'))
             return self._stream_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
