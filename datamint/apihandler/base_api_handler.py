@@ -15,7 +15,7 @@ import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamint import configs
 import gzip
-from datamint.exceptions import DatamintException
+from datamint.exceptions import DatamintException, ResourceNotFoundError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,33 +28,6 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 _PAGE_LIMIT = 5000
-
-
-class ResourceNotFoundError(DatamintException):
-    """
-    Exception raised when a resource is not found. 
-    For instance, when trying to get a resource by a non-existing id.
-    """
-
-    def __init__(self,
-                 resource_type: str,
-                 params: dict):
-        """ Constructor.
-
-        Args:
-            resource_type (str): A resource type.
-            params (dict): Dict of params identifying the sought resource.
-        """
-        super().__init__()
-        self.resource_type = resource_type
-        self.params = params
-
-    def set_params(self, resource_type: str, params: dict):
-        self.resource_type = resource_type
-        self.params = params
-
-    def __str__(self):
-        return f"Resource '{self.resource_type}' not found for parameters: {self.params}"
 
 
 class BaseAPIHandler:

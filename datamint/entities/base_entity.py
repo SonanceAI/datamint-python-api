@@ -25,13 +25,13 @@ class BaseEntity(BaseModel):
 
     def asdict(self) -> dict[str, Any]:
         """Convert the entity to a dictionary, including unknown fields."""
-        return self.model_dump()
+        return self.model_dump(warnings='none')
 
     def asjson(self) -> str:
         """Convert the entity to a JSON string, including unknown fields."""
-        return self.model_dump_json()
+        return self.model_dump_json(warnings='none')
 
-    def model_post_init(self, __context: Any) -> None:
-        if self.__pydantic_extra__:
-            _LOGGER.warning(f"Unknown fields found in {self.__class__.__name__} "
-                            f"fields: {self.__pydantic_extra__.keys()}. ")
+    # def model_post_init(self, __context: Any) -> None:
+    #     if self.__pydantic_extra__:
+    #         _LOGGER.warning(f"Unknown fields found in {self.__class__.__name__} "
+    #                         f"fields: {self.__pydantic_extra__.keys()}. ")

@@ -1,8 +1,9 @@
 import logging
-from typing import Any, Optional, TypeVar, Generic, Type, Sequence, Generator
+from typing import Any, TypeVar, Generic, Type, Sequence, Generator
 import httpx
 from dataclasses import dataclass
 from datamint.entities.base_entity import BaseEntity
+from datamint.exceptions import DatamintException, ResourceNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -13,9 +14,16 @@ _PAGE_LIMIT = 5000
 
 @dataclass
 class ApiConfig:
-    """Configuration for API client."""
+    """Configuration for API client.
+
+    Attributes:
+        base_url: Base URL for the API.
+        api_key: Optional API key for authentication.
+        timeout: Request timeout in seconds.
+        max_retries: Maximum number of retries for requests.
+    """
     base_url: str
-    api_key: Optional[str] = None
+    api_key: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
 
@@ -23,7 +31,9 @@ class ApiConfig:
 class BaseApi:
     """Base class for all API endpoint handlers."""
 
-    def __init__(self, config: ApiConfig, client: Optional[httpx.Client] = None) -> None:
+    def __init__(self,
+                 config: ApiConfig,
+                 client: httpx.Client | None = None) -> None:
         """Initialize the base API handler.
 
         Args:
@@ -44,6 +54,33 @@ class BaseApi:
             headers=headers,
             timeout=self.config.timeout
         )
+
+    def _stream_request(self, method: str, endpoint: str, **kwargs):
+        """Make streaming HTTP request with error handling.
+
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE)
+            endpoint: API endpoint path
+            **kwargs: Additional arguments for the request
+
+        Returns:
+            HTTP response object configured for streaming
+
+        Raises:
+            httpx.HTTPStatusError: If the request fails
+
+        Example:
+            with api._stream_request('GET', '/large-file') as response:
+                for chunk in response.iter_bytes():
+                    process_chunk(chunk)
+        """
+        url = endpoint.lstrip('/')  # Remove leading slash for httpx
+
+        try:
+            return self.client.stream(method, url, **kwargs)
+        except httpx.RequestError as e:
+            logger.error(f"Request error for streaming {method} {endpoint}: {e}")
+            raise
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Make HTTP request with error handling and retries.
@@ -77,9 +114,23 @@ class BaseApi:
                                       endpoint: str,
                                       return_field: str | None = None,
                                       **kwargs
-                                      ) -> Generator[tuple[httpx.Response, dict | list | str], None, None]:
+                                      ) -> Generator[tuple[httpx.Response, list | dict | str], None, None]:
+        """Make paginated HTTP requests, yielding each page of results.
+
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint path
+            return_field: Optional field name to extract from each item in the response
+            **kwargs: Additional arguments for the request (e.g., params, json)
+
+        Yields:
+            Tuples of (HTTP response, items from the current page `response.json()`, for convenience)
+        """
         offset = 0
-        params = kwargs.get('params', {})
+        params = dict(kwargs.get('params', {}))
+        # Ensure kwargs carries our params reference so mutations below take effect
+        kwargs['params'] = params
+
         while True:
             params['offset'] = offset
             params['limit'] = _PAGE_LIMIT
@@ -87,7 +138,7 @@ class BaseApi:
             response = self._make_request(method=method,
                                           endpoint=endpoint,
                                           **kwargs)
-            items = self._convert_response(response.json(), return_field=return_field)
+            items = self._convert_array_response(response.json(), return_field=return_field)
             yield response, items
 
             if len(items) < _PAGE_LIMIT:
@@ -95,10 +146,18 @@ class BaseApi:
 
             offset += _PAGE_LIMIT
 
-    def _convert_response(self,
-                          data: dict | list,
-                          return_field: str | None = None) -> list | dict | str:
+    def _convert_array_response(self,
+                                data: dict | list,
+                                return_field: str | None = None) -> list | dict | str:
+        """Normalize array-like responses into a list when possible.
 
+        Args:
+            data: Parsed JSON response.
+            return_field: Preferred top-level field to extract when present.
+
+        Returns:
+            A list of items when identifiable, otherwise the original data.
+        """
         if isinstance(data, list):
             items = data
         else:
@@ -127,7 +186,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
     def __init__(self, config: ApiConfig,
                  entity_class: Type[T],
                  endpoint_base: str,
-                 client: Optional[httpx.Client] = None) -> None:
+                 client: httpx.Client | None = None) -> None:
         """Initialize the entity API handler.
 
         Args:
@@ -140,14 +199,40 @@ class EntityBaseApi(BaseApi, Generic[T]):
         self.entity_class = entity_class
         self.endpoint_base = endpoint_base.strip('/')
 
+    def _make_entity_request(self,
+                             method: str,
+                             entity_id: str,
+                             add_path: str = '',
+                             **kwargs) -> httpx.Response:
+        try:
+            add_path = '/'.join(add_path.strip().strip('/').split('/'))
+            return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+            raise
+
+    def _stream_entity_request(self,
+                             method: str,
+                             entity_id: str,
+                             add_path: str = '',
+                             **kwargs):
+        try:
+            add_path = '/'.join(add_path.strip().strip('/').split('/'))
+            return self._stream_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+            raise
+
     def get_list(self, **kwargs) -> Sequence[T]:
         """Get entities with optional filtering.
 
         Returns:
-            List of entity instances
+            List of entity instances.
 
         Raises:
-            httpx.HTTPStatusError: If the request fails
+            httpx.HTTPStatusError: If the request fails.
         """
         params = dict(kwargs)
 
@@ -156,15 +241,11 @@ class EntityBaseApi(BaseApi, Generic[T]):
             if params[k] is None:
                 del params[k]
 
-        # response = self._make_request('GET', f'/{self.endpoint_base}',
-        #                               params=params)
-        # items = self._convert_response(response.json())
         items_gen = self._make_request_with_pagination('GET', f'/{self.endpoint_base}',
-                                                   return_field=self.endpoint_base,
-                                                   params=params)
-        
+                                                       return_field=self.endpoint_base,
+                                                       params=params)
 
-        return [self.entity_class(**item) for resp,items in items_gen for item in items]
+        return [self.entity_class(**item) for resp, items in items_gen for item in items]
 
     def get_all(self) -> Sequence[T]:
         """Get all entities with optional pagination and filtering.
@@ -181,58 +262,70 @@ class EntityBaseApi(BaseApi, Generic[T]):
         """Get a specific entity by its ID.
 
         Args:
-            entity_id: Unique identifier for the entity
+            entity_id: Unique identifier for the entity.
 
         Returns:
-            Entity instance
+            Entity instance.
 
         Raises:
-            httpx.HTTPStatusError: If the entity is not found or request fails
+            httpx.HTTPStatusError: If the entity is not found or request fails.
         """
-        response = self._make_request('GET', f'/{self.endpoint_base}/{entity_id}')
+        response = self._make_entity_request('GET', entity_id)
         return self.entity_class(**response.json())
 
-    def create(self, entity_data: dict[str, Any]) -> T:
+    def _create(self, entity_data: dict[str, Any]) -> str:
         """Create a new entity.
 
         Args:
-            entity_data: Dictionary containing entity data for creation
+            entity_data: Dictionary containing entity data for creation.
 
         Returns:
-            Created entity instance
+            The id of the created entity.
 
         Raises:
-            httpx.HTTPStatusError: If creation fails
+            httpx.HTTPStatusError: If creation fails.
         """
         response = self._make_request('POST', f'/{self.endpoint_base}', json=entity_data)
-        return self.entity_class(**response.json())
+        respdata = response.json()
+        if isinstance(respdata, str):
+            return respdata
+
+        return respdata.get('id')
 
     def update(self, entity_id: str, entity_data: dict[str, Any]) -> T:
         """Update an existing entity.
 
         Args:
-            entity_id: Unique identifier for the entity
-            entity_data: Dictionary containing updated entity data
+            entity_id: Unique identifier for the entity.
+            entity_data: Dictionary containing updated entity data.
 
         Returns:
-            Updated entity instance
+            Updated entity instance.
 
         Raises:
-            httpx.HTTPStatusError: If update fails or entity not found
+            httpx.HTTPStatusError: If update fails or entity not found.
         """
-        response = self._make_request('PUT', f'/{self.endpoint_base}/{entity_id}', json=entity_data)
+        response = self._make_entity_request('PUT', entity_id, json=entity_data)
         return self.entity_class(**response.json())
 
     def delete(self, entity_id: str) -> None:
         """Delete an entity by its ID.
 
         Args:
-            entity_id: Unique identifier for the entity to delete
+            entity_id: Unique identifier for the entity to delete.
 
         Raises:
             httpx.HTTPStatusError: If deletion fails or entity not found
         """
-        self._make_request('DELETE', f'/{self.endpoint_base}/{entity_id}')
+        self._make_entity_request('DELETE', entity_id)
+
+    def _get_child_entities(self,
+                            parent_entity: BaseEntity | str,
+                            child_entity_name: str) -> httpx.Response:
+        entid = parent_entity if isinstance(parent_entity, str) else parent_entity.id
+        # response = self._make_request('GET', f'/{self.endpoint_base}/{entid}/{child_entity_name}')
+        response = self._make_entity_request('GET', entid, add_path=child_entity_name)
+        return response
 
     # def bulk_create(self, entities_data: list[dict[str, Any]]) -> list[T]:
     #     """Create multiple entities in a single request.
