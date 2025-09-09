@@ -13,6 +13,7 @@ import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from io import BytesIO
 import gzip
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -390,6 +391,7 @@ class BaseApi:
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 
+
 class EntityBaseApi(BaseApi, Generic[T]):
     """Base API handler for entity-related endpoints with CRUD operations.
 
@@ -431,6 +433,24 @@ class EntityBaseApi(BaseApi, Generic[T]):
             return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
+                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+            raise
+
+    async def _make_entity_request_async(self,
+                                         method: str,
+                                         entity_id: str | BaseEntity,
+                                         add_path: str = '',
+                                         session: aiohttp.ClientSession | None = None,
+                                         **kwargs) -> aiohttp.ClientResponse:
+        try:
+            entity_id = self._entid(entity_id)
+            add_path = '/'.join(add_path.strip().strip('/').split('/'))
+            return await self._make_request_async(method,
+                                                  f'/{self.endpoint_base}/{entity_id}/{add_path}',
+                                                  session=session,
+                                                  **kwargs)
+        except aiohttp.ClientResponseError as e:
+            if e.status == 404:
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
@@ -562,8 +582,41 @@ class EntityBaseApi(BaseApi, Generic[T]):
         response = self._make_entity_request('PUT', entity_id, json=entity_data)
         return self.entity_class(**response.json())
 
-    def delete(self, entity_id: str) -> None:
-        """Delete an entity by its ID.
+    def delete(self, entity: str | BaseEntity) -> None:
+        """Delete an entity.
+
+        Args:
+            entity: Unique identifier for the entity to delete or the entity instance itself.
+
+        Raises:
+            httpx.HTTPStatusError: If deletion fails or entity not found
+        """
+        self._make_entity_request('DELETE', entity)
+
+    def bulk_delete(self, entities: Sequence[str | BaseEntity]) -> None:
+        """Delete multiple entities.
+
+        Args:
+            entities: Sequence of unique identifiers for the entities to delete or the entity instances themselves.
+
+        Raises:
+            httpx.HTTPStatusError: If deletion fails or any entity not found
+        """
+        async def _delete_all_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._delete_async(entity, session)
+                    for entity in entities
+                ]
+                await asyncio.gather(*tasks)
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(_delete_all_async())
+
+    async def _delete_async(self,
+                            entity_id: str | BaseEntity,
+                            session: aiohttp.ClientSession | None = None) -> None:
+        """Asynchronously delete an entity by its ID.
 
         Args:
             entity_id: Unique identifier for the entity to delete.
@@ -571,14 +624,14 @@ class EntityBaseApi(BaseApi, Generic[T]):
         Raises:
             httpx.HTTPStatusError: If deletion fails or entity not found
         """
-        self._make_entity_request('DELETE', entity_id)
+        await self._make_entity_request_async('DELETE', entity_id,
+                                              session=session)
 
     def _get_child_entities(self,
                             parent_entity: BaseEntity | str,
                             child_entity_name: str) -> httpx.Response:
-        entid = parent_entity if isinstance(parent_entity, str) else parent_entity.id
-        # response = self._make_request('GET', f'/{self.endpoint_base}/{entid}/{child_entity_name}')
-        response = self._make_entity_request('GET', entid, add_path=child_entity_name)
+        response = self._make_entity_request('GET', parent_entity,
+                                             add_path=child_entity_name)
         return response
 
     # def bulk_create(self, entities_data: list[dict[str, Any]]) -> list[T]:
