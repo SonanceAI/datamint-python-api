@@ -19,12 +19,12 @@ class ApiConfig:
     """Configuration for API client.
 
     Attributes:
-        base_url: Base URL for the API.
+        server_url: Base URL for the API.
         api_key: Optional API key for authentication.
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for requests.
     """
-    base_url: str
+    server_url: str
     api_key: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
@@ -47,12 +47,12 @@ class BaseApi:
 
     def _create_client(self) -> httpx.Client:
         """Create and configure HTTP client with authentication and timeouts."""
-        headers = {"Content-Type": "application/json"}
+        headers = None
         if self.config.api_key:
-            headers["apikey"] = self.config.api_key
+            headers = {"apikey": self.config.api_key}
 
         return httpx.Client(
-            base_url=self.config.base_url,
+            base_url=self.config.server_url,
             headers=headers,
             timeout=self.config.timeout
         )
@@ -101,6 +101,11 @@ class BaseApi:
         url = endpoint.lstrip('/')  # Remove leading slash for httpx
 
         try:
+            curl_command = self._generate_curl_command({"method": method,
+                                                        "url": url,
+                                                        "headers": self.client.headers,
+                                                        **kwargs})
+            logger.debug(f'Equivalent curl command: "{curl_command}"')
             response = self.client.request(method, url, **kwargs)
             response.raise_for_status()
             return response
@@ -201,7 +206,7 @@ class BaseApi:
                                   endpoint: str,
                                   session: aiohttp.ClientSession | None = None,
                                   data_to_get: Literal['json', 'text', 'content'] = 'json',
-                                  **kwargs) -> aiohttp.ClientResponse:
+                                  **kwargs):
         """Make asynchronous HTTP request with error handling.
 
         Args:
@@ -216,7 +221,7 @@ class BaseApi:
         Raises:
             aiohttp.ClientError: If the request fails
         """
-        url = f"{self.config.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+        url = f"{self.config.server_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
         # Prepare headers
         headers = kwargs.pop('headers', {})
@@ -260,7 +265,6 @@ class BaseApi:
                     else:
                         raise ValueError("data_to_get must be either 'json', 'text', or 'content'")
 
-                    return response
             except aiohttp.ClientError as e:
                 logger.error(f"Request error for {method} {endpoint}: {e}")
                 raise
@@ -275,6 +279,7 @@ class BaseApi:
                                       method: str,
                                       endpoint: str,
                                       return_field: str | None = None,
+                                      limit: int | None = None,
                                       **kwargs
                                       ) -> Generator[tuple[httpx.Response, list | dict | str], None, None]:
         """Make paginated HTTP requests, yielding each page of results.
@@ -283,30 +288,50 @@ class BaseApi:
             method: HTTP method (GET, POST, etc.)
             endpoint: API endpoint path
             return_field: Optional field name to extract from each item in the response
+            limit: Optional maximum number of items to retrieve
             **kwargs: Additional arguments for the request (e.g., params, json)
 
         Yields:
             Tuples of (HTTP response, items from the current page `response.json()`, for convenience)
         """
         offset = 0
+        total_fetched = 0
         params = dict(kwargs.get('params', {}))
         # Ensure kwargs carries our params reference so mutations below take effect
         kwargs['params'] = params
 
         while True:
+            if limit is not None and total_fetched >= limit:
+                break
+
+            page_limit = _PAGE_LIMIT
+            if limit is not None:
+                remaining = limit - total_fetched
+                page_limit = min(_PAGE_LIMIT, remaining)
+
             params['offset'] = offset
-            params['limit'] = _PAGE_LIMIT
+            params['limit'] = page_limit
 
             response = self._make_request(method=method,
                                           endpoint=endpoint,
                                           **kwargs)
             items = self._convert_array_response(response.json(), return_field=return_field)
-            yield response, items
+
+            if not items:
+                break
+
+            items_to_yield = items
+            if limit is not None:
+                # This ensures we don't yield more than the limit if the API returns more than requested in the last page
+                items_to_yield = items[:limit - total_fetched]
+
+            yield response, items_to_yield
+            total_fetched += len(items_to_yield)
 
             if len(items) < _PAGE_LIMIT:
                 break
 
-            offset += _PAGE_LIMIT
+            offset += len(items)
 
     def _convert_array_response(self,
                                 data: dict | list,
@@ -387,7 +412,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
-    def get_list(self, **kwargs) -> Sequence[T]:
+    def get_list(self, limit: int | None = None, **kwargs) -> Sequence[T]:
         """Get entities with optional filtering.
 
         Returns:
@@ -405,11 +430,16 @@ class EntityBaseApi(BaseApi, Generic[T]):
 
         items_gen = self._make_request_with_pagination('GET', f'/{self.endpoint_base}',
                                                        return_field=self.endpoint_base,
+                                                       limit=limit,
                                                        params=params)
 
-        return [self.entity_class(**item) for resp, items in items_gen for item in items]
+        all_items = []
+        for resp, items in items_gen:
+            all_items.extend(items)
 
-    def get_all(self) -> Sequence[T]:
+        return [self.entity_class(**item) for item in all_items]
+
+    def get_all(self, limit: int | None = None) -> Sequence[T]:
         """Get all entities with optional pagination and filtering.
 
         Returns:
@@ -418,7 +448,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
-        return self.get_list()
+        return self.get_list(limit=limit)
 
     def get_by_id(self, entity_id: str) -> T:
         """Get a specific entity by its ID.
@@ -435,7 +465,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
         response = self._make_entity_request('GET', entity_id)
         return self.entity_class(**response.json())
 
-    def _create(self, entity_data: dict[str, Any]) -> str:
+    def _create(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
         """Create a new entity.
 
         Args:
@@ -451,8 +481,35 @@ class EntityBaseApi(BaseApi, Generic[T]):
         respdata = response.json()
         if isinstance(respdata, str):
             return respdata
+        if isinstance(respdata, list):
+            return respdata
+        if isinstance(respdata, dict):
+            return respdata.get('id')
+        return respdata
 
-        return respdata.get('id')
+    async def _create_async(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
+        """Create a new entity.
+
+        Args:
+            entity_data: Dictionary containing entity data for creation.
+
+        Returns:
+            The id of the created entity.
+
+        Raises:
+            httpx.HTTPStatusError: If creation fails.
+        """
+        respdata = await self._make_request_async('POST',
+                                                  f'/{self.endpoint_base}',
+                                                  data_to_get='json',
+                                                  json=entity_data)
+        if isinstance(respdata, str):
+            return respdata
+        if isinstance(respdata, list):
+            return respdata
+        if isinstance(respdata, dict):
+            return respdata.get('id')
+        return respdata
 
     def update(self, entity_id: str, entity_data: dict[str, Any]) -> T:
         """Update an existing entity.

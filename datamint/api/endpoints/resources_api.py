@@ -74,6 +74,7 @@ class ResourcesApi(EntityBaseApi[Resource]):
                  channel: Optional[str] = None,
                  project_name: str | list[str] | None = None,
                  filename: Optional[str] = None,
+                 limit: int | None = None
                  ) -> Sequence[Resource]:
         """Get resources with optional filtering.
         Args:
@@ -131,7 +132,7 @@ class ResourcesApi(EntityBaseApi[Resource]):
             }
             payload['tags'] = json.dumps(tags_filter)
 
-        return super().get_list(**payload)
+        return super().get_list(limit=limit,**payload)
 
     def get_annotations(self, resource_id: str | Resource) -> Sequence[Annotation]:
         """Get annotations for a specific resource.
@@ -430,12 +431,13 @@ class ResourcesApi(EntityBaseApi[Resource]):
                                                      desc=f"Uploading segmentations for {file_path}",
                                                      total=len(fpaths)):
                         if f is not None:
-                            raise NotImplementedError("Uploading segmentations is not implemented yet.")
-                            # await self._upload_segmentations_async(rid,
-                            #                                        file_path=f,
-                            #                                        name=name,
-                            #                                        frame_index=frame_index,
-                            #                                        transpose_segmentation=transpose_segmentation)
+                            await self.annotations_api._upload_segmentations_async(
+                                rid,
+                                file_path=f,
+                                name=name,
+                                frame_index=frame_index,
+                                transpose_segmentation=transpose_segmentation
+                            )
                 return rid
 
             tasks = [__upload_single_resource(f, segfiles, metadata_file)

@@ -152,7 +152,7 @@ class CreateAnnotationDto:
                  type: AnnotationType | str,
                  identifier: str,
                  scope: str,
-                 annotation_worklist_id: str,
+                 annotation_worklist_id: str | None = None,
                  value=None,
                  imported_from: str | None = None,
                  import_author: str | None = None,

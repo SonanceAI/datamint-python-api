@@ -7,7 +7,7 @@ records returned by the DataMint API.
 
 from typing import Any
 import logging
-from .base_entity import BaseEntity
+from .base_entity import BaseEntity, MISSING_FIELD
 
 logger = logging.getLogger(__name__)
 
@@ -49,31 +49,30 @@ class Annotation(BaseEntity):
     id: str
     identifier: str
     scope: str
-    frame_index: int
+    frame_index: int | None
     annotation_type: str
-    text_value: str
-    numeric_value: float | int
-    units: str
-    geometry: list
+    text_value: str | None
+    numeric_value: float | int | None
+    units: str | None
+    geometry: list | dict | None
     created_at: str  # ISO timestamp string
     created_by: str
-    annotation_worklist_id: str
+    annotation_worklist_id: str | None
     status: str
-    approved_at: str  # ISO timestamp string
-    approved_by: str
+    approved_at: str | None  # ISO timestamp string
+    approved_by: str | None
     resource_id: str
-    associated_file: str
+    associated_file: str | None
     deleted: bool
-    deleted_at: str  # ISO timestamp string
-    deleted_by: str
-    created_by_model: str
-    old_geometry: Any
-    set_name: str
-    resource_filename: str
-    resource_modality: str
-    annotation_worklist_name: str
-    user_info: dict
-    values: Any
+    deleted_at: str | None  # ISO timestamp string
+    deleted_by: str | None
+    created_by_model: str | None
+    set_name: str | None
+    resource_filename: str | None
+    resource_modality: str | None
+    annotation_worklist_name: str | None
+    user_info: dict | None
+    values: list | None = MISSING_FIELD
 
     # TODO: Consider constraining some fields with Literal types and parsing timestamps to datetime
     #       once the API schema is stable, to provide stronger validation.
