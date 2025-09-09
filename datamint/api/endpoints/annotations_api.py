@@ -2,7 +2,7 @@ from typing import Any, Sequence, Literal, BinaryIO, Generator, IO
 import httpx
 from datetime import date
 import logging
-from ..base_api import EntityBaseApi, ApiConfig
+from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
 from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto
@@ -22,7 +22,7 @@ _USER_LOGGER = logging.getLogger('user_logger')
 MAX_NUMBER_DISTINCT_COLORS = 2048  # Maximum number of distinct colors in a segmentation image
 
 
-class AnnotationsApi(EntityBaseApi[Annotation]):
+class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotation]):
     """API handler for annotation-related endpoints."""
 
     def __init__(self, config: ApiConfig, client: httpx.Client | None = None) -> None:

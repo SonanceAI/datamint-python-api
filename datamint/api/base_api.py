@@ -1,8 +1,7 @@
 import logging
-from typing import Any, TypeVar, Generic, Type, Sequence, Generator, Literal
+from typing import Any,Generator
 import httpx
 from dataclasses import dataclass
-from datamint.entities.base_entity import BaseEntity
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 import aiohttp
 import json
@@ -13,12 +12,10 @@ import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from io import BytesIO
 import gzip
-import asyncio
 
 logger = logging.getLogger(__name__)
 
 # Generic type for entities
-T = TypeVar('T', bound=BaseEntity)
 _PAGE_LIMIT = 5000
 
 
@@ -185,6 +182,10 @@ class BaseApi:
         if not hasattr(e, 'response') or e.response is None:
             return -1
         return e.response.status_code
+    
+    @staticmethod
+    def _has_status_code(e, status_code: int) -> bool:
+        return BaseApi.get_status_code(e) == status_code
 
     def _check_errors_response(self,
                                response,
@@ -391,281 +392,3 @@ class BaseApi:
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 
-
-class EntityBaseApi(BaseApi, Generic[T]):
-    """Base API handler for entity-related endpoints with CRUD operations.
-
-    This class provides a template for API handlers that work with specific
-    entity types, offering common CRUD operations with proper typing.
-
-    Type Parameters:
-        T: The entity type this API handler manages (must extend BaseEntity)
-    """
-
-    def __init__(self, config: ApiConfig,
-                 entity_class: Type[T],
-                 endpoint_base: str,
-                 client: httpx.Client | None = None) -> None:
-        """Initialize the entity API handler.
-
-        Args:
-            config: API configuration containing base URL, API key, etc.
-            entity_class: The entity class this handler manages
-            endpoint_base: Base endpoint path (e.g., 'projects', 'annotations')
-            client: Optional HTTP client instance. If None, a new one will be created.
-        """
-        super().__init__(config, client)
-        self.entity_class = entity_class
-        self.endpoint_base = endpoint_base.strip('/')
-
-    @staticmethod
-    def _entid(entity: BaseEntity | str) -> str:
-        return entity if isinstance(entity, str) else entity.id
-
-    def _make_entity_request(self,
-                             method: str,
-                             entity_id: str | BaseEntity,
-                             add_path: str = '',
-                             **kwargs) -> httpx.Response:
-        try:
-            entity_id = self._entid(entity_id)
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
-            raise
-
-    async def _make_entity_request_async(self,
-                                         method: str,
-                                         entity_id: str | BaseEntity,
-                                         add_path: str = '',
-                                         session: aiohttp.ClientSession | None = None,
-                                         **kwargs) -> aiohttp.ClientResponse:
-        try:
-            entity_id = self._entid(entity_id)
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return await self._make_request_async(method,
-                                                  f'/{self.endpoint_base}/{entity_id}/{add_path}',
-                                                  session=session,
-                                                  **kwargs)
-        except aiohttp.ClientResponseError as e:
-            if e.status == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
-            raise
-
-    def _stream_entity_request(self,
-                               method: str,
-                               entity_id: str,
-                               add_path: str = '',
-                               **kwargs):
-        try:
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return self._stream_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
-            raise
-
-    def get_list(self, limit: int | None = None, **kwargs) -> Sequence[T]:
-        """Get entities with optional filtering.
-
-        Returns:
-            List of entity instances.
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails.
-        """
-        params = dict(kwargs)
-
-        # Remove None values from the payload.
-        for k in list(params.keys()):
-            if params[k] is None:
-                del params[k]
-
-        items_gen = self._make_request_with_pagination('GET', f'/{self.endpoint_base}',
-                                                       return_field=self.endpoint_base,
-                                                       limit=limit,
-                                                       params=params)
-
-        all_items = []
-        for resp, items in items_gen:
-            all_items.extend(items)
-
-        return [self.entity_class(**item) for item in all_items]
-
-    def get_all(self, limit: int | None = None) -> Sequence[T]:
-        """Get all entities with optional pagination and filtering.
-
-        Returns:
-            List of entity instances
-
-        Raises:
-            httpx.HTTPStatusError: If the request fails
-        """
-        return self.get_list(limit=limit)
-
-    def get_by_id(self, entity_id: str) -> T:
-        """Get a specific entity by its ID.
-
-        Args:
-            entity_id: Unique identifier for the entity.
-
-        Returns:
-            Entity instance.
-
-        Raises:
-            httpx.HTTPStatusError: If the entity is not found or request fails.
-        """
-        response = self._make_entity_request('GET', entity_id)
-        return self.entity_class(**response.json())
-
-    def _create(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
-        """Create a new entity.
-
-        Args:
-            entity_data: Dictionary containing entity data for creation.
-
-        Returns:
-            The id of the created entity.
-
-        Raises:
-            httpx.HTTPStatusError: If creation fails.
-        """
-        response = self._make_request('POST', f'/{self.endpoint_base}', json=entity_data)
-        respdata = response.json()
-        if isinstance(respdata, str):
-            return respdata
-        if isinstance(respdata, list):
-            return respdata
-        if isinstance(respdata, dict):
-            return respdata.get('id')
-        return respdata
-
-    async def _create_async(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
-        """Create a new entity.
-
-        Args:
-            entity_data: Dictionary containing entity data for creation.
-
-        Returns:
-            The id of the created entity.
-
-        Raises:
-            httpx.HTTPStatusError: If creation fails.
-        """
-        resp = await self._make_request_async('POST',
-                                              f'/{self.endpoint_base}',
-                                              json=entity_data)
-        respdata = await resp.json()
-        if isinstance(respdata, str):
-            return respdata
-        if isinstance(respdata, list):
-            return respdata
-        if isinstance(respdata, dict):
-            return respdata.get('id')
-        return respdata
-
-    def update(self, entity_id: str, entity_data: dict[str, Any]) -> T:
-        """Update an existing entity.
-
-        Args:
-            entity_id: Unique identifier for the entity.
-            entity_data: Dictionary containing updated entity data.
-
-        Returns:
-            Updated entity instance.
-
-        Raises:
-            httpx.HTTPStatusError: If update fails or entity not found.
-        """
-        response = self._make_entity_request('PUT', entity_id, json=entity_data)
-        return self.entity_class(**response.json())
-
-    def delete(self, entity: str | BaseEntity) -> None:
-        """Delete an entity.
-
-        Args:
-            entity: Unique identifier for the entity to delete or the entity instance itself.
-
-        Raises:
-            httpx.HTTPStatusError: If deletion fails or entity not found
-        """
-        self._make_entity_request('DELETE', entity)
-
-    def bulk_delete(self, entities: Sequence[str | BaseEntity]) -> None:
-        """Delete multiple entities.
-
-        Args:
-            entities: Sequence of unique identifiers for the entities to delete or the entity instances themselves.
-
-        Raises:
-            httpx.HTTPStatusError: If deletion fails or any entity not found
-        """
-        async def _delete_all_async():
-            async with aiohttp.ClientSession() as session:
-                tasks = [
-                    self._delete_async(entity, session)
-                    for entity in entities
-                ]
-                await asyncio.gather(*tasks)
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(_delete_all_async())
-
-    async def _delete_async(self,
-                            entity_id: str | BaseEntity,
-                            session: aiohttp.ClientSession | None = None) -> None:
-        """Asynchronously delete an entity by its ID.
-
-        Args:
-            entity_id: Unique identifier for the entity to delete.
-
-        Raises:
-            httpx.HTTPStatusError: If deletion fails or entity not found
-        """
-        await self._make_entity_request_async('DELETE', entity_id,
-                                              session=session)
-
-    def _get_child_entities(self,
-                            parent_entity: BaseEntity | str,
-                            child_entity_name: str) -> httpx.Response:
-        response = self._make_entity_request('GET', parent_entity,
-                                             add_path=child_entity_name)
-        return response
-
-    # def bulk_create(self, entities_data: list[dict[str, Any]]) -> list[T]:
-    #     """Create multiple entities in a single request.
-
-    #     Args:
-    #         entities_data: List of dictionaries containing entity data
-
-    #     Returns:
-    #         List of created entity instances
-
-    #     Raises:
-    #         httpx.HTTPStatusError: If bulk creation fails
-    #     """
-    #     payload = {'items': entities_data}  # Common bulk API format
-    #     response = self._make_request('POST', f'/{self.endpoint_base}/bulk', json=payload)
-    #     data = response.json()
-
-    #     # Handle response format - may be direct list or wrapped
-    #     items = data if isinstance(data, list) else data.get('items', [])
-    #     return [self.entity_class(**item) for item in items]
-
-    # def count(self, **params: Any) -> int:
-    #     """Get the total count of entities matching the given filters.
-
-    #     Args:
-    #         **params: Query parameters for filtering
-
-    #     Returns:
-    #         Total count of matching entities
-
-    #     Raises:
-    #         httpx.HTTPStatusError: If the request fails
-    #     """
-    #     response = self._make_request('GET', f'/{self.endpoint_base}/count', params=params)
-    #     data = response.json()
-    #     return data.get('count', 0) if isinstance(data, dict) else data

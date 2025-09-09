@@ -1,11 +1,11 @@
 from typing import Sequence
-from ..base_api import EntityBaseApi, ApiConfig
+from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 from datamint.entities.resource import Resource
 import httpx
 
 
-class ProjectsApi(EntityBaseApi[Project]):
+class ProjectsApi(CRUDEntityApi[Project]):
     """API handler for project-related endpoints."""
 
     def __init__(self,

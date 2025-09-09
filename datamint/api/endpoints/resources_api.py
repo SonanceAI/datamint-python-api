@@ -1,5 +1,6 @@
 from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
-from ..base_api import EntityBaseApi, ApiConfig, BaseApi
+from ..base_api import ApiConfig, BaseApi
+from ..entity_base_api import EntityBaseApi, CreatableEntityApi, DeletableEntityApi
 from .annotations_api import AnnotationsApi
 from .projects_api import ProjectsApi
 from datamint.entities.resource import Resource
@@ -51,7 +52,7 @@ def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
     return file_path
 
 
-class ResourcesApi(EntityBaseApi[Resource]):
+class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
     """API handler for resource-related endpoints."""
 
     def __init__(self, config: ApiConfig, client: Optional[httpx.Client] = None) -> None:
@@ -791,8 +792,8 @@ class ResourcesApi(EntityBaseApi[Resource]):
                 else:
                     try:
                         resource_file = BaseApi.convert_format(response.content,
-                                                            mimetype,
-                                                            save_path)
+                                                               mimetype,
+                                                               save_path)
                     except ValueError as e:
                         _LOGGER.warning(f"Could not convert file to a known format: {e}")
                         resource_file = response.content
@@ -818,7 +819,6 @@ class ResourcesApi(EntityBaseApi[Resource]):
             if add_extension:
                 return resource_file, save_path
         return resource_file
-
 
     def download_resource_frame(self,
                                 resource: str | Resource,
@@ -849,7 +849,7 @@ class ResourcesApi(EntityBaseApi[Resource]):
             return self.download_resource_file(resource, auto_convert=True)
 
         try:
-            response = self._make_entity_request('GET', 
+            response = self._make_entity_request('GET',
                                                  resource,
                                                  add_path=f'frames/{frame_index}',
                                                  headers={'accept': 'image/*'})
@@ -861,3 +861,29 @@ class ResourcesApi(EntityBaseApi[Resource]):
         except ResourceNotFoundError as e:
             e.set_params('resource', {'resource_id': resource.id})
             raise e
+
+    def publish_resources(self,
+                          resources: str | Resource | Sequence[str | Resource]) -> None:
+        """
+        Publish resources, changing their status to 'published'.
+
+        Args:
+            resources: The resources to publish. Can be a Resource object (instead of a list)
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists or the project does not exists.
+        """
+        if isinstance(resources, (Resource, str)):
+            resources = [resources]
+
+        for resource in resources:
+            try:
+                self._make_entity_request('POST', resource, add_path='publish')
+            except ResourceNotFoundError as e:
+                e.set_params('resource', {'resource_id': resource})
+                raise e
+            except Exception as e:
+                if BaseApi._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
+                    _LOGGER.warning(f"Resource {resource} is not in inbox status. Skipping publishing")
+                else:
+                    raise e

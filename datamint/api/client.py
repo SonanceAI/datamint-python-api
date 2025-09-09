@@ -1,7 +1,7 @@
 from typing import Optional
 import httpx
 from .base_api import ApiConfig
-from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi
+from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi
 import datamint.configs
 from datamint.exceptions import DatamintException
 import asyncio
@@ -50,6 +50,7 @@ class Api:
         self._projects = None
         self._annotations = None
         self._resources = None
+        self._channels = None
 
         if check_connection:
             self.check_connection()
@@ -81,6 +82,13 @@ class Api:
         if self._annotations is None:
             self._annotations = AnnotationsApi(self.config, self._client)
         return self._annotations
+
+    @property
+    def channels(self) -> ChannelsApi:
+        """Access to channel-related endpoints."""
+        if self._channels is None:
+            self._channels = ChannelsApi(self.config, self._client)
+        return self._channels
 
     # def close(self) -> None:
     #     """Close the HTTP client connections."""
