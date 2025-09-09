@@ -6,6 +6,13 @@ from datamint.entities.base_entity import BaseEntity
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 import aiohttp
 import json
+import pydicom.dataset
+from PIL import Image
+import cv2
+import nibabel as nib
+from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
+from io import BytesIO
+import gzip
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +212,6 @@ class BaseApi:
                                   method: str,
                                   endpoint: str,
                                   session: aiohttp.ClientSession | None = None,
-                                  data_to_get: Literal['json', 'text', 'content'] = 'json',
                                   **kwargs):
         """Make asynchronous HTTP request with error handling.
 
@@ -255,15 +261,7 @@ class BaseApi:
                     #     error_text = await response.text()
                     #     logger.error(f"HTTP error {response.status} for {method} {endpoint}: {error_text}")
                     self._check_errors_response(response, url=url)
-
-                    if data_to_get == 'json':
-                        return await response.json()
-                    elif data_to_get == 'text':
-                        return await response.text()
-                    elif data_to_get == 'content':
-                        return await response.read()
-                    else:
-                        raise ValueError("data_to_get must be either 'json', 'text', or 'content'")
+                    return response
 
             except aiohttp.ClientError as e:
                 logger.error(f"Request error for {method} {endpoint}: {e}")
@@ -359,6 +357,38 @@ class BaseApi:
                     items = items[0][return_field]
         return items
 
+    @staticmethod
+    def convert_format(bytes_array: bytes,
+                       mimetype: str,
+                       file_path: str | None = None
+                       ) -> pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | bytes | nib_FileBasedImage:
+        """ Convert the bytes array to the appropriate format based on the mimetype."""
+        content_io = BytesIO(bytes_array)
+        if mimetype.endswith('/dicom'):
+            return pydicom.dcmread(content_io)
+        elif mimetype.startswith('image/'):
+            return Image.open(content_io)
+        elif mimetype.startswith('video/'):
+            if file_path is None:
+                raise NotImplementedError("file_path=None is not implemented yet for video/* mimetypes.")
+            return cv2.VideoCapture(file_path)
+        elif mimetype == 'application/json':
+            return json.loads(bytes_array)
+        elif mimetype == 'application/octet-stream':
+            return bytes_array
+        elif mimetype.endswith('nifti'):
+            try:
+                return nib.Nifti1Image.from_stream(content_io)
+            except Exception as e:
+                if file_path is not None:
+                    return nib.load(file_path)
+                raise e
+        elif mimetype == 'application/gzip':
+            # let's hope it's a .nii.gz
+            with gzip.open(content_io, 'rb') as f:
+                return nib.Nifti1Image.from_stream(f)
+
+        raise ValueError(f"Unsupported mimetype: {mimetype}")
 
 class EntityBaseApi(BaseApi, Generic[T]):
     """Base API handler for entity-related endpoints with CRUD operations.
@@ -386,12 +416,17 @@ class EntityBaseApi(BaseApi, Generic[T]):
         self.entity_class = entity_class
         self.endpoint_base = endpoint_base.strip('/')
 
+    @staticmethod
+    def _entid(entity: BaseEntity | str) -> str:
+        return entity if isinstance(entity, str) else entity.id
+
     def _make_entity_request(self,
                              method: str,
-                             entity_id: str,
+                             entity_id: str | BaseEntity,
                              add_path: str = '',
                              **kwargs) -> httpx.Response:
         try:
+            entity_id = self._entid(entity_id)
             add_path = '/'.join(add_path.strip().strip('/').split('/'))
             return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
         except httpx.HTTPStatusError as e:
@@ -499,10 +534,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
         Raises:
             httpx.HTTPStatusError: If creation fails.
         """
-        respdata = await self._make_request_async('POST',
-                                                  f'/{self.endpoint_base}',
-                                                  data_to_get='json',
-                                                  json=entity_data)
+        resp = await self._make_request_async('POST',
+                                              f'/{self.endpoint_base}',
+                                              json=entity_data)
+        respdata = await resp.json()
         if isinstance(respdata, str):
             return respdata
         if isinstance(respdata, list):

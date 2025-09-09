@@ -1,10 +1,10 @@
 from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
-from ..base_api import EntityBaseApi, ApiConfig
+from ..base_api import EntityBaseApi, ApiConfig, BaseApi
 from .annotations_api import AnnotationsApi
 from .projects_api import ProjectsApi
 from datamint.entities.resource import Resource
 from datamint.entities.annotation import Annotation
-from datamint.exceptions import DatamintException
+from datamint.exceptions import DatamintException, ResourceNotFoundError
 import httpx
 from datetime import date
 import json
@@ -23,6 +23,11 @@ import asyncio
 import aiohttp
 from pathlib import Path
 import nest_asyncio  # For running asyncio in jupyter notebooks
+import cv2
+from PIL import Image
+from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
+import io
+
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -132,7 +137,7 @@ class ResourcesApi(EntityBaseApi[Resource]):
             }
             payload['tags'] = json.dumps(tags_filter)
 
-        return super().get_list(limit=limit,**payload)
+        return super().get_list(limit=limit, **payload)
 
     def get_annotations(self, resource_id: str | Resource) -> Sequence[Annotation]:
         """Get annotations for a specific resource.
@@ -355,10 +360,10 @@ class ResourcesApi(EntityBaseApi[Resource]):
                 except Exception as e:
                     _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
-            resp_data = await self._make_request_async(method='POST',
-                                                       endpoint=self.endpoint_base,
-                                                       data=form,
-                                                       data_to_get='json')
+            resp = await self._make_request_async(method='POST',
+                                                  endpoint=self.endpoint_base,
+                                                  data=form)
+            resp_data = await resp.json()
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
             _LOGGER.debug(f"Response on uploading {name}: {resp_data}")
@@ -612,3 +617,247 @@ class ResourcesApi(EntityBaseApi[Resource]):
         if is_multiple_resources:
             return resource_ids
         return resource_ids[0]
+
+    def _determine_mimetype(self,
+                            content,
+                            resource: str | Resource) -> tuple[str | None, str | None]:
+        # Determine mimetype from file content
+        mimetype_list, ext = guess_typez(content, use_magic=True)
+        mimetype = mimetype_list[-1]
+
+        # get mimetype from resource info if not detected
+        if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
+            if not isinstance(resource, Resource):
+                resource = self.get_by_id(resource)
+            mimetype = resource.mimetype or mimetype
+
+        return mimetype, ext
+
+    async def _async_download_file(self,
+                                   resource: str | Resource,
+                                   save_path: str | Path,
+                                   session: aiohttp.ClientSession | None = None,
+                                   progress_bar: tqdm | None = None,
+                                   add_extension: bool = False) -> str:
+        """
+        Asynchronously download a file from the server.
+
+        Args:
+            resource: The resource unique id or Resource object.
+            save_path: The path to save the file.
+            session: The aiohttp session to use for the request.
+            progress_bar: Optional progress bar to update after download completion.
+            add_extension: Whether to add the appropriate file extension based on content type.
+
+        Returns:
+            str: The actual path where the file was saved (important when add_extension=True).
+        """
+        save_path = str(save_path)  # Ensure save_path is a string for file operations
+        resource_id = self._entid(resource)
+        try:
+            resp = await self._make_request_async('GET',
+                                                  f'{self.endpoint_base}/{resource_id}/file',
+                                                  session=session,
+                                                  headers={'accept': 'application/octet-stream'})
+            data_bytes = await resp.read()
+
+            final_save_path = save_path
+            if add_extension:
+                # Save to temporary file first to determine mimetype from content
+                temp_path = f"{save_path}.tmp"
+                with open(temp_path, 'wb') as f:
+                    f.write(data_bytes)
+
+                # Determine mimetype from file content
+                mimetype, ext = self._determine_mimetype(content=data_bytes,
+                                                         resource=resource)
+
+                # Generate final path with extension if needed
+                if mimetype is not None and mimetype != DEFAULT_MIME_TYPE:
+                    if ext is None:
+                        ext = guess_extension(mimetype)
+                    if ext is not None and not save_path.endswith(ext):
+                        final_save_path = save_path + ext
+
+                # Move file to final location
+                os.rename(temp_path, final_save_path)
+            else:
+                # Standard save without extension detection
+                with open(final_save_path, 'wb') as f:
+                    f.write(data_bytes)
+
+            if progress_bar:
+                progress_bar.update(1)
+
+            return final_save_path
+
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource_id})
+            raise e
+
+    def download_multiple_resources(self,
+                                    resources: Sequence[str] | Sequence[Resource],
+                                    save_path: Sequence[str] | str,
+                                    add_extension: bool = False,
+                                    ) -> list[str]:
+        """
+        Download multiple resources and save them to the specified paths.
+        This is faster than downloading them one by one.
+
+        Args:
+            resources: A list of resource unique ids.
+            save_path : A list of paths to save the files or a directory path, of same length as resources.
+                If a directory path is provided, files will be saved in that directory.
+            add_extension: Whether to add the appropriate file extension to the save_path based on the content type.
+
+        Returns:
+            list[str]: A list of paths where the files were saved. Important if `add_extension=True`.
+        """
+        if isinstance(resources, str):
+            raise ValueError("resources must be a list of resources")
+
+        async def _download_all_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._async_download_file(
+                        resource=r,
+                        save_path=path,
+                        session=session,
+                        progress_bar=progress_bar,
+                        add_extension=add_extension
+                    )
+                    for r, path in zip(resources, save_path)
+                ]
+                return await asyncio.gather(*tasks)
+
+        if isinstance(save_path, str):
+            save_path = [os.path.join(save_path, self._entid(r)) for r in resources]
+
+        with tqdm(total=len(resources), desc="Downloading resources", unit="file") as progress_bar:
+            loop = asyncio.get_event_loop()
+            final_save_paths = loop.run_until_complete(_download_all_async())
+
+        return final_save_paths
+
+    def download_resource_file(self,
+                               resource: str | Resource,
+                               save_path: Optional[str] = None,
+                               auto_convert: bool = True,
+                               add_extension: bool = False
+                               ) -> bytes | pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage | tuple[Any, str]:
+        """
+        Download a resource file.
+
+        Args:
+            resource: The resource unique id.
+            save_path: The path to save the file.
+            auto_convert: Whether to convert the file to a known format or not.
+            add_extension: Whether to add the appropriate file extension to the save_path based on the content type.
+
+        Returns:
+            The resource content in bytes (if `auto_convert=False`) or the resource object (if `auto_convert=True`).
+            if `add_extension=True`, the function will return a tuple of (resource_data, save_path).
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+
+        Example:
+            >>> api_handler.download_resource_file('resource_id', auto_convert=False)
+                returns the resource content in bytes.
+            >>> api_handler.download_resource_file('resource_id', auto_convert=True)
+                Assuming this resource is a dicom file, it will return a pydicom.dataset.Dataset object. 
+            >>> api_handler.download_resource_file('resource_id', save_path='path/to/dicomfile.dcm')
+                saves the file in the specified path.
+        """
+        if save_path is None and add_extension:
+            raise ValueError("If add_extension is True, save_path must be provided.")
+
+        try:
+            response = self._make_entity_request('GET',
+                                                 resource,
+                                                 add_path='file',
+                                                 headers={'accept': 'application/octet-stream'})
+
+            # Get mimetype if needed for auto_convert or add_extension
+            mimetype = None
+            ext = None
+            if auto_convert or add_extension:
+                mimetype, ext = self._determine_mimetype(content=response.content,
+                                                         resource=resource)
+            if auto_convert:
+                if mimetype is None:
+                    _LOGGER.warning("Could not determine mimetype. Returning a bytes array.")
+                    resource_file = response.content
+                else:
+                    try:
+                        resource_file = BaseApi.convert_format(response.content,
+                                                            mimetype,
+                                                            save_path)
+                    except ValueError as e:
+                        _LOGGER.warning(f"Could not convert file to a known format: {e}")
+                        resource_file = response.content
+                    except NotImplementedError as e:
+                        _LOGGER.warning(f"Conversion not implemented yet for {mimetype} and save_path=None." +
+                                        " Returning a bytes array. If you want the conversion for this mimetype, provide a save_path.")
+                        resource_file = response.content
+            else:
+                resource_file = response.content
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource})
+            raise e
+
+        if save_path is not None:
+            if add_extension and mimetype is not None:
+                if ext is None:
+                    ext = guess_extension(mimetype)
+                if ext is not None and not save_path.endswith(ext):
+                    save_path += ext
+            with open(save_path, 'wb') as f:
+                f.write(response.content)
+
+            if add_extension:
+                return resource_file, save_path
+        return resource_file
+
+
+    def download_resource_frame(self,
+                                resource: str | Resource,
+                                frame_index: int) -> Image.Image:
+        """
+        Download a frame of a resource.
+        This is faster than downloading the whole resource and then extracting the frame.
+
+        Args:
+            resource: The resource unique id or Resource object.
+            frame_index: The index of the frame to download.
+
+        Returns:
+            Image.Image: The frame as a PIL image.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exists.
+            DatamintException: If the resource is not a video or dicom.
+        """
+        # check if the resource is an single frame image (png,jpeg,...) first.
+        # If so, download the whole resource file and return the image.
+        if not isinstance(resource, Resource):
+            resource = self.get_by_id(resource)
+        if resource.mimetype.startswith('image/') or resource.storage == 'ImageResource':
+            if frame_index != 0:
+                raise DatamintException(f"Resource {resource.id} is a single frame image, "
+                                        f"but frame_index is {frame_index}.")
+            return self.download_resource_file(resource, auto_convert=True)
+
+        try:
+            response = self._make_entity_request('GET', 
+                                                 resource,
+                                                 add_path=f'frames/{frame_index}',
+                                                 headers={'accept': 'image/*'})
+            if response.status_code == 200:
+                return Image.open(io.BytesIO(response.content))
+            else:
+                raise DatamintException(
+                    f"Error downloading frame {frame_index} of resource {resource.id}: {response.text}")
+        except ResourceNotFoundError as e:
+            e.set_params('resource', {'resource_id': resource.id})
+            raise e

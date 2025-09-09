@@ -310,9 +310,11 @@ class AnnotationsApi(EntityBaseApi[Annotation]):
         try:
             form = aiohttp.FormData()
             form.add_field('file', f, filename=filename, content_type=content_type)
-            respdata = await self._make_request_async(method='POST',
-                                                      endpoint=f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file',
-                                                      data=form)
+            endpoint = f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file'
+            resp = await self._make_request_async(method='POST',
+                                                  endpoint=endpoint,
+                                                  data=form)
+            respdata = await resp.json()
             if isinstance(respdata, dict) and 'error' in respdata:
                 raise DatamintException(respdata['error'])
         finally:
@@ -388,10 +390,10 @@ class AnnotationsApi(EntityBaseApi[Annotation]):
                             resource_id: str,
                             annotations_dto: list[CreateAnnotationDto] | list[dict]) -> list[str]:
         annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations_dto]
-        respdata = await self._make_request_async('POST',
-                                                  f'{self.endpoint_base}/{resource_id}/annotations',
-                                                  data_to_get='json',
-                                                  json=annotations)
+        resp = await self._make_request_async('POST',
+                                               f'{self.endpoint_base}/{resource_id}/annotations',
+                                               json=annotations)
+        respdata = await resp.json()
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
                 raise DatamintException(r['error'])
@@ -508,11 +510,11 @@ class AnnotationsApi(EntityBaseApi[Annotation]):
 
                     resp = await self._make_request_async(method='POST',
                                                           endpoint=f'{self.endpoint_base}/{resource_id}/segmentations/file',
-                                                          data=form,
-                                                          data_to_get='json')
-                    if 'error' in resp:
-                        raise DatamintException(resp['error'])
-                    return resp
+                                                          data=form)
+                    respdata = await resp.json()
+                    if 'error' in respdata:
+                        raise DatamintException(respdata['error'])
+                    return respdata
             else:
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
         elif isinstance(file_path, np.ndarray):
