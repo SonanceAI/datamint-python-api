@@ -1,7 +1,7 @@
 from typing import Optional
 import httpx
 from .base_api import ApiConfig
-from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi
+from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi
 import datamint.configs
 from datamint.exceptions import DatamintException
 import asyncio
@@ -11,6 +11,14 @@ class Api:
     """Main API client that provides access to all endpoint handlers."""
     DEFAULT_SERVER_URL = 'https://api.datamint.io'
     DATAMINT_API_VENV_NAME = datamint.configs.ENV_VARS[datamint.configs.APIKEY_KEY]
+
+    _API_MAP = {
+        'projects': ProjectsApi,
+        'resources': ResourcesApi,
+        'annotations': AnnotationsApi,
+        'channels': ChannelsApi,
+        'users': UsersApi,
+    }
 
     def __init__(self,
                  server_url: str | None = None,
@@ -37,8 +45,6 @@ class Api:
                 msg = f"API key not provided! Use the environment variable " + \
                     f"{Api.DATAMINT_API_VENV_NAME} or pass it as an argument."
                 raise DatamintException(msg)
-        # self.semaphore = asyncio.Semaphore(20)
-
         self.config = ApiConfig(
             server_url=server_url,
             api_key=api_key,
@@ -46,12 +52,7 @@ class Api:
             max_retries=max_retries
         )
         self._client = None
-        # Initialize endpoint handlers
-        self._projects = None
-        self._annotations = None
-        self._resources = None
-        self._channels = None
-
+        self._endpoints = {}
         if check_connection:
             self.check_connection()
 
@@ -62,45 +63,25 @@ class Api:
             raise DatamintException("Error connecting to the Datamint API." +
                                     f" Please check your api_key and/or other configurations. {e}")
 
+    def _get_endpoint(self, name: str):
+        if name not in self._endpoints:
+            api_class = self._API_MAP[name]
+            self._endpoints[name] = api_class(self.config, self._client)
+        return self._endpoints[name]
+
     @property
     def projects(self) -> ProjectsApi:
-        """Access to project-related endpoints."""
-        if self._projects is None:
-            self._projects = ProjectsApi(self.config, self._client)
-        return self._projects
-
+        return self._get_endpoint('projects')
     @property
     def resources(self) -> ResourcesApi:
-        """Access to resource-related endpoints."""
-        if self._resources is None:
-            self._resources = ResourcesApi(self.config, self._client)
-        return self._resources
-
+        return self._get_endpoint('resources')
     @property
     def annotations(self) -> AnnotationsApi:
-        """Access to annotation-related endpoints."""
-        if self._annotations is None:
-            self._annotations = AnnotationsApi(self.config, self._client)
-        return self._annotations
-
+        return self._get_endpoint('annotations')
     @property
     def channels(self) -> ChannelsApi:
-        """Access to channel-related endpoints."""
-        if self._channels is None:
-            self._channels = ChannelsApi(self.config, self._client)
-        return self._channels
+        return self._get_endpoint('channels')
+    @property
+    def users(self) -> UsersApi:
+        return self._get_endpoint('users')
 
-    # def close(self) -> None:
-    #     """Close the HTTP client connections."""
-    #     if self._projects and self._projects.client:
-    #         self._projects.client.close()
-    #     if self._annotations and self._annotations.client:
-    #         self._annotations.client.close()
-
-    # def __enter__(self):
-    #     """Context manager entry."""
-    #     return self
-
-    # def __exit__(self, exc_type, exc_val, exc_tb):
-    #     """Context manager exit."""
-    #     self.close()

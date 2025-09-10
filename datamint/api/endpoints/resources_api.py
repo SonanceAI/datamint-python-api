@@ -140,16 +140,16 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         return super().get_list(limit=limit, **payload)
 
-    def get_annotations(self, resource_id: str | Resource) -> Sequence[Annotation]:
+    def get_annotations(self, resource: str | Resource) -> Sequence[Annotation]:
         """Get annotations for a specific resource.
 
         Args:
-            resource_id: The ID of the resource to fetch annotations for.
+            resource: The resource ID or Resource instance to fetch annotations for.
 
         Returns:
             A sequence of Annotation objects associated with the specified resource.
         """
-        return self.annotations_api.get_list(resource=resource_id)
+        return self.annotations_api.get_list(resource=resource)
 
     @staticmethod
     def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset
@@ -750,7 +750,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         Download a resource file.
 
         Args:
-            resource: The resource unique id.
+            resource: The resource unique id or Resource instance.
             save_path: The path to save the file.
             auto_convert: Whether to convert the file to a known format or not.
             add_extension: Whether to add the appropriate file extension to the save_path based on the content type.
@@ -804,7 +804,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             else:
                 resource_file = response.content
         except ResourceNotFoundError as e:
-            e.set_params('resource', {'resource_id': resource})
+            e.set_params('resource', {'resource_id': self._entid(resource)})
             raise e
 
         if save_path is not None:
@@ -857,9 +857,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 return Image.open(io.BytesIO(response.content))
             else:
                 raise DatamintException(
-                    f"Error downloading frame {frame_index} of resource {resource.id}: {response.text}")
+                    f"Error downloading frame {frame_index} of resource {self._entid(resource)}: {response.text}")
         except ResourceNotFoundError as e:
-            e.set_params('resource', {'resource_id': resource.id})
+            e.set_params('resource', {'resource_id': self._entid(resource)})
             raise e
 
     def publish_resources(self,
@@ -880,7 +880,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             try:
                 self._make_entity_request('POST', resource, add_path='publish')
             except ResourceNotFoundError as e:
-                e.set_params('resource', {'resource_id': resource})
+                e.set_params('resource', {'resource_id': self._entid(resource)})
                 raise e
             except Exception as e:
                 if BaseApi._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:

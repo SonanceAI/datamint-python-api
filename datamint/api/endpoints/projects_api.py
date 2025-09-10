@@ -131,7 +131,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         self._make_entity_request('POST', project_id, add_path='resources',
                                   json={'resource_ids_to_add': resources_ids, 'all_files_selected': False})
 
-    def download(self, project_id: str,
+    def download(self, project: str | Project,
                  outpath: str,
                  all_annotations: bool = False,
                  include_unannotated: bool = False,
@@ -139,7 +139,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """Download a project by its id.
 
         Args:
-            project_id: The project id.
+            project: The project id or Project instance.
             outpath: The path to save the project zip file.
             all_annotations: Whether to include all annotations in the downloaded dataset,
                 even those not made by the provided project.
@@ -150,6 +150,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         if include_unannotated:
             params['include_unannotated'] = include_unannotated
 
+        project_id = self._entid(project)
         with self._stream_entity_request('GET', project_id,
                                          add_path='annotated_dataset',
                                          params=params) as response:

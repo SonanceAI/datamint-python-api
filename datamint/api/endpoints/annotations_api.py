@@ -5,7 +5,7 @@ import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
-from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto
+from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
 import aiohttp
@@ -16,6 +16,7 @@ from medimgkit.format_detection import guess_type
 import nibabel as nib
 from PIL import Image
 from io import BytesIO
+import pydicom
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -74,7 +75,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         return super().get_list(limit=limit, **payload)
 
     async def _upload_segmentations_async(self,
-                                          resource_id: str,
+                                          resource: str | Resource,
                                           frame_index: int | None,
                                           file_path: str | np.ndarray,
                                           name: dict[int, str] | dict[tuple, str],
@@ -90,7 +91,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Upload segmentations asynchronously.
 
         Args:
-            resource_id: The resource unique id.
+            resource: The resource unique id or Resource instance.
             frame_index: The frame index or None for multiple frames.
             file_path: Path to segmentation file or numpy array.
             name: The name of the segmentation or mapping of pixel values to names.
@@ -111,6 +112,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             else:
                 upload_volume = False
 
+
+        resource_id = self._entid(resource)
         # Handle volume upload
         if upload_volume:
             if frame_index is not None:
@@ -272,7 +275,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         return f, filename, close_file, content_type
 
     async def upload_annotation_file_async(self,
-                                           resource_id: str,
+                                           resource: str | Resource,
                                            annotation_id: str,
                                            file: str | IO,
                                            content_type: str | None = None,
@@ -282,7 +285,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Upload a file for an existing annotation asynchronously.
 
         Args:
-            resource_id: The resource unique id.
+            resource: The resource unique id or Resource instance.
             annotation_id: The annotation unique id.
             file: Path to the file or a file-like object.
             content_type: The MIME type of the file.
@@ -296,7 +299,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             .. code-block:: python
 
                 await ann_api.upload_annotation_file_async(
-                    resource_id='your_resource_id',
+                    resource='your_resource_id',
                     annotation_id='your_annotation_id',
                     file='path/to/your/file.png',
                     content_type='image/png',
@@ -310,6 +313,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         try:
             form = aiohttp.FormData()
             form.add_field('file', f, filename=filename, content_type=content_type)
+            resource_id = self._entid(resource)
             endpoint = f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file'
             resp = await self._make_request_async(method='POST',
                                                   endpoint=endpoint,
@@ -322,7 +326,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 f.close()
 
     def upload_annotation_file(self,
-                               resource_id: str,
+                               resource: str | Resource,
                                annotation_id: str,
                                file: str | IO,
                                content_type: str | None = None,
@@ -332,7 +336,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Upload a file for an existing annotation.
 
         Args:
-            resource_id: The resource unique id.
+            resource: The resource unique id or Resource instance.
             annotation_id: The annotation unique id.
             file: Path to the file or a file-like object.
             content_type: The MIME type of the file.
@@ -349,6 +353,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             files = {
                 'file': (filename, f, content_type)
             }
+            resource_id = self._entid(resource)
             resp = self._make_request(method='POST',
                                       endpoint=f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file',
                                       files=files)
@@ -622,3 +627,125 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             pil_img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
             yield img_bytes
+
+    def add_line_annotation(self,
+                            point1: tuple[int, int] | tuple[float, float, float],
+                            point2: tuple[int, int] | tuple[float, float, float],
+                            resource_id: str,
+                            identifier: str,
+                            frame_index: int | None = None,
+                            dicom_metadata: pydicom.Dataset | str | None = None,
+                            coords_system: CoordinateSystem = 'pixel',
+                            project: str | None = None,
+                            worklist_id: str | None = None,
+                            imported_from: str | None = None,
+                            author_email: str | None = None,
+                            model_id: str | None = None) -> list[str]:
+        """
+        Add a line annotation to a resource.
+
+        Args:
+            point1: The first point of the line. Can be a 2d or 3d point. 
+                If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
+                If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
+                to the DICOM metadata.
+            If `coords_system` is 'patient', it must be a 3d point.
+            point2: The second point of the line. See `point1` for more details.
+            resource_id: The resource unique id.
+            identifier: The annotation identifier, also as known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            dicom_metadata: The DICOM metadata of the image. If provided, the coordinates will be converted to the 
+                correct coordinates automatically using the DICOM metadata.
+            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'. 
+                If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
+            project: The project unique id or name.
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
+            model_id: The model unique id. Optional.
+
+        Example:
+            .. code-block:: python
+
+                res_id = 'aa93813c-cef0-4edd-a45c-85d4a8f1ad0d'
+                api.add_line_annotation([0, 0], (10, 30),
+                                        resource_id=res_id,
+                                        identifier='Line1',
+                                        frame_index=2,
+                                        project='Example Project')
+        """
+
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+
+        if coords_system == 'pixel':
+            if dicom_metadata is None:
+                point1 = (point1[0], point1[1], frame_index)
+                point2 = (point2[0], point2[1], frame_index)
+                geom = LineGeometry(point1, point2)
+            else:
+                if isinstance(dicom_metadata, str):
+                    dicom_metadata = pydicom.dcmread(dicom_metadata)
+                geom = LineGeometry.from_dicom(dicom_metadata, point1, point2, slice_index=frame_index)
+        elif coords_system == 'patient':
+            geom = LineGeometry(point1, point2)
+        else:
+            raise ValueError(f"Unknown coordinate system: {coords_system}")
+
+        return self._create_geometry_annotation(
+            geometry=geom,
+            resource_id=resource_id,
+            identifier=identifier,
+            frame_index=frame_index,
+            project=project,
+            worklist_id=worklist_id,
+            imported_from=imported_from,
+            author_email=author_email,
+            model_id=model_id
+        )
+    
+
+    def _create_geometry_annotation(self,
+                                    geometry: Geometry,
+                                    resource_id: str,
+                                    identifier: str,
+                                    frame_index: int | None = None,
+                                    project: str | None = None,
+                                    worklist_id: str | None = None,
+                                    imported_from: str | None = None,
+                                    author_email: str | None = None,
+                                    model_id: str | None = None) -> list[str]:
+        """
+        Create an annotation with the given geometry.
+
+        Args:
+            geometry: The geometry object (e.g., LineGeometry, BoxGeometry).
+            resource_id: The resource unique id.
+            identifier: The annotation identifier/label.
+            frame_index: The frame index of the annotation.
+            project: The project unique id or name.
+            worklist_id: The annotation worklist unique id.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author.
+            model_id: The model unique id.
+
+        Returns:
+            List of created annotation IDs.
+        """
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+
+        scope = 'frame' if frame_index is not None else 'image'
+        annotation_dto = CreateAnnotationDto(
+            type=geometry.type,
+            identifier=identifier,
+            scope=scope,
+            frame_index=frame_index,
+            geometry=geometry,
+            imported_from=imported_from,
+            import_author=author_email,
+            model_id=model_id,
+            annotation_worklist_id=worklist_id
+        )
+
+        return self.create(resource_id, annotation_dto)
