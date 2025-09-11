@@ -1,5 +1,5 @@
 import logging
-from typing import Any,Generator
+from typing import Any, Generator, AsyncGenerator, Sequence
 import httpx
 from dataclasses import dataclass
 from datamint.exceptions import DatamintException, ResourceNotFoundError
@@ -12,6 +12,7 @@ import nibabel as nib
 from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from io import BytesIO
 import gzip
+import contextlib
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class BaseApi:
             curl_command = self._generate_curl_command({"method": method,
                                                         "url": url,
                                                         "headers": self.client.headers,
-                                                        **kwargs})
+                                                        **kwargs}, fail_silently=True)
             logger.debug(f'Equivalent curl command: "{curl_command}"')
             response = self.client.request(method, url, **kwargs)
             response.raise_for_status()
@@ -121,7 +122,9 @@ class BaseApi:
             logger.error(f"Request error for {method} {endpoint}: {e}")
             raise
 
-    def _generate_curl_command(self, request_args: dict) -> str:
+    def _generate_curl_command(self,
+                               request_args: dict,
+                               fail_silently: bool = False) -> str:
         """
         Generate a curl command for debugging purposes.
 
@@ -131,91 +134,105 @@ class BaseApi:
         Returns:
             str: Equivalent curl command
         """
-        method = request_args.get('method', 'GET').upper()
-        url = request_args['url']
-        headers = request_args.get('headers', {})
-        data = request_args.get('json') or request_args.get('data')
-        params = request_args.get('params')
+        try:
+            method = request_args.get('method', 'GET').upper()
+            url = request_args['url']
+            headers = request_args.get('headers', {})
+            data = request_args.get('json') or request_args.get('data')
+            params = request_args.get('params')
 
-        curl_command = ['curl']
+            curl_command = ['curl']
 
-        # Add method if not GET
-        if method != 'GET':
-            curl_command.extend(['-X', method])
+            # Add method if not GET
+            if method != 'GET':
+                curl_command.extend(['-X', method])
 
-        # Add headers
-        for key, value in headers.items():
-            if key.lower() == 'apikey':
-                value = '<YOUR-API-KEY>'  # Mask API key for security
-            curl_command.extend(['-H', f"'{key}: {value}'"])
+            # Add headers
+            for key, value in headers.items():
+                if key.lower() == 'apikey':
+                    value = '<YOUR-API-KEY>'  # Mask API key for security
+                curl_command.extend(['-H', f"'{key}: {value}'"])
 
-        # Add query parameters
-        if params:
-            param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
-            url = f"{url}?{param_str}"
-        # Add URL
-        curl_command.append(f"'{url}'")
+            # Add query parameters
+            if params:
+                param_str = '&'.join([f"{k}={v}" for k, v in params.items()])
+                url = f"{url}?{param_str}"
+            # Add URL
+            curl_command.append(f"'{url}'")
 
-        # Add data
-        if data:
-            if isinstance(data, aiohttp.FormData):  # Check if it's aiohttp.FormData
-                # Handle FormData by extracting fields
-                form_parts = []
-                for options, headers, value in data._fields:
-                    # get the name from options
-                    name = options.get('name', 'file')
-                    if hasattr(value, 'read'):  # File-like object
-                        filename = getattr(value, 'name', 'file')
-                        form_parts.extend(['-F', f"'{name}=@{filename}'"])
-                    else:
-                        form_parts.extend(['-F', f"'{name}={value}'"])
-                curl_command.extend(form_parts)
-            elif isinstance(data, dict):
-                curl_command.extend(['-d', f"'{json.dumps(data)}'"])
-            else:
-                curl_command.extend(['-d', f"'{data}'"])
+            # Add data
+            if data:
+                if isinstance(data, aiohttp.FormData):  # Check if it's aiohttp.FormData
+                    # Handle FormData by extracting fields
+                    form_parts = []
+                    for options, headers, value in data._fields:
+                        # get the name from options
+                        name = options.get('name', 'file')
+                        if hasattr(value, 'read'):  # File-like object
+                            filename = getattr(value, 'name', 'file')
+                            form_parts.extend(['-F', f"'{name}=@{filename}'"])
+                        else:
+                            form_parts.extend(['-F', f"'{name}={value}'"])
+                    curl_command.extend(form_parts)
+                elif isinstance(data, dict):
+                    curl_command.extend(['-d', f"'{json.dumps(data)}'"])
+                else:
+                    curl_command.extend(['-d', f"'{data}'"])
 
-        return ' '.join(curl_command)
+            return ' '.join(curl_command)
+        except Exception as e:
+            if fail_silently:
+                logger.debug(f"Error generating curl command: {e}")
+                return "<error generating curl command>"
+            raise
 
     @staticmethod
-    def get_status_code(e) -> int:
-        if not hasattr(e, 'response') or e.response is None:
-            return -1
-        return e.response.status_code
-    
+    def get_status_code(e: httpx.HTTPStatusError | aiohttp.ClientResponseError) -> int:
+        if hasattr(e, 'response') and e.response is not None:
+            # httpx.HTTPStatusError
+            return e.response.status_code
+        if hasattr(e, 'status'):
+            # aiohttp.ClientResponseError
+            return e.status
+        if hasattr(e, 'status_code'):
+            return e.status_code
+        logger.debug(f"Unable to get status code from exception of type {type(e)}")
+        return -1
+
     @staticmethod
-    def _has_status_code(e, status_code: int) -> bool:
+    def _has_status_code(e: httpx.HTTPError | aiohttp.ClientResponseError,
+                         status_code: int) -> bool:
         return BaseApi.get_status_code(e) == status_code
 
     def _check_errors_response(self,
-                               response,
+                               response: httpx.Response | aiohttp.ClientResponse,
                                url: str):
         try:
-            if hasattr(response, 'raise_for_status'):
-                response.raise_for_status()
-        except Exception as e:
+            response.raise_for_status()
+        except (httpx.HTTPStatusError, aiohttp.ClientResponseError) as e:
+            logger.error(f"HTTP error occurred: {e}")
             status_code = BaseApi.get_status_code(e)
             if status_code >= 500 and status_code < 600:
                 logger.error(f"Error in request to {url}: {e}")
             if status_code >= 400 and status_code < 500:
-                try:
-                    logger.info(f"Error response: {response.text}")
-                    error_data = response.json()
-                except Exception as e2:
-                    logger.info(f"Error parsing the response. {e2}")
+                if isinstance(e, aiohttp.ClientResponseError):
+                    # aiohttp.ClientResponse does not have .text or .json() methods directly
+                    error_msg = e.message
                 else:
-                    if isinstance(error_data['message'], str) and ' not found' in error_data['message'].lower():
-                        # Will be caught by the caller and properly initialized:
-                        raise ResourceNotFoundError('unknown', {})
-
+                    error_msg = e.response.text
+                logger.info(f"Error response: {error_msg}")
+                if ' not found' in error_msg.lower():
+                    # Will be caught by the caller and properly initialized:
+                    raise ResourceNotFoundError('unknown', {})
             raise
 
+    @contextlib.asynccontextmanager
     async def _make_request_async(self,
                                   method: str,
                                   endpoint: str,
                                   session: aiohttp.ClientSession | None = None,
-                                  **kwargs):
-        """Make asynchronous HTTP request with error handling.
+                                  **kwargs) -> AsyncGenerator[aiohttp.ClientResponse, None]:
+        """Make asynchronous HTTP request with error handling as an async context manager.
 
         Args:
             method: HTTP method (GET, POST, PUT, DELETE)
@@ -223,57 +240,74 @@ class BaseApi:
             session: Optional aiohttp session. If None, a new one will be created.
             **kwargs: Additional arguments for the request
 
-        Returns:
-            HTTP response object
+        Yields:
+            An aiohttp.ClientResponse object.
 
         Raises:
             aiohttp.ClientError: If the request fails
+
+        Example:
+            .. code-block:: python
+
+                async with api._make_request_async('GET', '/data') as response:
+                    data = await response.json()
         """
+
+        if session is None:
+            async with aiohttp.ClientSession() as temp_session:
+                async with self._make_request_async(method, endpoint, temp_session, **kwargs) as resp:
+                    yield resp
+            return
+
         url = f"{self.config.server_url.rstrip('/')}/{endpoint.lstrip('/')}"
 
-        # Prepare headers
         headers = kwargs.pop('headers', {})
         if self.config.api_key:
             headers['apikey'] = self.config.api_key
 
-        # Set timeout
         timeout = aiohttp.ClientTimeout(total=self.config.timeout)
 
-        async def make_request(client_session: aiohttp.ClientSession) -> aiohttp.ClientResponse | Any:
-            try:
-                # logger.debug(f"Making async {method} request to {url} with headers {headers} and kwargs:\n {kwargs}")
-                try:
-                    logger.debug(f"Running request to {url}")
-                    logger.debug(f'Equivalent curl command: "{self._generate_curl_command({"method": method,
-                                                                                           "url": url,
-                                                                                           "headers": headers,
-                                                                                           **kwargs})}"'
-                                 )
-                except Exception as e:
-                    logger.debug(f"Error generating curl command: {e}")
-                async with client_session.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    timeout=timeout,
-                    **kwargs
-                ) as response:
-                    # Check for HTTP errors
-                    # if response.status >= 400:
-                    #     error_text = await response.text()
-                    #     logger.error(f"HTTP error {response.status} for {method} {endpoint}: {error_text}")
-                    self._check_errors_response(response, url=url)
-                    return response
+        response = None
+        curl_cmd = self._generate_curl_command(
+            {"method": method, "url": url, "headers": headers, **kwargs},
+            fail_silently=True
+        )
+        logger.debug(f'Equivalent curl command: "{curl_cmd}"')
+        try:
+            response = await session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                timeout=timeout,
+                **kwargs
+            )
+            self._check_errors_response(response, url=url)
+            yield response
+        except aiohttp.ClientError as e:
+            logger.error(f"Request error for {method} {endpoint}: {e}")
+            raise
+        finally:
+            if response is not None:
+                response.release()
 
-            except aiohttp.ClientError as e:
-                logger.error(f"Request error for {method} {endpoint}: {e}")
-                raise
+    async def _make_request_async_json(self,
+                                       method: str,
+                                       endpoint: str,
+                                       session: aiohttp.ClientSession | None = None,
+                                       **kwargs):
+        """Make asynchronous HTTP request and parse JSON response.
 
-        if session is not None:
-            return await make_request(session)
-        else:
-            async with aiohttp.ClientSession() as temp_session:
-                return await make_request(temp_session)
+        Args:
+            method: HTTP method (GET, POST, etc.)
+            endpoint: API endpoint path
+            session: Optional aiohttp session. If None, a new one will be created.
+            **kwargs: Additional arguments for the request
+
+        Returns:
+            Parsed JSON response or error information.
+        """
+        async with self._make_request_async(method, endpoint, session=session, **kwargs) as resp:
+            return await resp.json()
 
     def _make_request_with_pagination(self,
                                       method: str,
@@ -391,4 +425,3 @@ class BaseApi:
                 return nib.Nifti1Image.from_stream(f)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
-

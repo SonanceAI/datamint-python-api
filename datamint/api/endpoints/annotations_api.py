@@ -86,7 +86,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                           model_id: str | None = None,
                                           transpose_segmentation: bool = False,
                                           upload_volume: bool | str = 'auto'
-                                          ) -> list[str]:
+                                          ) -> Sequence[str]:
         """
         Upload segmentations asynchronously.
 
@@ -111,7 +111,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 upload_volume = True
             else:
                 upload_volume = False
-
 
         resource_id = self._entid(resource)
         # Handle volume upload
@@ -315,10 +314,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             form.add_field('file', f, filename=filename, content_type=content_type)
             resource_id = self._entid(resource)
             endpoint = f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file'
-            resp = await self._make_request_async(method='POST',
-                                                  endpoint=endpoint,
-                                                  data=form)
-            respdata = await resp.json()
+            respdata = await self._make_request_async_json('POST',
+                                                           endpoint=endpoint,
+                                                           data=form)
             if isinstance(respdata, dict) and 'error' in respdata:
                 raise DatamintException(respdata['error'])
         finally:
@@ -391,14 +389,150 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             return respdata[0]
         return respdata
 
+    def upload_segmentations(self,
+                             resource: str | Resource,
+                             file_path: str | np.ndarray,
+                             name: str | dict[int, str] | dict[tuple, str] | None = None,
+                             frame_index: int | list[int] | None = None,
+                             imported_from: str | None = None,
+                             author_email: str | None = None,
+                             discard_empty_segmentations: bool = True,
+                             worklist_id: str | None = None,
+                             model_id: str | None = None,
+                             transpose_segmentation: bool = False,
+                             ) -> list[str]:
+        """
+        Upload segmentations to a resource.
+
+        Args:
+            resource: The resource unique ID or Resource instance.
+            file_path: The path to the segmentation file or a numpy array.
+                If a numpy array is provided, it can have the shape:
+                - (height, width, #frames) or (height, width) for grayscale segmentations
+                - (3, height, width, #frames) for RGB segmentations
+                For NIfTI files (.nii/.nii.gz), the entire volume is uploaded as a single segmentation.
+            name: The name of the segmentation.
+                Can be:
+                - str: Single name for all segmentations
+                - dict[int, str]: Mapping pixel values to names for grayscale segmentations
+                - dict[tuple[int, int, int], str]: Mapping RGB tuples to names for RGB segmentations
+                Use 'default' as a key for a unnamed classes.
+                Example: {(255, 0, 0): 'Red_Region', (0, 255, 0): 'Green_Region'}
+            frame_index: The frame index of the segmentation. 
+                If a list, it must have the same length as the number of frames in the segmentation.
+                If None, it is assumed that the segmentations are in sequential order starting from 0.
+                This parameter is ignored for NIfTI files as they are treated as volume segmentations.
+            imported_from: The imported from value.
+            author_email: The author email.
+            discard_empty_segmentations: Whether to discard empty segmentations or not.
+            worklist_id: The annotation worklist unique id.
+            model_id: The model unique id.
+            transpose_segmentation: Whether to transpose the segmentation or not.
+
+        Returns:
+            List of segmentation unique ids.
+
+        Raises:
+            ResourceNotFoundError: If the resource does not exist or the segmentation is invalid.
+            FileNotFoundError: If the file path does not exist.
+            ValueError: If frame_index is provided for NIfTI files or invalid parameters.
+
+        Example:
+            .. code-block:: python
+
+                # Grayscale segmentation
+                api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.png', 'SegmentationName')
+
+                # RGB segmentation with numpy array
+                seg_data = np.random.randint(0, 3, size=(3, 2140, 1760, 1), dtype=np.uint8)
+                rgb_names = {(1, 0, 0): 'Red_Region', (0, 1, 0): 'Green_Region', (0, 0, 1): 'Blue_Region'}
+                api.annotations.upload_segmentations(resource_id, seg_data, rgb_names)
+
+                # Volume segmentation
+                api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
+        """
+        import asyncio
+        import nest_asyncio
+
+        if isinstance(file_path, str) and not os.path.exists(file_path):
+            raise FileNotFoundError(f"File {file_path} not found.")
+
+        # Handle NIfTI files specially - upload as single volume
+        if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+            _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
+            if frame_index is not None:
+                raise ValueError("Do not provide frame_index for NIfTI segmentations.")
+
+            # Ensure nest_asyncio is applied for Jupyter compatibility
+            nest_asyncio.apply()
+            loop = asyncio.get_event_loop()
+            task = self._upload_segmentations_async(
+                resource=resource,
+                frame_index=None,
+                file_path=file_path,
+                name=name,
+                imported_from=imported_from,
+                author_email=author_email,
+                worklist_id=worklist_id,
+                model_id=model_id,
+                transpose_segmentation=transpose_segmentation,
+                upload_volume=True
+            )
+            return loop.run_until_complete(task)
+
+        # All other file types are converted to multiple PNGs and uploaded frame by frame
+        standardized_name = self.standardize_segmentation_names(name)
+
+        # Handle frame_index parameter
+        if isinstance(frame_index, list):
+            if len(set(frame_index)) != len(frame_index):
+                raise ValueError("frame_index list contains duplicate values.")
+
+        nest_asyncio.apply()
+        loop = asyncio.get_event_loop()
+        task = self._upload_segmentations_async(
+            resource=resource,
+            frame_index=frame_index[0] if isinstance(frame_index, list) and len(frame_index) == 1 else None,
+            file_path=file_path,
+            name=standardized_name,
+            imported_from=imported_from,
+            author_email=author_email,
+            discard_empty_segmentations=discard_empty_segmentations,
+            worklist_id=worklist_id,
+            model_id=model_id,
+            transpose_segmentation=transpose_segmentation,
+            upload_volume=False
+        )
+        return loop.run_until_complete(task)
+
+    @staticmethod
+    def standardize_segmentation_names(name: str | dict[int, str] | dict[tuple, str] | None) -> dict[int, str] | dict[tuple, str]:
+        """
+        Standardize segmentation names to a consistent format.
+
+        Args:
+            name: The name input in various formats.
+
+        Returns:
+            Standardized name dictionary.
+        """
+        if name is None:
+            return {0: 'default'}  # Return a dict with integer key for compatibility
+        elif isinstance(name, str):
+            return {0: name}  # Use integer key for single string names
+        elif isinstance(name, dict):
+            # Return the dict as-is since it's already in the correct format
+            return name
+        else:
+            raise ValueError("Invalid name format. Must be str, dict[int, str], dict[tuple, str], or None.")
+
     async def _create_async(self,
                             resource_id: str,
                             annotations_dto: list[CreateAnnotationDto] | list[dict]) -> list[str]:
         annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations_dto]
-        resp = await self._make_request_async('POST',
-                                               f'{self.endpoint_base}/{resource_id}/annotations',
-                                               json=annotations)
-        respdata = await resp.json()
+        respdata = await self._make_request_async_json('POST',
+                                                       f'{self.endpoint_base}/{resource_id}/annotations',
+                                                       json=annotations)
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
                 raise DatamintException(r['error'])
@@ -470,7 +604,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                 worklist_id: str | None = None,
                                                 model_id: str | None = None,
                                                 transpose_segmentation: bool = False
-                                                ) -> list[str]:
+                                                ) -> Sequence[str]:
         """
         Upload a volume segmentation as a single file asynchronously.
 
@@ -497,6 +631,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             if any(isinstance(k, tuple) for k in name.keys()):
                 raise NotImplementedError(
                     "For volume segmentations, `name` must be a dictionary with integer keys only.")
+            if 'default' in name:
+                _LOGGER.warning("Ignoring 'default' key in name dictionary for volume segmentation. Not supported yet.")
 
         # Prepare file for upload
         if isinstance(file_path, str):
@@ -513,10 +649,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     if name is not None:
                         form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
-                    resp = await self._make_request_async(method='POST',
-                                                          endpoint=f'{self.endpoint_base}/{resource_id}/segmentations/file',
-                                                          data=form)
-                    respdata = await resp.json()
+                    respdata = await self._make_request_async_json('POST',
+                                                                   f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                                                                   data=form)
                     if 'error' in respdata:
                         raise DatamintException(respdata['error'])
                     return respdata
@@ -703,7 +838,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             author_email=author_email,
             model_id=model_id
         )
-    
 
     def _create_geometry_annotation(self,
                                     geometry: Geometry,

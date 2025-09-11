@@ -7,6 +7,8 @@ from datamint.exceptions import DatamintException, ResourceNotFoundError
 import aiohttp
 import asyncio
 from .base_api import ApiConfig, BaseApi
+import contextlib
+from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T', bound=BaseEntity)
@@ -56,19 +58,21 @@ class EntityBaseApi(BaseApi, Generic[T]):
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
+    @contextlib.asynccontextmanager
     async def _make_entity_request_async(self,
                                          method: str,
                                          entity_id: str | BaseEntity,
                                          add_path: str = '',
                                          session: aiohttp.ClientSession | None = None,
-                                         **kwargs) -> aiohttp.ClientResponse:
+                                         **kwargs) -> AsyncGenerator[aiohttp.ClientResponse, None]:
         try:
             entity_id = self._entid(entity_id)
             add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return await self._make_request_async(method,
-                                                  f'/{self.endpoint_base}/{entity_id}/{add_path}',
-                                                  session=session,
-                                                  **kwargs)
+            async with self._make_request_async(method,
+                                                f'/{self.endpoint_base}/{entity_id}/{add_path}',
+                                                session=session,
+                                                **kwargs) as resp:
+                yield resp
         except aiohttp.ClientResponseError as e:
             if e.status == 404:
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
@@ -140,7 +144,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
         response = self._make_entity_request('GET', entity_id)
         return self.entity_class(**response.json())
 
-    async def _create_async(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
+    async def _create_async(self, entity_data: dict[str, Any]) -> str | Sequence[str | dict]:
         """Create a new entity.
 
         Args:
@@ -152,10 +156,11 @@ class EntityBaseApi(BaseApi, Generic[T]):
         Raises:
             httpx.HTTPStatusError: If creation fails.
         """
-        resp = await self._make_request_async('POST',
-                                              f'/{self.endpoint_base}',
-                                              json=entity_data)
-        respdata = await resp.json()
+        respdata = await self._make_request_async_json('POST',
+                                                       f'/{self.endpoint_base}',
+                                                       json=entity_data)
+        if 'error' in respdata:
+            raise DatamintException(respdata['error'])
         if isinstance(respdata, str):
             return respdata
         if isinstance(respdata, list):

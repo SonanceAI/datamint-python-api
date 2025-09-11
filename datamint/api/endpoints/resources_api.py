@@ -11,7 +11,6 @@ from datetime import date
 import json
 import logging
 import pydicom
-import pydicom.dataset
 from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report, GeneratorWithLength
 from medimgkit import dicom_utils, standardize_mimetype
 from medimgkit.io_utils import is_io_object, peek
@@ -152,36 +151,18 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         return self.annotations_api.get_list(resource=resource)
 
     @staticmethod
-    def __process_files_parameter(file_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset
-                                  ) -> tuple[Sequence[str | IO], bool]:
+    def __process_files_parameter(file_path: Sequence[str | IO | pydicom.Dataset]
+                                  ) -> Sequence[str | IO]:
         """
         Process the file_path parameter to ensure it is a list of file paths or IO objects.
         """
-        if isinstance(file_path, pydicom.dataset.Dataset):
-            file_path = to_bytesio(file_path, file_path.filename)
-
-        if isinstance(file_path, str):
-            if os.path.isdir(file_path):
-                is_list = True
-                new_file_path = [f'{file_path}/{f}' for f in os.listdir(file_path)]
+        processed_files = []
+        for item in file_path:
+            if isinstance(item, pydicom.Dataset):
+                processed_files.append(to_bytesio(item, item.filename))
             else:
-                is_list = False
-                new_file_path = [file_path]
-        # Check if is an IO object
-        elif is_io_object(file_path):
-            is_list = False
-            new_file_path = [file_path]
-        elif not hasattr(file_path, '__len__'):
-            if hasattr(file_path, '__iter__'):
-                is_list = True
-                new_file_path = list(file_path)
-            else:
-                is_list = False
-                new_file_path = [file_path]
-        else:
-            is_list = True
-            new_file_path = file_path
-        return new_file_path, is_list
+                processed_files.append(item)
+        return processed_files
 
     def _assemble_dicoms(self, files_path: Sequence[str | IO]
                          ) -> tuple[Sequence[str | IO], bool, Sequence[int]]:
@@ -361,10 +342,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 except Exception as e:
                     _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
-            resp = await self._make_request_async(method='POST',
-                                                  endpoint=self.endpoint_base,
-                                                  data=form)
-            resp_data = await resp.json()
+            resp_data = await self._make_request_async_json('POST',
+                                                            endpoint=self.endpoint_base,
+                                                            data=form)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
             _LOGGER.debug(f"Response on uploading {name}: {resp_data}")
@@ -374,7 +354,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 _LOGGER.error(f"Error uploading {name}: {e}")
             else:
                 _LOGGER.error(f"Error uploading {file_path}: {e}")
-            raise e
+            raise
         finally:
             f.close()
 
@@ -451,29 +431,32 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_resources(self,
-                         files_path: str | IO | Sequence[str | IO] | pydicom.dataset.Dataset,
-                         mimetype: Optional[str] = None,
+                         files_path: Sequence[str | IO | pydicom.Dataset],
+                         mimetype: str | None = None,
                          anonymize: bool = False,
                          anonymize_retain_codes: Sequence[tuple] = [],
                          on_error: Literal['raise', 'skip'] = 'raise',
-                         tags: Optional[Sequence[str]] = None,
+                         tags: Sequence[str] | None = None,
                          mung_filename: Sequence[int] | Literal['all'] | None = None,
-                         channel: Optional[str] = None,
+                         channel: str | None = None,
                          publish: bool = False,
-                         publish_to: Optional[str] = None,
-                         segmentation_files: Optional[list[list[str] | dict]] = None,
+                         publish_to: str | None = None,
+                         segmentation_files: Sequence[Sequence[str] | dict] | None = None,
                          transpose_segmentation: bool = False,
-                         modality: Optional[str] = None,
+                         modality: str | None = None,
                          assemble_dicoms: bool = True,
-                         metadata: list[str | dict | None] | dict | str | None = None,
+                         metadata: Sequence[str | dict | None] | None = None,
                          discard_dicom_reports: bool = True,
                          progress_bar: bool = False
-                         ) -> list[str | Exception] | str | Exception:
+                         ) -> Sequence[str | Exception]:
         """
-        Upload resources.
+        Upload multiple resources.
+
+        Note: For uploading a single resource, use `upload_resource()` instead.
 
         Args:
-            files_path (str | IO | Sequence[str | IO]): The path to the resource file or a list of paths to resources files.
+            files_path: A sequence of paths to resource files, IO objects, or pydicom.Dataset objects.
+                Must contain at least 2 items. Supports mixed types within the sequence.
             mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
@@ -493,11 +476,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SeriesInstanceUID and InstanceNumber attributes.
-            metadatas (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
+            metadata (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
                 Must have the same length as `files_path`.
                 Can be file paths (str) or already loaded dictionaries (dict).
 
         Raises:
+            ValueError: If a single resource is provided instead of multiple resources.
             ResourceNotFoundError: If `publish_to` is supplied, and the project does not exists.
 
         Returns:
@@ -507,7 +491,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
-        files_path, is_multiple_resources = ResourcesApi.__process_files_parameter(files_path)
+        # Check if single resource provided and raise error
+        if isinstance(files_path, (str, IO)) or isinstance(files_path, pydicom.Dataset):
+            raise ValueError(
+                "upload_resources() only accepts multiple resources. For single resource upload, use upload_resource() instead.")
+
+        files_path = ResourcesApi.__process_files_parameter(files_path)
 
         # Discard DICOM reports
         if discard_dicom_reports:
@@ -549,9 +538,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if segmentation_files is not None:
             if assemble_dicoms:
                 raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
-            if is_multiple_resources:
-                if len(segmentation_files) != len(files_path):
-                    raise ValueError("The number of segmentation files must match the number of resources.")
+            if len(segmentation_files) != len(files_path):
+                raise ValueError("The number of segmentation files must match the number of resources.")
             else:
                 if isinstance(segmentation_files, list) and isinstance(segmentation_files[0], list):
                     raise ValueError("segmentation_files should not be a list of lists if files_path is not a list.")
@@ -615,9 +603,110 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             _LOGGER.debug(f"Mapping indices for DICOM files: {mapping_idx}")
             resource_ids = [resource_ids[idx] for idx in mapping_idx]
 
-        if is_multiple_resources:
-            return resource_ids
-        return resource_ids[0]
+        return resource_ids
+
+    def upload_resource(self,
+                        file_path: str | IO | pydicom.Dataset,
+                        mimetype: str | None = None,
+                        anonymize: bool = False,
+                        anonymize_retain_codes: Sequence[tuple] = [],
+                        tags: Sequence[str] | None = None,
+                        mung_filename: Sequence[int] | Literal['all'] | None = None,
+                        channel: str | None = None,
+                        publish: bool = False,
+                        publish_to: str | None = None,
+                        segmentation_files: dict | None = None,
+                        transpose_segmentation: bool = False,
+                        modality: str | None = None,
+                        metadata: dict | str | None = None,
+                        discard_dicom_reports: bool = True
+                        ) -> str:
+        """
+        Upload a single resource.
+
+        This is a convenience method that wraps upload_resources for single file uploads.
+        It provides a cleaner interface when uploading just one file.
+
+        Args:
+            file_path: The path to the resource file or IO object.
+            mimetype: The mimetype of the resource. If None, it will be guessed.
+            anonymize: Whether to anonymize the DICOM or not.
+            anonymize_retain_codes: The tags to retain when anonymizing the DICOM.
+            tags: The tags to add to the resource.
+            mung_filename: The parts of the filepath to keep when renaming the resource file.
+                'all' keeps all parts.
+            channel: The channel to upload the resource to. An arbitrary name to group the resources.
+            publish: Whether to directly publish the resource or not. It will have the 'published' status.
+            publish_to: The project name or id to publish the resource to.
+                It will have the 'published' status and will be added to the project.
+                If this is set, `publish` parameter is ignored.
+            segmentation_files: The segmentation files to upload. Should be a dict with:
+                - 'files': A list of paths to the segmentation files. Example: ['seg1.nii.gz', 'seg2.nii.gz'].
+                - 'names': A dict mapping pixel values to class names. Example: {1: 'Brain', 2: 'Lung'}.
+            transpose_segmentation: Whether to transpose the segmentation files or not.
+            modality: The modality of the resource.
+            metadata: JSON metadata to include with the resource.
+                Can be a file path (str) or already loaded dictionary (dict).
+            discard_dicom_reports: Whether to discard DICOM reports or not.
+
+        Returns:
+            str: The resource ID of the uploaded resource.
+
+        Raises:
+            ResourceNotFoundError: If `publish_to` is supplied, and the project does not exist.
+            DatamintException: If the upload fails.
+
+        Example:
+            .. code-block:: python
+
+                # Simple upload
+                resource_id = api.resources.upload_resource('path/to/file.dcm')
+
+                # Upload with metadata and segmentation
+                resource_id = api.resources.upload_resource(
+                    'path/to/file.dcm',
+                    tags=['tutorial', 'case1'],
+                    channel='study_channel',
+                    segmentation_files={
+                        'files': ['path/to/segmentation.nii.gz'],
+                        'names': {1: 'Bone', 2: 'Tissue'}
+                    },
+                    metadata={'patient_age': 45, 'modality': 'CT'}
+                )
+        """
+        # Convert segmentation_files to the format expected by upload_resources
+        segmentation_files_list: Optional[list[list[str] | dict]] = None
+        if segmentation_files is not None:
+            segmentation_files_list = [segmentation_files]
+
+        # Call upload_resources with single file
+        result = self.upload_resources(
+            files_path=[file_path],
+            mimetype=mimetype,
+            anonymize=anonymize,
+            anonymize_retain_codes=anonymize_retain_codes,
+            tags=tags,
+            mung_filename=mung_filename,
+            channel=channel,
+            publish=publish,
+            publish_to=publish_to,
+            segmentation_files=segmentation_files_list,
+            transpose_segmentation=transpose_segmentation,
+            modality=modality,
+            metadata=[metadata],
+            discard_dicom_reports=discard_dicom_reports,
+            progress_bar=False  # Disable progress bar for single uploads
+        )
+
+        # upload_resources returns a list, so we extract the first element
+        if isinstance(result, Sequence) and len(result) == 1:
+            r = result[0]
+            if isinstance(r, Exception):
+                raise r
+            return r
+        else:
+            # This should not happen with single file uploads, but handle it just in case
+            raise DatamintException(f"Unexpected return from upload_resources: {type(result)} | {result}")
 
     def _determine_mimetype(self,
                             content,
@@ -656,11 +745,11 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         save_path = str(save_path)  # Ensure save_path is a string for file operations
         resource_id = self._entid(resource)
         try:
-            resp = await self._make_request_async('GET',
-                                                  f'{self.endpoint_base}/{resource_id}/file',
-                                                  session=session,
-                                                  headers={'accept': 'application/octet-stream'})
-            data_bytes = await resp.read()
+            async with self._make_request_async('GET',
+                                                f'{self.endpoint_base}/{resource_id}/file',
+                                                session=session,
+                                                headers={'accept': 'application/octet-stream'}) as resp:
+                data_bytes = await resp.read()
 
             final_save_path = save_path
             if add_extension:
@@ -745,7 +834,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                save_path: Optional[str] = None,
                                auto_convert: bool = True,
                                add_extension: bool = False
-                               ) -> bytes | pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage | tuple[Any, str]:
+                               ) -> bytes | pydicom.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage | tuple[Any, str]:
         """
         Download a resource file.
 
@@ -766,7 +855,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             >>> api_handler.download_resource_file('resource_id', auto_convert=False)
                 returns the resource content in bytes.
             >>> api_handler.download_resource_file('resource_id', auto_convert=True)
-                Assuming this resource is a dicom file, it will return a pydicom.dataset.Dataset object. 
+                Assuming this resource is a dicom file, it will return a pydicom.Dataset object. 
             >>> api_handler.download_resource_file('resource_id', save_path='path/to/dicomfile.dcm')
                 saves the file in the specified path.
         """
@@ -881,9 +970,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 self._make_entity_request('POST', resource, add_path='publish')
             except ResourceNotFoundError as e:
                 e.set_params('resource', {'resource_id': self._entid(resource)})
-                raise e
-            except Exception as e:
+                raise
+            except httpx.HTTPError as e:
                 if BaseApi._has_status_code(e, 400) and 'Resource must be in inbox status to be approved' in e.response.text:
                     _LOGGER.warning(f"Resource {resource} is not in inbox status. Skipping publishing")
                 else:
-                    raise e
+                    raise

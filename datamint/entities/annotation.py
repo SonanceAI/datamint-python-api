@@ -8,6 +8,7 @@ records returned by the DataMint API.
 from typing import Any
 import logging
 from .base_entity import BaseEntity, MISSING_FIELD
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
 
@@ -74,5 +75,7 @@ class Annotation(BaseEntity):
     user_info: dict | None
     values: list | None = MISSING_FIELD
 
-    # TODO: Consider constraining some fields with Literal types and parsing timestamps to datetime
-    #       once the API schema is stable, to provide stronger validation.
+    @property
+    def type(self) -> str:
+        """Alias for :attr:`annotation_type`."""
+        return self.annotation_type
