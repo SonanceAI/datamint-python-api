@@ -16,6 +16,7 @@ from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from datamint import configs
 import gzip
 from datamint.exceptions import DatamintException, ResourceNotFoundError
+from deprecated.sphinx import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 _PAGE_LIMIT = 5000
 
 
+@deprecated(reason="Please use `from datamint import Api` instead.", version="2.0.0")
 class BaseAPIHandler:
     """
     Class to handle the API requests to the Datamint API
@@ -41,6 +43,9 @@ class BaseAPIHandler:
                  root_url: Optional[str] = None,
                  api_key: Optional[str] = None,
                  check_connection: bool = True):
+        # deprecated
+        _LOGGER.warning("The class APIHandler is deprecated and will be removed in future versions. "
+                        "Please use `from datamint import Api` instead.")
         nest_asyncio.apply()  # For running asyncio in jupyter notebooks
         self.root_url = root_url if root_url is not None else configs.get_value(configs.APIURL_KEY)
         if self.root_url is None:
