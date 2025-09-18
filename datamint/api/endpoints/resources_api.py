@@ -121,6 +121,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             "channel_name": channel,
             "filename": filename,
         }
+        # remove nones from payload
+        payload = {k: v for k, v in payload.items() if v is not None}
         if project_name is not None:
             if isinstance(project_name, str):
                 project_name = [project_name]
@@ -136,7 +138,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             }
             payload['tags'] = json.dumps(tags_filter)
 
-        return super().get_list(limit=limit, **payload)
+        return super().get_list(limit=limit, params=payload)
 
     def get_annotations(self, resource: str | Resource) -> Sequence[Annotation]:
         """Get annotations for a specific resource.

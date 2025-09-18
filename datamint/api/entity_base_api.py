@@ -91,7 +91,8 @@ class EntityBaseApi(BaseApi, Generic[T]):
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
-    def get_list(self, limit: int | None = None, **kwargs) -> Sequence[T]:
+    def get_list(self, limit: int | None = None,
+                 **kwargs) -> Sequence[T]:
         """Get entities with optional filtering.
 
         Returns:
@@ -100,17 +101,17 @@ class EntityBaseApi(BaseApi, Generic[T]):
         Raises:
             httpx.HTTPStatusError: If the request fails.
         """
-        params = dict(kwargs)
+        new_kwargs = dict(kwargs)
 
         # Remove None values from the payload.
-        for k in list(params.keys()):
-            if params[k] is None:
-                del params[k]
+        for k in list(new_kwargs.keys()):
+            if new_kwargs[k] is None:
+                del new_kwargs[k]
 
         items_gen = self._make_request_with_pagination('GET', f'/{self.endpoint_base}',
                                                        return_field=self.endpoint_base,
                                                        limit=limit,
-                                                       params=params)
+                                                       **new_kwargs)
 
         all_items = []
         for resp, items in items_gen:

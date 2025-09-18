@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Literal
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 from datamint.entities.resource import Resource
@@ -68,16 +68,33 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
         return self._create(project_data)
 
-    def get_by_name(self, name: str) -> Project | None:
+    def get_all(self, limit: int | None = None) -> Sequence[Project]:
+        """Get all projects.
+
+        Args:
+            limit: The maximum number of projects to return. If None, return all projects.
+
+        Returns:
+            A list of project instances.
+        """
+        return self.get_list(limit=limit, params={'includeArchived': True})
+
+    def get_by_name(self,
+                    name: str,
+                    include_archived: bool = True) -> Project | None:
         """Get a project by its name.
 
         Args:
             name (str): The name of the project.
+            include_archived (bool): Whether to include archived projects in the search.
 
         Returns:
             The project instance if found, otherwise None.
         """
-        projects = self.get_all()
+        if include_archived:
+            projects = self.get_list(params={'includeArchived': True})
+        else:
+            projects = self.get_all()
         for project in projects:
             if project.name == name:
                 return project
@@ -162,3 +179,25 @@ class ProjectsApi(CRUDEntityApi[Project]):
                     for data in response.iter_bytes(1024):
                         progress_bar.update(len(data))
                         file.write(data)
+
+    def set_work_status(self,
+                        resource: str | Resource,
+                        project: str | Project,
+                        status: Literal['opened', 'annotated', 'closed']) -> None:
+        """
+        Set the status of a resource.
+
+        Args:
+            annotation: The annotation unique id or an annotation object.
+            status: The new status to set.
+        """
+        resource_id = self._entid(resource)
+        proj_id = self._entid(project)
+
+        jsondata = {
+            'status': status
+        }
+        self._make_entity_request('POST',
+                                  entity_id=proj_id,
+                                  add_path=f'resources/{resource_id}/status',
+                                  json=jsondata)

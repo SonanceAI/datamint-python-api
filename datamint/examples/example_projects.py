@@ -1,75 +1,72 @@
 import requests
 import io
-from datamint import APIHandler
+from datamint import Api
 import logging
 from PIL import Image
 import numpy as np
+from datamint.entities import Project, Resource
+from pydicom.data import get_testdata_file
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _download_pydicom_test_file(filename: str) -> io.BytesIO:
-    """Download a pydicom test file from GitHub and return its content as a BytesIO object."""
-    url = f'https://raw.githubusercontent.com/pydicom/pydicom/master/tests/data/{filename}'
-    response = requests.get(url)
-    response.raise_for_status()
-    content = io.BytesIO(response.content)
-    content.name = filename
-    return content
-
-
 class ProjectMR:
     @staticmethod
-    def upload_resource_emri_small(api: APIHandler = None) -> str:
+    def upload_resource_emri_small(api: Api | None = None) -> Resource:
         if api is None:
-            api = APIHandler()
+            api = Api()
 
-        searched_res = api.get_resources(status='published', tags=['example'], filename='emri_small.dcm')
+        searched_res = api.resources.get_list(status='published',
+                                              tags=['example'],
+                                              filename='emri_small.dcm')
         for res in searched_res:
             _LOGGER.info('Resource already exists.')
-            return res['id']
+            return res
 
-        dcm_content = _download_pydicom_test_file('emri_small.dcm')
+        dcm_path = get_testdata_file("emri_small.dcm",
+                                     read=False)
 
-        _LOGGER.info(f'Uploading resource {dcm_content.name}...')
-        return api.upload_resources(dcm_content,
-                                    anonymize=True,
-                                    publish=True,
-                                    tags=['example'])
+        _LOGGER.info('Uploading resource emri_small.dcm...')
+        resid = api.resources.upload_resource(dcm_path,
+                                              anonymize=False,
+                                              publish=True,
+                                              tags=['example'])
+        return api.resources.get_by_id(resid)
 
     @staticmethod
-    def _upload_annotations(api: APIHandler,
-                            resid: str,
-                            proj) -> None:
+    def _upload_annotations(api: Api,
+                            res: Resource,
+                            proj: Project) -> None:
         _LOGGER.info('Uploading annotations...')
-        proj_id = proj['id']
-        proj_info = api.get_project_by_id(proj_id)
         segurl = 'https://github.com/user-attachments/assets/8c5d7dfe-1b5a-497d-b76e-fe790f09bb90'
         resp = requests.get(segurl, stream=True)
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert('L')
-        api.upload_segmentations(resid, np.array(img),
-                                 name='object1', frame_index=1,
-                                 worklist_id=proj_info['worklist_id'])
-        api.set_annotation_status(project_id=proj_id,
-                                  resource_id=resid,
-                                  status='closed')
+        api.annotations.upload_segmentations(res, np.array(img),
+                                             name='object1', frame_index=1,
+                                             worklist_id=proj.worklist_id)
+        api.projects.set_work_status(resource=res,
+                                     project=proj,
+                                     status='closed')
 
     @staticmethod
     def create(project_name: str = 'Example Project MR',
-               with_annotations=True) -> str:
-        api = APIHandler()
+               with_annotations=True) -> Project:
+        api = Api()
 
-        resid = ProjectMR.upload_resource_emri_small(api)
-        proj = api.get_project_by_name(project_name)
-        if 'id' in proj:
-            msg = f'Project {project_name} already exists. Delete it first or choose another name.'
-            raise ValueError(msg)
+        res = ProjectMR.upload_resource_emri_small(api)
+        proj = api.projects.get_by_name(name=project_name)
+        if proj:
+            _LOGGER.warning(f'Project {project_name} already exists. Returning it without modifications...')
+            return proj
+
         _LOGGER.info(f'Creating project {project_name}...')
-        proj = api.create_project(name=project_name,
-                                  description='This is an example project',
-                                  resources_ids=[resid])
-        if with_annotations:
-            ProjectMR._upload_annotations(api, resid, proj)
+        projid = api.projects.create(name=project_name,
+                                     description='This is an example project',
+                                     resources_ids=[res.id])
+        proj = api.projects.get_by_id(projid)
 
-        return proj['id']
+        if with_annotations:
+            ProjectMR._upload_annotations(api, res, proj)
+
+        return proj

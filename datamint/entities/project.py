@@ -56,3 +56,9 @@ class Project(BaseEntity):
     is_active_learning: bool = MISSING_FIELD
     two_up_display: bool = MISSING_FIELD
     require_review: bool = MISSING_FIELD
+
+    @property
+    def url(self) -> str:
+        """Get the URL to access this project in the DataMint web application."""
+        base_url = "https://app.datamint.io/projects/edit"
+        return f"{base_url}/{self.id}"

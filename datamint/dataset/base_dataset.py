@@ -16,7 +16,8 @@ from torch import Tensor
 from datamint.exceptions import DatamintException
 from medimgkit.dicom_utils import is_dicom
 from medimgkit.readers import read_array_normalized
-from medimgkit.format_detection import guess_extension
+from medimgkit.format_detection import guess_extension, guess_typez
+from medimgkit.nifti_utils import NIFTI_MIMES, get_nifti_shape
 from datetime import datetime
 from pathlib import Path
 from datamint.entities import Annotation, DatasetInfo
@@ -402,19 +403,33 @@ class DatamintBaseDataset:
     @staticmethod
     def read_number_of_frames(filepath: str) -> int:
         """Read the number of frames in a file."""
-        if is_dicom(filepath):
+
+        mimetypes, ext = guess_typez(filepath)
+        mimetype = mimetypes[0]
+        if mimetype is None:
+            raise ValueError(f"Could not determine MIME type for file: {filepath}")
+
+        if mimetype == 'application/dicom':
             ds = pydicom.dcmread(filepath)
             return getattr(ds, 'NumberOfFrames', 1)
-        elif filepath.lower().endswith(('.mp4', '.avi')):
+        elif mimetype.startswith('video/'):
             cap = cv2.VideoCapture(filepath)
             try:
                 return int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             finally:
                 cap.release()
-        elif filepath.lower().endswith(('.png', '.jpg', '.jpeg')):
+        elif mimetype in ('image/png', 'image/jpeg', 'image/jpg', 'image/bmp', 'image/tiff'):
             return 1
+        elif mimetype in NIFTI_MIMES:
+            shape = get_nifti_shape(filepath)
+            if len(shape) == 3:
+                return shape[-1]
+            elif len(shape) > 3:
+                return shape[3]
+            else:
+                return 1
         else:
-            raise ValueError(f"Unsupported file type: {filepath}")
+            raise ValueError(f"Unsupported file type '{mimetype}' for file {filepath}")
 
     def get_resources_ids(self) -> list[str]:
         """Get list of resource IDs."""
@@ -658,6 +673,9 @@ class DatamintBaseDataset:
             min_val = img.min()
             img = (img - min_val) / (img.max() - min_val) * 255
             img = img.astype(np.uint8)
+
+        if not img.flags.writeable:
+            img = img.copy()
 
         img_tensor = torch.from_numpy(img).contiguous()
 
@@ -941,7 +959,8 @@ class DatamintBaseDataset:
                     _LOGGER.error(f"Error deleting annotation file {filepath}: {e}")
 
             # Update resource annotations list - convert to Annotation objects
-            resource['annotations'] = [Annotation.from_dict(ann) for ann in new_resource_annotations]
+            # resource['annotations'] = [Annotation.from_dict(ann) for ann in new_resource_annotations]
+            resource['annotations'] = new_resource_annotations
 
         # Batch download all segmentation files
         if segmentations_to_download:

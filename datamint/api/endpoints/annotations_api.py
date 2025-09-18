@@ -5,6 +5,7 @@ import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
+from datamint.entities.project import Project
 from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
@@ -38,17 +39,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         super().__init__(config, Annotation, 'annotations', client)
 
-    # def create(self, annotation_data: dict[str, Any]) -> str:
-    #     """Create a new annotation.
-
-    #     Args:
-    #         annotation_data: Dictionary payload for the annotation.
-
-    #     Returns:
-    #         The id of the created annotation.
-    #     """
-    #     return self._create(annotation_data)
-
     def get_list(self,
                  resource: str | Resource | None = None,
                  annotation_type: AnnotationType | str | None = None,
@@ -75,11 +65,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         # remove nones
         payload = {k: v for k, v in payload.items() if v is not None}
-        return super().get_list(limit=limit, **payload)
+        return super().get_list(limit=limit, params=payload)
 
     async def _upload_segmentations_async(self,
                                           resource: str | Resource,
-                                          frame_index: int | None,
+                                          frame_index: int | Sequence [int] | None,
                                           file_path: str | np.ndarray,
                                           name: dict[int, str] | dict[tuple, str],
                                           imported_from: str | None = None,
@@ -140,8 +130,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             frames_indices = list(range(nframes))
         elif isinstance(frame_index, int):
             frames_indices = [frame_index]
+        elif isinstance(frame_index, Sequence):
+            if len(frame_index) != nframes:
+                raise ValueError("Length of frame_index does not match number of frames in segmentation.")
+            frames_indices = list(frame_index)
         else:
-            raise ValueError("frame_index must be an int or None")
+            raise ValueError("frame_index must be a list of integers or None.")
 
         annotids = []
         for fidx, f in zip(frames_indices, fios):
@@ -421,7 +415,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 - dict[tuple[int, int, int], str]: Mapping RGB tuples to names for RGB segmentations
                 Use 'default' as a key for a unnamed classes.
                 Example: {(255, 0, 0): 'Red_Region', (0, 255, 0): 'Green_Region'}
-            frame_index: The frame index of the segmentation. 
+            frame_index: The frame index of the segmentation.
                 If a list, it must have the same length as the number of frames in the segmentation.
                 If None, it is assumed that the segmentations are in sequential order starting from 0.
                 This parameter is ignored for NIfTI files as they are treated as volume segmentations.
@@ -484,17 +478,21 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         # All other file types are converted to multiple PNGs and uploaded frame by frame
         standardized_name = self.standardize_segmentation_names(name)
+        _LOGGER.debug(f"Standardized segmentation names: {standardized_name}")
 
         # Handle frame_index parameter
         if isinstance(frame_index, list):
             if len(set(frame_index)) != len(frame_index):
                 raise ValueError("frame_index list contains duplicate values.")
 
+        if isinstance(frame_index, Sequence) and len(frame_index) == 1:
+            frame_index = frame_index[0] 
+        
         nest_asyncio.apply()
         loop = asyncio.get_event_loop()
         task = self._upload_segmentations_async(
             resource=resource,
-            frame_index=frame_index[0] if isinstance(frame_index, list) and len(frame_index) == 1 else None,
+            frame_index=frame_index,
             file_path=file_path,
             name=standardized_name,
             imported_from=imported_from,
@@ -508,7 +506,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         return loop.run_until_complete(task)
 
     @staticmethod
-    def standardize_segmentation_names(name: str | dict[int, str] | dict[tuple, str] | None) -> dict[int, str] | dict[tuple, str]:
+    def standardize_segmentation_names(name: str | dict | None
+                                       ) -> dict:
         """
         Standardize segmentation names to a consistent format.
 
@@ -519,9 +518,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             Standardized name dictionary.
         """
         if name is None:
-            return {0: 'default'}  # Return a dict with integer key for compatibility
+            return {'default': 'default'}  # Return a dict with integer key for compatibility
         elif isinstance(name, str):
-            return {0: name}  # Use integer key for single string names
+            return {'default': name}  # Use integer key for single string names
         elif isinstance(name, dict):
             # Return the dict as-is since it's already in the correct format
             return name
@@ -782,7 +781,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Add a line annotation to a resource.
 
         Args:
-            point1: The first point of the line. Can be a 2d or 3d point. 
+            point1: The first point of the line. Can be a 2d or 3d point.
                 If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
                 If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
                 to the DICOM metadata.
@@ -791,9 +790,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             resource_id: The resource unique id.
             identifier: The annotation identifier, also as known as the annotation's label.
             frame_index: The frame index of the annotation.
-            dicom_metadata: The DICOM metadata of the image. If provided, the coordinates will be converted to the 
+            dicom_metadata: The DICOM metadata of the image. If provided, the coordinates will be converted to the
                 correct coordinates automatically using the DICOM metadata.
-            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'. 
+            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'.
                 If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
             project: The project unique id or name.
             worklist_id: The annotation worklist unique id. Optional.
@@ -959,6 +958,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         import nest_asyncio
         nest_asyncio.apply()
+
         async def _download_all_async():
             async with aiohttp.ClientSession() as session:
                 tasks = [
