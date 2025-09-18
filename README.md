@@ -45,13 +45,13 @@ import os
 os.environ["DATAMINT_API_KEY"] = "my_api_key"
 ```
 
-### Method 3: APIHandler constructor
+### Method 3: Api constructor
 
-Specify API key in the |APIHandlerClass| constructor:
+Specify API key in the Api constructor:
 
 ```python
-from datamint import APIHandler
-api = APIHandler(api_key='my_api_key')
+from datamint import Api
+api = Api(api_key='my_api_key')
 ```
 
 ## Tutorials
@@ -64,8 +64,9 @@ You can find example notebooks in the `notebooks` folder:
 
 and example scripts in [examples](examples) folder:
 
-- [Running an experiment for classification](examples/experiment_traintest_classifier.py)
-- [Running an experiment for segmentation](examples/experiment_traintest_segmentation.py)
+- [API usage examples](examples/api_usage.ipynb)
+- [Project and entity usage](examples/project_entity_usage.ipynb)
+- [Channels example](examples/channels_example.ipynb)
 
 ## Full documentation
 

@@ -17,7 +17,7 @@ Datamint
 --------
 
 - `Homepage <https://www.datamint.io>`_
-- `Datamint Platform <https://staging.datamint.io/>`_
+- `Datamint Platform <https://app.datamint.io/>`_
 - `Github <https://github.com/SonanceAI/datamint-python-api>`_
 
 .. toctree::
@@ -28,7 +28,6 @@ Datamint
    setup_api_key
    command_line_tools
    client_api
-   running_experiments
    pytorch_integration
 
 
@@ -38,7 +37,7 @@ Datamint
 
    datamint.apihandler
    datamint.dataset
-   datamint.experiment
+   datamint.entities
 
 
 Indices and tables
