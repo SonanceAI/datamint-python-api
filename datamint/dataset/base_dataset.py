@@ -225,26 +225,34 @@ class DatamintBaseDataset:
         else:
             self._check_version()
 
+    def _init_metainfo(self) -> None:
+        # get the server info
+        self.project_info = self.get_info()
+        self.metainfo = self._get_datasetinfo().asdict().copy()
+        self.metainfo['updated_at'] = None
+        self.metainfo['resources'] = []
+        self.metainfo['all_annotations'] = self.all_annotations
+        self.images_metainfo = self.metainfo['resources']
+
     def _load_metadata(self) -> bool:
         """Load and process dataset metadata."""
         if hasattr(self, 'metainfo'):
             _LOGGER.warning("Metadata already loaded.")
         metadata_path = os.path.join(self.dataset_dir, 'dataset.json')
         if not os.path.isfile(metadata_path):
-            # get the server info
-            self.project_info = self.get_info()
-            self.metainfo = self._get_datasetinfo().asdict().copy()
-            self.metainfo['updated_at'] = None
-            self.metainfo['resources'] = []
-            self.metainfo['all_annotations'] = self.all_annotations
-            self.images_metainfo = self.metainfo['resources']
+            self._init_metainfo()
             return False
         else:
             with open(metadata_path, 'r') as file:
                 self.metainfo = json.load(file)
         self.images_metainfo = self.metainfo['resources']
         # Convert annotations from dict to Annotation objects
-        self._convert_metainfo_to_clsobj()
+        try:
+            self._convert_metainfo_to_clsobj()
+        except Exception as e:
+            _LOGGER.warning(f"Failed to convert annotations. Redownloading dataset. {type(e)}")
+            self._init_metainfo()
+            return False
         return True
 
     def _convert_metainfo_to_clsobj(self):
@@ -552,13 +560,12 @@ class DatamintBaseDataset:
         """Get project information from API."""
         if hasattr(self, 'project_info') and self.project_info is not None:
             return self.project_info
-        project = self.api.projects.get_by_name(self.project_name).asdict()
-        if 'error' in project:
-            available_projects = project['all_projects']
+        project = self.api.projects.get_by_name(self.project_name)
+        if project is None:
             raise DatamintDatasetException(
-                f"Project with name '{self.project_name}' not found. "
-                f"Available projects: {available_projects}"
+                f"Project with name '{self.project_name}' not found."
             )
+        project = project.asdict()
         self.project_info = project
         self.dataset_id = project['dataset_id']
         return project
@@ -898,8 +905,8 @@ class DatamintBaseDataset:
         ################
 
         ### ANNOTATIONS ###
-        all_annotations = self.api.annotations.get_list(worklist_id=self.project_info['worklist_id'],
-                                                        status='published' if self.all_annotations else None)
+        all_annotations = self.api.annotations.get_list(worklist_id=None if self.all_annotations else self.project_info['worklist_id'],
+                                                        status=None if self.all_annotations else 'published')
 
         # group annotations by resource ID
         annotations_by_resource: dict[str, list[Annotation]] = {}
