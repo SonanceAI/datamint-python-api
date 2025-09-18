@@ -66,7 +66,7 @@ class Resource(BaseEntity):
     created_by: str
     published: bool
     deleted: bool
-    source_filepath: str
+    source_filepath: str | None
     metadata: dict
     projects: list[dict] = MISSING_FIELD
     published_on: str | None

@@ -13,6 +13,7 @@ from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from io import BytesIO
 import gzip
 import contextlib
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class BaseApi:
         """
         self.config = config
         self.client = client or self._create_client()
+        self.semaphore = asyncio.Semaphore(20)
 
     def _create_client(self) -> httpx.Client:
         """Create and configure HTTP client with authentication and timeouts."""
@@ -273,22 +275,23 @@ class BaseApi:
             fail_silently=True
         )
         logger.debug(f'Equivalent curl command: "{curl_cmd}"')
-        try:
-            response = await session.request(
-                method=method,
-                url=url,
-                headers=headers,
-                timeout=timeout,
-                **kwargs
-            )
-            self._check_errors_response(response, url=url)
-            yield response
-        except aiohttp.ClientError as e:
-            logger.error(f"Request error for {method} {endpoint}: {e}")
-            raise
-        finally:
-            if response is not None:
-                response.release()
+        async with self.semaphore:
+            try:
+                response = await session.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    timeout=timeout,
+                    **kwargs
+                )
+                self._check_errors_response(response, url=url)
+                yield response
+            except aiohttp.ClientError as e:
+                logger.error(f"Request error for {method} {endpoint}: {e}")
+                raise
+            finally:
+                if response is not None:
+                    response.release()
 
     async def _make_request_async_json(self,
                                        method: str,

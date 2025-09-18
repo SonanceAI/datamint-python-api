@@ -6,6 +6,7 @@ from .channel import Channel, ChannelResourceData
 from .project import Project
 from .resource import Resource
 from .user import User  # new export
+from .datasetinfo import DatasetInfo
 
 __all__ = [
     'Annotation',
@@ -14,5 +15,6 @@ __all__ = [
     'ChannelResourceData',
     'Project',
     'Resource',
-    "User"
+    "User",
+    'DatasetInfo',
 ]

@@ -82,19 +82,18 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                  limit: int | None = None
                  ) -> Sequence[Resource]:
         """Get resources with optional filtering.
-        Args:
-            status (ResourceStatus): The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
-            from_date (date | str | None): The start date.
-            to_date (date | str | None): The end date.
-            tags (Optional[list[str]]): The tags to filter the resources.
-            modality (Optional[str]): The modality of the resources.
-            mimetype (Optional[str]): The mimetype of the resources.
-            # return_ids_only (bool): Whether to return only the ids of the resources.
-            order_field (Optional[ResourceFields]): The field to order the resources. See :data:`~.base_api_handler.ResourceFields`.
-            order_ascending (Optional[bool]): Whether to order the resources in ascending order.
-            project_name (str | list[str] | None): The project name or a list of project names to filter resources by project.
-                If multiple projects are provided, resources will be filtered to include only those belonging to ALL of the specified projects.
 
+        Args:
+            status: The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
+            from_date : The start date.
+            to_date: The end date.
+            tags: The tags to filter the resources.
+            modality: The modality of the resources.
+            mimetype: The mimetype of the resources.
+            order_field: The field to order the resources. See :data:`~ResourceFields`.
+            order_ascending: Whether to order the resources in ascending order.
+            project_name: The project name or a list of project names to filter resources by project.
+                If multiple projects are provided, resources will be filtered to include only those belonging to ALL of the specified projects.
         """
 
         # Convert datetime objects to ISO format
@@ -151,11 +150,14 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         return self.annotations_api.get_list(resource=resource)
 
     @staticmethod
-    def __process_files_parameter(file_path: Sequence[str | IO | pydicom.Dataset]
+    def __process_files_parameter(file_path: str | Sequence[str | IO | pydicom.Dataset]
                                   ) -> Sequence[str | IO]:
         """
         Process the file_path parameter to ensure it is a list of file paths or IO objects.
         """
+        if isinstance(file_path, str) and os.path.isdir(file_path):
+            return [f'{file_path}/{f}' for f in os.listdir(file_path) if os.path.isfile(f'{file_path}/{f}')]
+
         processed_files = []
         for item in file_path:
             if isinstance(item, pydicom.Dataset):
@@ -164,7 +166,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 processed_files.append(item)
         return processed_files
 
-    def _assemble_dicoms(self, files_path: Sequence[str | IO]
+    def _assemble_dicoms(self, files_path: Sequence[str | IO],
+                         progress_bar: bool = False
                          ) -> tuple[Sequence[str | IO], bool, Sequence[int]]:
         """
         Assembles DICOM files into a single file.
@@ -175,7 +178,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         Returns:
             A tuple containing:
                 - The paths to the assembled DICOM files.
-                - A boolean indicating whether the assembly was successful.
+                - A boolean indicating if the assembly was necessary.
                 - same length as the output assembled DICOMs, mapping assembled DICOM to original DICOMs.
         """
         dicoms_files_path = []
@@ -194,7 +197,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if orig_len == 0:
             _LOGGER.debug("No DICOM files found to assemble.")
             return files_path, False, []
-        dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path, return_as_IO=True)
+        dicoms_files_path = dicom_utils.assemble_dicoms(dicoms_files_path,
+                                                        return_as_IO=True,
+                                                        progress_bar=progress_bar)
 
         new_len = len(dicoms_files_path)
         if new_len != orig_len:
@@ -491,8 +496,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
-        # Check if single resource provided and raise error
-        if isinstance(files_path, (str, IO)) or isinstance(files_path, pydicom.Dataset):
+        # Check if single resource provided and raise error (list of 1 item is allowed)
+        if isinstance(files_path, IO) or isinstance(files_path, pydicom.Dataset) or (isinstance(files_path, str) and not os.path.isdir(files_path)):
             raise ValueError(
                 "upload_resources() only accepts multiple resources. For single resource upload, use upload_resource() instead.")
 
@@ -525,7 +530,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if metadata is not None and len(metadata) != len(files_path):
             raise ValueError("The number of metadata files must match the number of resources.")
         if assemble_dicoms:
-            files_path, assembled, mapping_idx = self._assemble_dicoms(files_path)
+            files_path, assembled, mapping_idx = self._assemble_dicoms(files_path, progress_bar=progress_bar)
             assemble_dicoms = assembled
         else:
             mapping_idx = [i for i in range(len(files_path))]
@@ -695,6 +700,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             modality=modality,
             metadata=[metadata],
             discard_dicom_reports=discard_dicom_reports,
+            assemble_dicoms=False,  # No need to assemble for single file
             progress_bar=False  # Disable progress bar for single uploads
         )
 
@@ -789,6 +795,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                     resources: Sequence[str] | Sequence[Resource],
                                     save_path: Sequence[str] | str,
                                     add_extension: bool = False,
+                                    overwrite: bool = True
                                     ) -> list[str]:
         """
         Download multiple resources and save them to the specified paths.
@@ -822,6 +829,19 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         if isinstance(save_path, str):
             save_path = [os.path.join(save_path, self._entid(r)) for r in resources]
+
+        if len(save_path) != len(resources):
+            raise ValueError("The number of save paths must match the number of resources.")
+
+        if not overwrite:
+            new_resources = []
+            new_save_path = []
+            for i in range(len(resources)):
+                if not os.path.exists(save_path[i]):
+                    new_resources.append(resources[i])
+                    new_save_path.append(save_path[i])
+            resources = new_resources
+            save_path = new_save_path
 
         with tqdm(total=len(resources), desc="Downloading resources", unit="file") as progress_bar:
             loop = asyncio.get_event_loop()
@@ -976,3 +996,16 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     _LOGGER.warning(f"Resource {resource} is not in inbox status. Skipping publishing")
                 else:
                     raise
+
+    def set_tags(self,
+                 resource: str | Resource,
+                 tags: Sequence[str],
+                 ):
+        data = {'tags': tags}
+        resource_id = self._entid(resource)
+
+        response = self._make_entity_request('PUT',
+                                             resource_id,
+                                             add_path='tags',
+                                             json=data)
+        return response

@@ -17,6 +17,9 @@ import nibabel as nib
 from PIL import Image
 from io import BytesIO
 import pydicom
+from pathlib import Path
+from tqdm.auto import tqdm
+import asyncio
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -451,7 +454,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 # Volume segmentation
                 api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
         """
-        import asyncio
         import nest_asyncio
 
         if isinstance(file_path, str) and not os.path.exists(file_path):
@@ -775,7 +777,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             worklist_id: str | None = None,
                             imported_from: str | None = None,
                             author_email: str | None = None,
-                            model_id: str | None = None) -> list[str]:
+                            model_id: str | None = None) -> Sequence[str]:
         """
         Add a line annotation to a resource.
 
@@ -848,7 +850,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                     worklist_id: str | None = None,
                                     imported_from: str | None = None,
                                     author_email: str | None = None,
-                                    model_id: str | None = None) -> list[str]:
+                                    model_id: str | None = None) -> Sequence[str]:
         """
         Create an annotation with the given geometry.
 
@@ -883,3 +885,100 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         )
 
         return self.create(resource_id, annotation_dto)
+
+    def download_file(self,
+                      annotation: str | Annotation,
+                      fpath_out: str | Path | None = None) -> bytes:
+        """
+        Download the segmentation file for a given resource and annotation.
+
+        Args:
+            annotation: The annotation unique id or an annotation object.
+            fpath_out: (Optional) The file path to save the downloaded segmentation file.
+
+        Returns:
+            bytes: The content of the downloaded segmentation file in bytes format.
+        """
+        if isinstance(annotation, Annotation):
+            annotation_id = annotation.id
+            resource_id = annotation.resource_id
+        else:
+            annotation_id = annotation
+            resource_id = self.get_by_id(annotation_id).resource_id
+
+        resp = self._make_request('GET', f'/annotations/{resource_id}/annotations/{annotation_id}/file')
+        if fpath_out:
+            with open(str(fpath_out), 'wb') as f:
+                f.write(resp.content)
+        return resp.content
+
+    async def _async_download_segmentation_file(self,
+                                                annotation: str | Annotation,
+                                                save_path: str | Path,
+                                                session: aiohttp.ClientSession | None = None,
+                                                progress_bar: tqdm | None = None):
+        """
+        Asynchronously download a segmentation file.
+
+        Args:
+            annotation (str | dict): The annotation unique id or an annotation object.
+            save_path (str | Path): The path to save the file.
+            session (aiohttp.ClientSession): The aiohttp session to use for the request.
+            progress_bar (tqdm | None): Optional progress bar to update after download completion.
+        """
+        if isinstance(annotation, Annotation):
+            annotation_id = annotation.id
+            resource_id = annotation.resource_id
+        else:
+            annotation_id = annotation
+            resource_id = self.get_by_id(annotation_id).resource_id
+
+        try:
+            async with self._make_request_async('GET',
+                                                f'/annotations/{resource_id}/annotations/{annotation_id}/file',
+                                                session=session) as resp:
+                data_bytes = await resp.read()
+                with open(save_path, 'wb') as f:
+                    f.write(data_bytes)
+            if progress_bar:
+                progress_bar.update(1)
+        except ResourceNotFoundError as e:
+            e.set_params('annotation', {'annotation_id': annotation_id})
+            raise e
+
+    def download_multiple_files(self,
+                                annotations: Sequence[str | Annotation],
+                                save_paths: Sequence[str | Path] | str
+                                ) -> None:
+        """
+        Download multiple segmentation files and save them to the specified paths.
+
+        Args:
+            annotations: A list of annotation unique ids or annotation objects.
+            save_paths: A list of paths to save the files or a directory path.
+        """
+        import nest_asyncio
+        nest_asyncio.apply()
+        async def _download_all_async():
+            async with aiohttp.ClientSession() as session:
+                tasks = [
+                    self._async_download_segmentation_file(
+                        annotation, save_path=path, session=session, progress_bar=progress_bar)
+                    for annotation, path in zip(annotations, save_paths)
+                ]
+                await asyncio.gather(*tasks)
+
+        if isinstance(save_paths, str):
+            save_paths = [os.path.join(save_paths, self._entid(ann))
+                          for ann in annotations]
+
+        with tqdm(total=len(annotations), desc="Downloading segmentations", unit="file") as progress_bar:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(_download_all_async())
+
+    def bulk_download_file(self,
+                           annotations: Sequence[str | Annotation],
+                           save_paths: Sequence[str | Path] | str
+                           ) -> None:
+        """Alias for :py:meth:`download_multiple_files`"""
+        return self.download_multiple_files(annotations, save_paths)

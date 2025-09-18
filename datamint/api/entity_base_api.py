@@ -262,8 +262,9 @@ class DeletableEntityApi(EntityBaseApi[T]):
         Raises:
             httpx.HTTPStatusError: If deletion fails or entity not found
         """
-        await self._make_entity_request_async('DELETE', entity,
-                                              session=session)
+        async with self._make_entity_request_async('DELETE', entity,
+                                              session=session) as resp:
+            await resp.text()  # Consume response to complete request
 
     # def get_deleted(self, **kwargs) -> Sequence[T]:
     #     pass

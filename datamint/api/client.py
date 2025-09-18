@@ -1,7 +1,7 @@
 from typing import Optional
 import httpx
 from .base_api import ApiConfig
-from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi
+from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi, DatasetsInfoApi
 import datamint.configs
 from datamint.exceptions import DatamintException
 import asyncio
@@ -18,12 +18,13 @@ class Api:
         'annotations': AnnotationsApi,
         'channels': ChannelsApi,
         'users': UsersApi,
+        'datasets': DatasetsInfoApi
     }
 
     def __init__(self,
                  server_url: str | None = None,
                  api_key: Optional[str] = None,
-                 timeout: float = 30.0, max_retries: int = 3,
+                 timeout: float = 60.0, max_retries: int = 2,
                  check_connection: bool = True) -> None:
         """Initialize the API client.
 
@@ -84,4 +85,7 @@ class Api:
     @property
     def users(self) -> UsersApi:
         return self._get_endpoint('users')
-
+    @property
+    def _datasetsinfo(self) -> DatasetsInfoApi:
+        """Internal property to access DatasetsInfoApi."""
+        return self._get_endpoint('datasets')

@@ -7,7 +7,7 @@ import numpy as np
 import logging
 from PIL import Image
 import albumentations
-from datamint.dataset.annotation import Annotation
+from datamint.entities.annotation import Annotation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +155,7 @@ class DatamintDataset(DatamintBaseDataset):
             # FIXME: avoid enforcing resizing the mask
             seg = (Image.open(segfilepath)
                    .convert('L')
-                   .resize((w, h), Image.NEAREST)
+                   .resize((w, h), Image.Resampling.NEAREST)
                    )
             seg = np.array(seg)
 

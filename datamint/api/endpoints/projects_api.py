@@ -19,7 +19,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """
         super().__init__(config, Project, 'projects', client)
 
-    def get_project_resources(self, project: Project | str) -> Sequence[Resource]:
+    def get_project_resources(self, project: Project | str) -> list[Resource]:
         """Get resources associated with a specific project.
 
         Args:

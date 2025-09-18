@@ -20,11 +20,17 @@ nitpicky = True
 nitpick_ignore = {
     ("py:class", "pydicom.dataset.Dataset"),
     ("py:class", "PIL.Image.Image"),
+    ("py:class", "Image.Image"),
     ("py:class", "np.ndarray"),
     ("py:class", "numpy.ndarray"),
     ("py:class", "torch.nn.Module"),
     ("py:class", "cv2.VideoCapture"),
     ("py:class", "nibabel.filebasedimages.FileBasedImage"),
+    ("py:class", "pydantic.main.BaseModel"),
+    ("py:class", "httpx.HTTPStatusError"),
+    ("py:class", "httpx.Response"),
+    ("py:class", "httpx.Client"),
+    ("py:class", "aiohttp.client_exceptions.ClientResponseError"),
 }
 
 # -- General configuration ---------------------------------------------------
@@ -42,9 +48,8 @@ extensions = [
 ]
 
 rst_prolog = """
-.. |ExperimentClass| replace:: :py:class:`~datamint.experiment.experiment.Experiment`
 .. |DatamintDatasetClass| replace:: :py:class:`~datamint.dataset.dataset.DatamintDataset`
-.. |APIHandlerClass| replace:: :py:class:`~datamint.apihandler.api_handler.APIHandler`
+.. |ApiClass| replace:: :py:class:`~datamint.api.client.Api`
 """
 
 napoleon_google_docstring = True
@@ -84,3 +89,10 @@ html_css_files = [
 ]
 
 html_favicon = "favicon.png"
+
+# Ensure all modules are discoverable
+autodoc_mock_imports = []
+
+# Add type hints support
+autodoc_typehints = 'description'
+autodoc_typehints_description_target = 'documented'

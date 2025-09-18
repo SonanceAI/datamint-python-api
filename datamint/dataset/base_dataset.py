@@ -13,14 +13,15 @@ from datamint import configs
 from torch.utils.data import DataLoader
 import torch
 from torch import Tensor
-from datamint.apihandler.base_api_handler import DatamintException
+from datamint.exceptions import DatamintException
 from medimgkit.dicom_utils import is_dicom
 from medimgkit.readers import read_array_normalized
 from medimgkit.format_detection import guess_extension
 from datetime import datetime
 from pathlib import Path
-from datamint.dataset.annotation import Annotation
+from datamint.entities import Annotation, DatasetInfo
 import cv2
+from datamint.entities import Resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,23 +175,12 @@ class DatamintBaseDataset:
 
     def _setup_api_handler(self, server_url: Optional[str], api_key: Optional[str], auto_update: bool) -> None:
         """Setup API handler and validate connection."""
-        from datamint.apihandler.api_handler import APIHandler
-
-        self.api_handler = APIHandler(
-            root_url=server_url,
+        from datamint import Api
+        self.api = Api(
+            server_url=server_url,
             api_key=api_key,
-            check_connection=auto_update
+            check_connection=self.auto_update
         )
-        self.server_url = self.api_handler.root_url
-        self.api_key = self.api_handler.api_key
-
-        if self.api_key is None:
-            _LOGGER.warning(
-                "API key not provided. If you want to download data, please provide an API key, "
-                f"either by passing it as an argument, "
-                f"setting environment variable {configs.ENV_VARS[configs.APIKEY_KEY]} or "
-                "using datamint-config command line tool."
-            )
 
     def _setup_directories(self, root: str | None) -> None:
         """Setup root and dataset directories."""
@@ -242,7 +232,7 @@ class DatamintBaseDataset:
         if not os.path.isfile(metadata_path):
             # get the server info
             self.project_info = self.get_info()
-            self.metainfo = self._get_datasetinfo().copy()
+            self.metainfo = self._get_datasetinfo().asdict().copy()
             self.metainfo['updated_at'] = None
             self.metainfo['resources'] = []
             self.metainfo['all_annotations'] = self.all_annotations
@@ -526,18 +516,18 @@ class DatamintBaseDataset:
         if missing_files:
             raise DatamintDatasetException(f"Image files not found: {missing_files}")
 
-    def _get_datasetinfo(self) -> dict:
+    def _get_datasetinfo(self) -> DatasetInfo:
         """Get dataset information from API."""
         if self._server_dataset_info is not None:
             return self._server_dataset_info
-        all_datasets = self.api_handler.get_datasets()
+        all_datasets = self.api._datasetsinfo.get_all()
 
         for dataset in all_datasets:
-            if dataset['id'] == self.dataset_id:
+            if dataset.id == self.dataset_id:
                 self._server_dataset_info = dataset
                 return dataset
 
-        available_datasets = [(d['name'], d['id']) for d in all_datasets]
+        available_datasets = [(d.name, d.id) for d in all_datasets]
         raise DatamintDatasetException(
             f"Dataset with id '{self.dataset_id}' not found. "
             f"Available datasets: {available_datasets}"
@@ -547,7 +537,7 @@ class DatamintBaseDataset:
         """Get project information from API."""
         if hasattr(self, 'project_info') and self.project_info is not None:
             return self.project_info
-        project = self.api_handler.get_project_by_name(self.project_name)
+        project = self.api.projects.get_by_name(self.project_name).asdict()
         if 'error' in project:
             available_projects = project['all_projects']
             raise DatamintDatasetException(
@@ -592,31 +582,10 @@ class DatamintBaseDataset:
         lines = [head] + [" " * 4 + line for line in body]
         return "\n".join(lines)
 
-    def download_project(self) -> None:
-        """Download project data from API."""
-
-        dataset_info = self._get_datasetinfo()
-        self.dataset_id = dataset_info['id']
-        self.last_updaded_at = dataset_info['updated_at']
-
-        self.api_handler.download_project(
-            self.project_info['id'],
-            self.dataset_zippath,
-            all_annotations=self.all_annotations,
-            include_unannotated=self.include_unannotated
-        )
-
-        _LOGGER.debug("Downloaded dataset")
-
-        if os.path.getsize(self.dataset_zippath) == 0:
-            raise DatamintDatasetException("Download failed.")
-
-        self._extract_and_update_metadata()
-
     def _get_dataset_id(self) -> str:
         if self.dataset_id is None:
             dataset_info = self._get_datasetinfo()
-            self.dataset_id = dataset_info['id']
+            self.dataset_id = dataset_info.id
         return self.dataset_id
 
     def _extract_and_update_metadata(self) -> None:
@@ -638,7 +607,7 @@ class DatamintBaseDataset:
 
         # Save updated metadata
         with open(datasetjson_path, 'w') as file:
-            json.dump(self.metainfo, file, default=lambda o: o.to_dict() if hasattr(o, 'to_dict') else o)
+            json.dump(self.metainfo, file, default=lambda o: o.asdict() if hasattr(o, 'asdict') else o)
 
         self.images_metainfo = self.metainfo['resources']
         # self._convert_metainfo_to_clsobj()
@@ -646,19 +615,19 @@ class DatamintBaseDataset:
     def _update_metadata_timestamps(self) -> None:
         """Update metadata with correct timestamps."""
         if 'updated_at' not in self.metainfo:
-            self.metainfo['updated_at'] = self.last_updaded_at
+            self.metainfo['updated_at'] = self.last_updated_at
         else:
             try:
                 local_time = datetime.fromisoformat(self.metainfo['updated_at'])
-                server_time = datetime.fromisoformat(self.last_updaded_at)
+                server_time = datetime.fromisoformat(self.last_updated_at)
 
                 if local_time < server_time:
                     _LOGGER.warning(
                         f"Inconsistent updated_at dates detected "
-                        f"({self.metainfo['updated_at']} < {self.last_updaded_at}). "
-                        f"Fixing it to {self.last_updaded_at}"
+                        f"({self.metainfo['updated_at']} < {self.last_updated_at}). "
+                        f"Fixing it to {self.last_updated_at}"
                     )
-                    self.metainfo['updated_at'] = self.last_updaded_at
+                    self.metainfo['updated_at'] = self.last_updated_at
             except Exception as e:
                 _LOGGER.warning(f"Failed to parse updated_at date: {e}")
 
@@ -829,7 +798,7 @@ class DatamintBaseDataset:
 
         try:
             external_metadata_info = self._get_datasetinfo()
-            server_updated_at = external_metadata_info['updated_at']
+            server_updated_at = external_metadata_info.updated_at
         except Exception as e:
             _LOGGER.warning(f"Failed to check for updates in {self.project_name}: {e}")
             return
@@ -856,20 +825,21 @@ class DatamintBaseDataset:
             _LOGGER.info('Local version is up to date with the latest version.')
 
     def _fetch_new_resources(self,
-                             all_uptodate_resources: list[dict]) -> list[dict]:
+                             all_uptodate_resources: list[Resource]) -> list[dict]:
         local_resources = self.images_metainfo
         local_resources_ids = [res['id'] for res in local_resources]
         new_resources = []
         for resource in all_uptodate_resources:
+            resource = resource.asdict()
             if resource['id'] not in local_resources_ids:
                 resource['file'] = str(self._get_resource_file_path(resource))
                 resource['annotations'] = []
                 new_resources.append(resource)
         return new_resources
 
-    def _fetch_deleted_resources(self, all_uptodate_resources: list[dict]) -> list[dict]:
+    def _fetch_deleted_resources(self, all_uptodate_resources: list[Resource]) -> list[dict]:
         local_resources = self.images_metainfo
-        all_uptodate_resources_ids = [res['id'] for res in all_uptodate_resources]
+        all_uptodate_resources_ids = [res.id for res in all_uptodate_resources]
         deleted_resources = []
         for resource in local_resources:
             try:
@@ -888,7 +858,7 @@ class DatamintBaseDataset:
         # server_updated_at = external_metadata_info['updated_at']
 
         ### RESOURCES ###
-        all_uptodate_resources = self.api_handler.get_project_resources(self.get_info()['id'])
+        all_uptodate_resources = self.api.projects.get_project_resources(self.get_info()['id'])
         new_resources = self._fetch_new_resources(all_uptodate_resources)
         deleted_resources = self._fetch_deleted_resources(all_uptodate_resources)
 
@@ -898,9 +868,9 @@ class DatamintBaseDataset:
             new_resources_path = [Path(self.dataset_dir) / r['file'] for r in new_resources]
             new_resources_ids = [r['id'] for r in new_resources]
             _LOGGER.info(f"Downloading {len(new_resources)} new resources...")
-            new_res_paths = self.api_handler.download_multiple_resources(new_resources_ids,
-                                                                         save_path=new_resources_path,
-                                                                         add_extension=True)
+            new_res_paths = self.api.resources.download_multiple_resources(new_resources_ids,
+                                                                           save_path=new_resources_path,
+                                                                           add_extension=True)
             for new_rpath, r in zip(new_res_paths, new_resources):
                 r['file'] = str(Path(new_rpath).relative_to(self.dataset_dir))
             _LOGGER.info(f"Downloaded {len(new_resources)} new resources.")
@@ -910,16 +880,17 @@ class DatamintBaseDataset:
         ################
 
         ### ANNOTATIONS ###
-        all_annotations = self.api_handler.get_annotations(worklist_id=self.project_info['worklist_id'],
-                                                           status='published' if self.all_annotations else None)
+        all_annotations = self.api.annotations.get_list(worklist_id=self.project_info['worklist_id'],
+                                                        status='published' if self.all_annotations else None)
+
         # group annotations by resource ID
-        annotations_by_resource = {}
+        annotations_by_resource: dict[str, list[Annotation]] = {}
         for ann in all_annotations:
             # add the local filepath
             filepath = self._get_annotation_file_path(ann)
             if filepath is not None:
-                ann['file'] = str(filepath)
-            resource_id = ann['resource_id']
+                ann.file = str(filepath)
+            resource_id = ann.resource_id
             if resource_id not in annotations_by_resource:
                 annotations_by_resource[resource_id] = []
             annotations_by_resource[resource_id].append(ann)
@@ -937,11 +908,11 @@ class DatamintBaseDataset:
             # check if segmentation annotations need to be downloaded
             # Also check if annotations need to be deleted
             old_ann_ids = set([ann.id for ann in old_resource_annotations if hasattr(ann, 'id')])
-            new_ann_ids = set([ann['id'] for ann in new_resource_annotations])
+            new_ann_ids = set([ann.id for ann in new_resource_annotations])
 
             # Find annotations to add, update, or remove
             annotations_to_add = [ann for ann in new_resource_annotations
-                                  if ann['id'] not in old_ann_ids]
+                                  if ann.id not in old_ann_ids]
             annotations_to_remove = [ann for ann in old_resource_annotations
                                      if getattr(ann, 'id', 'NA') not in new_ann_ids]
 
@@ -975,17 +946,17 @@ class DatamintBaseDataset:
         # Batch download all segmentation files
         if segmentations_to_download:
             _LOGGER.info(f"Downloading {len(segmentations_to_download)} segmentation files...")
-            self.api_handler.download_multiple_segmentations(segmentations_to_download, segmentation_paths)
+            self.api.annotations.download_multiple_files(segmentations_to_download, segmentation_paths)
             _LOGGER.info(f"Downloaded {len(segmentations_to_download)} segmentation files.")
 
         ###################
         # update metadata
-        self.metainfo['updated_at'] = self._get_datasetinfo()['updated_at']
+        self.metainfo['updated_at'] = self._get_datasetinfo().updated_at
         self.metainfo['all_annotations'] = self.all_annotations
         # save updated metadata
         datasetjson_path = os.path.join(self.dataset_dir, 'dataset.json')
         with open(datasetjson_path, 'w') as file:
-            json.dump(self.metainfo, file, default=lambda o: o.to_dict() if hasattr(o, 'to_dict') else o)
+            json.dump(self.metainfo, file, default=lambda o: o.asdict() if hasattr(o, 'asdict') else o)
 
     def _get_resource_file_path(self, resource: dict) -> Path:
         """Get the local file path for a resource."""
