@@ -1,5 +1,5 @@
 from .base_dataset import DatamintBaseDataset
-from typing import List, Optional, Callable, Any, Dict, Literal
+from typing import List, Optional, Callable, Any, Dict, Literal, Sequence
 import torch
 from torch import Tensor
 import os
@@ -8,6 +8,7 @@ import logging
 from PIL import Image
 import albumentations
 from datamint.entities.annotation import Annotation
+from medimgkit.readers import read_array_normalized
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,7 +118,9 @@ class DatamintDataset(DatamintBaseDataset):
         if semantic_seg_merge_strategy is not None and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
 
-    def _load_segmentations(self, annotations: list[Annotation], img_shape) -> tuple[dict[str, list], dict[str, list]]:
+    def _load_segmentations(self,
+                            annotations: list[Annotation],
+                            img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
         Load segmentations from annotations.
 
@@ -152,19 +155,27 @@ class DatamintDataset(DatamintBaseDataset):
 
             segfilepath = ann.file  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
-            # FIXME: avoid enforcing resizing the mask
-            seg = (Image.open(segfilepath)
-                   .convert('L')
-                   .resize((w, h), Image.Resampling.NEAREST)
-                   )
-            seg = np.array(seg)
+            seg = read_array_normalized(segfilepath)  # (frames, C, H, W)
+            if seg.shape[1] != 1:
+                raise ValueError(f"Segmentation file must have 1 channel, got {seg.shape} in {segfilepath}")
+            seg = seg[:, 0, :, :]  # (frames, H, W)
+            
+            # # FIXME: avoid enforcing resizing the mask
+            # seg = (Image.open(segfilepath)
+            #        .convert('L')
+            #        .resize((w, h), Image.Resampling.NEAREST)
+            #        )
+            # seg = np.array(seg)
 
             seg = torch.from_numpy(seg)
             seg = seg == 255   # binary mask
             # map the segmentation label to the code
-            seg_code = self.frame_lcodes['segmentation'][ann.name]
             if self.return_frame_by_frame:
                 frame_index = 0
+                if seg.shape[0] != 1:
+                    raise NotImplementedError(
+                        "Volume segmentations are not supported yet when return_frame_by_frame is True")
+                seg = seg[0:1]  # (#frames, H, W) -> (1, H, W)
             else:
                 frame_index = ann.index
 
@@ -174,12 +185,25 @@ class DatamintDataset(DatamintBaseDataset):
             author_segs = segmentations[author]
             author_labels = seg_labels[author]
 
-            if author_segs[frame_index] is None:
-                author_segs[frame_index] = []
-                author_labels[frame_index] = []
-
-            author_segs[frame_index].append(seg)
-            author_labels[frame_index].append(seg_code)
+            if frame_index is not None and ann.scope == 'frame':
+                seg_code = self.frame_lcodes['segmentation'][ann.name]
+                if author_segs[frame_index] is None:
+                    author_segs[frame_index] = []
+                    author_labels[frame_index] = []
+                s = seg[0] if seg.shape[0] == 1 else seg[frame_index]
+                author_segs[frame_index].append(s)
+                author_labels[frame_index].append(seg_code)
+            elif frame_index is None and ann.scope == 'image':
+                seg_code = self.image_lcodes['segmentation'][ann.name]
+                # apply to all frames
+                for i in range(nframes):
+                    if author_segs[i] is None:
+                        author_segs[i] = []
+                        author_labels[i] = []
+                    author_segs[i].append(seg[i])
+                    author_labels[i].append(seg_code)
+            else:
+                raise ValueError(f"Invalid segmentation annotation: {ann}")
 
         # convert to tensor
         for author in segmentations.keys():
@@ -196,8 +220,8 @@ class DatamintDataset(DatamintBaseDataset):
         return segmentations, seg_labels
 
     def _instanceseg2semanticseg(self,
-                                 segmentations: List[Tensor],
-                                 seg_labels: List[Tensor]) -> Tensor:
+                                 segmentations: Sequence[Tensor],
+                                 seg_labels: Sequence[Tensor]) -> Tensor:
         """
         Convert instance segmentation to semantic segmentation.
 
@@ -208,25 +232,26 @@ class DatamintDataset(DatamintBaseDataset):
         Returns:
             Tensor: tensor of shape (n, num_labels, H, W), where `n` is the number of frames.
         """
-        if segmentations is not None:
-            if len(segmentations) != len(seg_labels):
-                raise ValueError("segmentations and seg_labels must have the same length")
+        if segmentations is None:
+            return None
 
-            h, w = segmentations[0].shape[1:]
-            new_shape = (len(segmentations),
-                         len(self.segmentation_labels_set)+1,  # +1 for background
-                         h, w)
-            new_segmentations = torch.zeros(new_shape, dtype=torch.uint8)
-            # for each frame
-            for i in range(len(segmentations)):
-                # for each instance
-                for j in range(len(segmentations[i])):
-                    new_segmentations[i, seg_labels[i][j]] += segmentations[i][j]
-            new_segmentations = new_segmentations > 0
-            # pixels that are not in any segmentation are labeled as background
-            new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
-            segmentations = new_segmentations.float()
-        return segmentations
+        if len(segmentations) != len(seg_labels):
+            raise ValueError("segmentations and seg_labels must have the same length")
+
+        h, w = segmentations[0].shape[1:]
+        new_shape = (len(segmentations),
+                     len(self.segmentation_labels_set)+1,  # +1 for background
+                     h, w)
+        new_segmentations = torch.zeros(new_shape, dtype=torch.uint8)
+        # for each frame
+        for i in range(len(segmentations)):
+            # for each instance
+            for j in range(len(segmentations[i])):
+                new_segmentations[i, seg_labels[i][j]] += segmentations[i][j]
+        new_segmentations = new_segmentations > 0
+        # pixels that are not in any segmentation are labeled as background
+        new_segmentations[:, 0] = new_segmentations.sum(dim=1) == 0
+        return new_segmentations.float()
 
     def apply_semantic_seg_merge_strategy(self, segmentations: dict[str, Tensor],
                                           nframes: int,
@@ -338,7 +363,7 @@ class DatamintDataset(DatamintBaseDataset):
                 if isinstance(labels, Tensor):
                     # single tensor for the author
                     seg_names[author] = [code_to_name[code.item()-1] for code in labels]
-                elif isinstance(labels, list):
+                elif isinstance(labels, Sequence):
                     # list of frame tensors
                     seg_names[author] = [[code_to_name[code.item()-1] for code in frame_labels]
                                          for frame_labels in labels]
@@ -477,7 +502,7 @@ class DatamintDataset(DatamintBaseDataset):
         return new_item
 
     def _convert_labels_annotations(self,
-                                    annotations: list[Annotation],
+                                    annotations: Sequence[Annotation],
                                     num_frames: int | None = None) -> dict[str, torch.Tensor]:
         """
         Converts the annotations, of the same type and scope, to tensor of shape (num_frames, num_labels)

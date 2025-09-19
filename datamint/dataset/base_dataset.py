@@ -360,11 +360,13 @@ class DatamintBaseDataset:
     @property
     def segmentation_labels_set(self) -> list[str]:
         """Returns the set of segmentation labels in the dataset."""
-        return self.frame_lsets['segmentation']
+        a = set(self.frame_lsets['segmentation'])
+        b = set(self.image_lsets['segmentation'])
+        return list(a.union(b))
 
     def _get_annotations_internal(
         self,
-        annotations: list[Annotation],
+        annotations: Sequence[Annotation],
         type: Literal['label', 'category', 'segmentation', 'all'] = 'all',
         scope: Literal['frame', 'image', 'all'] = 'all'
     ) -> list[Annotation]:
@@ -441,10 +443,8 @@ class DatamintBaseDataset:
 
     def get_resources_ids(self) -> list[str]:
         """Get list of resource IDs."""
-        return [
-            self.__getitem_internal(i, only_load_metainfo=True)['metainfo']['id']
-            for i in self.subset_indices
-        ]
+        return [self._get_image_metainfo(i, bypass_subset_indices=True)['metainfo']['id']
+                for i in self.subset_indices]
 
     def _get_labels_set(self, framed: bool) -> tuple[dict, dict[str, dict[str, int]]]:
         """Returns the set of labels and mappings to integers.
@@ -992,7 +992,6 @@ class DatamintBaseDataset:
             return Path(resource['file'])
         else:
             # ext = guess_extension(resource['mimetype'])
-            # _LOGGER.debug(f"Guessed extension for resource {resource['id']}|{resource['mimetype']}: {ext}")
             # if ext is None:
             #     _LOGGER.warning(f"Could not guess extension for resource {resource['id']}.")
             #     ext = ''
