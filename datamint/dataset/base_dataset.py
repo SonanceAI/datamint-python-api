@@ -1,6 +1,6 @@
 import os
 import requests
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from typing import Optional, Callable, Any, Literal
 import logging
 import shutil
@@ -905,8 +905,10 @@ class DatamintBaseDataset:
         ################
 
         ### ANNOTATIONS ###
-        all_annotations = self.api.annotations.get_list(worklist_id=None if self.all_annotations else self.project_info['worklist_id'],
-                                                        status=None if self.all_annotations else 'published')
+        _LOGGER.info("Fetching new annotations...")
+        all_annotations = self.api.annotations.get_list(worklist_id=self.project_info['worklist_id'],
+                                                        status=None if self.all_annotations else 'published',
+                                                        load_ai_segmentations=self.all_annotations)
 
         # group annotations by resource ID
         annotations_by_resource: dict[str, list[Annotation]] = {}
