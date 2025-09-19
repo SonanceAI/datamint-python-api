@@ -1,7 +1,7 @@
 import os
 import requests
 from tqdm.auto import tqdm
-from typing import Optional, Callable, Any, Literal
+from typing import Optional, Callable, Any, Literal, Sequence
 import logging
 import shutil
 import json
@@ -66,8 +66,8 @@ class DatamintBaseDataset:
         project_name: str,
         root: str | None = None,
         auto_update: bool = True,
-        api_key: Optional[str] = None,
-        server_url: Optional[str] = None,
+        api_key: str | None = None,
+        server_url: str | None = None,
         return_dicom: bool = False,
         return_metainfo: bool = True,
         return_annotations: bool = True,
@@ -75,14 +75,14 @@ class DatamintBaseDataset:
         include_unannotated: bool = True,
         all_annotations: bool = False,
         # Filtering parameters
-        include_annotators: Optional[list[str]] = None,
-        exclude_annotators: Optional[list[str]] = None,
-        include_segmentation_names: Optional[list[str]] = None,
-        exclude_segmentation_names: Optional[list[str]] = None,
-        include_image_label_names: Optional[list[str]] = None,
-        exclude_image_label_names: Optional[list[str]] = None,
-        include_frame_label_names: Optional[list[str]] = None,
-        exclude_frame_label_names: Optional[list[str]] = None,
+        include_annotators: list[str] | None = None,
+        exclude_annotators: list[str] | None = None,
+        include_segmentation_names: list[str] | None = None,
+        exclude_segmentation_names: list[str] | None = None,
+        include_image_label_names: list[str] | None = None,
+        exclude_image_label_names: list[str] | None = None,
+        include_frame_label_names: list[str] | None = None,
+        exclude_frame_label_names: list[str] | None = None,
     ):
         self._validate_inputs(project_name, include_annotators, exclude_annotators,
                               include_segmentation_names, exclude_segmentation_names,
@@ -106,14 +106,14 @@ class DatamintBaseDataset:
     def _validate_inputs(
         self,
         project_name: str,
-        include_annotators: Optional[list[str]],
-        exclude_annotators: Optional[list[str]],
-        include_segmentation_names: Optional[list[str]],
-        exclude_segmentation_names: Optional[list[str]],
-        include_image_label_names: Optional[list[str]],
-        exclude_image_label_names: Optional[list[str]],
-        include_frame_label_names: Optional[list[str]],
-        exclude_frame_label_names: Optional[list[str]],
+        include_annotators: Sequence[str] | None,
+        exclude_annotators: Sequence[str] | None,
+        include_segmentation_names: Sequence[str] | None,
+        exclude_segmentation_names: Sequence[str] | None,
+        include_image_label_names: Sequence[str] | None,
+        exclude_image_label_names: Sequence[str] | None,
+        include_frame_label_names: Sequence[str] | None,
+        exclude_frame_label_names: Sequence[str] | None,
     ) -> None:
         """Validate input parameters."""
         if project_name is None:
