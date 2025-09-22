@@ -119,7 +119,7 @@ class DatamintDataset(DatamintBaseDataset):
             raise ValueError("semantic_seg_merge_strategy can only be used if return_as_semantic_segmentation is True")
 
     def _load_segmentations(self,
-                            annotations: list[Annotation],
+                            annotations: Sequence[Annotation],
                             img_shape) -> tuple[dict[str, list], dict[str, list]]:
         """
         Load segmentations from annotations.
@@ -168,7 +168,7 @@ class DatamintDataset(DatamintBaseDataset):
             # seg = np.array(seg)
 
             seg = torch.from_numpy(seg)
-            seg = seg == 255   # binary mask
+            seg = seg != 0   # binary mask
             # map the segmentation label to the code
             if self.return_frame_by_frame:
                 frame_index = 0
