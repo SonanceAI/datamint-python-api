@@ -14,6 +14,7 @@ from io import BytesIO
 import gzip
 import contextlib
 import asyncio
+from medimgkit.format_detection import GZIP_MIME_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -422,7 +423,7 @@ class BaseApi:
                 if file_path is not None:
                     return nib.load(file_path)
                 raise e
-        elif mimetype == 'application/gzip':
+        elif mimetype in GZIP_MIME_TYPES:
             # let's hope it's a .nii.gz
             with gzip.open(content_io, 'rb') as f:
                 return nib.Nifti1Image.from_stream(f)
