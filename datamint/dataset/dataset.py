@@ -1,5 +1,5 @@
 from .base_dataset import DatamintBaseDataset
-from typing import List, Optional, Callable, Any, Dict, Literal, Sequence
+from typing import Optional, Callable, Any, Literal, Sequence
 import torch
 from torch import Tensor
 import os
@@ -120,7 +120,7 @@ class DatamintDataset(DatamintBaseDataset):
 
     def _load_segmentations(self,
                             annotations: Sequence[Annotation],
-                            img_shape) -> tuple[dict[str, list], dict[str, list]]:
+                            img_shape) -> tuple[dict[str, list], dict[str, list], dict[str, Any]]:
         """
         Load segmentations from annotations.
 
@@ -129,12 +129,13 @@ class DatamintDataset(DatamintBaseDataset):
             img_shape: shape of the image (#frames, C, H, W)
 
         Returns:
-            tuple[dict[str, list], dict[str, list]]: a tuple of two dictionaries.
+            tuple[dict[str, list], dict[str, list], dict[str, Any]]: a tuple of two dictionaries and additional metadata.
                 The first dictionary is author -> list of #frames tensors, each tensor has shape (#instances_i, H, W).
                 The second dictionary is author -> list of #frames segmentation labels (tensors).
         """
         segmentations = {}
         seg_labels = {}
+        seg_metainfos = {}
 
         if self.return_frame_by_frame:
             assert len(img_shape) == 3, f"img_shape must have 3 dimensions, got {img_shape}"
@@ -155,11 +156,15 @@ class DatamintDataset(DatamintBaseDataset):
 
             segfilepath = ann.file  # png file
             segfilepath = os.path.join(self.dataset_dir, segfilepath)
-            seg = read_array_normalized(segfilepath)  # (frames, C, H, W)
+            seg, seg_metainfo = read_array_normalized(segfilepath, return_metainfo=True)  # (frames, C, H, W)
             if seg.shape[1] != 1:
                 raise ValueError(f"Segmentation file must have 1 channel, got {seg.shape} in {segfilepath}")
             seg = seg[:, 0, :, :]  # (frames, H, W)
-            
+
+            if seg_metainfo is None:
+                raise Exception
+            seg_metainfos[author] = seg_metainfo
+
             # # FIXME: avoid enforcing resizing the mask
             # seg = (Image.open(segfilepath)
             #        .convert('L')
@@ -217,7 +222,7 @@ class DatamintDataset(DatamintBaseDataset):
                     author_segs[i] = torch.zeros((0, h, w), dtype=torch.bool)
                     author_labels[i] = torch.zeros(0, dtype=torch.int32)
 
-        return segmentations, seg_labels
+        return segmentations, seg_labels, seg_metainfos
 
     def _instanceseg2semanticseg(self,
                                  segmentations: Sequence[Tensor],
@@ -273,19 +278,19 @@ class DatamintDataset(DatamintBaseDataset):
             raise ValueError(f"Unknown semantic_seg_merge_strategy: {self.semantic_seg_merge_strategy}")
         return merged_segs.to(torch.get_default_dtype())
 
-    def _apply_semantic_seg_merge_strategy_union(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _apply_semantic_seg_merge_strategy_union(self, segmentations: dict[str, torch.Tensor]) -> torch.Tensor:
         new_segmentations = torch.zeros_like(list(segmentations.values())[0])
         for seg in segmentations.values():
             new_segmentations += seg
         return new_segmentations.bool()
 
-    def _apply_semantic_seg_merge_strategy_intersection(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _apply_semantic_seg_merge_strategy_intersection(self, segmentations: dict[str, torch.Tensor]) -> torch.Tensor:
         new_segmentations = torch.ones_like(list(segmentations.values())[0])
         for seg in segmentations.values():
             new_segmentations += seg
         return new_segmentations.bool()
 
-    def _apply_semantic_seg_merge_strategy_mode(self, segmentations: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def _apply_semantic_seg_merge_strategy_mode(self, segmentations: dict[str, torch.Tensor]) -> torch.Tensor:
         new_segmentations = torch.zeros_like(list(segmentations.values())[0])
         for seg in segmentations.values():
             new_segmentations += seg
@@ -428,7 +433,7 @@ class DatamintDataset(DatamintBaseDataset):
 
         try:
             if self.return_segmentations:
-                segmentations, seg_labels = self._load_segmentations(annotations, img.shape)
+                segmentations, seg_labels, seg_metainfos = self._load_segmentations(annotations, img.shape)
                 # seg_labels can be dict[str, list[Tensor]]
                 # apply mask transform
                 if self.mask_transform is not None:
@@ -475,6 +480,7 @@ class DatamintDataset(DatamintBaseDataset):
                 new_item['seg_labels'] = seg_labels
                 # process seg_labels to convert from code to label names
                 new_item['seg_labels_names'] = self._seg_labels_to_names(seg_labels)
+                new_item['seg_metainfo'] = {'file_metainfo': seg_metainfos}
 
         except Exception:
             _LOGGER.error(f'Error in loading/processing segmentations of {metainfo}')
