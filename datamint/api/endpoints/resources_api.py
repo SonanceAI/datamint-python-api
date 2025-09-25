@@ -235,30 +235,26 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                             metadata_file: Optional[str | dict] = None,
                                             ) -> str:
         if is_io_object(file_path):
-            name = file_path.name
+            source_filepath = os.path.abspath(os.path.expanduser(file_path.name))
+            filename = os.path.basename(source_filepath)
         else:
-            name = file_path
+            source_filepath = os.path.abspath(os.path.expanduser(file_path))
+            filename = os.path.basename(source_filepath)
 
         if session is not None and not isinstance(session, aiohttp.ClientSession):
             raise ValueError("session must be an aiohttp.ClientSession object.")
 
-        name = os.path.expanduser(os.path.normpath(name))
-        if len(Path(name).parts) == 0:
-            raise ValueError(f"File path '{name}' is not valid.")
-        name = os.path.join(*[x if x != '..' else '_' for x in Path(name).parts])
-
         if mung_filename is not None:
-            file_parts = Path(name).parts
+            file_parts = Path(source_filepath).parts
             if file_parts[0] == os.path.sep:
                 file_parts = file_parts[1:]
             if mung_filename == 'all':
-                new_file_path = '_'.join(file_parts)
+                new_filename = '_'.join(file_parts)
             else:
                 folder_parts = file_parts[:-1]
-                new_file_path = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
-                new_file_path += '_' + file_parts[-1]
-            name = new_file_path
-            _LOGGER.debug(f"New file path: {name}")
+                new_filename = '_'.join([folder_parts[i-1] for i in mung_filename if i <= len(folder_parts)])
+                new_filename += '_' + file_parts[-1]
+            filename = new_filename
 
         is_a_dicom_file = None
         if mimetype is None:
@@ -268,14 +264,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     mimetype = DEFAULT_NIFTI_MIME
                     break
             else:
-                if ext == '.nii.gz' or name.lower().endswith('nii.gz'):
+                if ext == '.nii.gz' or filename.lower().endswith('nii.gz'):
                     mimetype = DEFAULT_NIFTI_MIME
                 else:
                     mimetype = mimetype_list[-1] if mimetype_list else DEFAULT_MIME_TYPE
 
         mimetype = standardize_mimetype(mimetype)
-        filename = os.path.basename(name)
-        _LOGGER.debug(f"File name '{filename}' mimetype: {mimetype}")
 
         if is_a_dicom_file == True or is_dicom(file_path):
             if tags is None:
@@ -292,7 +286,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             elif lat == 'R':
                 tags.append("right")
             # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-            f = to_bytesio(ds, name)
+            f = to_bytesio(ds, filename)
         else:
             f = _open_io(file_path)
 
@@ -329,7 +323,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             form.add_field('source', 'api')
 
             form.add_field(file_key, f, filename=filename, content_type=mimetype)
-            form.add_field('source_filepath', name)  # full path to the file
+            form.add_field('source_filepath', source_filepath)  # full path to the file
             if mimetype is not None:
                 form.add_field('mimetype', mimetype)
             if channel is not None:
@@ -354,11 +348,11 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                             data=form)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
-            _LOGGER.debug(f"Response on uploading {name}: {resp_data}")
+            _LOGGER.debug(f"Response on uploading {filename}: {resp_data}")
             return resp_data['id']
         except Exception as e:
-            if 'name' in locals():
-                _LOGGER.error(f"Error uploading {name}: {e}")
+            if 'filename' in locals():
+                _LOGGER.error(f"Error uploading {filename}: {e}")
             else:
                 _LOGGER.error(f"Error uploading {file_path}: {e}")
             raise
@@ -676,7 +670,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     channel='study_channel',
                     segmentation_files={
                         'files': ['path/to/segmentation.nii.gz'],
-                        'names': {1: 'Bone', 2: 'Tissue'}
+                        'names': {1: 'Brain', 2: 'Lung'}
                     },
                     metadata={'patient_age': 45, 'modality': 'CT'}
                 )

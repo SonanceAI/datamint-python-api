@@ -492,7 +492,7 @@ def _get_files_from_path(path: str | Path,
     Returns:
         List of file paths as strings
     """
-    path = Path(path)
+    path = Path(path).resolve()
 
     if path.is_file():
         return [str(path)]
@@ -507,7 +507,7 @@ def _get_files_from_path(path: str | Path,
 
         file_paths = walk_to_depth(path, recursive_depth, exclude_pattern)
         filtered_files = filter_files(file_paths, include_extensions, exclude_extensions)
-        return [str(f) for f in filtered_files]
+        return [str(f.resolve()) for f in filtered_files]
 
     except Exception as e:
         _LOGGER.error(f'Error in recursive search: {e}')
