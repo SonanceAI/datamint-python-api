@@ -786,7 +786,6 @@ def main():
             _USER_LOGGER.error(f'❌ Connection failed: {e}')
             return
         try:
-            print('>>>', segfiles)
             results = api.resources.upload_resources(channel=args.channel,
                                                      files_path=files_path,
                                                      tags=args.tag,

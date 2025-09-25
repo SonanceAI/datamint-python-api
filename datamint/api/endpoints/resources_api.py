@@ -85,8 +85,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         Args:
             status: The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
-            from_date : The start date.
-            to_date: The end date.
+            from_date : The start date (inclusive).
+            to_date: The end date (exclusive).
             tags: The tags to filter the resources.
             modality: The modality of the resources.
             mimetype: The mimetype of the resources.
