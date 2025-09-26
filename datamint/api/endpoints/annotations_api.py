@@ -3,9 +3,9 @@ import httpx
 from datetime import date
 import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
+from .models_api import ModelsApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
-from datamint.entities.project import Project
 from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
@@ -38,6 +38,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             client: Optional HTTP client instance. If None, a new one will be created.
         """
         super().__init__(config, Annotation, 'annotations', client)
+        self._models_api = ModelsApi(config, client=client)
 
     def get_list(self,
                  resource: str | Resource | None = None,
@@ -69,7 +70,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     async def _upload_segmentations_async(self,
                                           resource: str | Resource,
-                                          frame_index: int | Sequence [int] | None,
+                                          frame_index: int | Sequence[int] | None,
                                           file_path: str | np.ndarray,
                                           name: dict[int, str] | dict[tuple, str],
                                           imported_from: str | None = None,
@@ -78,7 +79,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                           worklist_id: str | None = None,
                                           model_id: str | None = None,
                                           transpose_segmentation: bool = False,
-                                          upload_volume: bool | str = 'auto'
+                                          upload_volume: bool | str = 'auto',
                                           ) -> Sequence[str]:
         """
         Upload segmentations asynchronously.
@@ -397,6 +398,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              worklist_id: str | None = None,
                              model_id: str | None = None,
                              transpose_segmentation: bool = False,
+                             ai_model_name: str | None = None
                              ) -> list[str]:
         """
         Upload segmentations to a resource.
@@ -425,6 +427,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation or not.
+            ai_model_name: Optional AI model name to associate with the segmentation.
 
         Returns:
             List of segmentation unique ids.
@@ -453,6 +456,18 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
+        if ai_model_name is not None:
+            model_id = self._models_api.get_by_name(ai_model_name)
+            if model_id is None:
+                try:
+                    available_models = [model['name'] for model in self._models_api.get_all()]
+                except Exception:
+                    _LOGGER.warning("Could not fetch available AI models from the server.")
+                    raise ValueError(f"AI model with name '{ai_model_name}' not found. ")
+                raise ValueError(f"AI model with name '{ai_model_name}' not found. " +
+                                 f"Available models: {available_models}")
+            model_id = model_id['id']
+
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
             _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
@@ -472,7 +487,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 worklist_id=worklist_id,
                 model_id=model_id,
                 transpose_segmentation=transpose_segmentation,
-                upload_volume=True
+                upload_volume=True,
             )
             return loop.run_until_complete(task)
 
@@ -486,8 +501,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 raise ValueError("frame_index list contains duplicate values.")
 
         if isinstance(frame_index, Sequence) and len(frame_index) == 1:
-            frame_index = frame_index[0] 
-        
+            frame_index = frame_index[0]
+
         nest_asyncio.apply()
         loop = asyncio.get_event_loop()
         task = self._upload_segmentations_async(

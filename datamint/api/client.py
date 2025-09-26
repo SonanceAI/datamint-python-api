@@ -1,10 +1,8 @@
 from typing import Optional
-import httpx
 from .base_api import ApiConfig
-from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi, DatasetsInfoApi
+from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi, DatasetsInfoApi, ModelsApi
 import datamint.configs
 from datamint.exceptions import DatamintException
-import asyncio
 
 
 class Api:
@@ -18,7 +16,8 @@ class Api:
         'annotations': AnnotationsApi,
         'channels': ChannelsApi,
         'users': UsersApi,
-        'datasets': DatasetsInfoApi
+        'datasets': DatasetsInfoApi,
+        'models': ModelsApi
     }
 
     def __init__(self,
@@ -73,19 +72,28 @@ class Api:
     @property
     def projects(self) -> ProjectsApi:
         return self._get_endpoint('projects')
+
     @property
     def resources(self) -> ResourcesApi:
         return self._get_endpoint('resources')
+
     @property
     def annotations(self) -> AnnotationsApi:
         return self._get_endpoint('annotations')
+
     @property
     def channels(self) -> ChannelsApi:
         return self._get_endpoint('channels')
+
     @property
     def users(self) -> UsersApi:
         return self._get_endpoint('users')
+
     @property
     def _datasetsinfo(self) -> DatasetsInfoApi:
         """Internal property to access DatasetsInfoApi."""
         return self._get_endpoint('datasets')
+
+    @property
+    def models(self) -> ModelsApi:
+        return self._get_endpoint('models')
