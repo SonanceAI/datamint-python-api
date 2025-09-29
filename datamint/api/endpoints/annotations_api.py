@@ -6,6 +6,7 @@ from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from .models_api import ModelsApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
+from datamint.entities.project import Project
 from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
@@ -997,3 +998,33 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                            ) -> None:
         """Alias for :py:meth:`download_multiple_files`"""
         return self.download_multiple_files(annotations, save_paths)
+
+    def patch(self,
+              annotation: str | Annotation,
+              identifier: str) -> None:
+        """
+        Update the project assignment for an annotation.
+
+        Args:
+            annotation: The annotation unique id or Annotation instance.
+            identifier: The new identifier/label for the annotation.
+
+        Raises:
+            DatamintException: If the update fails.
+        """
+        annotation_id = self._entid(annotation)
+
+        payload = {'identifier': identifier}
+        # remove None values
+        payload = {k: v for k, v in payload.items() if v is not None}
+        if len(payload) == 0:
+            _LOGGER.info("No fields to update for annotation patch.")
+            return
+
+        resp = self._make_request('PATCH',
+                                  f'{self.endpoint_base}/{annotation_id}',
+                                  json=payload)
+
+        respdata = resp.json()
+        if isinstance(respdata, dict) and 'error' in respdata:
+            raise DatamintException(respdata['error'])
