@@ -3,6 +3,7 @@
 from datetime import datetime
 import logging
 from .base_entity import BaseEntity, MISSING_FIELD
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,10 @@ class Project(BaseEntity):
     resource_count: int
     annotated_resource_count: int
     description: str | None
-    ai_model_id: str | None
     viewable_ai_segs: list | None
     editable_ai_segs: list | None
+    registered_model: Any | None = MISSING_FIELD
+    ai_model_id: str | None = MISSING_FIELD
     closed_resources_count: int = MISSING_FIELD
     resources_to_annotate_count: int = MISSING_FIELD
     most_recent_experiment: str | None = MISSING_FIELD  # ISO timestamp string
