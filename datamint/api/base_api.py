@@ -1,26 +1,27 @@
 import logging
-from typing import Any, Generator, AsyncGenerator, Sequence
+from typing import Any, Generator, AsyncGenerator, Sequence, TYPE_CHECKING
 import httpx
 from dataclasses import dataclass
 from datamint.exceptions import DatamintException, ResourceNotFoundError
+from datamint.types import ImagingData
 import aiohttp
 import json
-import pydicom.dataset
 from PIL import Image
 import cv2
 import nibabel as nib
-from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 from io import BytesIO
 import gzip
 import contextlib
 import asyncio
-from medimgkit.format_detection import GZIP_MIME_TYPES
+from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess_typez, guess_extension
+
+if TYPE_CHECKING:
+    from datamint.api.client import Api
 
 logger = logging.getLogger(__name__)
 
 # Generic type for entities
 _PAGE_LIMIT = 5000
-
 
 @dataclass
 class ApiConfig:
@@ -36,6 +37,15 @@ class ApiConfig:
     api_key: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
+
+    @property
+    def web_app_url(self) -> str:
+        """Get the base URL for the web application."""
+        if self.server_url.startswith('http://localhost:3001'):
+            return 'http://localhost:3000'
+        if self.server_url.startswith('https://stagingapi.datamint.io'):
+            return 'https://staging.datamint.io'
+        return 'https://app.datamint.io'
 
 
 class BaseApi:
@@ -53,6 +63,7 @@ class BaseApi:
         self.config = config
         self.client = client or self._create_client()
         self.semaphore = asyncio.Semaphore(20)
+        self._api_instance: 'Api | None' = None  # Injected by Api class
 
     def _create_client(self) -> httpx.Client:
         """Create and configure HTTP client with authentication and timeouts."""
@@ -399,10 +410,30 @@ class BaseApi:
 
     @staticmethod
     def convert_format(bytes_array: bytes,
-                       mimetype: str,
+                       mimetype: str | None = None,
                        file_path: str | None = None
-                       ) -> pydicom.dataset.Dataset | Image.Image | cv2.VideoCapture | bytes | nib_FileBasedImage:
-        """ Convert the bytes array to the appropriate format based on the mimetype."""
+                       ) -> ImagingData | bytes:
+        """ Convert the bytes array to the appropriate format based on the mimetype.
+
+        Args:
+            bytes_array: Raw file content bytes
+            mimetype: Optional MIME type of the content
+            file_path: deprecated
+
+        Returns:
+            Converted content in appropriate format (pydicom.Dataset, PIL Image, cv2.VideoCapture, ...)
+
+        Example:
+            >>> fpath = 'path/to/file.dcm'
+            >>> with open(fpath, 'rb') as f:
+            ...     dicom_bytes = f.read()
+            >>> dicom = BaseApi.convert_format(dicom_bytes)
+
+        """
+        if mimetype is None:
+            mimetype, ext = BaseApi._determine_mimetype(bytes_array)
+            if mimetype is None:
+                raise ValueError("Could not determine mimetype from content.")
         content_io = BytesIO(bytes_array)
         if mimetype.endswith('/dicom'):
             return pydicom.dcmread(content_io)
@@ -429,3 +460,30 @@ class BaseApi:
                 return nib.Nifti1Image.from_stream(f)
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
+
+    @staticmethod
+    def _determine_mimetype(content: bytes,
+                            declared_mimetype: str | None = None) -> tuple[str | None, str | None]:
+        """Infer MIME type and file extension from content and optional declared type.
+
+        Args:
+            content: Raw file content bytes
+            declared_mimetype: Optional MIME type declared by the source
+
+        Returns:
+            Tuple of (inferred_mimetype, file_extension)
+        """
+        # Determine mimetype from file content
+        mimetype_list, ext = guess_typez(content, use_magic=True)
+        mimetype = mimetype_list[-1]
+
+        # get mimetype from resource info if not detected
+        if declared_mimetype is not None:
+            if mimetype is None:
+                mimetype = declared_mimetype
+                ext = guess_extension(mimetype)
+            elif mimetype == DEFAULT_MIME_TYPE:
+                mimetype = declared_mimetype
+                ext = guess_extension(mimetype)
+
+        return mimetype, ext

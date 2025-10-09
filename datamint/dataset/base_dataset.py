@@ -20,6 +20,7 @@ from pathlib import Path
 from datamint.entities import Annotation, DatasetInfo
 import cv2
 from datamint.entities import Resource
+import datamint.configs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class DatamintBaseDataset:
         exclude_frame_label_names: List of frame label names to exclude. If None, no frame labels will be excluded.
     """
 
-    DATAMINT_DEFAULT_DIR = ".datamint"
+    
     DATAMINT_DATASETS_DIR = "datasets"
 
     def __init__(
@@ -184,8 +185,7 @@ class DatamintBaseDataset:
         """Setup root and dataset directories."""
         if root is None:
             root = os.path.join(
-                os.path.expanduser("~"),
-                self.DATAMINT_DEFAULT_DIR,
+                datamint.configs.DATAMINT_DATA_DIR,
                 self.DATAMINT_DATASETS_DIR
             )
             os.makedirs(root, exist_ok=True)

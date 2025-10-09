@@ -1,7 +1,6 @@
 from typing import Any, TypeVar, Generic, Type, Sequence
 import logging
 import httpx
-from dataclasses import dataclass
 from datamint.entities.base_entity import BaseEntity
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 import aiohttp
@@ -37,8 +36,13 @@ class EntityBaseApi(BaseApi, Generic[T]):
             client: Optional HTTP client instance. If None, a new one will be created.
         """
         super().__init__(config, client)
-        self.entity_class = entity_class
+        self.__entity_class = entity_class
         self.endpoint_base = endpoint_base.strip('/')
+
+    def _init_entity_obj(self, **kwargs) -> T:
+        obj = self.__entity_class(**kwargs)
+        obj._api = self
+        return obj
 
     @staticmethod
     def _entid(entity: BaseEntity | str) -> str:
@@ -117,7 +121,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
         for resp, items in items_gen:
             all_items.extend(items)
 
-        return [self.entity_class(**item) for item in all_items]
+        return [self._init_entity_obj(**item) for item in all_items]
 
     def get_all(self, limit: int | None = None) -> Sequence[T]:
         """Get all entities with optional pagination and filtering.
@@ -143,7 +147,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
             httpx.HTTPStatusError: If the entity is not found or request fails.
         """
         response = self._make_entity_request('GET', entity_id)
-        return self.entity_class(**response.json())
+        return self._init_entity_obj(**response.json())
 
     async def _create_async(self, entity_data: dict[str, Any]) -> str | Sequence[str | dict]:
         """Create a new entity.
@@ -176,42 +180,6 @@ class EntityBaseApi(BaseApi, Generic[T]):
         response = self._make_entity_request('GET', parent_entity,
                                              add_path=child_entity_name)
         return response
-
-    # def bulk_create(self, entities_data: list[dict[str, Any]]) -> list[T]:
-    #     """Create multiple entities in a single request.
-
-    #     Args:
-    #         entities_data: List of dictionaries containing entity data
-
-    #     Returns:
-    #         List of created entity instances
-
-    #     Raises:
-    #         httpx.HTTPStatusError: If bulk creation fails
-    #     """
-    #     payload = {'items': entities_data}  # Common bulk API format
-    #     response = self._make_request('POST', f'/{self.endpoint_base}/bulk', json=payload)
-    #     data = response.json()
-
-    #     # Handle response format - may be direct list or wrapped
-    #     items = data if isinstance(data, list) else data.get('items', [])
-    #     return [self.entity_class(**item) for item in items]
-
-    # def count(self, **params: Any) -> int:
-    #     """Get the total count of entities matching the given filters.
-
-    #     Args:
-    #         **params: Query parameters for filtering
-
-    #     Returns:
-    #         Total count of matching entities
-
-    #     Raises:
-    #         httpx.HTTPStatusError: If the request fails
-    #     """
-    #     response = self._make_request('GET', f'/{self.endpoint_base}/count', params=params)
-    #     data = response.json()
-    #     return data.get('count', 0) if isinstance(data, dict) else data
 
 
 class DeletableEntityApi(EntityBaseApi[T]):
@@ -264,7 +232,7 @@ class DeletableEntityApi(EntityBaseApi[T]):
             httpx.HTTPStatusError: If deletion fails or entity not found
         """
         async with self._make_entity_request_async('DELETE', entity,
-                                              session=session) as resp:
+                                                   session=session) as resp:
             await resp.text()  # Consume response to complete request
 
     # def get_deleted(self, **kwargs) -> Sequence[T]:
