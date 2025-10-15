@@ -1,6 +1,9 @@
 from typing import Optional
 from .base_api import ApiConfig
-from .endpoints import ProjectsApi, ResourcesApi, AnnotationsApi, ChannelsApi, UsersApi, DatasetsInfoApi, ModelsApi
+from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
+                        ChannelsApi, UsersApi, DatasetsInfoApi, ModelsApi,
+                        AnnotationSetsApi
+                        )
 import datamint.configs
 from datamint.exceptions import DatamintException
 
@@ -17,7 +20,8 @@ class Api:
         'channels': ChannelsApi,
         'users': UsersApi,
         'datasets': DatasetsInfoApi,
-        'models': ModelsApi
+        'models': ModelsApi,
+        'annotationsets': AnnotationSetsApi,
     }
 
     def __init__(self,
@@ -97,3 +101,7 @@ class Api:
     @property
     def models(self) -> ModelsApi:
         return self._get_endpoint('models')
+
+    @property
+    def annotationsets(self) -> AnnotationSetsApi:
+        return self._get_endpoint('annotationsets')
