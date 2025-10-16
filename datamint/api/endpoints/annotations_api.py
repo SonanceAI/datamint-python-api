@@ -7,7 +7,7 @@ from .models_api import ModelsApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
 from datamint.entities.project import Project
-from datamint.apihandler.dto.annotation_dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
+from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
 import aiohttp
@@ -377,7 +377,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         annotations = [annotation_dto] if isinstance(annotation_dto, CreateAnnotationDto) else annotation_dto
         annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations]
-        resource_id = resource.id if isinstance(resource, Resource) else resource
+        resource_id = self._entid(resource)
         respdata = self._make_request('POST',
                                       f'{self.endpoint_base}/{resource_id}/annotations',
                                       json=annotations).json()
@@ -779,6 +779,37 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             pil_img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
             yield img_bytes
+
+    def create_image_classification(self,
+                                    resource: str | Resource,
+                                    identifier: str,
+                                    value: str,
+                                    imported_from: str | None = None,
+                                    model_id: str | None = None,
+                                    ) -> str:
+        """
+        Create an image-level classification annotation.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier/label.
+            value: The classification value.
+            imported_from: The imported from source value.
+            model_id: The model unique id.
+
+        Returns:
+            The id of the created annotation.
+        """
+        annotation_dto = CreateAnnotationDto(
+            type=AnnotationType.CATEGORY,
+            identifier=identifier,
+            scope='image',
+            value=value,
+            imported_from=imported_from,
+            model_id=model_id
+        )
+
+        return self.create(resource, annotation_dto)            
 
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],
