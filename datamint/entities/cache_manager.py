@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar, Generic
 from pydantic import BaseModel
-import appdirs
+# import appdirs
 import datamint.configs
 
 _LOGGER = logging.getLogger(__name__)
