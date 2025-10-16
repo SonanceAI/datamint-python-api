@@ -1,9 +1,15 @@
 """Project entity module for DataMint API."""
-
 from datetime import datetime
 import logging
+from typing import Sequence, Literal, TYPE_CHECKING
 from .base_entity import BaseEntity, MISSING_FIELD
 from typing import Any
+import webbrowser
+from pydantic import PrivateAttr
+
+if TYPE_CHECKING:
+    from datamint.api.endpoints.projects_api import ProjectsApi
+    from .resource import Resource
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +42,7 @@ class Project(BaseEntity):
     """
     id: str
     name: str
-    created_at: str  # ISO timestamp string
+    created_at: str
     created_by: str
     dataset_id: str
     worklist_id: str
@@ -50,17 +56,52 @@ class Project(BaseEntity):
     ai_model_id: str | None = MISSING_FIELD
     closed_resources_count: int = MISSING_FIELD
     resources_to_annotate_count: int = MISSING_FIELD
-    most_recent_experiment: str | None = MISSING_FIELD  # ISO timestamp string
+    most_recent_experiment: str | None = MISSING_FIELD
     annotators: list[dict] = MISSING_FIELD
-    customer_id: str | None = MISSING_FIELD
     archived_on: str | None = MISSING_FIELD
     archived_by: str | None = MISSING_FIELD
     is_active_learning: bool = MISSING_FIELD
     two_up_display: bool = MISSING_FIELD
     require_review: bool = MISSING_FIELD
 
+    _api: 'ProjectsApi' = PrivateAttr()
+
+    def fetch_resources(self) -> Sequence['Resource']:
+        """Fetch resources associated with this project from the API,
+        IMPORTANT: It always fetches fresh data from the server.
+
+        Returns:
+            List of Resource instances associated with the project.
+        """
+        return self._api.get_project_resources(self.id)
+
+    def set_work_status(self, resource: 'Resource', status: Literal['opened', 'annotated', 'closed']) -> None:
+        """Set the status of a resource.
+
+        Args:
+            resource: The resource unique id or a resource object.
+            status: The new status to set.
+        """
+
+        return self._api.set_work_status(self, resource, status)
+
     @property
     def url(self) -> str:
         """Get the URL to access this project in the DataMint web application."""
-        base_url = "https://app.datamint.io/projects/edit"
-        return f"{base_url}/{self.id}"
+        base_url = self._api.config.web_app_url
+        return f'{base_url}/projects/edit/{self.id}'
+
+    def show(self) -> None:
+        """Open the project in the default web browser."""
+        webbrowser.open(self.url)
+
+    def as_torch_dataset(self,
+                         root_dir: str | None = None,
+                         auto_update: bool = True,
+                         return_as_semantic_segmentation: bool = False):
+        from datamint.dataset import Dataset
+        return Dataset(project_name=self.name,
+                       root=root_dir,
+                       auto_update=auto_update,
+                       return_as_semantic_segmentation=return_as_semantic_segmentation,
+                       all_annotations=True)

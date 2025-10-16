@@ -30,7 +30,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """
         response = self._get_child_entities(project, 'resources')
         resources_data = response.json()
-        return [Resource(**item) for item in resources_data]
+        resources = [Resource(**item) for item in resources_data]
+        return resources
 
     def create(self,
                name: str,
@@ -148,47 +149,48 @@ class ProjectsApi(CRUDEntityApi[Project]):
         self._make_entity_request('POST', project_id, add_path='resources',
                                   json={'resource_ids_to_add': resources_ids, 'all_files_selected': False})
 
-    def download(self, project: str | Project,
-                 outpath: str,
-                 all_annotations: bool = False,
-                 include_unannotated: bool = False,
-                 ) -> None:
-        """Download a project by its id.
+    # def download(self, project: str | Project,
+    #              outpath: str,
+    #              all_annotations: bool = False,
+    #              include_unannotated: bool = False,
+    #              ) -> None:
+    #     """Download a project by its id.
 
-        Args:
-            project: The project id or Project instance.
-            outpath: The path to save the project zip file.
-            all_annotations: Whether to include all annotations in the downloaded dataset,
-                even those not made by the provided project.
-            include_unannotated: Whether to include unannotated resources in the downloaded dataset.
-        """
-        from tqdm.auto import tqdm
-        params = {'all_annotations': all_annotations}
-        if include_unannotated:
-            params['include_unannotated'] = include_unannotated
+    #     Args:
+    #         project: The project id or Project instance.
+    #         outpath: The path to save the project zip file.
+    #         all_annotations: Whether to include all annotations in the downloaded dataset,
+    #             even those not made by the provided project.
+    #         include_unannotated: Whether to include unannotated resources in the downloaded dataset.
+    #     """
+    #     from tqdm.auto import tqdm
+    #     params = {'all_annotations': all_annotations}
+    #     if include_unannotated:
+    #         params['include_unannotated'] = include_unannotated
 
-        project_id = self._entid(project)
-        with self._stream_entity_request('GET', project_id,
-                                         add_path='annotated_dataset',
-                                         params=params) as response:
-            total_size = int(response.headers.get('content-length', 0))
-            if total_size == 0:
-                total_size = None
-            with tqdm(total=total_size, unit='B', unit_scale=True) as progress_bar:
-                with open(outpath, 'wb') as file:
-                    for data in response.iter_bytes(1024):
-                        progress_bar.update(len(data))
-                        file.write(data)
+    #     project_id = self._entid(project)
+    #     with self._stream_entity_request('GET', project_id,
+    #                                      add_path='annotated_dataset',
+    #                                      params=params) as response:
+    #         total_size = int(response.headers.get('content-length', 0))
+    #         if total_size == 0:
+    #             total_size = None
+    #         with tqdm(total=total_size, unit='B', unit_scale=True) as progress_bar:
+    #             with open(outpath, 'wb') as file:
+    #                 for data in response.iter_bytes(1024):
+    #                     progress_bar.update(len(data))
+    #                     file.write(data)
 
     def set_work_status(self,
-                        resource: str | Resource,
                         project: str | Project,
+                        resource: str | Resource,
                         status: Literal['opened', 'annotated', 'closed']) -> None:
         """
         Set the status of a resource.
 
         Args:
-            annotation: The annotation unique id or an annotation object.
+            project: The project unique id or a project object.
+            resource: The resource unique id or a resource object.
             status: The new status to set.
         """
         resource_id = self._entid(resource)

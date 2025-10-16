@@ -18,6 +18,12 @@ _LOGGER = logging.getLogger(__name__)
 
 DIRS = PlatformDirs(appname='datamintapi')
 CONFIG_FILE = os.path.join(DIRS.user_config_dir, 'datamintapi.yaml')
+try:
+    DATAMINT_DATA_DIR = os.path.join(os.path.expanduser("~"), '.datamint')
+except Exception as e:
+    _LOGGER.error(f"Could not determine home directory: {e}")
+    DATAMINT_DATA_DIR = None
+    
 
 
 def get_env_var_name(key: str) -> str:

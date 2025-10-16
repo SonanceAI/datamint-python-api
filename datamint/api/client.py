@@ -70,7 +70,10 @@ class Api:
     def _get_endpoint(self, name: str):
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
-            self._endpoints[name] = api_class(self.config, self._client)
+            endpoint = api_class(self.config, self._client)
+            # Inject this API instance into the endpoint so it can inject into entities
+            endpoint._api_instance = self
+            self._endpoints[name] = endpoint
         return self._endpoints[name]
 
     @property

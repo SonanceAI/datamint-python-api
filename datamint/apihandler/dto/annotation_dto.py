@@ -17,7 +17,11 @@ Classes:
 import json
 from typing import Any, TypeAlias, Literal
 import logging
-from enum import Enum
+import sys
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 from medimgkit.dicom_utils import pixel_to_patient
 import pydicom
 import numpy as np
@@ -31,7 +35,7 @@ CoordinateSystem: TypeAlias = Literal['pixel', 'patient']
 """
 
 
-class AnnotationType(Enum):
+class AnnotationType(StrEnum):
     SEGMENTATION = 'segmentation'
     AREA = 'area'
     DISTANCE = 'distance'
