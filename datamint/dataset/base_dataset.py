@@ -11,7 +11,6 @@ from torch.utils.data import DataLoader
 import torch
 from torch import Tensor
 from datamint.exceptions import DatamintException
-from medimgkit.dicom_utils import is_dicom
 from medimgkit.readers import read_array_normalized
 from medimgkit.format_detection import guess_extension, guess_typez
 from medimgkit.nifti_utils import NIFTI_MIMES, get_nifti_shape
@@ -306,6 +305,15 @@ class DatamintBaseDataset:
         """Setup label sets and mappings."""
         self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
+        worklist_id = self.get_info()['worklist_id']
+        groups: dict[str, dict] = self.api.annotationsets.get_segmentation_group(worklist_id)['groups']
+        # order by 'index' key
+        max_index = max([g['index'] for g in groups.values()])
+        self.seglabel_list : list[str] = ['UNKNOWN'] * max_index  # 1-based
+        for segname, g in groups.items():
+            self.seglabel_list[g['index'] - 1] = segname
+
+        self.seglabel2code = {label: idx + 1 for idx, label in enumerate(self.seglabel_list)}
 
     def _filter_items(self, images_metainfo: list[dict]) -> list[dict]:
         """Filter items that have annotations."""
@@ -357,9 +365,7 @@ class DatamintBaseDataset:
     @property
     def segmentation_labels_set(self) -> list[str]:
         """Returns the set of segmentation labels in the dataset."""
-        a = set(self.frame_lsets['segmentation'])
-        b = set(self.image_lsets['segmentation'])
-        return list(a.union(b))
+        return self.seglabel_list
 
     def _get_annotations_internal(
         self,
@@ -463,8 +469,8 @@ class DatamintBaseDataset:
             label_anns = self.get_annotations(i, type='label', scope=scope)
             multilabel_set.update(ann.name for ann in label_anns)
 
-            seg_anns = self.get_annotations(i, type='segmentation', scope=scope)
-            segmentation_labels.update(ann.name for ann in seg_anns)
+            # seg_anns = self.get_annotations(i, type='segmentation', scope=scope)
+            # segmentation_labels.update(ann.name for ann in seg_anns)
 
             cat_anns = self.get_annotations(i, type='category', scope=scope)
             multiclass_set.update((ann.name, ann.value) for ann in cat_anns)
@@ -472,17 +478,17 @@ class DatamintBaseDataset:
         # Sort and create mappings
         multilabel_list = sorted(multilabel_set)
         multiclass_list = sorted(multiclass_set)
-        segmentation_list = sorted(segmentation_labels)
+        # segmentation_list = sorted(segmentation_labels)
 
         sets = {
             'multilabel': multilabel_list,
-            'segmentation': segmentation_list,
+            # 'segmentation': segmentation_list,
             'multiclass': multiclass_list
         }
 
         codes_map = {
             'multilabel': {label: idx for idx, label in enumerate(multilabel_list)},
-            'segmentation': {label: idx + 1 for idx, label in enumerate(segmentation_list)},
+            # 'segmentation': {label: idx + 1 for idx, label in enumerate(segmentation_list)},
             'multiclass': {label: idx for idx, label in enumerate(multiclass_list)}
         }
 

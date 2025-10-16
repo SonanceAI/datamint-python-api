@@ -191,7 +191,7 @@ class DatamintDataset(DatamintBaseDataset):
             author_labels = seg_labels[author]
 
             if frame_index is not None and ann.scope == 'frame':
-                seg_code = self.frame_lcodes['segmentation'][ann.name]
+                seg_code = self.seglabel2code[ann.name]
                 if author_segs[frame_index] is None:
                     author_segs[frame_index] = []
                     author_labels[frame_index] = []
@@ -199,7 +199,7 @@ class DatamintDataset(DatamintBaseDataset):
                 author_segs[frame_index].append(s)
                 author_labels[frame_index].append(seg_code)
             elif frame_index is None and ann.scope == 'image':
-                seg_code = self.image_lcodes['segmentation'][ann.name]
+                seg_code = self.seglabel2code[ann.name]
                 # apply to all frames
                 for i in range(nframes):
                     if author_segs[i] is None:
