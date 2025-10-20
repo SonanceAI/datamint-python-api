@@ -25,12 +25,12 @@ Specify the API key as an environment variable.
         import os
         os.environ["DATAMINT_API_KEY"] = "my_api_key"
 
-Method 3: APIHandler constructor
----------------------------------
-Specify API key in the |APIHandlerClass| constructor:
+Method 3: Api constructor
+-------------------------
+Specify API key in the |ApiClass| constructor:
 
 .. code-block:: python
 
-    from datamintapi import APIHandler
+    from datamint import Api
 
-    api = APIHandler(api_key='my_api_key')
+    api = Api(api_key='my_api_key')

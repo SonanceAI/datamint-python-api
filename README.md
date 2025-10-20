@@ -3,7 +3,6 @@
 ![Build Status](https://github.com/SonanceAI/datamint-python-api/actions/workflows/run_test.yaml/badge.svg)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-
 A comprehensive Python SDK for interacting with the Datamint platform, providing seamless integration for medical imaging workflows, dataset management, and machine learning experiments.
 
 ## 📋 Table of Contents
@@ -26,6 +25,8 @@ A comprehensive Python SDK for interacting with the Datamint platform, providing
 - **DICOM Support**: Native handling of DICOM files with anonymization capabilities
 - **Multi-format Support**: PNG, JPEG, NIfTI, and other medical imaging formats
 
+See the full documentation at https://sonanceai.github.io/datamint-python-api/
+
 ## 📦 Installation
 
 > [!NOTE]
@@ -47,6 +48,7 @@ pip install git+https://github.com/SonanceAI/datamint-python-api
 <summary>Click to expand virtual environment setup instructions</summary>
 
 We recommend that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages.
+For instance, create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
 
 1. **Create the environment** (one-time setup):
    ```bash
@@ -68,42 +70,28 @@ We recommend that you install Datamint in a dedicated virtual environment, to av
 
 </details>
 
-## 🔧 Quick Setup
+## Setup API key
 
-### 1. Configure API Access
+To use the Datamint API, you need to setup your API key (ask your administrator if you don't have one). Use one of the following methods to setup your API key:
 
-> **Important**: You need a valid API key to use the Datamint API. Contact your administrator.
+### Method 1: Command-line tool (recommended)
 
-Run the configuration tool:
+Run ``datamint-config`` in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) for more details.
+
+### Method 2: Environment variable
+
+Specify the API key as an environment variable.
+
+**Bash:**
 ```bash
-datamint-config
+export DATAMINT_API_KEY="my_api_key"
+# run your commands (e.g., `datamint-upload`, `python script.py`)
 ```
 
-Or set the environment variable:
-```bash
-export DATAMINT_API_KEY="your-api-key"
-```
-
-### 2. Basic Usage
-
+**Python:**
 ```python
-from datamintapi import APIHandler, Dataset
-
-# Initialize API handler
-api = APIHandler()
-
-# Download a dataset
-dataset = Dataset(
-    project_name="your-project",
-    auto_update=True
-)
-
-# Upload resources
-api.upload_resources(
-    files_path="path/to/dicom/files",
-    channel="mychannel",
-    anonymize=True
-)
+import os
+os.environ["DATAMINT_API_KEY"] = "my_api_key"
 ```
 
 ## 📚 Documentation
@@ -125,9 +113,6 @@ from datamintapi import Dataset
 # Load dataset with annotations
 dataset = Dataset(
     project_name="medical-segmentation",
-    return_annotations=True,
-    return_frame_by_frame=True,
-    include_unannotated=False
 )
 
 # Access data
@@ -226,11 +211,10 @@ datamint-upload \
 
 ```bash
 # Interactive setup
-datamint-config --interactive
+datamint-config
 
 # Set API key
 datamint-config --api-key "your-key"
-
 ```
 
 ## 🔍 Examples

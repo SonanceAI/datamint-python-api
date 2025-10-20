@@ -1,11 +1,11 @@
 Dataset Classes
 ===============
 
-.. automodule:: datamintapi.dataset.dataset
+.. automodule:: datamint.dataset.dataset
     :members:
     :show-inheritance:
     :inherited-members:
 
-.. automodule:: datamintapi.dataset.base_dataset
+.. automodule:: datamint.dataset.base_dataset
     :members:
 

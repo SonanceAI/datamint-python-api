@@ -14,17 +14,23 @@ copyright = '2024, Sonance Team'
 author = 'Sonance Team'
 
 # The full version, including alpha/beta/rc tags
-release = importlib.metadata.version("datamintapi")
+release = importlib.metadata.version("datamint")
 master_doc = "index"
 nitpicky = True
 nitpick_ignore = {
     ("py:class", "pydicom.dataset.Dataset"),
     ("py:class", "PIL.Image.Image"),
+    ("py:class", "Image.Image"),
     ("py:class", "np.ndarray"),
     ("py:class", "numpy.ndarray"),
     ("py:class", "torch.nn.Module"),
     ("py:class", "cv2.VideoCapture"),
     ("py:class", "nibabel.filebasedimages.FileBasedImage"),
+    ("py:class", "pydantic.main.BaseModel"),
+    ("py:class", "httpx.HTTPStatusError"),
+    ("py:class", "httpx.Response"),
+    ("py:class", "httpx.Client"),
+    ("py:class", "aiohttp.client_exceptions.ClientResponseError"),
 }
 
 # -- General configuration ---------------------------------------------------
@@ -42,9 +48,8 @@ extensions = [
 ]
 
 rst_prolog = """
-.. |ExperimentClass| replace:: :py:class:`~datamintapi.experiment.experiment.Experiment`
-.. |DatamintDatasetClass| replace:: :py:class:`~datamintapi.dataset.dataset.DatamintDataset`
-.. |APIHandlerClass| replace:: :py:class:`~datamintapi.apihandler.api_handler.APIHandler`
+.. |DatamintDatasetClass| replace:: :py:class:`~datamint.dataset.dataset.DatamintDataset`
+.. |ApiClass| replace:: :py:class:`~datamint.api.client.Api`
 """
 
 napoleon_google_docstring = True
@@ -84,3 +89,10 @@ html_css_files = [
 ]
 
 html_favicon = "favicon.png"
+
+# Ensure all modules are discoverable
+autodoc_mock_imports = []
+
+# Add type hints support
+autodoc_typehints = 'description'
+autodoc_typehints_description_target = 'documented'

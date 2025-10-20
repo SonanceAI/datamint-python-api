@@ -1,22 +1,20 @@
 import pytest
 from unittest.mock import patch
-from datamintapi.apihandler.api_handler import APIHandler
-import datamintapi
+from datamint.apihandler.api_handler import APIHandler
+import datamint
 import responses
 from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.data import get_testdata_files
-import datamintapi.configs
-from datamintapi.utils.dicom_utils import to_bytesio
-from datamintapi.apihandler.base_api_handler import DatamintException
+import datamint.configs
+from medimgkit.dicom_utils import to_bytesio
+from datamint.apihandler.base_api_handler import DatamintException
 import json
 from aiohttp import FormData
 from typing import IO
-import requests
 import os
 import numpy as np
 from copy import deepcopy
-import logging
 
 # pytest tests --log-cli-level=INFO
 
@@ -151,9 +149,9 @@ class TestAPIHandler:
     @patch('os.getenv')
     def test_api_handler_init(self, mock_getenv, get_projects_sample: dict):
         def mock_getenv_side_effect(key):
-            if key == datamintapi.configs.get_env_var_name(datamintapi.configs.APIKEY_KEY):
+            if key == datamint.configs.get_env_var_name(datamint.configs.APIKEY_KEY):
                 return 'test_api_key'
-            if key == datamintapi.configs.get_env_var_name(datamintapi.configs.APIURL_KEY):
+            if key == datamint.configs.get_env_var_name(datamint.configs.APIURL_KEY):
                 return _TEST_URL
             return None
 
@@ -207,7 +205,7 @@ class TestAPIHandler:
         from builtins import open
 
         def my_open_mock(file, *args, **kwargs):
-            if file.endswith('.dcm'):
+            if str(file).endswith('.dcm'):
                 return to_bytesio(sample_dicom1, file)
             return open(file, *args, **kwargs)
 

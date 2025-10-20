@@ -1,0 +1,27 @@
+version: 1
+disable_existing_loggers: False
+
+handlers:
+  console:
+    class: rich.logging.RichHandler
+    level: WARNING
+    show_time: False
+  console_user:
+    class: datamint.utils.logging_utils.ConsoleWrapperHandler
+    level: INFO
+    show_path: False
+    show_time: False
+
+loggers:
+  datamint:
+    level: ERROR
+    handlers: [console]
+    propagate: no
+  user_logger:
+    level: INFO
+    handlers: [console_user]
+    propagate: no
+
+root:
+  level: WARNING
+  handlers: [console]

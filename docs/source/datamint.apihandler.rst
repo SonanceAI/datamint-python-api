@@ -1,11 +1,12 @@
-datamint.APIHandler
-===================
+Client API
+==========
 
-.. automodule:: datamintapi.apihandler.api_handler
-   :members:
-   :inherited-members:
+.. toctree::
+    :maxdepth: 2
+    :caption: API Documentation
 
-.. automodule:: datamintapi.apihandler.base_api_handler
-    :members:
-    :exclude-members: BaseAPIHandler, validate_call
-    
+    datamint.api.client
+    datamint.api.endpoints
+    datamint.api.base_classes
+    datamint.exceptions
+    datamint.api.dto

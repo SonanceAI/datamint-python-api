@@ -1,174 +1,185 @@
-Upload DICOMs or other resources
-----------------------------------
+Getting Started with the API Client
+------------------------------------
 
-First, import the |APIHandlerClass| class and create an instance: ``api_handler = APIHandler(...)``.
-This class is responsible for interacting with the Datamint server.
+First, import the |ApiClass| class and create an instance:
+
+.. code-block:: python
+
+    from datamint import Api
+    api = Api()  # Uses API key from environment or config
+
+The |ApiClass| class provides access to different endpoint handlers:
+
+- ``api.resources`` - For uploading, downloading, and managing resources
+- ``api.annotations`` - For creating and managing annotations/segmentations  
+- ``api.projects`` - For creating and managing projects
+- ``api.channels`` - For organizing resources into channels
+- ``api.users`` - For user management operations
+
+Working with Resources
+----------------------
 
 Upload resource files
 ++++++++++++++++++++++++++++++++
 
-Use the :py:meth:`upload_resources() <datamintapi.apihandler.api_handler.APIHandler.upload_resources>` method to upload any resource type, such as DICOMs, videos, and image files:
+Use :py:meth:`api.resources.upload_resource() <datamint.api.endpoints.resources_api.ResourcesApi.upload_resource>` to upload any resource type, such as DICOMs, videos, and image files:
 
 .. code-block:: python
 
     # Upload a single file
-    resource_id = api_handler.upload_resources("/path/to/dicom.dcm")
+    resource_id = api.resources.upload_resource("/path/to/dicom.dcm")
 
     # Upload multiple files at once
-    resoures_ids = api_handler.upload_resources(["/path/to/dicom.dcm", 
-                                                 "/path/to/video.mp4"]
-                                                )
+    resource_ids = api.resources.upload_resources(["/path/to/dicom.dcm", 
+                                                   "/path/to/video.mp4"])
 
-You can see the list of all uploaded resources by calling the :py:meth:`get_resources() <datamintapi.apihandler.api_handler.APIHandler.get_resources>` method:
+List and filter resources
+++++++++++++++++++++++++++++++++
 
-.. code-block:: python
-
-    resources = api_handler.get_resources(status='inbox') # status can be any of {'inbox', 'published', 'archived'}
-    for res in resources:
-        print(res)
-    # Alternatively, you can use apihandler.get_resources_by_ids(resources_ids)
-
-Group up resources using channels
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-For a better organization of resources, you can group them into channels:
+You can see the list of all uploaded resources by calling :py:meth:`api.resources.get_list() <datamint.api.endpoints.resources_api.ResourcesApi.get_list>`:
 
 .. code-block:: python
 
-    # Uploads a resource and creates a new channel named 'CT scans':
-    resource_id = api_handler.upload_resources("/path/to/dicom.dcm",
-                                               channel='CT scans'
-                                               )
-
-    # This uploads a new resource to the same channel:
-    resource_id = api_handler.upload_resources("/path/to/dicom2.dcm",
-                                               channel='CT scans'
-                                               )                              
+    # Get resources with different filters
+    resources = api.resources.get_list(status='inbox')  # status: 'inbox', 'published', 'archived'
+    resources = api.resources.get_list(mimetype='application/dicom')  # filter by mimetype
+    resources = api.resources.get_list(channel='CT scans')  # filter by channel
     
-    # Get all resources from channel 'CT scans':
-    resources = api_handler.get_resources(channel='CT scans')
-    
+    for resource in resources:
+        print(f"Resource {resource.id}: {resource.filename}")
 
-Upload, anonymize and add a label
+Upload with options
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-To anonymize and add labels to a DICOM file, use the parameters `anonymize`
-and `labels` of :py:meth:`upload_resources() <datamintapi.apihandler.api_handler.APIHandler.upload_resources>`.
-Adding labels is useful for searching and filtering resources in the Datamint platform later.
+You can customize the upload with various parameters:
 
 .. code-block:: python
 
-    dicom_id = api_handler.upload_resources(files_path='/path/to/dicom.dcm',
-                                            anonymize=True,
-                                            labels=['label1', 'label2']
-                                            )
+    # Upload with channel organization
+    resource_id = api.resources.upload_resource("/path/to/dicom.dcm",
+                                                 channel='CT scans')
 
+    # Upload with anonymization and labels
+    resource_id = api.resources.upload_resource("/path/to/dicom.dcm",
+                                                 anonymize=True,
+                                                 tags=['label1', 'label2'])
 
-
-Changing the uploaded filename
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-By default, the filename that is uploaded is the basename of the file. 
-For instance, if you upload a file named 'path/to/dicom.dcm', the filename will be 'dicom.dcm'.
-To include the path into the filename, use the `mung_filename` parameter:
-
-.. code-block:: python
-
-    # filename='dicom.dcm' (DEFAULT)
-    resource_ids = api_handler.upload_resources(files_path='path/to/dicom.dcm',
-                                                mung_filename=None,
-                                                )
-
-    # filename='path_to_dicom.dcm'
-    resource_ids = api_handler.upload_resources(files_path='path/to/dicom.dcm',
-                                                mung_filename='all',
-                                                )
-
-    # filename='to_dicom.dcm'
-    resource_ids = api_handler.upload_resources(files_path='path/to/dicom.dcm',
-                                                mung_filename=1,
-                                                )
-
-
+    # Upload and publish directly to a project
+    resource_id = api.resources.upload_resource("/path/to/dicom.dcm",
+                                                 publish=True,
+                                                 publish_to='ProjectName')
 
 Download resources
 ------------------
 
-To download a resource, use the :py:meth:`~datamintapi.apihandler.api_handler.APIHandler.download_resource_file` method:
+To download a resource, use :py:meth:`api.resources.download_resource_file() <datamint.api.endpoints.resources_api.ResourcesApi.download_resource_file>`:
 
 .. code-block:: python
 
-    resources = api_handler.get_resources(status='inbox', mimetype='application/dicom')
-    resource_id = resources[0]['id']
+    # Get a resource
+    resources = api.resources.get_list(status='inbox', mimetype='application/dicom')
+    resource = resources[0]
 
-    # returns the resource content in bytes:
-    bytes_obj = api_handler.download_resource_file(resource_id, auto_convert=False)
+    # Download as bytes
+    bytes_obj = api.resources.download_resource_file(resource.id, auto_convert=False)
 
-    # Assuming this resource is a dicom file, it will return a pydicom.dataset.Dataset object. 
-    dicom_obj = api_handler.download_resource_file(resource_id, auto_convert=True)
+    # Auto-convert to appropriate object (e.g., pydicom.Dataset for DICOM files)
+    dicom_obj = api.resources.download_resource_file(resource.id, auto_convert=True)
         
-    # saves the file in the specified path.
-    api_handler.download_resource_file(resource_id, save_path='path/to/dicomfile.dcm')
-        
-With ``auto_convert=True``, the function uses the resource mimetype to automatically convert to a proper object type (`pydicom.dataset.Dataset`, in this case.)
-If you do not want this, but the bytes itself, use the ``auto_convert=False``.
+    # Save directly to file
+    api.resources.download_resource_file(resource.id, save_path='path/to/dicomfile.dcm')
 
+With ``auto_convert=True``, the function uses the resource mimetype to automatically convert to the appropriate object type (``pydicom.Dataset`` for DICOM, etc.).
 
 Publishing resources
 ---------------------
 
-To publish a resource, use :py:meth:`~datamintapi.apihandler.api_handler.APIHandler.publish_resources`:
+To publish a resource, use :py:meth:`api.resources.publish_resources() <datamint.api.endpoints.resources_api.ResourcesApi.publish_resources>`:
 
 .. code-block:: python
 
-    resources = api_handler.get_resources(status='inbox')
-    resource_id = resources[0]['id'] # assuming there is at least one resource in the inbox
+    resources = api.resources.get_list(status='inbox')
+    resource = resources[0]  # assuming there is at least one resource in the inbox
 
     # Change status from 'inbox' to 'published'
-    api_handler.publish_resources(resource_id)
+    api.resources.publish_resources(resource.id)
 
-To publish to a project, pass the project name or id as an argument:
+    # Publish to a specific project
+    api.resources.publish_resources(resource.id, project_name='ProjectName')
 
-.. code-block:: python
+Working with Annotations
+------------------------
 
-    api_handler.publish_resources(resource_id, project_name='ProjectName')
+Upload segmentations
+++++++++++++++++++++++++++++++++
 
-You can also publish resources while uploading them:
-
-.. code-block:: python
-
-    resource_id = api_handler.upload_resources(files_path='/path/to/video_data.mp4',
-                                               publish=True,
-                                               # publish_to='ProjectName' # optional
-                                               )
-
-Upload segmentation
--------------------
-
-To upload a segmentation, use :py:meth:`upload_segmentations() <datamintapi.apihandler.api_handler.APIHandler.upload_segmentations>`:
+To upload a segmentation, use :py:meth:`api.annotations.upload_segmentations() <datamint.api.endpoints.annotations_api.AnnotationsApi.upload_segmentations>`:
 
 .. code-block:: python
     
-    resource_id = api_handler.upload_resources("/path/to/dicom1.dcm") # or use an existing resource_id
-    api_handler.upload_segmentations(resource_id, 
-                                    'path/to/segmentation.nii.gz', # Can be a nifti file or an png file
-                                     name='SegmentationName')
+    # Upload a resource first (or use an existing resource_id)
+    resource_id = api.resources.upload_resources("/path/to/dicom.dcm")
+    
+    # Upload segmentation
+    api.annotations.upload_segmentations(resource_id, 
+                                        'path/to/segmentation.nii.gz',  # NIfTI or PNG file
+                                        name='SegmentationName')
 
+Multi-class segmentations
+++++++++++++++++++++++++++++++++
 
-If your segmentation has multiple classes, you can pass a dictionary mapping pixel values to class names.
-Let's say you have a segmentation with 2 classes, where pixel value 0 is background, 1 is 'tumor', and 2 is 'metal':
+If your segmentation has multiple classes, you can pass a dictionary mapping pixel values to class names:
 
 .. code-block:: python
 
     class_names = {
-        # Do not specify the background class, it is always 0 
+        # Background (0) is automatic, don't specify it
         1: "tumor",
         2: "metal",
     }
 
-    api_handler.upload_segmentations(resource_id, 
-                                    'path/to/segmentation.nii.gz', # Can be a nifti file or an png file
-                                     name=class_names
-                                    )
+    api.annotations.upload_segmentations(resource_id, 
+                                        'path/to/segmentation.nii.gz',
+                                        name=class_names)
 
-See also the tutorial notebook on uploading data: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
+Working with Projects
+---------------------
+
+Create and manage projects
+++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    # Create a new project
+    project_id = api.projects.create(
+        name='My Project',
+        description='Project description',
+        resources_ids=[resource_id1, resource_id2]  # optional
+    )
+
+    # Get project details
+    project = api.projects.get_by_id(project_id)
+    
+    # List all projects
+    projects = api.projects.get_list()
+    
+    # Get resources in a project
+    project_resources = api.projects.get_project_resources(project_id)
+
+Use :py:meth:`api.projects.create() <datamint.api.endpoints.projects_api.ProjectsApi.create>` to create projects, ``api.projects.get_by_id()`` to retrieve them, and :py:meth:`api.projects.get_project_resources() <datamint.api.endpoints.projects_api.ProjectsApi.get_project_resources>` to get associated resources.
+
+Working with Channels  
+---------------------
+
+Organize resources with channels
+++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    # List all channels
+    channels = api.channels.get_list()
+    
+    # Create a new channel
+    channel_id = api.channels.create(name='CT Scans', description='CT scan images')
+
+See also the tutorial notebooks: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_

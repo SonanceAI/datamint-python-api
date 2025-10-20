@@ -13,7 +13,7 @@ You should see this in the first line:
 
 .. code-block:: bash
 
-    usage: usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
+    usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
     (...)
 
 There are two command-line tools available:
@@ -142,6 +142,21 @@ You can provide the segmentation names file with the `--segmentation_names` flag
 .. code-block:: bash
     
     datamint-upload --path data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
+
+**JSON Metadata Support for NIfTI files:**
+
+When uploading NIfTI files (.nii or .nii.gz), the tool automatically detects and includes JSON metadata files with the same base name. 
+For example, if you have ``image.nii.gz``, it will automatically include ``image.json`` if it exists.
+
+.. code-block:: bash
+
+    datamint-upload --path /path/to/nifti_files/ -r
+
+This feature can be disabled with ``--no-auto-detect-json`` flag:
+
+.. code-block:: bash
+
+    datamint-upload --path /path/to/nifti_files/ -r --no-auto-detect-json
 
 To check if the segmentations were uploaded correctly, you can see some information after running your command line:
 
