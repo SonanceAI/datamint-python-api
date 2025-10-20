@@ -31,15 +31,21 @@ MAX_NUMBER_DISTINCT_COLORS = 2048  # Maximum number of distinct colors in a segm
 class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotation]):
     """API handler for annotation-related endpoints."""
 
-    def __init__(self, config: ApiConfig, client: httpx.Client | None = None) -> None:
+    def __init__(self,
+                 config: ApiConfig,
+                 client: httpx.Client | None = None,
+                 models_api=None,
+                 resources_api=None) -> None:
         """Initialize the annotations API handler.
 
         Args:
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
+        from .resources_api import ResourcesApi
         super().__init__(config, Annotation, 'annotations', client)
-        self._models_api = ModelsApi(config, client=client)
+        self._models_api = ModelsApi(config, client=client) if models_api is None else models_api
+        self._resources_api = ResourcesApi(config, client=client, annotations_api=self) if resources_api is None else resources_api
 
     def get_list(self,
                  resource: str | Resource | None = None,
@@ -934,7 +940,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     def download_file(self,
                       annotation: str | Annotation,
-                      fpath_out: str | Path | None = None) -> bytes:
+                      fpath_out: str | os.PathLike | None = None) -> bytes:
         """
         Download the segmentation file for a given resource and annotation.
 
@@ -954,7 +960,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         resp = self._make_request('GET', f'/annotations/{resource_id}/annotations/{annotation_id}/file')
         if fpath_out:
-            with open(str(fpath_out), 'wb') as f:
+            with open(fpath_out, 'wb') as f:
                 f.write(resp.content)
         return resp.content
 
@@ -1059,3 +1065,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         respdata = resp.json()
         if isinstance(respdata, dict) and 'error' in respdata:
             raise DatamintException(respdata['error'])
+
+    def _get_resource(self, ann: Annotation) -> Resource:
+        return self._resources_api.get_by_id(ann.resource_id)

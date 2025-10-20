@@ -45,6 +45,7 @@ medimgkit = ">=0.7.2"
 typing_extensions = ">=4.0.0"
 pydantic = ">=2.6.4"
 httpx = "*"
+backports-strenum = { version = "*", python = "<3.11" }
 # For compatibility with the datamintapi package
 datamintapi = "0.0.*"
 # Extra dependencies for docs

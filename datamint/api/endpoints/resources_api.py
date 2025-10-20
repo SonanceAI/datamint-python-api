@@ -1,9 +1,8 @@
 from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
 from ..base_api import ApiConfig, BaseApi
-from ..entity_base_api import EntityBaseApi, CreatableEntityApi, DeletableEntityApi
-from .annotations_api import AnnotationsApi
-from .projects_api import ProjectsApi
+from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities.resource import Resource
+from datamint.entities.project import Project
 from datamint.entities.annotation import Annotation
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 import httpx
@@ -23,10 +22,9 @@ import asyncio
 import aiohttp
 from pathlib import Path
 import nest_asyncio  # For running asyncio in jupyter notebooks
-import cv2
 from PIL import Image
-from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
 import io
+from datamint.types import ImagingData
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,17 +52,25 @@ def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
 class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
     """API handler for resource-related endpoints."""
 
-    def __init__(self, config: ApiConfig, client: Optional[httpx.Client] = None) -> None:
+    def __init__(self,
+                 config: ApiConfig,
+                 client: Optional[httpx.Client] = None,
+                 annotations_api=None,
+                 projects_api=None
+                 ) -> None:
         """Initialize the resources API handler.
 
         Args:
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
+        from .annotations_api import AnnotationsApi
+        from .projects_api import ProjectsApi
         super().__init__(config, Resource, 'resources', client)
         nest_asyncio.apply()
-        self.annotations_api = AnnotationsApi(config, client)
-        self.projects_api = ProjectsApi(config, client)
+        self.annotations_api = AnnotationsApi(
+            config, client, resources_api=self) if annotations_api is None else annotations_api
+        self.projects_api = ProjectsApi(config, client) if projects_api is None else projects_api
 
     def get_list(self,
                  status: Optional[ResourceStatus] = None,
@@ -710,21 +716,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             # This should not happen with single file uploads, but handle it just in case
             raise DatamintException(f"Unexpected return from upload_resources: {type(result)} | {result}")
 
-    def _determine_mimetype(self,
-                            content,
-                            resource: str | Resource) -> tuple[str | None, str | None]:
-        # Determine mimetype from file content
-        mimetype_list, ext = guess_typez(content, use_magic=True)
-        mimetype = mimetype_list[-1]
-
-        # get mimetype from resource info if not detected
-        if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
-            if not isinstance(resource, Resource):
-                resource = self.get_by_id(resource)
-            mimetype = resource.mimetype or mimetype
-
-        return mimetype, ext
-
     async def _async_download_file(self,
                                    resource: str | Resource,
                                    save_path: str | Path,
@@ -761,8 +752,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     f.write(data_bytes)
 
                 # Determine mimetype from file content
-                mimetype, ext = self._determine_mimetype(content=data_bytes,
-                                                         resource=resource)
+                mimetype, ext = BaseApi._determine_mimetype(content=data_bytes,
+                                                            declared_mimetype=resource.mimetype if isinstance(resource, Resource) else None)
 
                 # Generate final path with extension if needed
                 if mimetype is not None and mimetype != DEFAULT_MIME_TYPE:
@@ -850,7 +841,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                save_path: Optional[str] = None,
                                auto_convert: bool = True,
                                add_extension: bool = False
-                               ) -> bytes | pydicom.Dataset | Image.Image | cv2.VideoCapture | nib_FileBasedImage | tuple[Any, str]:
+                               ) -> ImagingData | tuple[ImagingData, str] | bytes:
         """
         Download a resource file.
 
@@ -888,8 +879,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             mimetype = None
             ext = None
             if auto_convert or add_extension:
-                mimetype, ext = self._determine_mimetype(content=response.content,
-                                                         resource=resource)
+                mimetype, ext = BaseApi._determine_mimetype(content=response.content,
+                                                            declared_mimetype=resource.mimetype if isinstance(resource, Resource) else None)
             if auto_convert:
                 if mimetype is None:
                     _LOGGER.warning("Could not determine mimetype. Returning a bytes array.")
@@ -1011,6 +1002,20 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                              add_path='tags',
                                              json=data)
         return response
+
+    # def get_projects(self, resource: Resource) -> Sequence[Project]:
+    #     """
+    #     Get all projects this resource belongs to.
+
+    #     Args:
+    #         resource: The Resource instance.
+
+    #     Returns:
+    #         List of Project instances
+    #     """
+    #     resource._ensure_attr('projects')
+    #     proj_ids = [p['id'] for p in resource.projects]
+    #     return [proj for proj in self.projects_api.get_all() if proj.id in proj_ids]
 
     def add_tags(self,
                  resource: str | Resource,
