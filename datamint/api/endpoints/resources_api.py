@@ -988,6 +988,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                  resource: str | Resource,
                  tags: Sequence[str],
                  ):
+        """
+        Set tags for a resource, IMPORTANT: This replaces all existing tags.
+        Args:
+            resource: The resource unique id or Resource object.
+            tags: The tags to set.
+        """
         data = {'tags': tags}
         resource_id = self._entid(resource)
 
@@ -1010,3 +1016,39 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
     #     resource._ensure_attr('projects')
     #     proj_ids = [p['id'] for p in resource.projects]
     #     return [proj for proj in self.projects_api.get_all() if proj.id in proj_ids]
+
+    def add_tags(self,
+                 resource: str | Resource,
+                 tags: Sequence[str],
+                 ):
+        """
+        Add tags to a resource, IMPORTANT: This appends to existing tags.
+        Args:
+            resource: The resource unique id or Resource object.
+            tags: The tags to add.
+        """
+        if isinstance(resource, str):
+            resource = self.get_by_id(resource)
+        old_tags = resource.tags if resource.tags is not None else []
+        return self.set_tags(resource, old_tags + list(tags))
+
+    def bulk_delete(self, entities: Sequence[str | Resource]) -> None:
+        """Delete multiple entities. Faster than deleting them one by one.
+
+        Args:
+            entities: Sequence of unique identifiers for the entities to delete or the entity instances themselves.
+
+        Raises:
+            httpx.HTTPStatusError: If deletion fails or any entity not found
+        """
+        from math import ceil
+
+        resources_ids = [self._entid(ent) for ent in entities]
+        if len(resources_ids) == 0:
+            return
+        batch_size = 200
+        for i in range(0, ceil(len(resources_ids)/batch_size)):
+            batch_ids = resources_ids[i*batch_size:(i+1)*batch_size]
+            self._make_request('DELETE',
+                               f'{self.endpoint_base}',
+                               params={'resource_ids': ','.join(batch_ids)})

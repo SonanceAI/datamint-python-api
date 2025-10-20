@@ -13,4 +13,6 @@ __all__ = [
     "BoxGeometry",
     "LineGeometry",
     "CoordinateSystem"
+    "LineGeometry",
+    "CoordinateSystem"
 ]
