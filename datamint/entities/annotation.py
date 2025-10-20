@@ -5,11 +5,20 @@ This module defines the Annotation model used to represent annotation
 records returned by the DataMint API.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import logging
+import os
+
 from .base_entity import BaseEntity, MISSING_FIELD
-from pydantic import Field
+from .cache_manager import CacheManager
+from pydantic import PrivateAttr
 from datetime import datetime
+from datamint.api.dto import AnnotationType
+from datamint.types import ImagingData
+
+if TYPE_CHECKING:
+    from datamint.api.endpoints.annotations_api import AnnotationsApi
+    from .resource import Resource
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +29,8 @@ _FIELD_MAPPING = {
     'added_by': 'created_by',
     'index': 'frame_index',
 }
+
+_ANNOTATION_CACHE_KEY = "annotation_data"
 
 
 class Annotation(BaseEntity):
@@ -60,7 +71,7 @@ class Annotation(BaseEntity):
     identifier: str
     scope: str
     frame_index: int | None
-    annotation_type: str
+    annotation_type: AnnotationType
     text_value: str | None
     numeric_value: float | int | None
     units: str | None
@@ -83,7 +94,66 @@ class Annotation(BaseEntity):
     annotation_worklist_name: str | None
     user_info: dict | None
     values: list | None = MISSING_FIELD
-    file: str | None = None  # Add file field for segmentations
+    file: str | None = None
+
+    _api: 'AnnotationsApi' = PrivateAttr()
+
+    def __init__(self, **data):
+        """Initialize the annotation entity."""
+        super().__init__(**data)
+        self._cache: CacheManager = CacheManager('annotations')
+        self._resource: 'Resource | None' = None
+
+    @property
+    def resource(self) -> 'Resource':
+        """Lazily load and cache the associated Resource entity."""
+        if self._resource is None:
+            self._resource = self._api._get_resource(self)
+        return self._resource
+
+    def fetch_file_data(
+        self,
+        save_path: os.PathLike | str | None = None,
+        auto_convert: bool = True,
+        use_cache: bool = False,
+    ) -> bytes | ImagingData:
+        # Version info for cache validation
+        version_info = self._generate_version_info()
+
+        # Try to get from cache
+        img_data = None
+        if use_cache:
+            img_data = self._cache.get(self.id, _ANNOTATION_CACHE_KEY, version_info)
+
+        if img_data is None:
+            # Fetch from server using download_resource_file
+            logger.debug(f"Fetching image data from server for resource {self.id}")
+            img_data = self._api.download_file(
+                self,
+                fpath_out=save_path
+            )
+            # Cache the data
+            if use_cache:
+                self._cache.set(self.id, _ANNOTATION_CACHE_KEY, img_data, version_info)
+
+        if auto_convert:
+            return self._api.convert_format(img_data)
+
+        return img_data
+
+    def _generate_version_info(self) -> dict:
+        """Helper to generate version info for caching."""
+        return {
+            'created_at': self.created_at,
+            'deleted_at': self.deleted_at,
+            'associated_file': self.associated_file,
+        }
+
+    def invalidate_cache(self) -> None:
+        """Invalidate all cached data for this annotation."""
+        self._cache.invalidate(self.id)
+        self._resource = None
+        logger.debug(f"Invalidated cache for annotation {self.id}")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Annotation':
