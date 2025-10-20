@@ -221,7 +221,7 @@ class DeletableEntityApi(EntityBaseApi[T]):
     retrieval and restoration of such entities.
     """
 
-    def delete(self, entity: str | BaseEntity) -> None:
+    def delete(self, entity: str | T) -> None:
         """Delete an entity.
 
         Args:
@@ -232,7 +232,7 @@ class DeletableEntityApi(EntityBaseApi[T]):
         """
         self._make_entity_request('DELETE', entity)
 
-    def bulk_delete(self, entities: Sequence[str | BaseEntity]) -> None:
+    def bulk_delete(self, entities: Sequence[str | T]) -> None:
         """Delete multiple entities.
 
         Args:
