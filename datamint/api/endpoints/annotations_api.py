@@ -473,7 +473,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     raise ValueError(f"AI model with name '{ai_model_name}' not found. ")
                 raise ValueError(f"AI model with name '{ai_model_name}' not found. " +
                                  f"Available models: {available_models}")
-            model_id = model_id['id']
+            model_id = model_id['name']
 
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
