@@ -307,6 +307,10 @@ class DatamintBaseDataset:
         self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
         worklist_id = self.get_info()['worklist_id']
         groups: dict[str, dict] = self.api.annotationsets.get_segmentation_group(worklist_id)['groups']
+        if not groups:
+            self.seglabel_list = []
+            self.seglabel2code = {}
+            return
         # order by 'index' key
         max_index = max([g['index'] for g in groups.values()])
         self.seglabel_list : list[str] = ['UNKNOWN'] * max_index  # 1-based
