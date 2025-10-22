@@ -1,5 +1,5 @@
 from typing import Optional
-from .base_api import ApiConfig
+from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         ChannelsApi, UsersApi, DatasetsInfoApi, ModelsApi,
                         AnnotationSetsApi
@@ -13,7 +13,7 @@ class Api:
     DEFAULT_SERVER_URL = 'https://api.datamint.io'
     DATAMINT_API_VENV_NAME = datamint.configs.ENV_VARS[datamint.configs.APIKEY_KEY]
 
-    _API_MAP = {
+    _API_MAP : dict[str, type[BaseApi]] = {
         'projects': ProjectsApi,
         'resources': ResourcesApi,
         'annotations': AnnotationsApi,
