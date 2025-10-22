@@ -6,7 +6,7 @@ based on Datamint configuration.
 import os
 import logging
 from typing import Optional
-from datamintapi import configs
+from datamint import configs
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,28 +42,11 @@ def get_datamint_api_key() -> Optional[str]:
     return None
 
 
-def setup_mlflow_environment() -> bool:
-    """
-    Automatically set up MLflow environment variables based on Datamint configuration.
-
-    Returns:
-        bool: True if MLflow environment was successfully configured, False otherwise.
-    """
-    import mlflow
-    # Check if MLflow variables are already set
-    if os.getenv('MLFLOW_TRACKING_URI') and os.getenv('MLFLOW_TRACKING_TOKEN'):
-        _LOGGER.debug("MLflow environment variables already set, skipping auto-configuration")
-        return True
-
-    # Get Datamint configuration
+def _get_mlflowdatamint_uri() -> Optional[str]:
     api_url = get_datamint_api_url()
-    api_key = get_datamint_api_key()
+    if not api_url:
+        return None
 
-    if not api_url or not api_key:
-        _LOGGER.debug("Datamint configuration incomplete, cannot auto-configure MLflow")
-        return False
-
-    # Convert Datamint API URL to MLflow tracking URI
     # Remove trailing slash if present
     api_url = api_url.rstrip('/')
 
@@ -71,10 +54,32 @@ def setup_mlflow_environment() -> bool:
     base_url = base_url.replace('https://', 'http://')  # FIXME
 
     mlflow_uri = f"{base_url}:5000"
+    return mlflow_uri
 
-    # Set MLflow environment variables
-    os.environ['MLFLOW_TRACKING_TOKEN'] = api_key
-    mlflow.set_tracking_uri(mlflow_uri)
+
+def setup_mlflow_environment(overwrite: bool = False,
+                             set_mlflow: bool = True) -> bool:
+    """
+    Automatically set up MLflow environment variables based on Datamint configuration.
+
+    Returns:
+        bool: True if MLflow environment was successfully configured, False otherwise.
+    """
+    _LOGGER.debug("Setting up MLflow environment variables from Datamint configuration")
+    api_key = get_datamint_api_key()
+    mlflow_uri = _get_mlflowdatamint_uri()
+    if not mlflow_uri or not api_key:
+        _LOGGER.debug("Datamint configuration incomplete, cannot auto-configure MLflow")
+        return False
+
+    if overwrite or not os.getenv('MLFLOW_TRACKING_TOKEN'):
+        os.environ['MLFLOW_TRACKING_TOKEN'] = api_key
+    if overwrite or not os.getenv('MLFLOW_TRACKING_URI'):
+        os.environ['MLFLOW_TRACKING_URI'] = mlflow_uri
+
+    if set_mlflow:
+        import mlflow
+        mlflow.set_tracking_uri(mlflow_uri)
 
     return True
 

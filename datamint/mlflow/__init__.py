@@ -1,10 +1,9 @@
-from .tracking.fluent import set_project
-from .env_utils import setup_mlflow_environment, ensure_mlflow_configured
-
 # Monkey patch mlflow.tracking._tracking_service.utils.get_tracking_uri
+from .tracking.fluent import set_project
 import mlflow.tracking._tracking_service.utils as mlflow_utils
 from functools import wraps
 import logging
+from .env_utils import setup_mlflow_environment, ensure_mlflow_configured
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ def _patched_get_tracking_uri(*args, **kwargs):
     if _SETUP_CALLED_SUCCESSFULLY:
         return _original_get_tracking_uri(*args, **kwargs)
     try:
-        _SETUP_CALLED_SUCCESSFULLY = setup_mlflow_environment()
+        _SETUP_CALLED_SUCCESSFULLY = setup_mlflow_environment(set_mlflow=True)
     except Exception as e:
         _SETUP_CALLED_SUCCESSFULLY = False
         _LOGGER.error("Failed to set up MLflow environment: %s", e)
@@ -39,7 +38,9 @@ def _patched_get_tracking_uri(*args, **kwargs):
     return ret
 
 
+setup_mlflow_environment(set_mlflow=False)
 # Replace the original function with our patched version
 mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
+
 
 __all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured']

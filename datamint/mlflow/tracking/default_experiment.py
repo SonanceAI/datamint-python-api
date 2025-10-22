@@ -1,6 +1,5 @@
 import sys
 import os
-from mlflow.tracking.client import MlflowClient
 from mlflow.tracking.default_experiment.abstract_context import DefaultExperimentProvider
 
 
@@ -11,6 +10,8 @@ class DatamintExperimentProvider(DefaultExperimentProvider):
         return True
 
     def get_experiment_id(self):
+        from mlflow.tracking.client import MlflowClient
+        
         if DatamintExperimentProvider._experiment_id is not None:
             return self._experiment_id
         # Get the filename of the main source file

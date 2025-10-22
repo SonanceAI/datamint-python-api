@@ -108,7 +108,7 @@ os.environ["DATAMINT_API_KEY"] = "my_api_key"
 ### Dataset Management
 
 ```python
-from datamintapi import Dataset
+from datamint import Dataset
 
 # Load dataset with annotations
 dataset = Dataset(

@@ -7,11 +7,11 @@ import inspect
 import torch
 from torch import nn
 import lightning.pytorch as L
+from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
+from datamint.mlflow.env_utils import ensure_mlflow_configured
 import mlflow
 import logging
 from lightning.pytorch.loggers import MLFlowLogger
-from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
-from datamint.mlflow.env_utils import ensure_mlflow_configured
 
 _LOGGER = logging.getLogger(__name__)
 

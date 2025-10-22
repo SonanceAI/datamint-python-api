@@ -1,9 +1,6 @@
 from mlflow.store.tracking.rest_store import RestStore
-from mlflow.utils.credentials import get_default_host_creds
 from functools import partial
 from .fluent import get_active_project_id
-from mlflow.utils.proto_json_utils import message_to_json
-from mlflow.protos.service_pb2 import CreateExperiment
 import json
 
 
@@ -16,6 +13,7 @@ class DatamintStore(RestStore):
     def __init__(self, store_uri: str, artifact_uri=None, force_valid=True):
         # Ensure MLflow environment is configured when store is initialized
         from datamint.mlflow.env_utils import setup_mlflow_environment
+        from mlflow.utils.credentials import get_default_host_creds
         setup_mlflow_environment()
         
         if store_uri.startswith('datamint://') or 'datamint.io' in store_uri or force_valid:
@@ -28,6 +26,9 @@ class DatamintStore(RestStore):
         super().__init__(get_host_creds=get_host_creds)
 
     def create_experiment(self, name, artifact_location=None, tags=None, project_id: str = None) -> str:
+        from mlflow.protos.service_pb2 import CreateExperiment
+        from mlflow.utils.proto_json_utils import message_to_json
+
         if self.invalid:
             return super().create_experiment(name, artifact_location, tags)
         if project_id is None:

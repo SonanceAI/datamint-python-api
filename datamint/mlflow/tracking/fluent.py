@@ -1,8 +1,8 @@
 from typing import Optional
 import threading
 import logging
-from datamint import APIHandler
-from datamintapi.apihandler.base_api_handler import DatamintException
+from datamint import Api
+from datamint.exceptions import DatamintException
 import os
 from datamint.mlflow.env_vars import EnvVars
 from datamint.mlflow.env_utils import ensure_mlflow_configured
@@ -36,22 +36,17 @@ def get_active_project_id() -> str | None:
     return None
 
 
-def _find_project_by_name(project_name: str) -> Optional[dict]:
-    dt_client = APIHandler(check_connection=False)
-    project = dt_client.get_project_by_name(project_name)
+def _find_project_by_name(project_name: str):
+    dt_client = Api(check_connection=False)
+    project = dt_client.projects.get_by_name(project_name)
     if project is None:
         raise DatamintException(f"Project with name '{project_name}' does not exist.")
-    if 'error' in project:
-        raise DatamintException(f'Error getting project: {project["error"]}')
     return project
 
 
-def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None) -> dict:
+def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None):
     from mlflow.exceptions import MlflowException
-    from datamint.mlflow import setup_mlflow_environment
     global _ACTIVE_PROJECT_ID
-
-    setup_mlflow_environment()
 
     # Ensure MLflow is properly configured before proceeding
     ensure_mlflow_configured()
@@ -63,16 +58,14 @@ def set_project(project_name: Optional[str] = None, project_id: Optional[str] = 
         raise MlflowException("You cannot specify both a project name and a project id")
 
     with _PROJECT_LOCK:
-        dt_client = APIHandler(check_connection=False)
+        dt_client = Api(check_connection=False)
         if project_id is None:
-            project = dt_client.get_project_by_name(project_name)
+            project = dt_client.projects.get_by_name(project_name)
             if project is None:
                 raise DatamintException(f"Project with name '{project_name}' does not exist.")
-            if 'error' in project:
-                raise DatamintException(f'Error getting project "{project_name}" by name: {project["error"]}')
-            project_id = project['id']
+            project_id = project.id
         else:
-            project = dt_client.get_project_by_id(project_id)
+            project = dt_client.projects.get_by_id(project_id)
             if project is None:
                 raise DatamintException(f"Project with id '{project_id}' does not exist.")
 
