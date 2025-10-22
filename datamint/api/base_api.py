@@ -121,11 +121,12 @@ class BaseApi:
         url = endpoint.lstrip('/')  # Remove leading slash for httpx
 
         try:
-            curl_command = self._generate_curl_command({"method": method,
-                                                        "url": url,
-                                                        "headers": self.client.headers,
-                                                        **kwargs}, fail_silently=True)
-            logger.debug(f'Equivalent curl command: "{curl_command}"')
+            if logger.isEnabledFor(logging.DEBUG):
+                curl_command = self._generate_curl_command({"method": method,
+                                                            "url": url,
+                                                            "headers": self.client.headers,
+                                                            **kwargs}, fail_silently=True)
+                logger.debug(f'Equivalent curl command: "{curl_command}"')
             response = self.client.request(method, url, **kwargs)
             response.raise_for_status()
             return response
