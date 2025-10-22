@@ -70,7 +70,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         nest_asyncio.apply()
         self.annotations_api = AnnotationsApi(
             config, client, resources_api=self) if annotations_api is None else annotations_api
-        self.projects_api = ProjectsApi(config, client) if projects_api is None else projects_api
+        self.projects_api = projects_api or ProjectsApi(config, client, resources_api=self)
 
     def get_list(self,
                  status: Optional[ResourceStatus] = None,

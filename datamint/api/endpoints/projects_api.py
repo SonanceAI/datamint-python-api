@@ -1,8 +1,10 @@
-from typing import Sequence, Literal
+from typing import Sequence, Literal, TYPE_CHECKING
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
-from datamint.entities.resource import Resource
 import httpx
+from datamint.entities.resource import Resource
+if TYPE_CHECKING:
+    from .resources_api import ResourcesApi
 
 
 class ProjectsApi(CRUDEntityApi[Project]):
@@ -10,14 +12,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def __init__(self,
                  config: ApiConfig,
-                 client: httpx.Client | None = None) -> None:
+                 client: httpx.Client | None = None,
+                 resources_api: 'ResourcesApi | None' = None) -> None:
         """Initialize the projects API handler.
 
         Args:
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
+        from .resources_api import ResourcesApi
         super().__init__(config, Project, 'projects', client)
+        self.resources_api = resources_api or ResourcesApi(config, client, projects_api=self)
 
     def get_project_resources(self, project: Project | str) -> list[Resource]:
         """Get resources associated with a specific project.
@@ -30,7 +35,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """
         response = self._get_child_entities(project, 'resources')
         resources_data = response.json()
-        resources = [Resource(**item) for item in resources_data]
+        resources = [self.resources_api._init_entity_obj(**item) for item in resources_data]
         return resources
 
     def create(self,
