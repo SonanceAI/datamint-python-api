@@ -263,8 +263,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             filename = new_filename
 
         is_a_dicom_file = None
-        if mimetype is None:
-            mimetype_list, ext = guess_typez(file_path, use_magic=True)
+        if not mimetype:
+            mimetype_list, ext = guess_typez(file_path, use_magic=False)
             for mime in mimetype_list:
                 if mime in NIFTI_MIMES:
                     mimetype = DEFAULT_NIFTI_MIME
@@ -273,7 +273,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 if ext == '.nii.gz' or filename.lower().endswith('nii.gz'):
                     mimetype = DEFAULT_NIFTI_MIME
                 else:
-                    mimetype = mimetype_list[-1] if mimetype_list else DEFAULT_MIME_TYPE
+                    mimetype = mimetype_list[-1] if mimetype_list and mimetype_list[-1] else DEFAULT_MIME_TYPE
+        if (not mimetype) or mimetype == DEFAULT_MIME_TYPE:
+            msg = f"Could not determine mimetype for file {source_filepath}."
+            _LOGGER.warning(msg)
+            _USER_LOGGER.warning(msg)
+
 
         mimetype = standardize_mimetype(mimetype)
 
