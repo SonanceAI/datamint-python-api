@@ -433,8 +433,14 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                             )
                 return rid
 
-            tasks = [__upload_single_resource(f, segfiles, metadata_file)
-                     for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
+            try:
+                tasks = [__upload_single_resource(f, segfiles, metadata_file)
+                        for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
+            except ValueError:
+                msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
+                _LOGGER.error(msg)
+                _USER_LOGGER.error(msg)
+                raise 
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_resources(self,
