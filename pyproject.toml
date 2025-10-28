@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.3.3"
+version = "2.3.5"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -41,7 +41,7 @@ lightning = ">=2.0.0, !=2.5.1, !=2.5.1.post0"
 mlflow = "^2.0.0"
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
-medimgkit = ">=0.7.2"
+medimgkit = ">=0.7.3"
 typing_extensions = ">=4.0.0"
 pydantic = ">=2.6.4"
 httpx = "*"

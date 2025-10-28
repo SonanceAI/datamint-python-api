@@ -574,6 +574,8 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         help='Automatically detect and include JSON metadata files with the same base name as NIFTI files')
     parser.add_argument('--no-auto-detect-json', dest='auto_detect_json', action='store_false',
                         help='Disable automatic detection of JSON metadata files (default behavior)')
+    parser.add_argument('--no-assemble-dicoms', dest='assemble_dicoms', action='store_false', default=True,
+                        help='Do not assemble DICOM files into series (default: assemble them)')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamint_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
@@ -797,7 +799,7 @@ def main():
                                                      publish_to=args.project,
                                                      segmentation_files=segfiles,
                                                      transpose_segmentation=args.transpose_segmentation,
-                                                     assemble_dicoms=True,
+                                                     assemble_dicoms=args.assemble_dicoms,
                                                      metadata=metadata_files,
                                                      progress_bar=True
                                                      )
