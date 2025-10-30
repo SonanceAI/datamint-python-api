@@ -6,6 +6,7 @@ based on Datamint configuration.
 import os
 import logging
 from typing import Optional
+from urllib.parse import urlparse
 from datamint import configs
 
 
@@ -46,12 +47,21 @@ def _get_mlflowdatamint_uri() -> Optional[str]:
     api_url = get_datamint_api_url()
     if not api_url:
         return None
+    _LOGGER.debug(f"Retrieved Datamint API URL: {api_url}")
 
     # Remove trailing slash if present
     api_url = api_url.rstrip('/')
+    # api_url samples:
+    # https://api.datamint.io
+    # http://localhost:3001
 
-    base_url = api_url.rsplit(':', maxsplit=1)[0]
-    base_url = base_url.replace('https://', 'http://')  # FIXME
+    parsed_url = urlparse(api_url)
+    base_url = f"{parsed_url.scheme}://{parsed_url.hostname}"
+    _LOGGER.debug(f"Derived base URL for MLflow Datamint: {base_url}")
+    # FIXME: It should work with https or datamint-api server should forward https requests.
+    base_url = base_url.replace('https://', 'http://')
+    if len(base_url.replace('http:', '')) == 0:
+        return None
 
     mlflow_uri = f"{base_url}:5000"
     return mlflow_uri
