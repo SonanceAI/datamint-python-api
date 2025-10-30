@@ -61,21 +61,52 @@ class BaseApi:
             client: Optional HTTP client instance. If None, a new one will be created.
         """
         self.config = config
-        self.client = client or self._create_client()
+        self._owns_client = client is None  # Track if we created the client
+        self.client = client or BaseApi._create_client(config)
         self.semaphore = asyncio.Semaphore(20)
         self._api_instance: 'Api | None' = None  # Injected by Api class
 
-    def _create_client(self) -> httpx.Client:
-        """Create and configure HTTP client with authentication and timeouts."""
+    @staticmethod
+    def _create_client(config: ApiConfig) -> httpx.Client:
+        """Create and configure HTTP client with authentication and timeouts.
+        
+        The client is designed to be long-lived and reused across multiple requests.
+        It maintains connection pooling for improved performance.
+        Default limits: max_keepalive_connections=20, max_connections=100
+        """
         headers = None
-        if self.config.api_key:
-            headers = {"apikey": self.config.api_key}
+        if config.api_key:
+            headers = {"apikey": config.api_key}
 
         return httpx.Client(
-            base_url=self.config.server_url,
+            base_url=config.server_url,
             headers=headers,
-            timeout=self.config.timeout
+            timeout=config.timeout,
         )
+
+    def close(self) -> None:
+        """Close the HTTP client and release resources.
+        
+        Should be called when the API instance is no longer needed.
+        Only closes the client if it was created by this instance.
+        """
+        if self._owns_client and self.client is not None:
+            self.client.close()
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensures client is closed."""
+        self.close()
+
+    def __del__(self):
+        """Destructor - ensures client is closed when instance is garbage collected."""
+        try:
+            self.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
 
     def _stream_request(self, method: str, endpoint: str, **kwargs):
         """Make streaming HTTP request with error handling.
