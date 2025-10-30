@@ -74,14 +74,17 @@ class BaseApi:
         It maintains connection pooling for improved performance.
         Default limits: max_keepalive_connections=20, max_connections=100
         """
-        headers = None
-        if config.api_key:
-            headers = {"apikey": config.api_key}
+        headers = {"apikey": config.api_key} if config.api_key else None
 
         return httpx.Client(
             base_url=config.server_url,
             headers=headers,
             timeout=config.timeout,
+            limits=httpx.Limits(
+                max_keepalive_connections=5,  # Increased from default 20
+                max_connections=20,  # Increased from default 100
+                keepalive_expiry=8
+            )
         )
 
     def close(self) -> None:
