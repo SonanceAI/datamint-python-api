@@ -68,6 +68,8 @@ class Api:
                                     f" Please check your api_key and/or other configurations. {e}")
 
     def _get_endpoint(self, name: str):
+        if self._client is None:
+            self._client = BaseApi._create_client(self.config)
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
             endpoint = api_class(self.config, self._client)

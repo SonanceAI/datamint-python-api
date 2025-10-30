@@ -25,7 +25,6 @@ Datamint
    :caption: Contents
 
    getting_started
-   setup_api_key
    command_line_tools
    client_api
    pytorch_integration
@@ -40,8 +39,38 @@ Datamint
    datamint.entities
 
 
-Indices and tables
-==================
+Quick Start
+-----------
+
+Install the package:
+
+.. code-block:: bash
+
+   pip install datamint
+
+Configure your API access:
+
+.. code-block:: bash
+
+   datamint-config
+
+Start using the API:
+
+.. code-block:: python
+
+   from datamint import Api
+   
+   # Initialize API handler
+   api = Api()
+   all_projects = api.projects.get_all()
+   
+
+Community & Support
+-------------------
+`GitHub Issues <https://github.com/SonanceAI/datamint-python-api/issues>`_
+
+Indices and Tables
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`

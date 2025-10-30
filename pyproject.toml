@@ -37,7 +37,8 @@ Deprecated = ">=1.2.0"
 platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
-lightning = "*"
+lightning = ">=2.0.0, !=2.5.1, !=2.5.1.post0"
+mlflow = "^2.0.0"
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
 medimgkit = ">=0.7.3"
@@ -74,3 +75,16 @@ dev = ["pytest", "pytest-cov", "responses", "aioresponses"]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[tool.poetry.plugins."mlflow.tracking_store"]
+datamint = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+http = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+https = "datamint.mlflow.tracking.datamint_store:DatamintStore"
+
+[tool.poetry.plugins."mlflow.artifact_repository"]
+datamint = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+http = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+https = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+mlflow-artifacts = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArtifactsRepository"
+
+[tool.poetry.plugins."mlflow.default_experiment_provider"]
+datamint = "datamint.mlflow.tracking.default_experiment:DatamintExperimentProvider"

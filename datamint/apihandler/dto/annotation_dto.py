@@ -178,6 +178,8 @@ class CreateAnnotationDto:
         if model_id is not None:
             if is_model == False:
                 raise ValueError("model_id==False while self.model_id is provided.")
+            if not isinstance(model_id, str):
+                raise ValueError("model_id must be a string if provided.")
             is_model = True
         self.is_model = is_model
         self.geometry = geometry

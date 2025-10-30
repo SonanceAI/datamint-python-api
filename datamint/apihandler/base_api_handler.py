@@ -30,7 +30,6 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 
 _PAGE_LIMIT = 5000
 
-
 @deprecated(reason="Please use `from datamint import Api` instead.", version="2.0.0")
 class BaseAPIHandler:
     """

@@ -1,28 +1,61 @@
 .. _pytorch_integration:
 
 
-Pytorch integration
-===================
-Before continuing, you may want to check the :ref:`setup_api_key` section to easily set up your API key, if you haven't done so yet.
+PyTorch & Lightning Integration
+===============================
 
-Dataset
--------
+The Datamint Python API provides seamless integration with PyTorch and PyTorch Lightning, enabling efficient machine learning workflows for medical imaging tasks.
 
-Datamint provides a custom PyTorch dataset class that can be used to load data from the server in a PyTorch-friendly way.
-To use it, import the |DatamintDatasetClass| class and create an instance of it, passing the necessary parameters.
+Overview
+--------
+
+Key integration features:
+
+- **DatamintDataModule**: Lightning-compatible data module
+- **MLFlowModelCheckpoint**: Advanced model checkpointing with MLflow integration
+- **Automatic Experiment Tracking**: Seamless logging and model registration
+- **Medical Image Optimizations**: Specialized handling for medical data formats
+
+PyTorch Dataset Integration
+---------------------------
+
+Basic PyTorch Usage
+~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
-    from datamint import Dataset
+   import torch
+   from torch.utils.data import DataLoader
+   from datamint import Dataset
+   
+   # Load dataset. This is a PyTorch-compatible dataset that can be used directly.
+   dataset = Dataset(
+       project_name="liver-segmentation",
+       return_annotations=True,
+       return_frame_by_frame=True,
+       include_unannotated=False
+   )
+   
+   # Create PyTorch DataLoader
+   dataloader = DataLoader(
+       dataset,
+       batch_size=16,
+       shuffle=True,
+       num_workers=4,
+       collate_fn=dataset.get_collate_fn()
+   )
+   
+   # Training loop
+   for batch in dataloader:
+       images = batch['image']      # Shape: [B, C, H, W]
+       masks = batch['segmentation'] # Shape: [B, H, W]
+       metadata = batch['metainfo']  # List of dicts
+       # (...)
 
-    dataset = Dataset('../data',
-                      project_name='MyProjectName', # Must exists in the server
-                      # return_frame_by_frame=True, # Optional, if you want each item to be a frame instead of a video/3d-image
-                     )
+Dataset Transforms
+~~~~~~~~~~~~~~~~~~
 
-and then use it in your PyTorch code as usual.
-
-Here is a complete example that inherits |DatamintDatasetClass|:
+Apply transforms for data augmentation and preprocessing:
 
 .. code-block:: python
 
