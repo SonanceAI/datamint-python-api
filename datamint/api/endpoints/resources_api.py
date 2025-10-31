@@ -25,6 +25,7 @@ import nest_asyncio  # For running asyncio in jupyter notebooks
 from PIL import Image
 import io
 from datamint.types import ImagingData
+from collections import defaultdict
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -279,7 +280,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             _LOGGER.warning(msg)
             _USER_LOGGER.warning(msg)
 
-
         mimetype = standardize_mimetype(mimetype)
 
         if is_a_dicom_file == True or is_dicom(file_path):
@@ -440,12 +440,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
             try:
                 tasks = [__upload_single_resource(f, segfiles, metadata_file)
-                        for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
+                         for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
             except ValueError:
                 msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
                 _LOGGER.error(msg)
                 _USER_LOGGER.error(msg)
-                raise 
+                raise
             return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_resources(self,
@@ -996,22 +996,28 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     raise
 
     def set_tags(self,
-                 resource: str | Resource,
+                 resource: str | Resource | Sequence[str | Resource],
                  tags: Sequence[str],
                  ):
         """
         Set tags for a resource, IMPORTANT: This replaces all existing tags.
         Args:
-            resource: The resource unique id or Resource object.
+            resource: The resource object or a list of resources.
             tags: The tags to set.
         """
         data = {'tags': tags}
-        resource_id = self._entid(resource)
-
-        response = self._make_entity_request('PUT',
-                                             resource_id,
-                                             add_path='tags',
-                                             json=data)
+        if isinstance(resource, Sequence):
+            resource_ids = [self._entid(res) for res in resource]
+            response = self._make_request('PUT',
+                                          f'{self.endpoint_base}/tags',
+                                          json={'resource_ids': resource_ids,
+                                                'tags': tags})
+        else:
+            resource_id = self._entid(resource)
+            response = self._make_entity_request('PUT',
+                                                 resource_id,
+                                                 add_path='tags',
+                                                 json=data)
         return response
 
     # def get_projects(self, resource: Resource) -> Sequence[Project]:
@@ -1029,7 +1035,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
     #     return [proj for proj in self.projects_api.get_all() if proj.id in proj_ids]
 
     def add_tags(self,
-                 resource: str | Resource,
+                 resource: str | Resource | Sequence[str | Resource],
                  tags: Sequence[str],
                  ):
         """
@@ -1040,8 +1046,26 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         """
         if isinstance(resource, str):
             resource = self.get_by_id(resource)
+        elif isinstance(resource, Sequence):
+            # Transform every str to Resource first.
+            resources = [self.get_by_id(res) if isinstance(res, str) else res for res in resource]
+
+            # group resource having the exact same tags to minimize requests
+            tag_map: dict[tuple, list[Resource]] = defaultdict(list)
+            for res in resources:
+                old_tags = res.tags if res.tags is not None else []
+                # key = tuple(sorted(old_tags))
+                key = tuple(old_tags)  # keep order, assuming order matters for tags
+                tag_map[key].append(res)
+
+            # finally, set tags for each group
+            for old_tags_tuple, res_group in tag_map.items():
+                old_tags = list(old_tags_tuple)
+                self.set_tags(res_group, old_tags + list(tags))
+            return
+
         old_tags = resource.tags if resource.tags is not None else []
-        return self.set_tags(resource, old_tags + list(tags))
+        self.set_tags(resource, old_tags + list(tags))
 
     def bulk_delete(self, entities: Sequence[str | Resource]) -> None:
         """Delete multiple entities. Faster than deleting them one by one.
