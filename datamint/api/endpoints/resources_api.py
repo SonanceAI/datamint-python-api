@@ -2,9 +2,9 @@ from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities.resource import Resource
-from datamint.entities.project import Project
 from datamint.entities.annotation import Annotation
 from datamint.exceptions import DatamintException, ResourceNotFoundError
+from datamint.api.dto import AnnotationType
 import httpx
 from datetime import date
 import json
@@ -147,7 +147,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         return super().get_list(limit=limit, params=payload)
 
-    def get_annotations(self, resource: str | Resource) -> Sequence[Annotation]:
+    def get_annotations(self, resource: str | Resource, 
+                        annotation_type: AnnotationType | str | None = None) -> Sequence[Annotation]:
         """Get annotations for a specific resource.
 
         Args:
@@ -156,7 +157,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         Returns:
             A sequence of Annotation objects associated with the specified resource.
         """
-        return self.annotations_api.get_list(resource=resource)
+        return self.annotations_api.get_list(resource=resource,
+                                             load_ai_segmentations=True,
+                                             annotation_type=annotation_type)
 
     @staticmethod
     def __process_files_parameter(file_path: str | Sequence[str | IO | pydicom.Dataset]

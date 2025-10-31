@@ -6,7 +6,6 @@ from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from .models_api import ModelsApi
 from datamint.entities.annotation import Annotation
 from datamint.entities.resource import Resource
-from datamint.entities.project import Project
 from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os

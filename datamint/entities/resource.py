@@ -176,11 +176,7 @@ class Resource(BaseEntity):
     ) -> Sequence['Annotation']:
         """Get annotations associated with this resource."""
 
-        annotations = self._api.get_annotations(self)
-
-        if annotation_type:
-            annotation_type = AnnotationType(annotation_type)
-            annotations = [a for a in annotations if a.annotation_type == annotation_type]
+        annotations = self._api.get_annotations(self, annotation_type=annotation_type)
         return annotations
 
     # def get_projects(
