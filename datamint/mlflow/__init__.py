@@ -4,6 +4,7 @@ import mlflow.tracking._tracking_service.utils as mlflow_utils
 from functools import wraps
 import logging
 from .env_utils import setup_mlflow_environment, ensure_mlflow_configured
+from .flavors.model import DatamintModel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,4 +44,5 @@ setup_mlflow_environment(set_mlflow=False)
 mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
 
 
-__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured']
+__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 
+           'DatamintModel']
