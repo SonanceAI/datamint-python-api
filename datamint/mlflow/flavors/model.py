@@ -1,10 +1,9 @@
+from typing import Sequence, Any, TYPE_CHECKING
+from abc import ABC, abstractmethod
+from mlflow.pyfunc import load_model as pyfunc_load_model
+from mlflow.pyfunc import PyFuncModel, PythonModel
 from datamint.entities.annotations import Annotation
 from datamint.entities import Resource
-from typing import Sequence, Any
-from abc import ABC, abstractmethod
-import mlflow
-from mlflow.pyfunc import PyFuncModel, PythonModel
-
 
 class DatamintModel(ABC, PythonModel):
     """
@@ -22,7 +21,7 @@ class DatamintModel(ABC, PythonModel):
         self._mlflow_models = self._load_mlflow_models()
 
     def _load_mlflow_models(self):
-        return {key: mlflow.pyfunc.load_model(uri)
+        return {key: pyfunc_load_model(uri)
                 for key, uri in self.mlflow_models_uri.items()}
 
     @property
