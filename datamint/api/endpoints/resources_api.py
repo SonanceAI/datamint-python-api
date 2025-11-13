@@ -2,7 +2,7 @@ from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities.resource import Resource
-from datamint.entities.annotation import Annotation
+from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 from datamint.api.dto import AnnotationType
 import httpx

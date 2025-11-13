@@ -7,14 +7,17 @@ import logging
 from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
 from pydantic import PrivateAttr
-from datamint.api.dto import AnnotationType
 import webbrowser
-from datamint.types import ImagingData
+from pathlib import Path
+from datamint.api.base_api import BaseApi
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
     from .project import Project
-    from .annotation import Annotation
+    from .annotations.annotation import Annotation
+    from datamint.types import ImagingData
+    from datamint.api.dto import AnnotationType
+
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +73,6 @@ class Resource(BaseEntity):
     location: str
     upload_channel: str
     filename: str
-    modality: str
     mimetype: str
     size: int
     upload_mechanism: str
@@ -80,23 +82,24 @@ class Resource(BaseEntity):
     created_by: str
     published: bool
     deleted: bool
-    source_filepath: str | None
-    metadata: dict
-    projects: list[dict] = MISSING_FIELD
-    published_on: str | None
-    published_by: str | None
+    # metadata: dict[str,Any] = {}
+    modality: str | None = None
+    source_filepath: str | None = None
+    # projects: list[dict[str, Any]] | None = None
+    published_on: str | None = None
+    published_by: str | None = None
     tags: list[str] | None = None
-    publish_transforms: Optional[Any] = None
+    # publish_transforms: dict[str, Any] | None = None
     deleted_at: Optional[str] = None
     deleted_by: Optional[str] = None
     instance_uid: Optional[str] = None
     series_uid: Optional[str] = None
     study_uid: Optional[str] = None
     patient_id: Optional[str] = None
-    segmentations: Optional[Any] = None  # TODO: Define proper type when spec available
-    measurements: Optional[Any] = None  # TODO: Define proper type when spec available
-    categories: Optional[Any] = None  # TODO: Define proper type when spec available
-    user_info: Optional[dict] = None
+    # segmentations: Optional[Any] = None  # TODO: Define proper type when spec available
+    # measurements: Optional[Any] = None  # TODO: Define proper type when spec available
+    # categories: Optional[Any] = None  # TODO: Define proper type when spec available
+    user_info: dict[str, str | None] = MISSING_FIELD
 
     _api: 'ResourcesApi' = PrivateAttr()
 
@@ -110,7 +113,7 @@ class Resource(BaseEntity):
         auto_convert: bool = True,
         save_path: str | None = None,
         use_cache: bool = False,
-    ) -> bytes | ImagingData:
+    ) -> 'bytes | ImagingData':
         """Get the file data for this resource.
 
         This method automatically caches the file data locally. On subsequent
@@ -148,10 +151,10 @@ class Resource(BaseEntity):
 
         if auto_convert:
             try:
-                mimetype, ext = self._api._determine_mimetype(img_data, self)
-                img_data = self._api.convert_format(img_data,
-                                                    mimetype=mimetype,
-                                                    file_path=save_path)
+                mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
+                img_data = BaseApi.convert_format(img_data,
+                                                  mimetype=mimetype,
+                                                  file_path=save_path)
             except Exception as e:
                 logger.error(f"Failed to auto-convert resource {self.id}: {e}")
 
@@ -172,7 +175,7 @@ class Resource(BaseEntity):
 
     def fetch_annotations(
         self,
-        annotation_type: AnnotationType | str | None = None
+        annotation_type: 'AnnotationType | str | None' = None
     ) -> Sequence['Annotation']:
         """Get annotations associated with this resource."""
 
@@ -189,7 +192,6 @@ class Resource(BaseEntity):
     #     """
     #     return self._api.get_projects(self)
 
-        
     def invalidate_cache(self) -> None:
         """Invalidate cached data for this resource.
         """
@@ -241,7 +243,7 @@ class Resource(BaseEntity):
             f"modality='{self.modality}', status='{self.status}', "
             f"published={self.published})"
         )
-    
+
     @property
     def url(self) -> str:
         """Get the URL to access this resource in the DataMint web application."""
@@ -251,3 +253,82 @@ class Resource(BaseEntity):
     def show(self) -> None:
         """Open the resource in the default web browser."""
         webbrowser.open(self.url)
+
+
+class LocalResource(Resource):
+    """Represents a local resource that hasn't been uploaded to DataMint API yet."""
+
+    _filepath: Path = PrivateAttr()
+
+    def __init__(self, file_path: str | Path):
+        """Initialize a local resource from a file path.
+
+        Args:
+            file_path: Path to the local file
+        """
+        from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
+        from medimgkit.modality_detector import detect_modality
+
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
+
+        mimetype, _ = guess_type(file_path)
+        if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
+            logger.warning(f"Could not determine mimetype for file: {file_path}")
+        size = file_path.stat().st_size
+        created_at = datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
+
+        super().__init__(
+            id="",
+            resource_uri="",
+            storage="",
+            location=str(file_path),
+            upload_channel="",
+            filename=file_path.name,
+            modality=detect_modality(file_path),
+            mimetype=mimetype,
+            size=size,
+            upload_mechanism="",
+            customer_id="",
+            status="local",
+            created_at=created_at,
+            created_by="",
+            published=False,
+            deleted=False,
+            source_filepath=str(file_path),
+        )
+        self._cache = None
+        self._filepath = file_path
+
+    def fetch_file_data(
+        self, *args,
+        auto_convert: bool = True,
+        save_path: str | None = None,
+        **kwargs,
+    ) -> 'bytes | ImagingData':
+        """Get the file data for this local resource.
+
+        Args:
+            auto_convert: If True, automatically converts to appropriate format (pydicom.Dataset, PIL Image, etc.)
+            save_path: Optional path to save the file locally
+        Returns:
+            File data (format depends on auto_convert and file type)
+        """
+        with open(self._filepath, 'rb') as f:
+            img_data = f.read()
+
+        if save_path:
+            with open(save_path, 'wb') as f:
+                f.write(img_data)
+
+        if auto_convert:
+            try:
+                mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
+                img_data = BaseApi.convert_format(img_data,
+                                                  mimetype=mimetype,
+                                                  file_path=str(self._filepath))
+            except Exception as e:
+                logger.error(f"Failed to auto-convert local resource {self._filepath}: {e}")
+
+        return img_data

@@ -3,7 +3,6 @@ from typing import Any, Generator, AsyncGenerator, Sequence, TYPE_CHECKING
 import httpx
 from dataclasses import dataclass
 from datamint.exceptions import DatamintException, ResourceNotFoundError
-from datamint.types import ImagingData
 import aiohttp
 import json
 from PIL import Image
@@ -17,10 +16,10 @@ from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess
 
 if TYPE_CHECKING:
     from datamint.api.client import Api
+    from datamint.types import ImagingData
 
 logger = logging.getLogger(__name__)
 
-# Generic type for entities
 _PAGE_LIMIT = 5000
 
 @dataclass
@@ -447,7 +446,7 @@ class BaseApi:
     def convert_format(bytes_array: bytes,
                        mimetype: str | None = None,
                        file_path: str | None = None
-                       ) -> ImagingData | bytes:
+                       ) -> 'ImagingData | bytes':
         """ Convert the bytes array to the appropriate format based on the mimetype.
 
         Args:

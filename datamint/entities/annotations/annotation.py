@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Any
 import logging
 import os
 
-from .base_entity import BaseEntity, MISSING_FIELD
-from .cache_manager import CacheManager
+from ..base_entity import BaseEntity, MISSING_FIELD
+from ..cache_manager import CacheManager
 from pydantic import PrivateAttr
 from datetime import datetime
 from datamint.api.dto import AnnotationType
@@ -18,7 +18,7 @@ from datamint.types import ImagingData
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.annotations_api import AnnotationsApi
-    from .resource import Resource
+    from ..resource import Resource
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,28 @@ _FIELD_MAPPING = {
 _ANNOTATION_CACHE_KEY = "annotation_data"
 
 
-class Annotation(BaseEntity):
+class AnnotationBase(BaseEntity):
+    """Minimal base class for creating annotations.
+    
+    This class contains only the essential fields needed to create annotations.
+    Use this for creating specific annotation types like ImageClassification.
+    """
+    
+    identifier: str
+    scope: str
+    annotation_type: AnnotationType
+    confiability: float = 1.0
+    
+    def __init__(self, **data):
+        """Initialize the annotation base entity."""
+        super().__init__(**data)
+
+    @property
+    def name(self) -> str:
+        """Get the annotation name (alias for identifier)."""
+        return self.identifier
+
+class Annotation(AnnotationBase):
     """Pydantic Model representing a DataMint annotation.
 
     Attributes:
@@ -67,32 +88,32 @@ class Annotation(BaseEntity):
         values: Optional extra values payload for flexible schemas.
     """
 
-    id: str
+    id: str | None = None
     identifier: str
     scope: str
-    frame_index: int | None
+    frame_index: int | None = None
     annotation_type: AnnotationType
-    text_value: str | None
-    numeric_value: float | int | None
-    units: str | None
-    geometry: list | dict | None
-    created_at: str  # ISO timestamp string
-    created_by: str
-    annotation_worklist_id: str | None
-    status: str
-    approved_at: str | None  # ISO timestamp string
-    approved_by: str | None
-    resource_id: str
-    associated_file: str | None
-    deleted: bool
-    deleted_at: str | None  # ISO timestamp string
-    deleted_by: str | None
-    created_by_model: str | None
-    set_name: str | None
-    resource_filename: str | None
-    resource_modality: str | None
-    annotation_worklist_name: str | None
-    user_info: dict | None
+    text_value: str | None = None
+    numeric_value: float | int | None = None
+    units: str | None = None
+    geometry: list | dict | None = None
+    created_at: str | None = None  # ISO timestamp string
+    created_by: str | None = None
+    annotation_worklist_id: str | None = None
+    status: str | None = None
+    approved_at: str | None = None  # ISO timestamp string
+    approved_by: str | None = None
+    resource_id: str | None = None
+    associated_file: str | None = None
+    deleted: bool = False
+    deleted_at: str | None = None  # ISO timestamp string
+    deleted_by: str | None = None
+    created_by_model: str | None = None
+    set_name: str | None = None
+    resource_filename: str | None = None
+    resource_modality: str | None = None
+    annotation_worklist_name: str | None = None
+    user_info: dict | None = None
     values: list | None = MISSING_FIELD
     file: str | None = None
 
@@ -189,11 +210,6 @@ class Annotation(BaseEntity):
     def type(self) -> str:
         """Alias for :attr:`annotation_type`."""
         return self.annotation_type
-
-    @property
-    def name(self) -> str:
-        """Get the annotation name (alias for identifier)."""
-        return self.identifier
 
     @property
     def index(self) -> int | None:

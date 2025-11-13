@@ -35,9 +35,17 @@ class BaseEntity(BaseModel):
 
     _api: 'EntityBaseApi[Self] | EntityBaseApi' = PrivateAttr()
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        # check attributes for MISSING_FIELD and delete them
+        for field_name in self.__pydantic_fields__.keys():
+            if hasattr(self, field_name) and getattr(self, field_name) == MISSING_FIELD:
+                delattr(self, field_name)
+
     def asdict(self) -> dict[str, Any]:
         """Convert the entity to a dictionary, including unknown fields."""
-        return self.model_dump(warnings='none')
+        d = self.model_dump(warnings='none')
+        return {k: v for k, v in d.items() if v != MISSING_FIELD}
 
     def asjson(self) -> str:
         """Convert the entity to a JSON string, including unknown fields."""
@@ -59,10 +67,13 @@ class BaseEntity(BaseModel):
             if have_to_log:
                 _LOGGER.warning(f"Unknown fields {list(self.__pydantic_extra__.keys())} found in {class_name}")
 
-    @staticmethod
-    def is_attr_missing(value: Any) -> bool:
+    def is_attr_missing(self, attr_name: str) -> bool:
         """Check if a value is the MISSING_FIELD sentinel."""
-        return value == MISSING_FIELD
+        if attr_name not in self.__pydantic_fields__.keys():
+            raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
+        if not hasattr(self, attr_name):
+            return True
+        return getattr(self, attr_name) == MISSING_FIELD  # deprecated
 
     def _refresh(self) -> Self:
         """Refresh the entity data from the server.
@@ -88,5 +99,16 @@ class BaseEntity(BaseModel):
         Args:
             attr_name: Name of the attribute to check and ensure
         """
-        if self.is_attr_missing(getattr(self, attr_name)):
+        if attr_name not in self.__pydantic_fields__.keys():
+            raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
+
+        if self.is_attr_missing(attr_name):
             self._refresh()
+
+    def has_missing_attrs(self) -> bool:
+        """Check if the entity has any attributes that are MISSING_FIELD.
+
+        Returns:
+            True if any attribute is MISSING_FIELD, False otherwise
+        """
+        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
