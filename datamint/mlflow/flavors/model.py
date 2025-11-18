@@ -8,6 +8,7 @@ annotation system. It supports various prediction modes for different data types
 from typing import Sequence, Any, TYPE_CHECKING, Literal, TypeAlias
 from abc import ABC, abstractmethod
 from enum import Enum
+from dataclasses import dataclass
 from mlflow.pyfunc import load_model as pyfunc_load_model
 from mlflow.pyfunc import PyFuncModel, PythonModel
 from datamint.entities.annotations import Annotation
@@ -18,7 +19,29 @@ logger = logging.getLogger(__name__)
 
 # Type aliases
 # AnnotationList: TypeAlias = Sequence[Annotation]
-PredictionResult: TypeAlias = Sequence[Sequence[Annotation]]
+PredictionResult: TypeAlias = list[list[Annotation]]
+
+
+@dataclass
+class ModelSettings:
+    """
+    Deployment and inference configuration for DatamintModel.
+    
+    These settings are serialized with the model and used by remote MLflow servers
+    to properly configure the runtime environment.
+    """
+    # Hardware requirements
+    need_gpu: bool = False
+    """Whether GPU is required for inference"""
+    
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'ModelSettings':
+        """Create config from dictionary, raising error on unknown keys."""
+        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        invalid_fields = set(data.keys()) - valid_fields
+        if invalid_fields:
+            raise ValueError(f"Invalid fields for ModelSettings: {', '.join(sorted(invalid_fields))}")
+        return cls(**data)
 
 
 class PredictionMode(str, Enum):
@@ -71,7 +94,10 @@ class DatamintModel(ABC, PythonModel):
     ```python
     class MyModel(DatamintModel):
         def __init__(self):
-            super().__init__(mlflow_models_uri={'model': 'models:/MyModel/latest'})
+            super().__init__(
+                mlflow_models_uri={'model': 'models:/MyModel/latest'},
+                config=ModelSettings(need_gpu=True)
+            )
 
         def predict_default(self, model_input, **kwargs):
             # Your prediction logic here
@@ -117,29 +143,46 @@ class DatamintModel(ABC, PythonModel):
     2. Optionally implement specific modes your model supports
     3. Override `_render_annotations()` if you want to support visualization
     4. Use `self.mlflow_models` to access loaded MLflow models
+    5. Configure deployment settings via `ModelSettings`
 
     See individual method docstrings for detailed parameter specifications.
     """
 
-    def __init__(self, mlflow_models_uri: dict[str, str] | None = None) -> None:
+    def __init__(self,
+                 settings: ModelSettings | dict[str, Any] | None = None,
+                 mlflow_models_uri: dict[str, str] | None = None,
+                 ) -> None:
         """
         Initialize the DatamintModel adapter.
 
         Args:
+            config: ModelSettings instance or dict with deployment settings.
+                Example: {'need_gpu': True}
             mlflow_models_uri: Dictionary mapping model names to MLflow URIs.
                               Example: {'detector': 'models:/MyDetector/1',
                                        'classifier': 'models:/MyClassifier/latest'}
                               These models will be lazy-loaded and accessible via
                               self.mlflow_models['detector'].get_raw_model()
+            
         """
         super().__init__()
         self.mlflow_models_uri = (mlflow_models_uri or {}).copy()
+        
+        # Handle settings - convert dict to ModelSettings if needed
+        if isinstance(settings, dict):
+            self.settings = ModelSettings.from_dict(settings)
+        elif isinstance(settings, ModelSettings):
+            self.settings = settings
+        else:
+            self.settings = ModelSettings()
+        
         self._supported_modes_cache = None
 
     def load_context(self, context):
         """
         Called by MLflow when loading the model.
 
+        Sets up runtime environment based on config (e.g., device selection).
         Override this if you need custom loading logic.
         """
         self._mlflow_models = self._load_mlflow_models()

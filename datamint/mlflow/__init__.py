@@ -51,10 +51,11 @@ else:
 
     __getattr__, __dir__, __all__ = lazy.attach(
         __name__,
-        submodules=['flavors.model'],
+        submodules=['flavors.model', 'flavors.datamint_flavor'],
         submod_attrs={
             "flavors.model": ["DatamintModel"],
+            "flavors.datamint_flavor": ["log_model", "load_model"],
         },
     )
 
-__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured']
+__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'DatamintModel']

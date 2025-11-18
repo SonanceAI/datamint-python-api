@@ -92,7 +92,6 @@ class Annotation(AnnotationBase):
     identifier: str
     scope: str
     frame_index: int | None = None
-    annotation_type: AnnotationType
     text_value: str | None = None
     numeric_value: float | int | None = None
     units: str | None = None
