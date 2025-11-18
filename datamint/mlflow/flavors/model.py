@@ -11,6 +11,7 @@ from enum import Enum
 from dataclasses import dataclass
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import load_model as pyfunc_load_model
+from mlflow.pytorch import load_model as pytorch_load_model
 from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
 from datamint.entities import Resource
@@ -158,6 +159,7 @@ class DatamintModel(ABC, PythonModel):
 
     def __init__(self,
                  settings: ModelSettings | dict[str, Any] | None = None,
+                 mlflow_torch_models_uri: dict[str, str] | None = None,
                  mlflow_models_uri: dict[str, str] | None = None,
                  ) -> None:
         """
@@ -165,16 +167,19 @@ class DatamintModel(ABC, PythonModel):
 
         Args:
             config: ModelSettings instance or dict with deployment settings.
-                Example: {'need_gpu': True}
+                    Example: {'need_gpu': True}
+            mlflow_torch_models_uri: Dictionary mapping model names to PyTorch model URIs.
+                    Example: {'backbone': 'models:/MyClassifier/2'}
+                    These models will be lazy-loaded and accessible via ``self.mlflow_torch_models_uri['backbone']``
             mlflow_models_uri: Dictionary mapping model names to MLflow URIs.
-                              Example: {'detector': 'models:/MyDetector/1',
-                                       'classifier': 'models:/MyClassifier/latest'}
-                              These models will be lazy-loaded and accessible via
-                              self.mlflow_models['detector'].get_raw_model()
+                    Example: {'detector': 'models:/MyDetector/1',
+                              'classifier': 'models:/MyClassifier/latest'}
+                    These models will be lazy-loaded and accessible via ``self.mlflow_models['detector']``
 
         """
         super().__init__()
         self.mlflow_models_uri = (mlflow_models_uri or {}).copy()
+        self.mlflow_torch_models_uri = (mlflow_torch_models_uri or {}).copy()
 
         # Handle settings - convert dict to ModelSettings if needed
         if isinstance(settings, dict):
@@ -194,6 +199,7 @@ class DatamintModel(ABC, PythonModel):
         """
         self._inference_device = self._load_inference_device(context=context)
         self._mlflow_models = self._load_mlflow_models()
+        self._mlflow_torch_models = self._load_mlflow_torch_models()
         # model_config = context.model_config
 
     def _load_inference_device(self, context: PythonModelContext | None = None) -> str:
@@ -234,12 +240,26 @@ class DatamintModel(ABC, PythonModel):
         loaded_models = {}
         for name, uri in self.mlflow_models_uri.items():
             try:
-                loaded_models[name] = pyfunc_load_model(uri, 
+                loaded_models[name] = pyfunc_load_model(uri,
                                                         model_config={'device': self.inference_device}
                                                         )
                 logger.info(f"Loaded model '{name}' from {uri}")
             except Exception as e:
                 logger.error(f"Failed to load model '{name}' from {uri}: {e}")
+                raise
+        return loaded_models
+
+    def _load_mlflow_torch_models(self) -> dict[str, Any]:
+        """Load all MLflow PyTorch models specified in mlflow_torch_models_uri."""
+        loaded_models = {}
+        for name, uri in self.mlflow_torch_models_uri.items():
+            try:
+                loaded_models[name] = pytorch_load_model(uri,
+                                                         device=self.inference_device,
+                                                         map_location=self.inference_device)
+                logger.info(f"Loaded torch model '{name}' from {uri}")
+            except Exception as e:
+                logger.error(f"Failed to load torch model '{name}' from {uri}: {e}")
                 raise
         return loaded_models
 
@@ -255,6 +275,18 @@ class DatamintModel(ABC, PythonModel):
         if not hasattr(self, '_mlflow_models'):
             self._mlflow_models = self._load_mlflow_models()
         return self._mlflow_models
+
+    @property
+    def mlflow_torch_models(self) -> dict[str, Any]:
+        """
+        Access loaded MLflow PyTorch models.
+
+        Returns:
+            Dictionary mapping model names to PyTorch model instances.
+        """
+        if not hasattr(self, '_mlflow_torch_models'):
+            self._mlflow_torch_models = self._load_mlflow_torch_models()
+        return self._mlflow_torch_models
 
     def predict(self,
                 model_input: list[Resource],
