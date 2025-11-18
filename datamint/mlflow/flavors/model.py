@@ -9,11 +9,13 @@ from typing import Sequence, Any, TYPE_CHECKING, Literal, TypeAlias
 from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
+from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import load_model as pyfunc_load_model
-from mlflow.pyfunc import PyFuncModel, PythonModel
+from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
 from datamint.entities import Resource
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +28,14 @@ PredictionResult: TypeAlias = list[list[Annotation]]
 class ModelSettings:
     """
     Deployment and inference configuration for DatamintModel.
-    
+
     These settings are serialized with the model and used by remote MLflow servers
     to properly configure the runtime environment.
     """
     # Hardware requirements
     need_gpu: bool = False
     """Whether GPU is required for inference"""
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'ModelSettings':
         """Create config from dictionary, raising error on unknown keys."""
@@ -100,8 +102,9 @@ class DatamintModel(ABC, PythonModel):
             )
 
         def predict_default(self, model_input, **kwargs):
-            # Your prediction logic here
-            model = self.mlflow_models['model'].get_raw_model()
+            # Access the device for your computation
+            device = self.inference_device  # Reads from MLFLOW_DEFAULT_PREDICTION_DEVICE or defaults to 'cpu'
+            model = self.mlflow_models['model'].get_raw_model().to(device)
             # ... process and return annotations
             return predictions
     ```
@@ -135,7 +138,12 @@ class DatamintModel(ABC, PythonModel):
     - `confidence_threshold` (float): Filter predictions by confidence score
     - `batch_size` (int): Batch size for processing
     - `render_annotation` (bool): Return annotated images instead of annotations
-    - `device` (str): Device for computation ('cpu', 'cuda', 'cuda:0', etc.)
+
+    Device Configuration:
+    --------------------
+    The device for computation is automatically configured from the 
+    `MLFLOW_DEFAULT_PREDICTION_DEVICE` environment variable. Access it via `self.inference_device`.
+    Defaults to 'cpu' if not set.
 
     Implementation Guide:
     --------------------
@@ -163,11 +171,11 @@ class DatamintModel(ABC, PythonModel):
                                        'classifier': 'models:/MyClassifier/latest'}
                               These models will be lazy-loaded and accessible via
                               self.mlflow_models['detector'].get_raw_model()
-            
+
         """
         super().__init__()
         self.mlflow_models_uri = (mlflow_models_uri or {}).copy()
-        
+
         # Handle settings - convert dict to ModelSettings if needed
         if isinstance(settings, dict):
             self.settings = ModelSettings.from_dict(settings)
@@ -175,24 +183,60 @@ class DatamintModel(ABC, PythonModel):
             self.settings = settings
         else:
             self.settings = ModelSettings()
-        
+
         self._supported_modes_cache = None
 
-    def load_context(self, context):
+    def load_context(self, context: PythonModelContext):
         """
         Called by MLflow when loading the model.
 
-        Sets up runtime environment based on config (e.g., device selection).
         Override this if you need custom loading logic.
         """
+        self._inference_device = self._load_inference_device(context=context)
         self._mlflow_models = self._load_mlflow_models()
+        # model_config = context.model_config
+
+    def _load_inference_device(self, context: PythonModelContext | None = None) -> str:
+        """
+        Load inference device from model config or environment variable.
+        """
+        import torch
+
+        device = None
+        if context and context.model_config:
+            device = context.model_config.get("device", None)
+            logger.info(f"Model config device: {device}")
+        if device is None:
+            env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+            if env_device:
+                device = env_device
+            elif torch.cuda.is_available():
+                device = 'cuda'
+            else:
+                device = 'cpu'
+
+        logger.info(f"Set inference device: {device}")
+        return device
+
+    @property
+    def inference_device(self) -> str:
+        if hasattr(self, '_inference_device') and self._inference_device is not None:
+            return self._inference_device
+        env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+        if env_device:
+            logger.info(f"Inference device not set; getting from environment variable ({env_device})")
+            return env_device
+        logger.warning("Inference device not set; defaulting to 'cpu'")
+        return 'cpu'
 
     def _load_mlflow_models(self) -> dict[str, PyFuncModel]:
         """Load all MLflow models specified in mlflow_models_uri."""
         loaded_models = {}
         for name, uri in self.mlflow_models_uri.items():
             try:
-                loaded_models[name] = pyfunc_load_model(uri)
+                loaded_models[name] = pyfunc_load_model(uri, 
+                                                        model_config={'device': self.inference_device}
+                                                        )
                 logger.info(f"Loaded model '{name}' from {uri}")
             except Exception as e:
                 logger.error(f"Failed to load model '{name}' from {uri}: {e}")
@@ -375,14 +419,14 @@ class DatamintModel(ABC, PythonModel):
         method = self._get_method_for_mode(mode)
         if method is None:
             return False
-        
+
         # Check if method is from DatamintModel base class (not overridden)
         if hasattr(DatamintModel, method.__name__):
             self._get_method_for_mode
             base_method = getattr(DatamintModel, method.__name__)
             # Method is implemented if it's not the same as base class method
             return method.__func__ is not base_method
-        
+
         return True
 
     def _post_process(self,

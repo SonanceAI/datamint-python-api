@@ -41,6 +41,9 @@ def save_model(datamint_model: DatamintModel,
         model_settings=asdict(datamint_model.settings),
     )
 
+    model_config = model_config or {}
+    model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
+
     return mlflow.pyfunc.save_model(
         path=path,
         python_model=datamint_model,
@@ -107,9 +110,15 @@ def log_model(
     )
 
 
-def load_model(model_uri: str) -> DatamintModel:
-    return mlflow.pyfunc.load_model(model_uri=model_uri).unwrap_python_model()
+def load_model(model_uri: str, device: str | None = None) -> DatamintModel:
+    if device is not None:
+        model_config = {'device': device}
+    else:
+        model_config = None
+    return mlflow.pyfunc.load_model(model_uri=model_uri,
+                                    model_config=model_config
+                                    ).unwrap_python_model()
 
 
-def _load_pyfunc(path: str) -> pyfunc.PyFuncModel:
-    return mlflow.pyfunc.load_model(model_uri=path)
+def _load_pyfunc(path: str, model_config=None) -> pyfunc.PyFuncModel:
+    return mlflow.pyfunc.load_model(model_uri=path, model_config=model_config)
