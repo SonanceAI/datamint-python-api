@@ -103,6 +103,11 @@ class Resource(BaseEntity):
 
     _api: 'ResourcesApi' = PrivateAttr()
 
+    def __new__(cls, *args, **kwargs):
+        if cls is Resource and 'local_filepath' in kwargs:
+            return super().__new__(LocalResource)
+        return super().__new__(cls)
+
     def __init__(self, **data):
         """Initialize the resource entity."""
         super().__init__(**data)
@@ -255,21 +260,30 @@ class Resource(BaseEntity):
         webbrowser.open(self.url)
 
 
-class LocalResource(Resource):
-    """Represents a local resource that hasn't been uploaded to DataMint API yet."""
-
-    _filepath: Path = PrivateAttr()
-
-    def __init__(self, file_path: str | Path):
-        """Initialize a local resource from a file path.
+    @staticmethod
+    def from_local_file(file_path: str | Path):
+        """Create a LocalResource instance from a local file path.
 
         Args:
             file_path: Path to the local file
         """
+        return LocalResource(local_filepath=file_path)
+
+class LocalResource(Resource):
+    """Represents a local resource that hasn't been uploaded to DataMint API yet."""
+
+    local_filepath: str
+
+    def __init__(self, local_filepath: str | Path, **kwargs):
+        """Initialize a local resource from a file path.
+
+        Args:
+            local_filepath: Path to the local file
+        """
         from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
         from medimgkit.modality_detector import detect_modality
 
-        file_path = Path(file_path)
+        file_path = Path(local_filepath)
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -297,9 +311,9 @@ class LocalResource(Resource):
             published=False,
             deleted=False,
             source_filepath=str(file_path),
+            local_filepath=str(file_path),
         )
         self._cache = None
-        self._filepath = file_path
 
     def fetch_file_data(
         self, *args,
@@ -315,7 +329,7 @@ class LocalResource(Resource):
         Returns:
             File data (format depends on auto_convert and file type)
         """
-        with open(self._filepath, 'rb') as f:
+        with open(self.local_filepath, 'rb') as f:
             img_data = f.read()
 
         if save_path:
@@ -327,8 +341,28 @@ class LocalResource(Resource):
                 mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
                 img_data = BaseApi.convert_format(img_data,
                                                   mimetype=mimetype,
-                                                  file_path=str(self._filepath))
+                                                  file_path=str(self.local_filepath))
             except Exception as e:
-                logger.error(f"Failed to auto-convert local resource {self._filepath}: {e}")
+                logger.error(f"Failed to auto-convert local resource {self.local_filepath}: {e}")
 
         return img_data
+
+    def __str__(self) -> str:
+        """String representation of the local resource.
+
+        Returns:
+            Human-readable string describing the local resource
+        """
+        return f"LocalResource(filepath='{self.local_filepath}', size={self.size_mb}MB)"
+    
+    def __repr__(self) -> str:
+        """Detailed string representation of the local resource.
+
+        Returns:
+            Detailed string representation for debugging
+        """
+        return (
+            f"LocalResource(filepath='{self.local_filepath}', "
+            f"filename='{self.filename}', modality='{self.modality}', "
+            f"size={self.size_mb}MB)"
+        )

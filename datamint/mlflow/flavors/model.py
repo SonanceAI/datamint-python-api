@@ -14,15 +14,57 @@ from mlflow.pyfunc import load_model as pyfunc_load_model
 from mlflow.pytorch import load_model as pytorch_load_model
 from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
-from datamint.entities import Resource
+from datamint.entities.resource import Resource, LocalResource
 import logging
 import os
+from pydantic import ConfigDict, BaseModel, PrivateAttr, field_validator
 
 logger = logging.getLogger(__name__)
 
 # Type aliases
 # AnnotationList: TypeAlias = Sequence[Annotation]
 PredictionResult: TypeAlias = list[list[Annotation]]
+
+
+# class InferenceResource(BaseModel):
+#     """
+#     Proxy class representing a resource for inference.
+#     """
+#     id: str | None = None
+#     """Unique identifier of the resource in DataMint"""
+
+#     uri: str | None = None
+#     """URI of the resource (e.g., local file path or remote URL)"""
+
+#     mimetype: str | None = None
+#     """(Optional) MIME type of the resource (e.g., 'image/png', 'video/mp4')"""
+
+#     resource_obj: Resource | None = None
+#     """Optional Resource object associated with this inference resource"""
+
+#     def __init__(self, **data):
+#         logger.debug(f'>>>>> InferenceResource init: {data}')
+#         super().__init__(**data)
+
+#     @field_validator('id', 'uri', 'resource_obj', mode='after')
+#     @classmethod
+#     def at_least_one_provided(cls, v, info):
+#         """Ensure at least one of id, uri, or resource_obj is provided."""
+#         if info.data.get('id') or info.data.get('uri') or info.data.get('resource_obj'):
+#             return v
+#         raise ValueError("At least one of 'id', 'uri', or 'resource_obj' must be provided")
+
+#     def fabricate_resource(self) -> Resource:
+#         logger.debug(f'Fabricating Resource from InferenceResource: {self}')
+#         if self.resource_obj is not None:
+#             return self.resource_obj
+#         if self.id is not None:
+#             from datamint.api.client import Api
+#             return Api().resources.get_by_id(self.id)
+#         if self.uri is not None:
+#             return LocalResource(file_path=self.uri)
+
+#         raise ValueError("Cannot fabricate Resource: no resource_obj, id, or uri provided.")
 
 
 @dataclass
@@ -288,6 +330,36 @@ class DatamintModel(ABC, PythonModel):
             self._mlflow_torch_models = self._load_mlflow_torch_models()
         return self._mlflow_torch_models
 
+    # def _preprocess_input(self,
+    #                       model_input: list[InferenceResource | Resource | dict[str, Any]],
+    #                       params: dict[str, Any]) -> list[Resource]:
+    #     """
+    #     Preprocess input to convert to list of Resource objects.
+
+    #     Args:
+    #         model_input: List of InferenceResource, Resource, or dict
+    #         params: Additional parameters (unused here)
+    #     Returns:
+    #         List of Resource objects
+    #     """
+    #     resources = []
+    #     for item in model_input:
+    #         if isinstance(item, Resource):
+    #             resources.append(item)
+    #         elif isinstance(item, InferenceResource):
+    #             resources.append(item.fabricate_resource())
+    #         elif isinstance(item, dict):
+    #             if 'local_filepath' in item or item.get('id', None) == '':
+    #                 logger.debug(f'Creating LocalResource from dict: {item}')
+    #                 resources.append(LocalResource(local_filepath=item['local_filepath']))
+    #             elif 'upload_channel' in item or 'location' in item or 'storage' in item:
+    #                 resources.append(Resource(**item))
+    #             else:
+    #                 resources.append(InferenceResource(**item).fabricate_resource())
+    #         else:
+    #             raise ValueError(f"Unsupported input type: {type(item)}")
+    #     return resources
+
     def predict(self,
                 model_input: list[Resource],
                 params: dict[str, Any] | None = None) -> PredictionResult:
@@ -316,6 +388,7 @@ class DatamintModel(ABC, PythonModel):
             NotImplementedError: If requested mode is not implemented
         """
         params = params or {}
+        # model_input = self._preprocess_input(model_input, params)
 
         # Parse and validate mode
         mode = self._parse_mode(model_input=model_input, params=params)
@@ -353,6 +426,8 @@ class DatamintModel(ABC, PythonModel):
             is_all_image = all(res.mimetype.startswith('image/') for res in model_input) if model_input else False
         except Exception:
             is_all_image = False
+
+        logger.debug(f"Parsing prediction mode: '{mode_str}' | {is_all_image=}")
 
         if mode_str == PredictionMode.DEFAULT.value and is_all_image:
             mode_str = PredictionMode.IMAGE.value
