@@ -310,8 +310,7 @@ class DatamintModel(ABC, PythonModel):
                 m.eval()
         return models
 
-    @property
-    def mlflow_models(self) -> dict[str, PyFuncModel]:
+    def get_mlflow_models(self) -> dict[str, PyFuncModel]:
         """
         Access loaded MLflow models.
 
@@ -320,11 +319,11 @@ class DatamintModel(ABC, PythonModel):
             Use .get_raw_model() to access the underlying model (e.g., torch.nn.Module)
         """
         if not hasattr(self, '_mlflow_models'):
+            logger.warning("Loading MLflow models on first access")
             self._mlflow_models = self._load_mlflow_models()
         return self._mlflow_models
 
-    @property
-    def mlflow_torch_models(self) -> dict[str, Any]:
+    def get_mlflow_torch_models(self) -> dict[str, Any]:
         """
         Access loaded MLflow PyTorch models.
 
@@ -332,6 +331,7 @@ class DatamintModel(ABC, PythonModel):
             Dictionary mapping model names to PyTorch model instances.
         """
         if not hasattr(self, '_mlflow_torch_models'):
+            logger.warning("Loading MLflow PyTorch models on first access")
             self._mlflow_torch_models = self._load_mlflow_torch_models()
         return self._mlflow_torch_models
 
