@@ -158,6 +158,8 @@ class DatamintModel(ABC, PythonModel):
     See individual method docstrings for detailed parameter specifications.
     """
 
+    LINKED_MODELS_DIR = "linked_models"
+
     def __init__(self,
                  settings: ModelSettings | dict[str, Any] | None = None,
                  mlflow_torch_models_uri: dict[str, str] | None = None,
@@ -274,7 +276,7 @@ class DatamintModel(ABC, PythonModel):
                 logger.info(f"Model '{name}' found locally at '{uri}'")
                 model_uri = os.path.abspath(uri)
             elif uri.startswith("models:/"):
-                local_path = uri.replace("models:/", "models/", 1)
+                local_path = uri.replace("models:/", DatamintModel.LINKED_MODELS_DIR + "/", 1)
                 if os.path.exists(local_path):
                     logger.info(f"Model '{name}' found locally at '{local_path}'")
                     model_uri = os.path.abspath(local_path)
