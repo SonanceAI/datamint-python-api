@@ -103,13 +103,9 @@ Full documentation at [command_line_tools](https://sonanceai.github.io/datamint-
 
 **Upload DICOM files with anonymization:**
 ```bash
-datamint-upload \
-    /path/to/dicoms \
-    --recursive \
-    --channel "training-data" \
-    --anonymize \
-    --publish
+datamint-upload /path/to/dicoms --recursive --channel "training-data" --publish --tag "my_data_tag"
 ```
+It anonymizes by default.
 
 ### Configuration Management
 
