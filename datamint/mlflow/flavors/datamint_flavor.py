@@ -39,6 +39,7 @@ def save_model(datamint_model: DatamintModel,
         datamint_version=datamint.__version__,
         supported_modes=supported_modes or datamint_model.get_supported_modes(),
         model_settings=asdict(datamint_model.settings),
+        linked_models=datamint_model._get_linked_models_uri()
     )
 
     model_config = model_config or {}

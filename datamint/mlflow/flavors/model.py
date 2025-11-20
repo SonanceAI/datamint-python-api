@@ -5,7 +5,7 @@ This module provides a flexible framework for wrapping ML models to work with Da
 annotation system. It supports various prediction modes for different data types and use cases.
 """
 
-from typing import Sequence, Any, TYPE_CHECKING, Literal, TypeAlias
+from typing import Any, TypeAlias, Callable
 from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
@@ -24,47 +24,6 @@ logger = logging.getLogger(__name__)
 # Type aliases
 # AnnotationList: TypeAlias = Sequence[Annotation]
 PredictionResult: TypeAlias = list[list[Annotation]]
-
-
-# class InferenceResource(BaseModel):
-#     """
-#     Proxy class representing a resource for inference.
-#     """
-#     id: str | None = None
-#     """Unique identifier of the resource in DataMint"""
-
-#     uri: str | None = None
-#     """URI of the resource (e.g., local file path or remote URL)"""
-
-#     mimetype: str | None = None
-#     """(Optional) MIME type of the resource (e.g., 'image/png', 'video/mp4')"""
-
-#     resource_obj: Resource | None = None
-#     """Optional Resource object associated with this inference resource"""
-
-#     def __init__(self, **data):
-#         logger.debug(f'>>>>> InferenceResource init: {data}')
-#         super().__init__(**data)
-
-#     @field_validator('id', 'uri', 'resource_obj', mode='after')
-#     @classmethod
-#     def at_least_one_provided(cls, v, info):
-#         """Ensure at least one of id, uri, or resource_obj is provided."""
-#         if info.data.get('id') or info.data.get('uri') or info.data.get('resource_obj'):
-#             return v
-#         raise ValueError("At least one of 'id', 'uri', or 'resource_obj' must be provided")
-
-#     def fabricate_resource(self) -> Resource:
-#         logger.debug(f'Fabricating Resource from InferenceResource: {self}')
-#         if self.resource_obj is not None:
-#             return self.resource_obj
-#         if self.id is not None:
-#             from datamint.api.client import Api
-#             return Api().resources.get_by_id(self.id)
-#         if self.uri is not None:
-#             return LocalResource(file_path=self.uri)
-
-#         raise ValueError("Cannot fabricate Resource: no resource_obj, id, or uri provided.")
 
 
 @dataclass
@@ -244,6 +203,33 @@ class DatamintModel(ABC, PythonModel):
         self._mlflow_torch_models = self._load_mlflow_torch_models()
         # model_config = context.model_config
 
+    def _get_linked_models_uri(self) -> dict[str, Any]:
+        """Get all linked models (MLflow and PyTorch)"""
+        linked = {}
+        linked.update(self.mlflow_models_uri)
+        linked.update(self.mlflow_torch_models_uri)
+        return linked
+
+    def _clear_linked_models_cache(self):
+        """Clear loaded linked models to free memory"""
+        if hasattr(self, '_mlflow_models'):
+            del self._mlflow_models
+        if hasattr(self, '_mlflow_torch_models'):
+            del self._mlflow_torch_models
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+
+        state.pop('_mlflow_models', None)
+        state.pop('_mlflow_torch_models', None)
+
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # avoid possible invalid states after unpickling
+        self._clear_linked_models_cache()
+
     def _load_inference_device(self, context: PythonModelContext | None = None) -> str:
         """
         Load inference device from model config or environment variable.
@@ -277,33 +263,50 @@ class DatamintModel(ABC, PythonModel):
         logger.warning("Inference device not set; defaulting to 'cpu'")
         return 'cpu'
 
-    def _load_mlflow_models(self) -> dict[str, PyFuncModel]:
-        """Load all MLflow models specified in mlflow_models_uri."""
+    def _load_models_generic(self, uris: dict[str, str],
+                             loader_func: Callable,
+                             **loader_kwargs) -> dict[str, Any]:
+        """Generic helper to load models from URIs."""
         loaded_models = {}
-        for name, uri in self.mlflow_models_uri.items():
+        for name, uri in uris.items():
+            model_uri = uri
+            if os.path.exists(uri):
+                logger.info(f"Model '{name}' found locally at '{uri}'")
+                model_uri = os.path.abspath(uri)
+            elif uri.startswith("models:/"):
+                local_path = uri.replace("models:/", "models/", 1)
+                if os.path.exists(local_path):
+                    logger.info(f"Model '{name}' found locally at '{local_path}'")
+                    model_uri = os.path.abspath(local_path)
+
             try:
-                loaded_models[name] = pyfunc_load_model(uri,
-                                                        model_config={'device': self.inference_device}
-                                                        )
-                logger.info(f"Loaded model '{name}' from {uri}")
+                loaded_models[name] = loader_func(model_uri, **loader_kwargs)
+                logger.info(f"Loaded model '{name}' from {model_uri}")
             except Exception as e:
-                logger.error(f"Failed to load model '{name}' from {uri}: {e}")
+                logger.error(f"Failed to load model '{name}' from {model_uri}: {e}")
                 raise
         return loaded_models
 
+    def _load_mlflow_models(self) -> dict[str, PyFuncModel]:
+        """Load all MLflow models specified in mlflow_models_uri."""
+        return self._load_models_generic(
+            self.mlflow_models_uri,
+            pyfunc_load_model,
+            model_config={'device': self.inference_device}
+        )
+
     def _load_mlflow_torch_models(self) -> dict[str, Any]:
         """Load all MLflow PyTorch models specified in mlflow_torch_models_uri."""
-        loaded_models = {}
-        for name, uri in self.mlflow_torch_models_uri.items():
-            try:
-                loaded_models[name] = pytorch_load_model(uri,
-                                                         device=self.inference_device,
-                                                         map_location=self.inference_device)
-                logger.info(f"Loaded torch model '{name}' from {uri}")
-            except Exception as e:
-                logger.error(f"Failed to load torch model '{name}' from {uri}: {e}")
-                raise
-        return loaded_models
+        models = self._load_models_generic(
+            self.mlflow_torch_models_uri,
+            pytorch_load_model,
+            device=self.inference_device,
+            map_location=self.inference_device,
+        )
+        for m in models.values():
+            if hasattr(m, 'eval'):
+                m.eval()
+        return models
 
     @property
     def mlflow_models(self) -> dict[str, PyFuncModel]:
