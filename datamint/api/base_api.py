@@ -464,6 +464,8 @@ class BaseApi:
             >>> dicom = BaseApi.convert_format(dicom_bytes)
 
         """
+        import pydicom
+
         if mimetype is None:
             mimetype, ext = BaseApi._determine_mimetype(bytes_array)
             if mimetype is None:

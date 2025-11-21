@@ -31,6 +31,8 @@ def save_model(datamint_model: DatamintModel,
                example_no_conversion=None,
                streamable=None,
                **kwargs):
+    import medimgkit
+
     if mlflow_model is None:
         mlflow_model = Model()
 
@@ -44,6 +46,14 @@ def save_model(datamint_model: DatamintModel,
 
     model_config = model_config or {}
     model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
+    datamint_requirements = ['datamint=={}'.format(datamint.__version__), 'medimgkit=={}'.format(medimgkit.__version__)]
+    if not pip_requirements and not extra_pip_requirements:
+        extra_pip_requirements = datamint_requirements
+    elif pip_requirements and isinstance(pip_requirements, Sequence):
+        pip_requirements = list(pip_requirements) + datamint_requirements
+    elif extra_pip_requirements and isinstance(extra_pip_requirements, Sequence):
+        extra_pip_requirements = list(extra_pip_requirements) + datamint_requirements
+
 
     return mlflow.pyfunc.save_model(
         path=path,

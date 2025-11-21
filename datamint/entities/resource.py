@@ -288,7 +288,6 @@ class LocalResource(Resource):
         from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
         from medimgkit.modality_detector import detect_modality
 
-
         if raw_data is None and local_filepath is None:
             raise ValueError("Either local_filepath or raw_data must be provided.")
         if raw_data is not None and local_filepath is not None:
@@ -298,13 +297,11 @@ class LocalResource(Resource):
                 raw_data = f.read()
                 local_filepath = None
         if raw_data is not None:
-            import io
+            # import io
             if isinstance(raw_data, str):
-                # Convert from base64 string to bytes
-                import base64
-                raw_data = base64.b64decode(raw_data)
-                logger.debug(f"Decoded raw_data from base64 to bytes")
-            mimetype, _ = guess_type(io.BytesIO(raw_data[:8*1024]))
+                mimetype, _ = guess_type(raw_data.encode())
+            else:
+                mimetype, _ = guess_type(raw_data)
             default_values = {
                 'id': '',
                 'resource_uri': '',
@@ -401,6 +398,7 @@ class LocalResource(Resource):
                                                   file_path=local_filepath)
             except Exception as e:
                 logger.error(f"Failed to auto-convert local resource: {e}")
+                logger.error(e, exc_info=True)
 
         return img_data
 
