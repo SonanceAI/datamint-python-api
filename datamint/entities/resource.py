@@ -104,7 +104,7 @@ class Resource(BaseEntity):
     _api: 'ResourcesApi' = PrivateAttr()
 
     def __new__(cls, *args, **kwargs):
-        if cls is Resource and 'local_filepath' in kwargs:
+        if cls is Resource and ('local_filepath' in kwargs or 'raw_data' in kwargs):
             return super().__new__(LocalResource)
         return super().__new__(cls)
 
@@ -259,7 +259,6 @@ class Resource(BaseEntity):
         """Open the resource in the default web browser."""
         webbrowser.open(self.url)
 
-
     @staticmethod
     def from_local_file(file_path: str | Path):
         """Create a LocalResource instance from a local file path.
@@ -269,13 +268,19 @@ class Resource(BaseEntity):
         """
         return LocalResource(local_filepath=file_path)
 
+
 class LocalResource(Resource):
     """Represents a local resource that hasn't been uploaded to DataMint API yet."""
 
-    local_filepath: str
+    local_filepath: str | None = None
+    raw_data: bytes | None = None
 
-    def __init__(self, local_filepath: str | Path, **kwargs):
-        """Initialize a local resource from a file path.
+    def __init__(self,
+                 local_filepath: str | Path | None = None,
+                 raw_data: bytes | None = None,
+                 convert_to_bytes: bool = False,
+                 **kwargs):
+        """Initialize a local resource from a local file path or raw data.
 
         Args:
             local_filepath: Path to the local file
@@ -283,37 +288,84 @@ class LocalResource(Resource):
         from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
         from medimgkit.modality_detector import detect_modality
 
-        file_path = Path(local_filepath)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
 
-        mimetype, _ = guess_type(file_path)
-        if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
-            logger.warning(f"Could not determine mimetype for file: {file_path}")
-        size = file_path.stat().st_size
-        created_at = datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
+        if raw_data is None and local_filepath is None:
+            raise ValueError("Either local_filepath or raw_data must be provided.")
+        if raw_data is not None and local_filepath is not None:
+            raise ValueError("Only one of local_filepath or raw_data should be provided.")
+        if convert_to_bytes and local_filepath:
+            with open(local_filepath, 'rb') as f:
+                raw_data = f.read()
+                local_filepath = None
+        if raw_data is not None:
+            import io
+            if isinstance(raw_data, str):
+                # Convert from base64 string to bytes
+                import base64
+                raw_data = base64.b64decode(raw_data)
+                logger.debug(f"Decoded raw_data from base64 to bytes")
+            mimetype, _ = guess_type(io.BytesIO(raw_data[:8*1024]))
+            default_values = {
+                'id': '',
+                'resource_uri': '',
+                'storage': '',
+                'location': '',
+                'upload_channel': '',
+                'filename': 'raw_data',
+                'modality': None,
+                'mimetype': mimetype if mimetype else DEFAULT_MIME_TYPE,
+                'size': len(raw_data),
+                'upload_mechanism': '',
+                'customer_id': '',
+                'status': 'local',
+                'created_at': datetime.now().isoformat(),
+                'created_by': '',
+                'published': False,
+                'deleted': False,
+                'source_filepath': None,
+            }
+            new_kwargs = kwargs.copy()
+            for key, value in default_values.items():
+                new_kwargs.setdefault(key, value)
+            super().__init__(
+                local_filepath=None,
+                raw_data=raw_data,
+                **new_kwargs
+            )
+            self._cache = None
+        elif local_filepath is not None:
+            file_path = Path(local_filepath)
+            if not file_path.exists():
+                raise FileNotFoundError(f"File not found: {file_path}")
 
-        super().__init__(
-            id="",
-            resource_uri="",
-            storage="",
-            location=str(file_path),
-            upload_channel="",
-            filename=file_path.name,
-            modality=detect_modality(file_path),
-            mimetype=mimetype,
-            size=size,
-            upload_mechanism="",
-            customer_id="",
-            status="local",
-            created_at=created_at,
-            created_by="",
-            published=False,
-            deleted=False,
-            source_filepath=str(file_path),
-            local_filepath=str(file_path),
-        )
-        self._cache = None
+            mimetype, _ = guess_type(file_path)
+            if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
+                logger.warning(f"Could not determine mimetype for file: {file_path}")
+            size = file_path.stat().st_size
+            created_at = datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
+
+            super().__init__(
+                id="",
+                resource_uri="",
+                storage="",
+                location=str(file_path),
+                upload_channel="",
+                filename=file_path.name,
+                modality=detect_modality(file_path),
+                mimetype=mimetype,
+                size=size,
+                upload_mechanism="",
+                customer_id="",
+                status="local",
+                created_at=created_at,
+                created_by="",
+                published=False,
+                deleted=False,
+                source_filepath=str(file_path),
+                local_filepath=str(file_path),
+                raw_data=None,
+            )
+            self._cache = None
 
     def fetch_file_data(
         self, *args,
@@ -329,8 +381,13 @@ class LocalResource(Resource):
         Returns:
             File data (format depends on auto_convert and file type)
         """
-        with open(self.local_filepath, 'rb') as f:
-            img_data = f.read()
+        if self.raw_data is not None:
+            img_data = self.raw_data
+            local_filepath = None
+        else:
+            local_filepath = str(self.local_filepath)
+            with open(local_filepath, 'rb') as f:
+                img_data = f.read()
 
         if save_path:
             with open(save_path, 'wb') as f:
@@ -341,9 +398,9 @@ class LocalResource(Resource):
                 mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
                 img_data = BaseApi.convert_format(img_data,
                                                   mimetype=mimetype,
-                                                  file_path=str(self.local_filepath))
+                                                  file_path=local_filepath)
             except Exception as e:
-                logger.error(f"Failed to auto-convert local resource {self.local_filepath}: {e}")
+                logger.error(f"Failed to auto-convert local resource: {e}")
 
         return img_data
 
@@ -354,7 +411,7 @@ class LocalResource(Resource):
             Human-readable string describing the local resource
         """
         return f"LocalResource(filepath='{self.local_filepath}', size={self.size_mb}MB)"
-    
+
     def __repr__(self) -> str:
         """Detailed string representation of the local resource.
 

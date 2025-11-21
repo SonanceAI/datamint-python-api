@@ -31,7 +31,10 @@ class BaseEntity(BaseModel):
     are created through API endpoints.
     """
 
-    model_config = ConfigDict(extra='allow', arbitrary_types_allowed=True)  # Allow extra fields and arbitrary types
+    model_config = ConfigDict(extra='allow',
+                              arbitrary_types_allowed=True,  # Allow extra fields and arbitrary types
+                              ser_json_bytes='base64',
+                              val_json_bytes='base64')
 
     _api: 'EntityBaseApi[Self] | EntityBaseApi' = PrivateAttr()
 
