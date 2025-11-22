@@ -370,14 +370,21 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                resource: str | Resource,
                annotation_dto: CreateAnnotationDto | Sequence[CreateAnnotationDto]
                ) -> str | Sequence[str]:
-        """Create a new annotation.
+        """Create one or more annotations for a resource.
+
+        .. warning::
+            This is an internal method and should not be used directly by users.
+            Please use specific annotation creation methods like 
+            :py:meth:`create_image_classification` or :py:meth:`upload_segmentations` instead.
 
         Args:
-            resource: The resource unique id or Resource instance.
-            annotation_dto: A CreateAnnotationDto instance or a list of such instances.
+            resource (str | Resource): The resource unique id or Resource instance.
+            annotation_dto (CreateAnnotationDto | Sequence[CreateAnnotationDto]): 
+                A CreateAnnotationDto instance or a list of such instances to be created.
 
         Returns:
-            The id of the created annotation or a list of ids if multiple annotations were created.
+            str | Sequence[str]: The id of the created annotation if a single annotation 
+            was provided, or a list of ids if multiple annotations were created.
         """
 
         annotations = [annotation_dto] if isinstance(annotation_dto, CreateAnnotationDto) else annotation_dto

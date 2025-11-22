@@ -5,7 +5,8 @@ This module provides a flexible framework for wrapping ML models to work with Da
 annotation system. It supports various prediction modes for different data types and use cases.
 """
 
-from typing import Any, TypeAlias, Callable
+from typing import Any, TypeAlias
+from collections.abc import Callable
 from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
@@ -14,10 +15,9 @@ from mlflow.pyfunc import load_model as pyfunc_load_model
 from mlflow.pytorch import load_model as pytorch_load_model
 from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
-from datamint.entities.resource import Resource, LocalResource
+from datamint.entities.resource import Resource
 import logging
 import os
-from pydantic import ConfigDict, BaseModel, PrivateAttr, field_validator
 
 logger = logging.getLogger(__name__)
 

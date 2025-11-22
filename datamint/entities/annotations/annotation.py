@@ -16,6 +16,7 @@ from datetime import datetime
 from datamint.api.dto import AnnotationType
 from datamint.types import ImagingData
 
+
 if TYPE_CHECKING:
     from datamint.api.endpoints.annotations_api import AnnotationsApi
     from ..resource import Resource
