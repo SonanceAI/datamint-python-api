@@ -7,6 +7,7 @@ from .model import DatamintModel
 import logging
 from typing import Sequence
 from dataclasses import asdict
+from packaging.requirements import Requirement
 
 FLAVOR_NAME = 'datamint'
 
@@ -46,13 +47,33 @@ def save_model(datamint_model: DatamintModel,
 
     model_config = model_config or {}
     model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
+    
+    def _get_req_name(req):
+        try:
+            return Requirement(req).name.lower()
+        except Exception:
+            return req.split("==")[0].strip().lower()
+
     datamint_requirements = ['datamint=={}'.format(datamint.__version__), 'medimgkit=={}'.format(medimgkit.__version__)]
-    if not pip_requirements and not extra_pip_requirements:
-        extra_pip_requirements = datamint_requirements
-    elif pip_requirements and isinstance(pip_requirements, Sequence):
-        pip_requirements = list(pip_requirements) + datamint_requirements
-    elif extra_pip_requirements and isinstance(extra_pip_requirements, Sequence):
-        extra_pip_requirements = list(extra_pip_requirements) + datamint_requirements
+    
+    user_requirements = []
+    # Check if requirements are lists (not strings which are also Sequences)
+    if pip_requirements and isinstance(pip_requirements, Sequence) and not isinstance(pip_requirements, str):
+        user_requirements.extend(pip_requirements)
+    if extra_pip_requirements and isinstance(extra_pip_requirements, Sequence) and not isinstance(extra_pip_requirements, str):
+        user_requirements.extend(extra_pip_requirements)
+        
+    user_req_names = {_get_req_name(req) for req in user_requirements}
+    
+    missing_requirements = [req for req in datamint_requirements if _get_req_name(req) not in user_req_names]
+
+    if missing_requirements:
+        if extra_pip_requirements is None:
+            extra_pip_requirements = missing_requirements
+        elif isinstance(extra_pip_requirements, Sequence) and not isinstance(extra_pip_requirements, str):
+            extra_pip_requirements = list(extra_pip_requirements) + missing_requirements
+        elif pip_requirements and isinstance(pip_requirements, Sequence) and not isinstance(pip_requirements, str):
+             pip_requirements = list(pip_requirements) + missing_requirements
 
 
     return mlflow.pyfunc.save_model(
