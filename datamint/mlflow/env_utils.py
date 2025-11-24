@@ -15,17 +15,8 @@ _LOGGER = logging.getLogger(__name__)
 
 def get_datamint_api_url() -> Optional[str]:
     """Get the Datamint API URL from configuration or environment variables."""
-    # First check environment variable
-    api_url = os.getenv('DATAMINT_API_URL')
-    if api_url:
-        return api_url
-
-    # Then check configuration
-    api_url = configs.get_value(configs.APIURL_KEY)
-    if api_url:
-        return api_url
-
-    return None
+    api_url = configs.get_value(configs.APIURL_KEY, include_envvars=True)  # configs checks env vars first
+    return api_url
 
 
 def get_datamint_api_key() -> Optional[str]:
