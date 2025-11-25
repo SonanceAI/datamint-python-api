@@ -1,4 +1,4 @@
-from typing import Sequence, Literal, TYPE_CHECKING
+from typing import Sequence, Literal, TYPE_CHECKING, overload
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 import httpx
@@ -38,13 +38,38 @@ class ProjectsApi(CRUDEntityApi[Project]):
         resources = [self.resources_api._init_entity_obj(**item) for item in resources_data]
         return resources
 
+
+    @overload
     def create(self,
                name: str,
                description: str,
                resources_ids: list[str] | None = None,
                is_active_learning: bool = False,
-               two_up_display: bool = False
-               ) -> str:
+               two_up_display: bool = False,
+               *,
+               return_entity: Literal[True] = True
+               ) -> Project: ...
+
+    @overload
+    def create(self,
+               name: str,
+               description: str,
+               resources_ids: list[str] | None = None,
+               is_active_learning: bool = False,
+               two_up_display: bool = False,
+               *,
+               return_entity: Literal[False]
+               ) -> str: ...
+
+    def create(self,
+               name: str,
+               description: str,
+               resources_ids: list[str] | None = None,
+               is_active_learning: bool = False,
+               two_up_display: bool = False,
+               *,
+               return_entity: bool = True
+               ) -> str | Project:
         """Create a new project.
 
         Args:
@@ -53,6 +78,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
             resources_ids: The list of resource ids to be included in the project.
             is_active_learning: Whether the project is an active learning project or not.
             two_up_display: Allow annotators to display multiple resources for annotation.
+            return_entity: Whether to return the created Project instance or just its ID.
 
         Returns:
             The id of the created project.
@@ -72,7 +98,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                         "require_review": False,
                         'description': description}
 
-        return self._create(project_data)
+        return self._create(project_data, return_entity=return_entity)
 
     def get_all(self, limit: int | None = None) -> Sequence[Project]:
         """Get all projects.

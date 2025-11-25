@@ -1,4 +1,4 @@
-from typing import Any, TypeVar, Generic, Type, Sequence
+from typing import Any, Literal, TypeVar, Generic, Type, Sequence, AsyncGenerator, overload
 import logging
 import httpx
 from datamint.entities.base_entity import BaseEntity
@@ -7,7 +7,6 @@ import aiohttp
 import asyncio
 from .base_api import ApiConfig, BaseApi
 import contextlib
-from typing import AsyncGenerator
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T', bound=BaseEntity)
@@ -248,7 +247,16 @@ class CreatableEntityApi(EntityBaseApi[T]):
     This class adds methods to handle creation of new entities.
     """
 
-    def _create(self, entity_data: dict[str, Any]) -> str | list[str | dict]:
+    @overload
+    def _create(self, entity_data: dict[str, Any],
+                return_entity: Literal[True] = True) -> T | list[T]: ...
+
+    @overload
+    def _create(self, entity_data: dict[str, Any],
+                return_entity: Literal[False]) -> str | list: ...
+
+    def _create(self, entity_data: dict[str, Any],
+                return_entity: bool = False) -> str | T | list:
         """Create a new entity.
 
         Args:
@@ -263,14 +271,35 @@ class CreatableEntityApi(EntityBaseApi[T]):
         response = self._make_request('POST', f'/{self.endpoint_base}', json=entity_data)
         respdata = response.json()
         if isinstance(respdata, str):
+            if return_entity:
+                return self.get_by_id(respdata)
             return respdata
         if isinstance(respdata, list):
+            if return_entity:
+                logger.warning("Current implementation is slow when returning entities on bulk create."
+                               " Try ``return_entity=False`` for better performance.")
+                return [self.get_by_id(item['id']) if isinstance(item, dict) and 'id' in item else self.get_by_id(item)
+                        for item in respdata]
             return respdata
         if isinstance(respdata, dict):
+            if return_entity:
+                try:
+                    return self._init_entity_obj(**respdata)
+                except:
+                    logger.debug("Failed to init entity obj on create response. Falling back to get_by_id.")
+                    return self.get_by_id(respdata.get('id'))
             return respdata.get('id')
         return respdata
 
-    def create(self, *args, **kwargs) -> str | T:
+    @overload
+    def create(self, *args, return_entity: Literal[True] = True, **kwargs) -> T: ...
+
+    @overload
+    def create(self, *args, return_entity: Literal[False], **kwargs) -> str: ...
+
+    def create(self, *args,
+               return_entity: bool = True,
+               **kwargs) -> str | T:
         raise NotImplementedError("Subclasses must implement the create method with their own custom parameters")
 
 
