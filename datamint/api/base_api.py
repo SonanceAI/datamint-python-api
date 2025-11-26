@@ -379,9 +379,13 @@ class BaseApi:
         """
         offset = 0
         total_fetched = 0
-        params = dict(kwargs.get('params', {}))
-        # Ensure kwargs carries our params reference so mutations below take effect
-        kwargs['params'] = params
+        
+        use_json_pagination = method.upper() == 'POST' and 'json' in kwargs and isinstance(kwargs['json'], dict)
+
+        if not use_json_pagination:
+            params = dict(kwargs.get('params', {}))
+            # Ensure kwargs carries our params reference so mutations below take effect
+            kwargs['params'] = params
 
         while True:
             if limit is not None and total_fetched >= limit:
@@ -392,8 +396,12 @@ class BaseApi:
                 remaining = limit - total_fetched
                 page_limit = min(_PAGE_LIMIT, remaining)
 
-            params['offset'] = offset
-            params['limit'] = page_limit
+            if use_json_pagination:
+                kwargs['json']['offset'] = str(offset)
+                kwargs['json']['limit'] = str(page_limit)
+            else:
+                params['offset'] = offset
+                params['limit'] = page_limit
 
             response = self._make_request(method=method,
                                           endpoint=endpoint,

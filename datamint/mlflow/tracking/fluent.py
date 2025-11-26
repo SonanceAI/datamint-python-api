@@ -62,7 +62,12 @@ def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
 
 
 def set_project(project: 'Project | str'):
-    from datamint.entities.project import Project as ProjectEntity
+    """
+    Set the active project for the current session.
+    
+    Args:
+        project: The Project instance or project name/ID to set as active.
+    """
     global _ACTIVE_PROJECT_ID
 
     # Ensure MLflow is properly configured before proceeding
