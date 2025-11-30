@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional, Any, Sequence
 import logging
+import urllib.parse
+import urllib.request
 
 from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
@@ -280,10 +282,12 @@ class LocalResource(Resource):
                  raw_data: bytes | None = None,
                  convert_to_bytes: bool = False,
                  **kwargs):
-        """Initialize a local resource from a local file path or raw data.
+        """Initialize a local resource from a local file path, URL, or raw data.
 
         Args:
-            local_filepath: Path to the local file
+            local_filepath: Path to the local file or URL to an online image
+            raw_data: Raw bytes of the file data
+            convert_to_bytes: If True and local_filepath is provided, read file into raw_data
         """
         from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
         from medimgkit.modality_detector import detect_modality
@@ -292,6 +296,63 @@ class LocalResource(Resource):
             raise ValueError("Either local_filepath or raw_data must be provided.")
         if raw_data is not None and local_filepath is not None:
             raise ValueError("Only one of local_filepath or raw_data should be provided.")
+
+        # Check if local_filepath is a URL
+        if local_filepath is not None:
+            local_filepath_str = str(local_filepath)
+            if local_filepath_str.startswith(('http://', 'https://')):
+                # Download content from URL
+                logger.debug(f"Downloading resource from URL: {local_filepath_str}")
+                try:
+                    with urllib.request.urlopen(local_filepath_str) as response:
+                        raw_data = response.read()
+                        # Try to get content-type from response headers
+                        content_type = response.headers.get('Content-Type', '').split(';')[0].strip()
+                except Exception as e:
+                    raise ValueError(f"Failed to download from URL: {local_filepath_str}") from e
+
+                # Extract filename from URL
+                parsed_url = urllib.parse.urlparse(local_filepath_str)
+                url_path = urllib.parse.unquote(parsed_url.path)
+                filename = Path(url_path).name if url_path else 'downloaded_file'
+
+                # Determine mimetype
+                mimetype, _ = guess_type(raw_data)
+                if mimetype is None and content_type:
+                    mimetype = content_type
+                if mimetype is None:
+                    mimetype = DEFAULT_MIME_TYPE
+
+                default_values = {
+                    'id': '',
+                    'resource_uri': '',
+                    'storage': '',
+                    'location': local_filepath_str,
+                    'upload_channel': '',
+                    'filename': filename,
+                    'modality': None,
+                    'mimetype': mimetype,
+                    'size': len(raw_data),
+                    'upload_mechanism': '',
+                    'customer_id': '',
+                    'status': 'local',
+                    'created_at': datetime.now().isoformat(),
+                    'created_by': '',
+                    'published': False,
+                    'deleted': False,
+                    'source_filepath': local_filepath_str,
+                }
+                new_kwargs = kwargs.copy()
+                for key, value in default_values.items():
+                    new_kwargs.setdefault(key, value)
+                super(Resource, self).__init__(
+                    local_filepath=None,
+                    raw_data=raw_data,
+                    **new_kwargs
+                )
+                self._cache = None
+                return
+
         if convert_to_bytes and local_filepath:
             with open(local_filepath, 'rb') as f:
                 raw_data = f.read()
