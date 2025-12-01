@@ -9,11 +9,9 @@ A comprehensive Python SDK for interacting with the Datamint platform, providing
 
 - [Features](#-features)
 - [Installation](#-installation)
-- [Quick Setup](#-quick-setup)
+- [Quick Setup](#-setup-api-key)
 - [Documentation](#-documentation)
-- [Key Components](#-key-components)
 - [Command Line Tools](#️-command-line-tools)
-- [Examples](#-examples)
 - [Support](#-support)
 
 ## 🚀 Features
@@ -34,13 +32,7 @@ See the full documentation at https://sonanceai.github.io/datamint-python-api/
 
 ### From PyPI
 
-To be released soon
-
-### From Source
-
-```bash
-pip install git+https://github.com/SonanceAI/datamint-python-api
-```
+`pip install -U datamint`
 
 ### Virtual Environment Setup
 
@@ -65,18 +57,18 @@ For instance, create the enviroment once with `python3 -m venv datamint-env` and
 
 3. **Install the package**:
    ```bash
-   pip install git+https://github.com/SonanceAI/datamint-python-api
+   pip install datamint
    ```
 
 </details>
 
-## Setup API key
+## ⚙ Setup API key
 
 To use the Datamint API, you need to setup your API key (ask your administrator if you don't have one). Use one of the following methods to setup your API key:
 
 ### Method 1: Command-line tool (recommended)
 
-Run ``datamint-config`` in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) for more details.
+Run ``datamint-config`` in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html#configuring-the-datamint-settings) for more details.
 
 ### Method 2: Environment variable
 
@@ -98,114 +90,22 @@ os.environ["DATAMINT_API_KEY"] = "my_api_key"
 
 | Resource | Description |
 |----------|-------------|
-| [🚀 Getting Started](docs/source/getting_started.rst) | Step-by-step setup and basic usage |
-| [📖 API Reference](docs/source/client_api.rst) | Complete API documentation |
-| [🔥 PyTorch Integration](docs/source/pytorch_integration.rst) | ML workflow integration |
+| [🚀 Getting Started](https://sonanceai.github.io/datamint-python-api/getting_started.html) | Step-by-step setup and basic usage |
+| [📖 API Reference](https://sonanceai.github.io/datamint-python-api/client_api.html) | Complete API documentation |
+| [🔥 PyTorch Integration](https://sonanceai.github.io/datamint-python-api/pytorch_integration.html) | ML workflow integration |
 | [💡 Examples](examples/) | Practical usage examples |
 
-## 🔗 Key Components
-
-### Dataset Management
-
-```python
-from datamint import Dataset
-
-# Load dataset with annotations
-dataset = Dataset(
-    project_name="medical-segmentation",
-)
-
-# Access data
-for sample in dataset:
-    image = sample['image']       # torch.Tensor
-    mask = sample['segmentation'] # torch.Tensor (if available)
-    metadata = sample['metainfo'] # dict
-```
-
-
-### PyTorch Lightning Integration
-
-```python
-import lightning as L
-from datamint.lightning import DatamintDataModule
-from datamint.mlflow.lightning.callbacks import MLFlowModelCheckpoint
-
-# Data module
-datamodule = DatamintDataModule(
-    project_name="your-project",
-    batch_size=16,
-    train_split=0.8
-)
-
-# ML tracking callback
-checkpoint_callback = MLFlowModelCheckpoint(
-    monitor="val_loss",
-    save_top_k=1,
-    register_model_name="best-model"
-)
-
-# Trainer with MLflow logging
-trainer = L.Trainer(
-    max_epochs=100,
-    callbacks=[checkpoint_callback],
-    logger=L.pytorch.loggers.MLFlowLogger(
-        experiment_name="medical-segmentation"
-    )
-)
-```
-
-
-### Annotation Management
-
-
-```python
-# Upload segmentation masks
-api.upload_segmentations(
-    resource_id="resource-123",
-    file_path="segmentation.nii.gz",
-    name="liver_segmentation",
-    frame_index=0
-)
-
-# Add categorical annotations
-api.add_image_category_annotation(
-    resource_id="resource-123",
-    identifier="diagnosis",
-    value="positive"
-)
-
-# Add geometric annotations
-api.add_line_annotation(
-    point1=(10, 20),
-    point2=(50, 80),
-    resource_id="resource-123",
-    identifier="measurement",
-    frame_index=5
-)
-```
-
-
 ## 🛠️ Command Line Tools
+
+Full documentation at [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html).
 
 ### Upload Resources
 
 **Upload DICOM files with anonymization:**
 ```bash
-datamint-upload \
-    --path /path/to/dicoms \
-    --recursive \
-    --channel "training-data" \
-    --anonymize \
-    --publish
+datamint-upload /path/to/dicoms --recursive --channel "training-data" --publish --tag "my_data_tag"
 ```
-
-**Upload with segmentation masks:**
-```bash
-datamint-upload \
-    --path /path/to/images \
-    --segmentation_path /path/to/masks \
-    --segmentation_names segmentation_config.yaml
-```
+It anonymizes by default.
 
 ### Configuration Management
 
@@ -217,51 +117,8 @@ datamint-config
 datamint-config --api-key "your-key"
 ```
 
-## 🔍 Examples
-
-### Medical Image Segmentation Pipeline
-
-```python
-import torch
-import lightning as L
-from datamint.lightning import DatamintDataModule
-from datamint.mlflow.lightning.callbacks import MLFlowModelCheckpoint
-
-class SegmentationModel(L.LightningModule):
-    def __init__(self):
-        super().__init__()
-        # Model definition...
-    
-    def training_step(self, batch, batch_idx):
-        # Training logic...
-        pass
-
-# Setup data
-datamodule = DatamintDataModule(
-    project_name="liver-segmentation",
-    batch_size=8,
-    train_split=0.8
-)
-
-# Setup model with MLflow tracking
-model = SegmentationModel()
-checkpoint_cb = MLFlowModelCheckpoint(
-    monitor="val_dice",
-    mode="max",
-    register_model_name="liver-segmentation-model"
-)
-
-# Train
-trainer = L.Trainer(
-    max_epochs=50,
-    callbacks=[checkpoint_cb],
-    logger=L.pytorch.loggers.MLFlowLogger()
-)
-trainer.fit(model, datamodule)
-```
-
 ## 🆘 Support
 
-[Full Documentation](https://datamint-python-api.readthedocs.io/) 
+[Full Documentation](https://datamint-python-api.readthedocs.io/)  
 [GitHub Issues](https://github.com/SonanceAI/datamint-python-api/issues)
 

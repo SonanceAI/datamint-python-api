@@ -480,6 +480,7 @@ class BaseApi:
                 raise ValueError("Could not determine mimetype from content.")
         content_io = BytesIO(bytes_array)
         if mimetype.endswith('/dicom'):
+            import pydicom
             return pydicom.dcmread(content_io)
         elif mimetype.startswith('image/'):
             return Image.open(content_io)
