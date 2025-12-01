@@ -3,7 +3,6 @@ from typing import Any, Generator, AsyncGenerator, Sequence, TYPE_CHECKING
 import httpx
 from dataclasses import dataclass
 from datamint.exceptions import DatamintException, ResourceNotFoundError
-from datamint.types import ImagingData
 import aiohttp
 import json
 from PIL import Image
@@ -17,10 +16,10 @@ from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess
 
 if TYPE_CHECKING:
     from datamint.api.client import Api
+    from datamint.types import ImagingData
 
 logger = logging.getLogger(__name__)
 
-# Generic type for entities
 _PAGE_LIMIT = 5000
 
 @dataclass
@@ -380,9 +379,13 @@ class BaseApi:
         """
         offset = 0
         total_fetched = 0
-        params = dict(kwargs.get('params', {}))
-        # Ensure kwargs carries our params reference so mutations below take effect
-        kwargs['params'] = params
+        
+        use_json_pagination = method.upper() == 'POST' and 'json' in kwargs and isinstance(kwargs['json'], dict)
+
+        if not use_json_pagination:
+            params = dict(kwargs.get('params', {}))
+            # Ensure kwargs carries our params reference so mutations below take effect
+            kwargs['params'] = params
 
         while True:
             if limit is not None and total_fetched >= limit:
@@ -393,8 +396,12 @@ class BaseApi:
                 remaining = limit - total_fetched
                 page_limit = min(_PAGE_LIMIT, remaining)
 
-            params['offset'] = offset
-            params['limit'] = page_limit
+            if use_json_pagination:
+                kwargs['json']['offset'] = str(offset)
+                kwargs['json']['limit'] = str(page_limit)
+            else:
+                params['offset'] = offset
+                params['limit'] = page_limit
 
             response = self._make_request(method=method,
                                           endpoint=endpoint,
@@ -447,7 +454,7 @@ class BaseApi:
     def convert_format(bytes_array: bytes,
                        mimetype: str | None = None,
                        file_path: str | None = None
-                       ) -> ImagingData | bytes:
+                       ) -> 'ImagingData | bytes':
         """ Convert the bytes array to the appropriate format based on the mimetype.
 
         Args:
@@ -465,6 +472,8 @@ class BaseApi:
             >>> dicom = BaseApi.convert_format(dicom_bytes)
 
         """
+        import pydicom
+
         if mimetype is None:
             mimetype, ext = BaseApi._determine_mimetype(bytes_array)
             if mimetype is None:

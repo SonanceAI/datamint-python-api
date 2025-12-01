@@ -4,19 +4,23 @@ from weakref import proxy
 from mlflow.store.artifact.artifact_repository_registry import get_artifact_repository
 from typing import Literal, Any
 import inspect
-import torch
 from torch import nn
 import lightning.pytorch as L
 from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
 from datamint.mlflow.env_utils import ensure_mlflow_configured
-import mlflow
+import mlflow.models
+import mlflow.exceptions
+import mlflow.pytorch
 import logging
+import json
+import hashlib
 from lightning.pytorch.loggers import MLFlowLogger
 
 _LOGGER = logging.getLogger(__name__)
 
 
 def help_infer_signature(x):
+    import torch
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
     elif isinstance(x, dict):
@@ -32,7 +36,7 @@ def help_infer_signature(x):
 class MLFlowModelCheckpoint(ModelCheckpoint):
     def __init__(self, *args,
                  register_model_name: str | None = None,
-                 register_model_on: Literal["train", "val", "test", "predict"] | None = None,
+                 register_model_on: Literal["train", "val", "test", "predict"] = 'test',
                  code_paths: list[str] | None = None,
                  log_model_at_end_only: bool = True,
                  additional_metadata: dict[str, Any] | None = None,
@@ -43,7 +47,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
         Args:
             register_model_name (str | None): The name to register the model under in MLFlow. If None, the model will not be registered.
-            register_model_on (Literal["train", "val", "test", "predict"] | None): The stage at which to register the model. If None, the model will not be registered.
+            register_model_on (Literal["train", "val", "test", "predict"]): The stage at which to register the model. It registers at the end of the specified stage.
             code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
             log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of the training instead of after every checkpoint save.
             additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
@@ -64,13 +68,12 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
         if register_model_name is not None and register_model_on is None:
             raise ValueError("If you provide a register_model_name, you must also provide a register_model_on.")
-        if register_model_on is not None and register_model_name is None:
-            raise ValueError("If you provide a register_model_on, you must also provide a register_model_name.")
-        if register_model_on not in ["train", "val", "test", "predict", None]:
+        if register_model_on not in ["train", "val", "test", "predict"]:
             raise ValueError("register_model_on must be one of train, val, test or predict.")
 
         self.register_model_name = register_model_name
         self.register_model_on = register_model_on
+        self.registered_model_info = None
         self.log_model_at_end_only = log_model_at_end_only
         self._last_model_uri = None
         self.last_saved_model_info = None
@@ -79,6 +82,52 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self.code_paths = code_paths
         self.additional_metadata = additional_metadata or {}
         self.extra_pip_requirements = extra_pip_requirements or []
+        self._last_registered_state_hash: str = "None"
+        self._has_been_trained: bool = False
+
+    def _compute_registration_state_hash(self) -> str:
+        """Compute a hash representing the current model state for registration comparison.
+
+        Returns:
+            A hash string of the current state, or None if state cannot be computed.
+        """
+        state_dict = {
+            'checkpoint_path': str(self._last_checkpoint_saved),
+            'global_step': self._last_global_step_saved,
+            'signature': str(self._inferred_signature) if self._inferred_signature else None,
+            'model_uri': self._last_model_uri,
+        }
+
+        state_str = json.dumps(state_dict, sort_keys=True)
+        return hashlib.md5(state_str.encode('utf-8')).hexdigest()
+
+    def _should_register_model(self) -> bool:
+        """Determine if the model should be registered.
+
+        Returns:
+            True if the model should be registered, False otherwise.
+        """
+
+        if self._last_model_uri is None:
+            _LOGGER.warning("No model URI available. Cannot register model.")
+            return False
+
+        # If never registered before, register
+        if self._last_registered_state_hash is None:
+            return True
+
+        # If model was retrained, register
+        if self._has_been_trained:
+            return True
+
+        # If state changed (signature, checkpoint, etc.), register
+        current_state_hash = self._compute_registration_state_hash()
+        if current_state_hash != self._last_registered_state_hash:
+            _LOGGER.debug("Model state has changed since last registration, will register.")
+            return True
+
+        _LOGGER.info("Model already registered with same configuration. Skipping registration.")
+        return False
 
     def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
         """Extract metadata from the model's forward method signature.
@@ -211,11 +260,23 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
     def register_model(self, trainer=None):
         """Register the model in MLFlow Model Registry."""
+        if not self._should_register_model():
+            return self.registered_model_info
+
         # mlflow_client = _get_MLFlowLogger(trainer)._mlflow_client
-        return mlflow.register_model(
+        self.registered_model_info = mlflow.register_model(
             model_uri=self._last_model_uri,
             name=self.register_model_name,
         )
+
+        # Update the registered state hash after successful registration
+        self._last_registered_state_hash = self._compute_registration_state_hash()
+        self._has_been_trained = False  # Reset training flag after registration
+
+        _LOGGER.info(f"Model registered as '{self.register_model_name}' "
+                     f"version {self.registered_model_info.version}")
+
+        return self.registered_model_info
 
     def _update_signature(self, trainer):
         if self._inferred_signature is None:
@@ -257,7 +318,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             self._inferred_signature = mlflow.models.infer_signature(model_input=x0,
                                                                      params=infered_params)
 
-
             # run once and get back to the original forward
             pl_module.forward = original_forward
             method = getattr(pl_module, 'forward')
@@ -271,6 +331,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         pl_module.forward = wrapped_forward
 
     def on_train_start(self, trainer, pl_module):
+        self._has_been_trained = True
         self.__wrap_forward(pl_module)
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
@@ -285,7 +346,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
         self._update_signature(trainer)
 
-        if self.register_model_on == 'train':
+        if self.register_model_on == 'train' and self.register_model_name:
             self.register_model(trainer)
 
     def _restore_model_uri(self, trainer: L.Trainer) -> None:
@@ -319,20 +380,20 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_test_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_test_end(trainer, pl_module)
 
-        if self.register_model_on == 'test':
+        if self.register_model_on == 'test' and self.register_model_name:
             self._update_signature(trainer)
             self.register_model(trainer)
 
     def on_predict_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_predict_end(trainer, pl_module)
 
-        if self.register_model_on == 'predict':
+        if self.register_model_on == 'predict' and self.register_model_name:
             self._update_signature(trainer)
             self.register_model(trainer)
 
     def on_validation_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_validation_end(trainer, pl_module)
 
-        if self.register_model_on == 'val':
+        if self.register_model_on == 'val' and self.register_model_name:
             self._update_signature(trainer)
             self.register_model(trainer)

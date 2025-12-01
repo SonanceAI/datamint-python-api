@@ -7,7 +7,7 @@ import numpy as np
 import logging
 from PIL import Image
 import albumentations
-from datamint.entities.annotation import Annotation
+from datamint.entities.annotations.annotation import Annotation
 from medimgkit.readers import read_array_normalized
 
 _LOGGER = logging.getLogger(__name__)

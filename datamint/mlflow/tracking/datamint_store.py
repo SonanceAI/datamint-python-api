@@ -1,6 +1,5 @@
 from mlflow.store.tracking.rest_store import RestStore
 from functools import partial
-from .fluent import get_active_project_id
 import json
 
 
@@ -25,9 +24,10 @@ class DatamintStore(RestStore):
         get_host_creds = partial(get_default_host_creds, store_uri)
         super().__init__(get_host_creds=get_host_creds)
 
-    def create_experiment(self, name, artifact_location=None, tags=None, project_id: str = None) -> str:
+    def create_experiment(self, name, artifact_location=None, tags=None, project_id: str | None = None) -> str:
         from mlflow.protos.service_pb2 import CreateExperiment
         from mlflow.utils.proto_json_utils import message_to_json
+        from datamint.mlflow.tracking.fluent import get_active_project_id
 
         if self.invalid:
             return super().create_experiment(name, artifact_location, tags)

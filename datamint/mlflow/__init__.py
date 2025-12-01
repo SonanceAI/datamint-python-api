@@ -4,6 +4,7 @@ import mlflow.tracking._tracking_service.utils as mlflow_utils
 from functools import wraps
 import logging
 from .env_utils import setup_mlflow_environment, ensure_mlflow_configured
+from typing import TYPE_CHECKING
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,4 +44,18 @@ setup_mlflow_environment(set_mlflow=False)
 mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
 
 
-__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured']
+if TYPE_CHECKING:
+    from .flavors.model import DatamintModel
+else:
+    import lazy_loader as lazy
+
+    __getattr__, __dir__, __all__ = lazy.attach(
+        __name__,
+        submodules=['flavors.model', 'flavors.datamint_flavor'],
+        submod_attrs={
+            "flavors.model": ["DatamintModel"],
+            "flavors.datamint_flavor": ["log_model", "load_model"],
+        },
+    )
+
+__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'DatamintModel']

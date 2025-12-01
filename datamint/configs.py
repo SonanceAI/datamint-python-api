@@ -1,10 +1,9 @@
 import yaml
 import os
 import logging
-from netrc import netrc
 from platformdirs import PlatformDirs
-from typing import Dict
 from pathlib import Path
+from typing import Any
 
 APIURL_KEY = 'default_api_url'
 APIKEY_KEY = 'api_key'
@@ -12,6 +11,10 @@ APIKEY_KEY = 'api_key'
 ENV_VARS = {
     APIKEY_KEY: 'DATAMINT_API_KEY',
     APIURL_KEY: 'DATAMINT_API_URL'
+}
+
+DEFAULT_VALUES = {
+    APIURL_KEY: 'https://api.datamint.io'
 }
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,17 +26,17 @@ try:
 except Exception as e:
     _LOGGER.error(f"Could not determine home directory: {e}")
     DATAMINT_DATA_DIR = None
-    
 
 
 def get_env_var_name(key: str) -> str:
     return ENV_VARS[key]
 
-def read_config() -> Dict:
+
+def read_config() -> dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as configfile:
             return yaml.safe_load(configfile)
-    return {}
+    return DEFAULT_VALUES.copy()
 
 
 def set_value(key: str,

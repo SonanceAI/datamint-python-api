@@ -2,7 +2,7 @@ from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities.resource import Resource
-from datamint.entities.annotation import Annotation
+from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import DatamintException, ResourceNotFoundError
 from datamint.api.dto import AnnotationType
 import httpx
@@ -147,7 +147,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         return super().get_list(limit=limit, params=payload)
 
-    def get_annotations(self, resource: str | Resource, 
+    def get_annotations(self, resource: str | Resource,
                         annotation_type: AnnotationType | str | None = None) -> Sequence[Annotation]:
         """Get annotations for a specific resource.
 
@@ -1008,19 +1008,21 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             resource: The resource object or a list of resources.
             tags: The tags to set.
         """
-        data = {'tags': tags}
+
+        uniq_tags = set(tags)  # remove duplicates
+
         if isinstance(resource, Sequence):
             resource_ids = [self._entid(res) for res in resource]
             response = self._make_request('PUT',
                                           f'{self.endpoint_base}/tags',
                                           json={'resource_ids': resource_ids,
-                                                'tags': tags})
+                                                'tags': list(uniq_tags)})
         else:
             resource_id = self._entid(resource)
             response = self._make_entity_request('PUT',
                                                  resource_id,
                                                  add_path='tags',
-                                                 json=data)
+                                                 json={'tags': list(uniq_tags)})
         return response
 
     # def get_projects(self, resource: Resource) -> Sequence[Project]:

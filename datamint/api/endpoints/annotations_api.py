@@ -4,7 +4,7 @@ from datetime import date
 import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from .models_api import ModelsApi
-from datamint.entities.annotation import Annotation
+from datamint.entities.annotations.annotation import Annotation
 from datamint.entities.resource import Resource
 from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
 import numpy as np
@@ -44,10 +44,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         from .resources_api import ResourcesApi
         super().__init__(config, Annotation, 'annotations', client)
         self._models_api = ModelsApi(config, client=client) if models_api is None else models_api
-        self._resources_api = ResourcesApi(config, client=client, annotations_api=self) if resources_api is None else resources_api
+        self._resources_api = ResourcesApi(
+            config, client=client, annotations_api=self) if resources_api is None else resources_api
 
     def get_list(self,
-                 resource: str | Resource | None = None,
+                 resource: str | Resource | Sequence[str | Resource] | None = None,
                  annotation_type: AnnotationType | str | None = None,
                  annotator_email: str | None = None,
                  date_from: date | None = None,
@@ -56,10 +57,58 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
                  load_ai_segmentations: bool | None = None,
-                 limit: int | None = None
-                 ) -> Sequence[Annotation]:
+                 limit: int | None = None,
+                 group_by_resource: bool = False
+                 ) -> Sequence[Annotation] | Sequence[Sequence[Annotation]]:
+        """
+        Retrieve a list of annotations with optional filtering.
+
+        Args:
+            resource: The resource unique id(s) or Resource instance(s). Can be a single resource,
+                a list of resources, or None to retrieve annotations from all resources.
+            annotation_type: Filter by annotation type (e.g., 'segmentation', 'category').
+            annotator_email: Filter by annotator email address.
+            date_from: Filter annotations created on or after this date.
+            date_to: Filter annotations created on or before this date.
+            dataset_id: Filter by dataset unique id.
+            worklist_id: Filter by annotation worklist unique id.
+            status: Filter by annotation status ('new' or 'published').
+            load_ai_segmentations: Whether to load AI-generated segmentations.
+            limit: Maximum number of annotations to return.
+            group_by_resource: If True, return results grouped by resource.
+                For instance, the first index of the returned list will contain all annotations for the first resource.
+
+        Returns:
+            Sequence[Annotation] | Sequence[Sequence[Annotation]]: List of annotations, or list of lists if grouped by resource.
+
+        Example:
+            .. code-block:: python
+
+                # Get all annotations for a single resource
+                annotations = api.annotations.get_list(resource='resource_id')
+
+                # Get annotations with filters
+                annotations = api.annotations.get_list(
+                    resource='resource_id',
+                    annotation_type='segmentation',
+                    status='published'
+                )
+
+                # Get annotations for multiple resources
+                annotations = api.annotations.get_list(
+                    resource=['resource_id_1', 'resource_id_2', 'resource_id_3']
+                )
+        """
+        def group_annotations_by_resource(annotations: Sequence[Annotation],
+                                          resource_ids: Sequence[str]
+                                          ) -> Sequence[Sequence[Annotation]]:
+            resource_annotations_map = {rid: [] for rid in resource_ids}
+            for ann in annotations:
+                resource_annotations_map[ann.resource_id].append(ann)
+            return [resource_annotations_map[rid] for rid in resource_ids]
+
+        # Build search payload according to POST /annotations/search schema
         payload = {
-            'resource_id': resource.id if isinstance(resource, Resource) else resource,
             'annotation_type': annotation_type,
             'annotatorEmail': annotator_email,
             'from': date_from.isoformat() if date_from is not None else None,
@@ -67,12 +116,37 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             'dataset_id': dataset_id,
             'annotation_worklist_id': worklist_id,
             'status': status,
-            'load_ai_segmentations': load_ai_segmentations
+            'load_ai_segmentations': load_ai_segmentations,
         }
 
-        # remove nones
+        if isinstance(resource, (str, Resource)):
+            resource_id = self._entid(resource)
+            payload['resource_id'] = resource_id
+            resource_ids = None
+        elif resource is not None:
+            resource_ids = [self._entid(res) for res in resource]
+            payload['resource_ids'] = resource_ids
+        else:
+            resource_ids = None
+
+        # Remove None values from payload
         payload = {k: v for k, v in payload.items() if v is not None}
-        return super().get_list(limit=limit, params=payload)
+
+        items_gen = self._make_request_with_pagination('POST',
+                                                       f'{self.endpoint_base}/search',
+                                                       return_field=self.endpoint_base,
+                                                       limit=limit,
+                                                       json=payload)
+
+        all_items = []
+        for _, items in items_gen:
+            all_items.extend(items)
+
+        all_annotations = [self._init_entity_obj(**item) for item in all_items]
+
+        if group_by_resource and resource_ids is not None:
+            return group_annotations_by_resource(all_annotations, resource_ids)
+        return all_annotations
 
     async def _upload_segmentations_async(self,
                                           resource: str | Resource,
@@ -370,14 +444,21 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                resource: str | Resource,
                annotation_dto: CreateAnnotationDto | Sequence[CreateAnnotationDto]
                ) -> str | Sequence[str]:
-        """Create a new annotation.
+        """Create one or more annotations for a resource.
+
+        .. warning::
+            This is an internal method and should not be used directly by users.
+            Please use specific annotation creation methods like 
+            :py:meth:`create_image_classification` or :py:meth:`upload_segmentations` instead.
 
         Args:
-            resource: The resource unique id or Resource instance.
-            annotation_dto: A CreateAnnotationDto instance or a list of such instances.
+            resource (str | Resource): The resource unique id or Resource instance.
+            annotation_dto (CreateAnnotationDto | Sequence[CreateAnnotationDto]): 
+                A CreateAnnotationDto instance or a list of such instances to be created.
 
         Returns:
-            The id of the created annotation or a list of ids if multiple annotations were created.
+            str | Sequence[str]: The id of the created annotation if a single annotation 
+            was provided, or a list of ids if multiple annotations were created.
         """
 
         annotations = [annotation_dto] if isinstance(annotation_dto, CreateAnnotationDto) else annotation_dto
@@ -814,7 +895,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id
         )
 
-        return self.create(resource, annotation_dto)            
+        return self.create(resource, annotation_dto)
 
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],

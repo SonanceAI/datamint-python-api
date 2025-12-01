@@ -65,7 +65,7 @@ class Api:
             self.projects.get_list(limit=1)
         except Exception as e:
             raise DatamintException("Error connecting to the Datamint API." +
-                                    f" Please check your api_key and/or other configurations. {e}")
+                                    f" Please check your api_key and/or other configurations.") from e
 
     def _get_endpoint(self, name: str):
         if self._client is None:

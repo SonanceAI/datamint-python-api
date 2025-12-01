@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import threading
 import logging
 from datamint import Api
@@ -6,6 +6,9 @@ from datamint.exceptions import DatamintException
 import os
 from datamint.mlflow.env_vars import EnvVars
 from datamint.mlflow.env_utils import ensure_mlflow_configured
+
+if TYPE_CHECKING:
+    from datamint.entities.project import Project
 
 _PROJECT_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
@@ -44,30 +47,40 @@ def _find_project_by_name(project_name: str):
     return project
 
 
-def set_project(project_name: Optional[str] = None, project_id: Optional[str] = None):
-    from mlflow.exceptions import MlflowException
+def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
+    dt_client = Api(check_connection=False)
+    # If length >= 32, likely an ID
+    if len(project_name_or_id) >= 32 and ' ' not in project_name_or_id:
+        # Try to get by ID first
+        project = dt_client.projects.get_by_id(project_name_or_id)
+        if project is not None:
+            return project
+    project = dt_client.projects.get_by_name(project_name_or_id)
+    if project is None:
+        raise DatamintException(f"Project '{project_name_or_id}' does not exist.")
+    return project
+
+
+def set_project(project: 'Project | str'):
+    """
+    Set the active project for the current session.
+    
+    Args:
+        project: The Project instance or project name/ID to set as active.
+    """
     global _ACTIVE_PROJECT_ID
 
     # Ensure MLflow is properly configured before proceeding
     ensure_mlflow_configured()
 
-    if project_name is None and project_id is None:
-        raise MlflowException("You must specify either a project name or a project id")
-
-    if project_name is not None and project_id is not None:
-        raise MlflowException("You cannot specify both a project name and a project id")
-
     with _PROJECT_LOCK:
-        dt_client = Api(check_connection=False)
-        if project_id is None:
-            project = dt_client.projects.get_by_name(project_name)
-            if project is None:
-                raise DatamintException(f"Project with name '{project_name}' does not exist.")
+        if isinstance(project, str):
+            project_id = None
+            project = _get_project_by_name_or_id(project)
             project_id = project.id
         else:
-            project = dt_client.projects.get_by_id(project_id)
-            if project is None:
-                raise DatamintException(f"Project with id '{project_id}' does not exist.")
+            # It's a Project entity
+            project_id = project.id
 
         _ACTIVE_PROJECT_ID = project_id
 
