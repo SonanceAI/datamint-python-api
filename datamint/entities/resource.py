@@ -77,13 +77,13 @@ class Resource(BaseEntity):
     filename: str
     mimetype: str
     size: int
-    upload_mechanism: str
     customer_id: str
     status: str
     created_at: str
     created_by: str
     published: bool
     deleted: bool
+    upload_mechanism: str | None = None
     # metadata: dict[str,Any] = {}
     modality: str | None = None
     source_filepath: str | None = None
