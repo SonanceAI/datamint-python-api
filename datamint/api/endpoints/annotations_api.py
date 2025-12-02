@@ -1057,13 +1057,23 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             save_path (str | Path): The path to save the file.
             session (aiohttp.ClientSession): The aiohttp session to use for the request.
             progress_bar (tqdm | None): Optional progress bar to update after download completion.
+            
+        Returns:
+            dict: A dictionary with 'success' (bool) and optional 'error' (str) keys.
         """
         if isinstance(annotation, Annotation):
             annotation_id = annotation.id
             resource_id = annotation.resource_id
         else:
             annotation_id = annotation
-            resource_id = self.get_by_id(annotation_id).resource_id
+            try:
+                resource_id = self.get_by_id(annotation_id).resource_id
+            except Exception as e:
+                error_msg = f"Failed to get resource_id for annotation {annotation_id}: {str(e)}"
+                _LOGGER.error(error_msg)
+                if progress_bar:
+                    progress_bar.update(1)
+                return {'success': False, 'annotation_id': annotation_id, 'error': error_msg}
 
         try:
             async with self._make_request_async('GET',
@@ -1074,20 +1084,31 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     f.write(data_bytes)
             if progress_bar:
                 progress_bar.update(1)
-        except ResourceNotFoundError as e:
-            e.set_params('annotation', {'annotation_id': annotation_id})
-            raise e
+            return {'success': True, 'annotation_id': annotation_id}
+        except Exception as e:
+            error_msg = f"Failed to download annotation {annotation_id}: {str(e)}"
+            _LOGGER.error(error_msg)
+            if progress_bar:
+                progress_bar.update(1)
+            return {'success': False, 'annotation_id': annotation_id, 'error': error_msg}
 
     def download_multiple_files(self,
                                 annotations: Sequence[str | Annotation],
                                 save_paths: Sequence[str | Path] | str
-                                ) -> None:
+                                ) -> list[dict[str, Any]]:
         """
         Download multiple segmentation files and save them to the specified paths.
 
         Args:
             annotations: A list of annotation unique ids or annotation objects.
             save_paths: A list of paths to save the files or a directory path.
+            
+        Returns:
+            List of dictionaries with 'success', 'annotation_id', and optional 'error' keys.
+            
+        Note:
+            If any downloads fail, they will be logged but the process will continue.
+            A summary of failed downloads will be logged at the end.
         """
         import nest_asyncio
         nest_asyncio.apply()
@@ -1099,7 +1120,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         annotation, save_path=path, session=session, progress_bar=progress_bar)
                     for annotation, path in zip(annotations, save_paths)
                 ]
-                await asyncio.gather(*tasks)
+                return await asyncio.gather(*tasks)
 
         if isinstance(save_paths, str):
             save_paths = [os.path.join(save_paths, self._entid(ann))
@@ -1107,7 +1128,19 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         with tqdm(total=len(annotations), desc="Downloading segmentations", unit="file") as progress_bar:
             loop = asyncio.get_event_loop()
-            loop.run_until_complete(_download_all_async())
+            results = loop.run_until_complete(_download_all_async())
+        
+        # Log summary of failures
+        failures = [r for r in results if not r['success']]
+        if failures:
+            _LOGGER.warning(f"Failed to download {len(failures)} out of {len(annotations)} annotations")
+            _USER_LOGGER.warning(f"Failed to download {len(failures)} out of {len(annotations)} annotations")
+            for failure in failures:
+                _LOGGER.debug(f"  - {failure['annotation_id']}: {failure['error']}")
+        else:
+            _USER_LOGGER.info(f"Successfully downloaded all {len(annotations)} annotations")
+        
+        return results
 
     def bulk_download_file(self,
                            annotations: Sequence[str | Annotation],
