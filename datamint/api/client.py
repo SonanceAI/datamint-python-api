@@ -1,9 +1,9 @@
-from typing import Optional
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
-                        ChannelsApi, UsersApi, DatasetsInfoApi, ModelsApi,
-                        AnnotationSetsApi
+                        ChannelsApi, UsersApi, DatasetsInfoApi,
+                        AnnotationSetsApi, DeployModelApi
                         )
+from .endpoints.models_api import ModelsApi
 import datamint.configs
 from datamint.exceptions import DatamintException
 
@@ -13,7 +13,7 @@ class Api:
     DEFAULT_SERVER_URL = 'https://api.datamint.io'
     DATAMINT_API_VENV_NAME = datamint.configs.ENV_VARS[datamint.configs.APIKEY_KEY]
 
-    _API_MAP : dict[str, type[BaseApi]] = {
+    _API_MAP: dict[str, type[BaseApi]] = {
         'projects': ProjectsApi,
         'resources': ResourcesApi,
         'annotations': AnnotationsApi,
@@ -22,11 +22,12 @@ class Api:
         'datasets': DatasetsInfoApi,
         'models': ModelsApi,
         'annotationsets': AnnotationSetsApi,
+        'deploy': DeployModelApi,
     }
 
     def __init__(self,
                  server_url: str | None = None,
-                 api_key: Optional[str] = None,
+                 api_key: str | None = None,
                  timeout: float = 60.0, max_retries: int = 2,
                  check_connection: bool = True) -> None:
         """Initialize the API client.
@@ -55,8 +56,16 @@ class Api:
             timeout=timeout,
             max_retries=max_retries
         )
+        self.mlflow_config = ApiConfig(
+            server_url=server_url,
+            api_key=api_key,
+            timeout=timeout,
+            max_retries=max_retries,
+            port=5000
+        )
         self._client = None
-        self._endpoints = {}
+        self._mlclient = None
+        self._endpoints: dict[str, BaseApi] = {}
         if check_connection:
             self.check_connection()
 
@@ -67,12 +76,18 @@ class Api:
             raise DatamintException("Error connecting to the Datamint API." +
                                     f" Please check your api_key and/or other configurations.") from e
 
-    def _get_endpoint(self, name: str):
-        if self._client is None:
-            self._client = BaseApi._create_client(self.config)
+    def _get_endpoint(self, name: str, is_mlflow: bool = False):
+        if is_mlflow:
+            if self._mlclient is None:
+                self._mlclient = BaseApi._create_client(self.mlflow_config)
+            client = self._mlclient
+        else:
+            if self._client is None:
+                self._client = BaseApi._create_client(self.config)
+            client = self._client
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
-            endpoint = api_class(self.config, self._client)
+            endpoint = api_class(self.config, client)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self
             self._endpoints[name] = endpoint
@@ -110,3 +125,8 @@ class Api:
     @property
     def annotationsets(self) -> AnnotationSetsApi:
         return self._get_endpoint('annotationsets')
+
+    @property
+    def deploy(self) -> DeployModelApi:
+        """Access deployment management endpoints."""
+        return self._get_endpoint('deploy', is_mlflow=True)

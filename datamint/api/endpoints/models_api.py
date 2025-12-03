@@ -1,3 +1,4 @@
+"""Deprecated: Use MLFlow API instead."""
 from typing import Sequence
 from ..entity_base_api import ApiConfig, BaseApi
 import httpx
