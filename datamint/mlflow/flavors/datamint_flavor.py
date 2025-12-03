@@ -76,6 +76,8 @@ def save_model(datamint_model: DatamintModel,
              pip_requirements = list(pip_requirements) + missing_requirements
 
 
+    datamint_model._clear_linked_models_cache()
+
     return mlflow.pyfunc.save_model(
         path=path,
         python_model=datamint_model,
