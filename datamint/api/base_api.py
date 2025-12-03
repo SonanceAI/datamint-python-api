@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _PAGE_LIMIT = 5000
 
+
 @dataclass
 class ApiConfig:
     """Configuration for API client.
@@ -31,18 +32,26 @@ class ApiConfig:
         api_key: Optional API key for authentication.
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for requests.
+        port: Optional port number for the API server.
     """
     server_url: str
     api_key: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
+    port: int | None = None
 
     @property
     def web_app_url(self) -> str:
         """Get the base URL for the web application."""
-        if self.server_url.startswith('http://localhost:3001'):
+        base_url = self.server_url
+
+        # Add port to base_url if specified
+        if self.port is not None:
+            base_url = f"{self.server_url.rstrip('/')}:{self.port}"
+
+        if base_url.startswith('http://localhost'):
             return 'http://localhost:3000'
-        if self.server_url.startswith('https://stagingapi.datamint.io'):
+        if base_url.startswith('https://stagingapi.datamint.io'):
             return 'https://staging.datamint.io'
         return 'https://app.datamint.io'
 
@@ -68,15 +77,29 @@ class BaseApi:
     @staticmethod
     def _create_client(config: ApiConfig) -> httpx.Client:
         """Create and configure HTTP client with authentication and timeouts.
-        
+
         The client is designed to be long-lived and reused across multiple requests.
         It maintains connection pooling for improved performance.
         Default limits: max_keepalive_connections=20, max_connections=100
         """
-        headers = {"apikey": config.api_key} if config.api_key else None
+        headers = {"apikey": config.api_key, 'Authorization': f"Bearer {config.api_key}"} if config.api_key else None
+
+        # Add port to base_url if specified
+        base_url = config.server_url.rstrip('/').strip()
+        if config.port is not None:
+            # if the port is already in the URL, replace it
+            if ':' in base_url.split('//')[-1]:
+                parts = base_url.rsplit(':', 1)
+                # confirm parts[1] is numeric
+                if parts[1].isdigit():
+                    base_url = f"{parts[0]}:{config.port}"
+                else:
+                    logger.warning(f"Invalid port detected in server_url: {config.server_url}")
+            else:
+                base_url = f"{base_url}:{config.port}"
 
         return httpx.Client(
-            base_url=config.server_url,
+            base_url=base_url,
             headers=headers,
             timeout=config.timeout,
             limits=httpx.Limits(
@@ -88,7 +111,7 @@ class BaseApi:
 
     def close(self) -> None:
         """Close the HTTP client and release resources.
-        
+
         Should be called when the API instance is no longer needed.
         Only closes the client if it was created by this instance.
         """
@@ -379,7 +402,7 @@ class BaseApi:
         """
         offset = 0
         total_fetched = 0
-        
+
         use_json_pagination = method.upper() == 'POST' and 'json' in kwargs and isinstance(kwargs['json'], dict)
 
         if not use_json_pagination:
