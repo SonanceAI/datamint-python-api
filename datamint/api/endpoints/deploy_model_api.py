@@ -1,24 +1,6 @@
-from typing import Optional
 import httpx
 from ..entity_base_api import EntityBaseApi, ApiConfig
-from datamint.entities.base_entity import BaseEntity
-
-
-class DeployJob(BaseEntity):
-    status: str
-    model_name: str
-    model_version: Optional[int] = None
-    model_alias: Optional[str] = None
-    image_name: Optional[str] = None
-    image_tag: Optional[str] = None
-    error_message: Optional[str] = None
-    progress_percentage: int = 0
-    current_step: Optional[str] = None
-    with_gpu: bool = False
-    recent_logs: Optional[list[str]] = None
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
-
+from datamint.entities.deployjob import DeployJob
 
 class DeployModelApi(EntityBaseApi[DeployJob]):
     """API handler for model deployment endpoints."""
