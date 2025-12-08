@@ -1,9 +1,9 @@
-from typing import Any, Sequence, Literal, BinaryIO, Generator, IO
+from typing import Literal, BinaryIO, IO
+from collections.abc import Sequence, Generator
 import httpx
 from datetime import date
 import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
-from .models_api import ModelsApi
 from datamint.entities.annotations.annotation import Annotation
 from datamint.entities.resource import Resource
 from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
@@ -42,6 +42,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             client: Optional HTTP client instance. If None, a new one will be created.
         """
         from .resources_api import ResourcesApi
+        from .models_api import ModelsApi
+
         super().__init__(config, Annotation, 'annotations', client)
         self._models_api = ModelsApi(config, client=client) if models_api is None else models_api
         self._resources_api = ResourcesApi(

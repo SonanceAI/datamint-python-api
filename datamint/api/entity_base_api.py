@@ -25,7 +25,8 @@ class EntityBaseApi(BaseApi, Generic[T]):
     def __init__(self, config: ApiConfig,
                  entity_class: Type[T],
                  endpoint_base: str,
-                 client: httpx.Client | None = None) -> None:
+                 client: httpx.Client | None = None
+                 ) -> None:
         """Initialize the entity API handler.
 
         Args:

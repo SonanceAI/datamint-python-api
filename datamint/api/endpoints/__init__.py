@@ -6,8 +6,8 @@ from .projects_api import ProjectsApi
 from .resources_api import ResourcesApi
 from .users_api import UsersApi
 from .datasetsinfo_api import DatasetsInfoApi
-from .models_api import ModelsApi
 from .annotationsets_api import AnnotationSetsApi
+from .deploy_model_api import DeployModelApi
 
 __all__ = [
     'AnnotationsApi',
@@ -16,6 +16,6 @@ __all__ = [
     'ResourcesApi',
     'UsersApi',
     'DatasetsInfoApi',
-    'ModelsApi',
     'AnnotationSetsApi',
+    'DeployModelApi',
 ]
