@@ -932,6 +932,7 @@ class DatamintBaseDataset:
         # Collect all segmentation annotations that need to be downloaded
         segmentations_to_download = []
         segmentation_paths = []
+        segmentation_resource_map = {}  # Maps annotation ID to resource ID for cleanup
 
         # update annotations in resources
         for resource in self.images_metainfo:
@@ -958,6 +959,7 @@ class DatamintBaseDataset:
                     filepath.parent.mkdir(parents=True, exist_ok=True)
                     segmentations_to_download.append(ann)
                     segmentation_paths.append(filepath)
+                    segmentation_resource_map[ann.id] = resource_id
 
             # Process annotation changes
             for ann in annotations_to_remove:
@@ -975,14 +977,28 @@ class DatamintBaseDataset:
                     _LOGGER.error(f"Error deleting annotation file {filepath}: {e}")
 
             # Update resource annotations list - convert to Annotation objects
-            # resource['annotations'] = [Annotation.from_dict(ann) for ann in new_resource_annotations]
             resource['annotations'] = new_resource_annotations
 
         # Batch download all segmentation files
         if segmentations_to_download:
             _LOGGER.info(f"Downloading {len(segmentations_to_download)} segmentation files...")
-            self.api.annotations.download_multiple_files(segmentations_to_download, segmentation_paths)
-            _LOGGER.info(f"Downloaded {len(segmentations_to_download)} segmentation files.")
+            download_results = self.api.annotations.download_multiple_files(
+                segmentations_to_download, segmentation_paths
+            )
+            
+            # Process failed downloads
+            failed_annotations = [result['annotation_id'] for result in download_results if not result['success']]
+            if failed_annotations:
+                _LOGGER.warning(f"Failed to download {len(failed_annotations)} annotations, removing them from metadata")
+                
+                # Remove failed annotations from each resource's annotation list
+                for resource in self.images_metainfo:
+                    resource['annotations'] = [
+                        ann for ann in resource['annotations']
+                        if ann.id not in failed_annotations
+                    ]
+            
+            _LOGGER.info(f"Successfully downloaded {len(segmentations_to_download) - len(failed_annotations)} segmentation files.")
 
         ###################
         # update metadata
@@ -1054,7 +1070,7 @@ class DatamintBaseDataset:
         # delete associated annotations
         for ann in deleted_metainfo.get('annotations', []):
             ann_file = getattr(ann, 'file', None) if hasattr(ann, 'file') else ann.get('file', None)
-            if ann_file is not None:
+            if ann_file is not None and os.path.exists(os.path.join(self.dataset_dir, ann_file)):
                 os.remove(os.path.join(self.dataset_dir, ann_file))
 
     def __add__(self, other):
