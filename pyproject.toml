@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.5.4"
+version = "2.5.5"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -44,6 +44,7 @@ lazy-loader = ">=0.3.0"
 medimgkit = ">=0.8.0"
 typing_extensions = ">=4.0.0"
 pydantic = ">=2.6.4"
+certifi = ">=2025.0.0"
 httpx = "*"
 backports-strenum = { version = "*", python = "<3.11" }
 # For compatibility with the datamintapi package

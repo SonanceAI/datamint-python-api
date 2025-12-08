@@ -117,6 +117,48 @@ datamint-config
 datamint-config --api-key "your-key"
 ```
 
+## 🔒 SSL Certificate Troubleshooting
+
+If you encounter SSL certificate verification errors like:
+```
+SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
+```
+
+### Quick Fix
+
+**1. Upgrade certifi:**
+```bash
+pip install --upgrade certifi
+```
+
+**2. Set environment variables:**
+```bash
+export SSL_CERT_FILE=$(python -m certifi)
+export REQUESTS_CA_BUNDLE=$(python -m certifi)
+```
+
+**3. Run your script:**
+```bash
+python your_script.py
+```
+
+### Alternative Solutions
+
+**Option 1: Use Custom CA Bundle**
+```python
+from datamint import Api
+
+api = Api(verify_ssl="/path/to/your/ca-bundle.crt")
+```
+
+**Option 2: Disable SSL Verification (Development Only)**
+```python
+from datamint import Api
+
+# ⚠️ WARNING: Only use in development with self-signed certificates
+api = Api(verify_ssl=False)
+```
+
 ## 🆘 Support
 
 [Full Documentation](https://datamint-python-api.readthedocs.io/)  

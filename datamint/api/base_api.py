@@ -33,12 +33,16 @@ class ApiConfig:
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for requests.
         port: Optional port number for the API server.
+        verify_ssl: Whether to verify SSL certificates. Default is True.
+            Set to False only in development environments with self-signed certificates.
+            Can also be a path to a CA bundle file.
     """
     server_url: str
     api_key: str | None = None
     timeout: float = 30.0
     max_retries: int = 3
     port: int | None = None
+    verify_ssl: bool | str = True
 
     @property
     def web_app_url(self) -> str:
@@ -102,12 +106,58 @@ class BaseApi:
             base_url=base_url,
             headers=headers,
             timeout=config.timeout,
+            verify=config.verify_ssl,
             limits=httpx.Limits(
                 max_keepalive_connections=5,  # Increased from default 20
                 max_connections=20,  # Increased from default 100
                 keepalive_expiry=8
             )
         )
+
+    def _raise_ssl_error(self, original_error: Exception) -> None:
+        """Raise a more helpful SSL certificate error with troubleshooting guidance.
+        
+        Args:
+            original_error: The original SSL-related exception
+            
+        Raises:
+            DatamintException: With helpful troubleshooting information
+        """
+        error_msg = (
+            f"SSL Certificate verification failed: {original_error}\n\n"
+            "This typically happens when Python cannot verify the SSL certificate of the Datamint API.\n\n"
+            "Quick fixes:\n"
+            "1. Upgrade certifi:\n"
+            "   pip install --upgrade certifi\n\n"
+            "2. Set environment variables:\n"
+            "   export SSL_CERT_FILE=$(python -m certifi)\n"
+            "   export REQUESTS_CA_BUNDLE=$(python -m certifi)\n\n"
+            "3. Or disable SSL verification (development only):\n"
+            "   api = Api(verify_ssl=False)\n\n"
+            "For more help, see: https://github.com/SonanceAI/datamint-python-api#-ssl-certificate-troubleshooting"
+        )
+        raise DatamintException(error_msg) from original_error
+
+    def _create_aiohttp_connector(self) -> aiohttp.TCPConnector:
+        """Create aiohttp connector with SSL configuration.
+        
+        Returns:
+            Configured TCPConnector for aiohttp sessions.
+        """
+        import ssl
+        import certifi
+        
+        if self.config.verify_ssl is False:
+            # Disable SSL verification (not recommended for production)
+            return aiohttp.TCPConnector(ssl=False)
+        elif isinstance(self.config.verify_ssl, str):
+            # Use custom CA bundle
+            ssl_context = ssl.create_default_context(cafile=self.config.verify_ssl)
+            return aiohttp.TCPConnector(ssl=ssl_context)
+        else:
+            # Use certifi's CA bundle (default behavior)
+            ssl_context = ssl.create_default_context(cafile=certifi.where())
+            return aiohttp.TCPConnector(ssl=ssl_context)
 
     def close(self) -> None:
         """Close the HTTP client and release resources.
@@ -188,6 +238,11 @@ class BaseApi:
             return response
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error {e.response.status_code} for {method} {endpoint}: {e.response.text}")
+            raise
+        except httpx.ConnectError as e:
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "certificate verify failed" in str(e).lower():
+                self._raise_ssl_error(e)
+            logger.error(f"Connection error for {method} {endpoint}: {e}")
             raise
         except httpx.RequestError as e:
             logger.error(f"Request error for {method} {endpoint}: {e}")
@@ -355,7 +410,12 @@ class BaseApi:
                 )
                 self._check_errors_response(response, url=url)
                 yield response
+            except aiohttp.ClientConnectorCertificateError as e:
+                self._raise_ssl_error(e)
             except aiohttp.ClientError as e:
+                # Check for SSL errors in other client errors
+                if "certificate" in str(e).lower() or "ssl" in str(e).lower():
+                    self._raise_ssl_error(e)
                 logger.error(f"Request error for {method} {endpoint}: {e}")
                 raise
             finally:

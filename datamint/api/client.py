@@ -29,15 +29,19 @@ class Api:
                  server_url: str | None = None,
                  api_key: str | None = None,
                  timeout: float = 60.0, max_retries: int = 2,
-                 check_connection: bool = True) -> None:
+                 check_connection: bool = True,
+                 verify_ssl: bool | str = True) -> None:
         """Initialize the API client.
 
         Args:
-            base_url: Base URL for the API
+            server_url: Base URL for the API
             api_key: Optional API key for authentication
             timeout: Request timeout in seconds
             max_retries: Maximum number of retry attempts
-            client: Optional HTTP client instance
+            check_connection: Whether to check connection on initialization
+            verify_ssl: Whether to verify SSL certificates. Default is True.
+                Set to False only in development environments with self-signed certificates.
+                Can also be a path to a CA bundle file for custom certificate verification.
         """
         if server_url is None:
             server_url = datamint.configs.get_value(datamint.configs.APIURL_KEY)
@@ -54,14 +58,16 @@ class Api:
             server_url=server_url,
             api_key=api_key,
             timeout=timeout,
-            max_retries=max_retries
+            max_retries=max_retries,
+            verify_ssl=verify_ssl
         )
         self.mlflow_config = ApiConfig(
             server_url=server_url,
             api_key=api_key,
             timeout=timeout,
             max_retries=max_retries,
-            port=5000
+            port=5000,
+            verify_ssl=verify_ssl
         )
         self._client = None
         self._mlclient = None

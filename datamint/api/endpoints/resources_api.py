@@ -267,7 +267,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             filename = new_filename
 
         is_a_dicom_file = None
-        if not mimetype:
+        if not mimetype or mimetype == DEFAULT_MIME_TYPE:
             mimetype_list, ext = guess_typez(file_path, use_magic=False)
             for mime in mimetype_list:
                 if mime in NIFTI_MIMES:
