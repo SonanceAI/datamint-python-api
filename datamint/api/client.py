@@ -61,6 +61,13 @@ class Api:
             max_retries=max_retries,
             verify_ssl=verify_ssl
         )
+        self.high_config = ApiConfig(
+            server_url=server_url,
+            api_key=api_key,
+            timeout=timeout*5,
+            max_retries=max_retries,
+            verify_ssl=verify_ssl,
+        )
         self.mlflow_config = ApiConfig(
             server_url=server_url,
             api_key=api_key,
@@ -70,6 +77,7 @@ class Api:
             verify_ssl=verify_ssl
         )
         self._client = None
+        self._highclient = None
         self._mlclient = None
         self._endpoints: dict[str, BaseApi] = {}
         if check_connection:
@@ -87,6 +95,10 @@ class Api:
             if self._mlclient is None:
                 self._mlclient = BaseApi._create_client(self.mlflow_config)
             client = self._mlclient
+        elif name in ['resources', 'annotations']:
+            if self._highclient is None:
+                self._highclient = BaseApi._create_client(self.high_config)
+            client = self._highclient
         else:
             if self._client is None:
                 self._client = BaseApi._create_client(self.config)

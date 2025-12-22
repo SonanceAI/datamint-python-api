@@ -180,6 +180,16 @@ class Resource(BaseEntity):
         version_info = self._generate_version_info()
         self._cache.set(self.id, _IMAGE_CACHEKEY, data, version_info)
 
+    def is_cached(self) -> bool:
+        """Check if the resource's file data is already cached locally and valid.
+
+        Returns:
+            True if valid cached data exists, False otherwise.
+        """
+        version_info = self._generate_version_info()
+        cached_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
+        return cached_data is not None
+
     def fetch_annotations(
         self,
         annotation_type: 'AnnotationType | str | None' = None

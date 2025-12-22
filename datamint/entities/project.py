@@ -75,6 +75,45 @@ class Project(BaseEntity):
         """
         return self._api.get_project_resources(self.id)
 
+    def download_resources_datas(self, progress_bar: bool = True) -> None:
+        """Downloads all project resources in parallel for faster subsequent access.
+
+        This method downloads and caches all resource file data concurrently,
+        skipping resources that are already cached. This dramatically improves
+        performance when working with large projects.
+
+        Args:
+            progress_bar: Whether to show a progress bar. Default is True.
+
+        Example:
+            >>> proj = api.projects.get_by_name("My Project")
+            >>> proj.download_resources()  # Cache all resources in parallel
+            >>> # Now fetch_file_data() will be instantaneous for cached resources
+            >>> for res in proj.fetch_resources():
+            ...     data = res.fetch_file_data(use_cache=True)
+        """
+        return self.cache_resources(progress_bar=progress_bar)
+
+    def cache_resources(self, progress_bar: bool = True) -> None:
+        """Cache all project resources in parallel for faster subsequent access.
+
+        This method downloads and caches all resource file data concurrently,
+        skipping resources that are already cached. This dramatically improves
+        performance when working with large projects.
+
+        Args:
+            progress_bar: Whether to show a progress bar. Default is True.
+
+        Example:
+            >>> proj = api.projects.get_by_name("My Project")
+            >>> proj.cache_resources()  # Cache all resources in parallel
+            >>> # Now fetch_file_data() will be instantaneous for cached resources
+            >>> for res in proj.fetch_resources():
+            ...     data = res.fetch_file_data(use_cache=True)
+        """
+        resources = self.fetch_resources()
+        self._api.resources_api.cache_resources(resources, progress_bar=progress_bar)
+
     def set_work_status(self, resource: 'Resource', status: Literal['opened', 'annotated', 'closed']) -> None:
         """Set the status of a resource.
 

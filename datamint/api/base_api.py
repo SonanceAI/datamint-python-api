@@ -84,7 +84,6 @@ class BaseApi:
 
         The client is designed to be long-lived and reused across multiple requests.
         It maintains connection pooling for improved performance.
-        Default limits: max_keepalive_connections=20, max_connections=100
         """
         headers = {"apikey": config.api_key, 'Authorization': f"Bearer {config.api_key}"} if config.api_key else None
 
@@ -108,8 +107,8 @@ class BaseApi:
             timeout=config.timeout,
             verify=config.verify_ssl,
             limits=httpx.Limits(
-                max_keepalive_connections=5,  # Increased from default 20
-                max_connections=20,  # Increased from default 100
+                max_keepalive_connections=5,  
+                max_connections=20, 
                 keepalive_expiry=8
             )
         )
@@ -147,17 +146,20 @@ class BaseApi:
         import ssl
         import certifi
         
+        limit = 20
+        ttl_dns_cache = 300
+
         if self.config.verify_ssl is False:
             # Disable SSL verification (not recommended for production)
-            return aiohttp.TCPConnector(ssl=False)
+            return aiohttp.TCPConnector(ssl=False, limit=limit, ttl_dns_cache=ttl_dns_cache)
         elif isinstance(self.config.verify_ssl, str):
             # Use custom CA bundle
             ssl_context = ssl.create_default_context(cafile=self.config.verify_ssl)
-            return aiohttp.TCPConnector(ssl=ssl_context)
+            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache)
         else:
             # Use certifi's CA bundle (default behavior)
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-            return aiohttp.TCPConnector(ssl=ssl_context)
+            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache)
 
     def close(self) -> None:
         """Close the HTTP client and release resources.
@@ -380,7 +382,8 @@ class BaseApi:
         """
 
         if session is None:
-            async with aiohttp.ClientSession() as temp_session:
+            connector = self._create_aiohttp_connector()
+            async with aiohttp.ClientSession(connector=connector) as temp_session:
                 async with self._make_request_async(method, endpoint, temp_session, **kwargs) as resp:
                     yield resp
             return
@@ -391,7 +394,10 @@ class BaseApi:
         if self.config.api_key:
             headers['apikey'] = self.config.api_key
 
-        timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+        if 'timeout' in kwargs:
+            timeout = kwargs.pop('timeout')
+        else:
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
 
         response = None
         curl_cmd = self._generate_curl_command(

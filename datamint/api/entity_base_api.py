@@ -1,4 +1,5 @@
-from typing import Any, Literal, TypeVar, Generic, Type, Sequence, AsyncGenerator, overload
+from typing import Any, Literal, TypeVar, Generic, overload
+from collections.abc import Sequence, AsyncGenerator
 import logging
 import httpx
 from datamint.entities.base_entity import BaseEntity
@@ -23,7 +24,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
     """
 
     def __init__(self, config: ApiConfig,
-                 entity_class: Type[T],
+                 entity_class: type[T],
                  endpoint_base: str,
                  client: httpx.Client | None = None
                  ) -> None:

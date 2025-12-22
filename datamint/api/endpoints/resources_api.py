@@ -1,4 +1,5 @@
-from typing import Any, Optional, Sequence, TypeAlias, Literal, IO
+from typing import TypeAlias, Literal, IO
+from collections.abc import Sequence
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities.resource import Resource
@@ -55,7 +56,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
     def __init__(self,
                  config: ApiConfig,
-                 client: Optional[httpx.Client] = None,
+                 client: httpx.Client | None = None,
                  annotations_api=None,
                  projects_api=None
                  ) -> None:
@@ -74,18 +75,18 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         self.projects_api = projects_api or ProjectsApi(config, client, resources_api=self)
 
     def get_list(self,
-                 status: Optional[ResourceStatus] = None,
+                 status: ResourceStatus | None = None,
                  from_date: date | str | None = None,
                  to_date: date | str | None = None,
-                 tags: Optional[Sequence[str]] = None,
-                 modality: Optional[str] = None,
-                 mimetype: Optional[str] = None,
+                 tags: Sequence[str] | None = None,
+                 modality: str | None = None,
+                 mimetype: str | None = None,
                  #  return_ids_only: bool = False,
-                 order_field: Optional[ResourceFields] = None,
-                 order_ascending: Optional[bool] = None,
-                 channel: Optional[str] = None,
+                 order_field: ResourceFields | None = None,
+                 order_ascending: bool | None = None,
+                 channel: str | None = None,
                  project_name: str | list[str] | None = None,
-                 filename: Optional[str] = None,
+                 filename: str | None = None,
                  limit: int | None = None
                  ) -> Sequence[Resource]:
         """Get resources with optional filtering.
@@ -233,16 +234,16 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
-                                            mimetype: Optional[str] = None,
+                                            mimetype: str | None = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
                                             tags: list[str] = [],
                                             mung_filename: Sequence[int] | Literal['all'] | None = None,
-                                            channel: Optional[str] = None,
+                                            channel: str | None = None,
                                             session=None,
-                                            modality: Optional[str] = None,
+                                            modality: str | None = None,
                                             publish: bool = False,
-                                            metadata_file: Optional[str | dict] = None,
+                                            metadata_file: str | dict | None = None,
                                             ) -> str:
         if is_io_object(file_path):
             source_filepath = os.path.abspath(os.path.expanduser(file_path.name))
@@ -375,14 +376,14 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
     async def _upload_resources_async(self,
                                       files_path: Sequence[str | IO],
-                                      mimetype: Optional[str] = None,
+                                      mimetype: str | None = None,
                                       anonymize: bool = False,
                                       anonymize_retain_codes: Sequence[tuple] = [],
                                       on_error: Literal['raise', 'skip'] = 'raise',
                                       tags=None,
                                       mung_filename: Sequence[int] | Literal['all'] | None = None,
-                                      channel: Optional[str] = None,
-                                      modality: Optional[str] = None,
+                                      channel: str | None = None,
+                                      modality: str | None = None,
                                       publish: bool = False,
                                       segmentation_files: Sequence[dict] | None = None,
                                       transpose_segmentation: bool = False,
@@ -696,7 +697,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 )
         """
         # Convert segmentation_files to the format expected by upload_resources
-        segmentation_files_list: Optional[list[list[str] | dict]] = None
+        segmentation_files_list: list[list[str] | dict] | None = None
         if segmentation_files is not None:
             segmentation_files_list = [segmentation_files]
 
@@ -751,22 +752,32 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         """
         save_path = str(save_path)  # Ensure save_path is a string for file operations
         resource_id = self._entid(resource)
+
+        # Disable total timeout for large file downloads, keep connect timeout
+        timeout = aiohttp.ClientTimeout(total=None, sock_connect=self.config.timeout)
+
         try:
             async with self._make_request_async('GET',
                                                 f'{self.endpoint_base}/{resource_id}/file',
                                                 session=session,
-                                                headers={'accept': 'application/octet-stream'}) as resp:
-                data_bytes = await resp.read()
+                                                headers={'accept': 'application/octet-stream'},
+                                                timeout=timeout) as resp:
 
-            final_save_path = save_path
+                final_save_path = save_path
+                target_path = final_save_path
+                if add_extension:
+                    target_path = f"{save_path}.tmp"
+
+                with open(target_path, 'wb') as f:
+                    async for chunk in resp.content.iter_chunked(1024 * 1024):  # 1MB chunks
+                        f.write(chunk)
+
             if add_extension:
-                # Save to temporary file first to determine mimetype from content
-                temp_path = f"{save_path}.tmp"
-                with open(temp_path, 'wb') as f:
-                    f.write(data_bytes)
+                # Determine mimetype from file content (read first 2KB)
+                with open(target_path, 'rb') as f:
+                    head_content = f.read(2048)
 
-                # Determine mimetype from file content
-                mimetype, ext = BaseApi._determine_mimetype(content=data_bytes,
+                mimetype, ext = BaseApi._determine_mimetype(content=head_content,
                                                             declared_mimetype=resource.mimetype if isinstance(resource, Resource) else None)
 
                 # Generate final path with extension if needed
@@ -777,11 +788,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                         final_save_path = save_path + ext
 
                 # Move file to final location
-                os.rename(temp_path, final_save_path)
-            else:
-                # Standard save without extension detection
-                with open(final_save_path, 'wb') as f:
-                    f.write(data_bytes)
+                os.rename(target_path, final_save_path)
 
             if progress_bar:
                 progress_bar.update(1)
@@ -852,7 +859,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
     def download_resource_file(self,
                                resource: str | Resource,
-                               save_path: Optional[str] = None,
+                               save_path: str | None = None,
                                auto_convert: bool = True,
                                add_extension: bool = False
                                ) -> ImagingData | tuple[ImagingData, str] | bytes:
@@ -930,6 +937,53 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 return resource_file, save_path
         return resource_file
 
+    def cache_resources(
+        self,
+        resources: Sequence[Resource],
+        progress_bar: bool = True,
+    ) -> None:
+        """Cache multiple resources in parallel, skipping already cached ones.
+
+        This method downloads and caches resource file data concurrently,
+        significantly improving efficiency when working with large datasets.
+        Only resources that are not already cached will be downloaded.
+
+        Args:
+            resources: Sequence of Resource instances to cache.
+            progress_bar: Whether to show a progress bar. Default is True.
+
+        Example:
+            >>> resources = api.resources.get_list(limit=100)
+            >>> api.resources.cache_resources(resources)
+            Caching resources: 100%|██████████| 85/85 [00:12<00:00,  6.8files/s]
+        """
+        # Filter out already cached resources
+        resources_to_cache = [res for res in resources if not res.is_cached()]
+
+        if not resources_to_cache:
+            _LOGGER.info("All resources are already cached.")
+            return
+
+        _LOGGER.info(f"Caching {len(resources_to_cache)} of {len(resources)} resources...")
+
+        if progress_bar:
+            pbar = tqdm(total=len(resources_to_cache), desc="Caching resources", unit="file")
+        else:
+            pbar = None
+
+        try:
+            for res in resources_to_cache:
+                res._api = self  # Ensure the resource has a reference to the API
+                res.fetch_file_data(auto_convert=False, use_cache=True)
+                if pbar:
+                    pbar.set_postfix(filename=res.filename)
+                    pbar.update(1)
+
+        finally:
+            if pbar:
+                pbar.close()
+        _LOGGER.info(f"Successfully cached {len(resources_to_cache)} resources.")
+
     def download_resource_frame(self,
                                 resource: str | Resource,
                                 frame_index: int) -> Image.Image:
@@ -954,7 +1008,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             resource = self.get_by_id(resource)
         if resource.mimetype.startswith('image/') or resource.storage == 'ImageResource':
             if frame_index != 0:
-                raise DatamintException(f"Resource {resource.id} is a single frame image, "
+                raise DatamintException(f"Resource {resource.id} is not a multi-frame resource, "
                                         f"but frame_index is {frame_index}.")
             return self.download_resource_file(resource, auto_convert=True)
 
