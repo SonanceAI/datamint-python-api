@@ -143,6 +143,10 @@ class Resource(BaseEntity):
             img_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
             if img_data is not None:
                 logger.debug(f"Using cached image data for resource {self.id}")
+                # Save cached data to save_path if provided
+                if save_path:
+                    with open(save_path, 'wb') as f:
+                        f.write(img_data)
 
         if img_data is None:
             # Fetch from server using download_resource_file
