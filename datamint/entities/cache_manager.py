@@ -105,7 +105,11 @@ class CacheManager(Generic[T]):
         Returns:
             Path to the data file
         """
-        return self._get_entity_cache_dir(entity_id) / f"{data_key}.pkl"
+
+        datapath = self._get_entity_cache_dir(entity_id) / f"{data_key}"
+        if datapath.with_suffix('.pkl').exists():
+            return datapath.with_suffix('.pkl')
+        return datapath
 
     def _compute_version_hash(self, version_info: dict[str, Any]) -> str:
         """Compute a hash from version information.
@@ -119,6 +123,48 @@ class CacheManager(Generic[T]):
         # Sort keys for consistent hashing
         sorted_info = json.dumps(version_info, sort_keys=True)
         return hashlib.sha256(sorted_info.encode()).hexdigest()
+
+    def _get_validated_metadata(
+        self,
+        entity_id: str,
+        data_key: str,
+        version_info: dict[str, Any] | None = None
+    ) -> tuple['CacheManager.ItemMetadata', Path] | tuple[None, None]:
+        """Get and validate cached metadata for an entity.
+
+        Args:
+            entity_id: Unique identifier for the entity
+            data_key: Key identifying the type of data
+            version_info: Optional version information from server to validate cache
+
+        Returns:
+            Tuple of (metadata, data_path) if valid, (None, None) if cache miss or invalid
+        """
+        metadata_path = self._get_metadata_path(entity_id)
+        data_path = self._get_data_path(entity_id, data_key)
+
+        if not metadata_path.exists() or not data_path.exists():
+            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key}")
+            return None, None
+
+        try:
+            with open(metadata_path, 'r') as f:
+                jsondata = f.read()
+            cached_metadata = CacheManager.ItemMetadata.model_validate_json(jsondata)
+
+            if version_info is not None:
+                server_version = self._compute_version_hash(version_info)
+                if server_version != cached_metadata.version_hash:
+                    _LOGGER.debug(
+                        f"Cache version mismatch for {entity_id}/{data_key}. "
+                        f"Server: {server_version}, Cached: {cached_metadata.version_hash}"
+                    )
+                    return None, None
+
+            return cached_metadata, data_path
+        except Exception as e:
+            _LOGGER.warning(f"Error reading cache metadata for {entity_id}/{data_key}: {e}")
+            return None, None
 
     def get(
         self,
@@ -136,39 +182,37 @@ class CacheManager(Generic[T]):
         Returns:
             Cached data if valid, None if cache miss or invalid
         """
-        metadata_path = self._get_metadata_path(entity_id)
-        data_path = self._get_data_path(entity_id, data_key)
-
-        # Check if cache exists
-        if not metadata_path.exists() or not data_path.exists():
-            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key}")
+        cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
+        
+        if cached_metadata is None:
             return None
 
         try:
-            # Load or create metadata
-            with open(metadata_path, 'r') as f:
-                jsondata = f.read()
-            cached_metadata = CacheManager.ItemMetadata.model_validate_json(jsondata)
-
-            # Validate version if provided
-            if version_info is not None:
-                server_version = self._compute_version_hash(version_info)
-
-                if server_version != cached_metadata.version_hash:
-                    _LOGGER.debug(
-                        f"Cache version mismatch for {entity_id}/{data_key}. "
-                        f"Server: {server_version}, Cached: {cached_metadata.version_hash}"
-                    )
-                    return None
-
             data = self._load_data(cached_metadata)
-
             _LOGGER.debug(f"Cache hit for {entity_id}/{data_key}")
             return data
-
         except Exception as e:
             _LOGGER.warning(f"Error reading cache for {entity_id}/{data_key}: {e}")
             return None
+
+    def get_path(
+        self,
+        entity_id: str,
+        data_key: str,
+        version_info: dict[str, Any] | None = None
+    ) -> Path | None:
+        """Get the path to cached data for an entity if valid.
+
+        Args:
+            entity_id: Unique identifier for the entity
+            data_key: Key identifying the type of data
+            version_info: Optional version information from server to validate cache
+
+        Returns:
+            Path to cached data if valid, None if cache miss or invalid
+        """
+        cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
+        return data_path
 
     def set(
         self,

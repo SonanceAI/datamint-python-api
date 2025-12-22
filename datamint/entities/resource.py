@@ -189,6 +189,19 @@ class Resource(BaseEntity):
         version_info = self._generate_version_info()
         cached_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
         return cached_data is not None
+    
+    @property
+    def filepath_cached(self) -> Path | None:
+        """Get the file path of the cached resource data, if available.
+
+        Returns:
+            Path to the cached file data, or None if not cached.
+        """
+        if self._cache is None:
+            return None
+        version_info = self._generate_version_info()
+        path = self._cache.get_path(self.id, _IMAGE_CACHEKEY, version_info)
+        return path
 
     def fetch_annotations(
         self,
@@ -286,6 +299,15 @@ class LocalResource(Resource):
 
     local_filepath: str | None = None
     raw_data: bytes | None = None
+
+    @property
+    def filepath_cached(self) -> str | None:
+        """Get the file path of the local resource data.
+
+        Returns:
+            Path to the local file, or None if only raw data is available.
+        """
+        return self.local_filepath
 
     def __init__(self,
                  local_filepath: str | Path | None = None,
