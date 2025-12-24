@@ -1,4 +1,4 @@
-from typing import Literal, BinaryIO, IO, Any
+from typing import Literal, BinaryIO, IO, Any, overload
 from collections.abc import Sequence, Generator
 import httpx
 from datetime import date
@@ -48,6 +48,37 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         self._models_api = ModelsApi(config, client=client) if models_api is None else models_api
         self._resources_api = ResourcesApi(
             config, client=client, annotations_api=self) if resources_api is None else resources_api
+
+    @overload
+    def get_list(self,
+                 resource: str | Resource | Sequence[str | Resource] | None = None,
+                 annotation_type: AnnotationType | str | None = None,
+                 annotator_email: str | None = None,
+                 date_from: date | None = None,
+                 date_to: date | None = None,
+                 dataset_id: str | None = None,
+                 worklist_id: str | None = None,
+                 status: Literal['new', 'published'] | None = None,
+                 load_ai_segmentations: bool | None = None,
+                 limit: int | None = None,
+                 group_by_resource: Literal[False] = False
+                 ) -> Sequence[Annotation]: ...
+
+    @overload
+    def get_list(self,
+                 resource: str | Resource | Sequence[str | Resource] | None = None,
+                 annotation_type: AnnotationType | str | None = None,
+                 annotator_email: str | None = None,
+                 date_from: date | None = None,
+                 date_to: date | None = None,
+                 dataset_id: str | None = None,
+                 worklist_id: str | None = None,
+                 status: Literal['new', 'published'] | None = None,
+                 load_ai_segmentations: bool | None = None,
+                 limit: int | None = None,
+                 *,
+                 group_by_resource: Literal[True]
+                 ) -> Sequence[Sequence[Annotation]]: ...
 
     def get_list(self,
                  resource: str | Resource | Sequence[str | Resource] | None = None,
@@ -478,7 +509,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     def upload_segmentations(self,
                              resource: str | Resource,
-                             file_path: str | np.ndarray,
+                             file_path: str | Path | np.ndarray,
                              name: str | dict[int, str] | dict[tuple, str] | None = None,
                              frame_index: int | list[int] | None = None,
                              imported_from: str | None = None,
@@ -541,6 +572,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
         """
         import nest_asyncio
+
+        if isinstance(file_path, Path):
+            file_path = str(file_path)
 
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")

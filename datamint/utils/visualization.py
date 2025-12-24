@@ -113,10 +113,7 @@ def draw_masks(
         image = image / image.max()
 
     if masks.ndim == 2:
-        return torchvision.utils.draw_segmentation_masks(image=image,
-                                                         masks=masks,
-                                                         alpha=alpha,
-                                                         colors=colors)
+        masks = masks.unsqueeze(0)
 
     if colors is None:
         colors = generate_color_palette(len(masks))
