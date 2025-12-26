@@ -232,7 +232,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         _LOGGER.debug(f"log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
         modelinfo = mlflow.pytorch.log_model(
             pytorch_model=model,
-            artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
+            name=Path(self._last_checkpoint_saved).stem,
             signature=self._inferred_signature,
             run_id=run_id,
             extra_pip_requirements=requirements,
@@ -291,6 +291,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
         # check if the model exists
         for artifact_info in mlclient.list_artifacts(run_id=mllogger.run_id):
+            _LOGGER.debug(f"Artifact found: {artifact_info.path} for run ID: {mllogger.run_id}")
             if artifact_info.path.startswith('model'):
                 break
         else:

@@ -122,8 +122,13 @@ class Annotation(AnnotationBase):
     def __init__(self, **data):
         """Initialize the annotation entity."""
         super().__init__(**data)
-        self._cache: CacheManager = CacheManager('annotations')
         self._resource: 'Resource | None' = None
+
+    @property
+    def _cache(self) -> CacheManager[bytes]:
+        if not hasattr(self, '__cache'):
+            self.__cache = CacheManager[bytes]('annotations')
+        return self.__cache
 
     @property
     def resource(self) -> 'Resource':
