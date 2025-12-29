@@ -116,7 +116,6 @@ def log_model(
     **kwargs
 ):
     return Model.log(
-        artifact_path=None,
         datamint_model=datamint_model,
         supported_modes=supported_modes,
         name=name,

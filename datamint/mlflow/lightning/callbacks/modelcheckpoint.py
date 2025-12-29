@@ -322,7 +322,8 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._has_been_trained = True
         self.__wrap_forward(pl_module)
         logger = _get_MLFlowLogger(trainer)
-        mlflow.set_experiment(experiment_id=logger.experiment_id)
+        if logger.experiment_id is not None:
+            mlflow.set_experiment(experiment_id=logger.experiment_id)
         super().on_train_start(trainer, pl_module)
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
@@ -359,7 +360,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                             " Check `run_id` parameter in MLFlowLogger.")
             return
         retrieved_logged_models = mlflow.search_logged_models(
-            filter_string=f"name = {Path(trainer.ckpt_path).stem[:256]} AND source_run_id='{logger.run_id[:64]}'",
+            filter_string=f"name = '{Path(trainer.ckpt_path).stem[:256]}' AND source_run_id='{logger.run_id[:64]}'",
             order_by=[{"field_name": "last_updated_timestamp", "ascending": False}],
             output_format="list"
         )

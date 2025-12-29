@@ -7,7 +7,6 @@ annotations in medical imaging volumes.
 from .annotation import Annotation
 from datamint.api.dto import AnnotationType
 import numpy as np
-import nibabel as nib
 from nibabel.nifti1 import Nifti1Image
 from pydantic import PrivateAttr
 import logging
@@ -253,7 +252,7 @@ class VolumeSegmentation(Annotation):
         return len(self._class_map)
 
     @property
-    def class_map(self) -> dict[int, str] | None:
+    def class_map(self) -> dict[int, str]:
         """
         Get the stored class map.
         
@@ -263,7 +262,7 @@ class VolumeSegmentation(Annotation):
         return self._class_map
 
     @property
-    def segmentation_data(self) -> np.ndarray | Nifti1Image | None:
+    def segmentation_data(self) -> np.ndarray | Nifti1Image:
         """
         Get the stored segmentation data.
         
