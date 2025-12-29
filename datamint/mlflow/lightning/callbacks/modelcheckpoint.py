@@ -229,7 +229,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if not any('lightning' in req.lower() for req in requirements):
             requirements.append(f'lightning=={L.__version__}')
 
-        _LOGGER.debug(f"log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
+        _LOGGER.debug(f"log_model_to_mlflow: Logging model at {self._last_checkpoint_saved} with {run_id=}...")
         modelinfo = mlflow.pytorch.log_model(
             pytorch_model=model,
             name=Path(self._last_checkpoint_saved).stem,
@@ -334,6 +334,9 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_train_start(self, trainer, pl_module):
         self._has_been_trained = True
         self.__wrap_forward(pl_module)
+        logger = _get_MLFlowLogger(trainer)
+        mlflow.set_experiment(experiment_id=logger.experiment_id)
+        super().on_train_start(trainer, pl_module)
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_train_end(trainer, pl_module)
@@ -357,12 +360,16 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             return
         if trainer.ckpt_path is None:
             return
-        extracted_run_id = Path(trainer.ckpt_path).parts[1]
-        if extracted_run_id != logger.run_id:
-            _LOGGER.warning(f"Run ID mismatch: {extracted_run_id} != {logger.run_id}." +
+        if logger.run_id is None:
+            _LOGGER.warning("MLFlowLogger has no run_id. Cannot restore model URI.")
+            return
+        if logger.run_id not in str(trainer.ckpt_path):
+            _LOGGER.warning(f"Run ID mismatch between checkpoint path and MLFlowLogger." +
                             " Check `run_id` parameter in MLFlowLogger.")
         self._last_model_uri = f'runs:/{logger.run_id}/model/{Path(trainer.ckpt_path).stem}'
         try:
+            _LOGGER.debug(f"Restored model URI: {self._last_model_uri}")
+            _LOGGER.debug("Fetching model info from MLFlow...")
             self.last_saved_model_info = mlflow.models.get_model_info(self._last_model_uri)
         except mlflow.exceptions.MlflowException as e:
             _LOGGER.warning(f"Failed to get model info for URI {self._last_model_uri}: {e}")
