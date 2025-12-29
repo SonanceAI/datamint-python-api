@@ -113,7 +113,12 @@ class Resource(BaseEntity):
     def __init__(self, **data):
         """Initialize the resource entity."""
         super().__init__(**data)
-        self._cache: CacheManager[bytes] = CacheManager[bytes]('resources')
+
+    @property
+    def _cache(self) -> CacheManager[bytes]:
+        if not hasattr(self, '__cache'):
+            self.__cache = CacheManager[bytes]('resources')
+        return self.__cache
 
     def fetch_file_data(
         self,
@@ -386,7 +391,6 @@ class LocalResource(Resource):
                     raw_data=raw_data,
                     **new_kwargs
                 )
-                self._cache = None
                 return
 
         if convert_to_bytes and local_filepath:
@@ -426,7 +430,6 @@ class LocalResource(Resource):
                 raw_data=raw_data,
                 **new_kwargs
             )
-            self._cache = None
         elif local_filepath is not None:
             file_path = Path(local_filepath)
             if not file_path.exists():
@@ -459,7 +462,6 @@ class LocalResource(Resource):
                 local_filepath=str(file_path),
                 raw_data=None,
             )
-            self._cache = None
 
     def fetch_file_data(
         self, *args,

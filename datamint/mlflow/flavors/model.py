@@ -22,7 +22,6 @@ import os
 logger = logging.getLogger(__name__)
 
 # Type aliases
-# AnnotationList: TypeAlias = Sequence[Annotation]
 PredictionResult: TypeAlias = list[list[Annotation]]
 
 
@@ -159,6 +158,7 @@ class DatamintModel(ABC, PythonModel):
     """
 
     LINKED_MODELS_DIR = "linked_models"
+    _CACHED_ATTRS = ['_mlflow_models', '_mlflow_torch_models', '_inference_device']
 
     def __init__(self,
                  settings: ModelSettings | dict[str, Any] | None = None,
@@ -214,16 +214,18 @@ class DatamintModel(ABC, PythonModel):
 
     def _clear_linked_models_cache(self):
         """Clear loaded linked models to free memory"""
-        if hasattr(self, '_mlflow_models'):
-            del self._mlflow_models
-        if hasattr(self, '_mlflow_torch_models'):
-            del self._mlflow_torch_models
+        
+        for attr in self._CACHED_ATTRS:
+            if hasattr(self, attr):
+                delattr(self, attr)
+        
 
     def __getstate__(self):
         state = self.__dict__.copy()
 
-        state.pop('_mlflow_models', None)
-        state.pop('_mlflow_torch_models', None)
+        for attr in self._CACHED_ATTRS:
+            if attr in state:
+                del state[attr]
 
         return state
 

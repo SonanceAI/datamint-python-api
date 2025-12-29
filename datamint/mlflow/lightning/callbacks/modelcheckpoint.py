@@ -123,7 +123,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         # If state changed (signature, checkpoint, etc.), register
         current_state_hash = self._compute_registration_state_hash()
         if current_state_hash != self._last_registered_state_hash:
-            _LOGGER.debug("Model state has changed since last registration, will register.")
             return True
 
         _LOGGER.info("Model already registered with same configuration. Skipping registration.")
@@ -169,7 +168,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             return ()
 
     def _save_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
-        _LOGGER.debug(f"Saving checkpoint to {filepath}...")
         trainer.save_checkpoint(filepath, self.save_weights_only)
 
         self._last_global_step_saved = trainer.global_step
@@ -180,7 +178,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             for logger in trainer.loggers:
                 logger.after_save_checkpoint(proxy(self))
                 if isinstance(logger, MLFlowLogger) and not self.log_model_at_end_only:
-                    _LOGGER.debug(f"_save_checkpoint: Logging model to MLFlow at {filepath}...")
                     self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
 
     def log_additional_metadata(self, logger: MLFlowLogger | L.Trainer,
@@ -229,10 +226,9 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if not any('lightning' in req.lower() for req in requirements):
             requirements.append(f'lightning=={L.__version__}')
 
-        _LOGGER.debug(f"log_model_to_mlflow: Logging model to MLFlow at {self._last_checkpoint_saved}...")
         modelinfo = mlflow.pytorch.log_model(
             pytorch_model=model,
-            artifact_path=f'model/{Path(self._last_checkpoint_saved).stem}',
+            name=Path(self._last_checkpoint_saved).stem,
             signature=self._inferred_signature,
             run_id=run_id,
             extra_pip_requirements=requirements,
@@ -286,22 +282,14 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.warning("No model URI found. Cannot update signature.")
             return
 
-        mllogger = _get_MLFlowLogger(trainer)
-        mlclient = mllogger._mlflow_client
-
-        # check if the model exists
-        for artifact_info in mlclient.list_artifacts(run_id=mllogger.run_id):
-            if artifact_info.path.startswith('model'):
-                break
-        else:
-            _LOGGER.warning(f"Model URI {self._last_model_uri} does not exist. Cannot update signature.")
-            return
-        _LOGGER.debug(f"Updating signature for model URI: {self._last_model_uri}...")
         # update the signature
-        mlflow.models.set_signature(
-            model_uri=self._last_model_uri,
-            signature=self._inferred_signature,
-        )
+        try:
+            mlflow.models.set_signature(
+                model_uri=self._last_model_uri,
+                signature=self._inferred_signature,
+            )
+        except mlflow.exceptions.MlflowException as e:
+            _LOGGER.warning(f"Failed to update model signature. Check if model actually exists. {e}")
 
     def __wrap_forward(self, pl_module: nn.Module):
         original_forward = pl_module.forward
@@ -333,6 +321,10 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
     def on_train_start(self, trainer, pl_module):
         self._has_been_trained = True
         self.__wrap_forward(pl_module)
+        logger = _get_MLFlowLogger(trainer)
+        if logger.experiment_id is not None:
+            mlflow.set_experiment(experiment_id=logger.experiment_id)
+        super().on_train_start(trainer, pl_module)
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_train_end(trainer, pl_module)
@@ -350,17 +342,33 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             self.register_model(trainer)
 
     def _restore_model_uri(self, trainer: L.Trainer) -> None:
+        """Restore the last model URI from the trainer's checkpoint path.
+        """
         logger = _get_MLFlowLogger(trainer)
+        self._last_model_uri = None
+        self.last_saved_model_info = None
         if logger is None:
             _LOGGER.warning("No MLFlowLogger found. Cannot restore model URI.")
             return
         if trainer.ckpt_path is None:
             return
-        extracted_run_id = Path(trainer.ckpt_path).parts[1]
-        if extracted_run_id != logger.run_id:
-            _LOGGER.warning(f"Run ID mismatch: {extracted_run_id} != {logger.run_id}." +
+        if logger.run_id is None:
+            _LOGGER.warning("MLFlowLogger has no run_id. Cannot restore model URI.")
+            return
+        if logger.run_id not in str(trainer.ckpt_path):
+            _LOGGER.warning(f"Run ID mismatch between checkpoint path and MLFlowLogger." +
                             " Check `run_id` parameter in MLFlowLogger.")
-        self._last_model_uri = f'runs:/{logger.run_id}/model/{Path(trainer.ckpt_path).stem}'
+            return
+        retrieved_logged_models = mlflow.search_logged_models(
+            filter_string=f"name = '{Path(trainer.ckpt_path).stem[:256]}' AND source_run_id='{logger.run_id[:64]}'",
+            order_by=[{"field_name": "last_updated_timestamp", "ascending": False}],
+            output_format="list"
+        )
+        if not retrieved_logged_models:
+            _LOGGER.warning(f"No logged model found for checkpoint {trainer.ckpt_path}.")
+            return
+        # get the most recent one
+        self._last_model_uri = retrieved_logged_models[0].model_uri
         try:
             self.last_saved_model_info = mlflow.models.get_model_info(self._last_model_uri)
         except mlflow.exceptions.MlflowException as e:

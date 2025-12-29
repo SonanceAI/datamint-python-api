@@ -5,7 +5,7 @@ import datamint.mlflow.flavors
 from mlflow import pyfunc
 from .model import DatamintModel
 import logging
-from typing import Sequence
+from collections.abc import Sequence
 from dataclasses import asdict
 from packaging.requirements import Requirement
 
@@ -29,7 +29,6 @@ def save_model(datamint_model: DatamintModel,
                extra_pip_requirements=None,
                metadata=None,
                model_config=None,
-               example_no_conversion=None,
                streamable=None,
                **kwargs):
     import medimgkit
@@ -94,7 +93,6 @@ def save_model(datamint_model: DatamintModel,
         extra_pip_requirements=extra_pip_requirements,
         metadata=metadata,
         model_config=model_config,
-        example_no_conversion=example_no_conversion,
         streamable=streamable,
         **kwargs
     )
@@ -103,11 +101,10 @@ def save_model(datamint_model: DatamintModel,
 def log_model(
     datamint_model: DatamintModel,
     supported_modes: Sequence[str] | None = None,
-    artifact_path: str = "datamint_model",
+    name: str = "datamint_model",
     data_path=None,
     code_paths=None,
     infer_code_paths=False,
-    conda_env=None,
     artifacts=None,
     registered_model_name: str | None = None,
     signature: ModelSignature | None = None,
@@ -116,20 +113,17 @@ def log_model(
     extra_pip_requirements=None,
     metadata=None,
     model_config=None,
-    example_no_conversion=None,
-    streamable=None,
     **kwargs
 ):
     return Model.log(
         datamint_model=datamint_model,
         supported_modes=supported_modes,
-        artifact_path=artifact_path,
+        name=name,
         flavor=datamint.mlflow.flavors.datamint_flavor,
         # loader_module=loader_module,
         data_path=data_path,
         code_paths=code_paths,
         artifacts=artifacts,
-        conda_env=conda_env,
         registered_model_name=registered_model_name,
         signature=signature,
         input_example=input_example,
@@ -137,8 +131,6 @@ def log_model(
         extra_pip_requirements=extra_pip_requirements,
         metadata=metadata,
         model_config=model_config,
-        example_no_conversion=example_no_conversion,
-        streamable=streamable,
         infer_code_paths=infer_code_paths,
         **kwargs
     )
