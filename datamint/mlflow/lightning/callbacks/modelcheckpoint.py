@@ -282,21 +282,14 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.warning("No model URI found. Cannot update signature.")
             return
 
-        mllogger = _get_MLFlowLogger(trainer)
-        mlclient = mllogger._mlflow_client
-
-        # check if the model exists
-        for artifact_info in mlclient.list_artifacts(run_id=mllogger.run_id):
-            if artifact_info.path.startswith('model'):
-                break
-        else:
-            _LOGGER.warning(f"Model URI {self._last_model_uri} does not exist. Cannot update signature.")
-            return
         # update the signature
-        mlflow.models.set_signature(
-            model_uri=self._last_model_uri,
-            signature=self._inferred_signature,
-        )
+        try:
+            mlflow.models.set_signature(
+                model_uri=self._last_model_uri,
+                signature=self._inferred_signature,
+            )
+        except mlflow.exceptions.MlflowException as e:
+            _LOGGER.warning(f"Failed to update model signature. Check if model actually exists. {e}")
 
     def __wrap_forward(self, pl_module: nn.Module):
         original_forward = pl_module.forward
