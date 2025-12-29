@@ -54,6 +54,8 @@ def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
 class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
     """API handler for resource-related endpoints."""
 
+    _ENDPOINT_BASE = 'resources'
+
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None,
@@ -68,7 +70,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         """
         from .annotations_api import AnnotationsApi
         from .projects_api import ProjectsApi
-        super().__init__(config, Resource, 'resources', client)
+        super().__init__(config, Resource, ResourcesApi._ENDPOINT_BASE, client)
         nest_asyncio.apply()
         self.annotations_api = AnnotationsApi(
             config, client, resources_api=self) if annotations_api is None else annotations_api

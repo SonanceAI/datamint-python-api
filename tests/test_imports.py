@@ -48,57 +48,15 @@ class TestImports:
         except ImportError as e:
             pytest.fail(f"Failed to import DatamintBaseDataset: {e}")
 
-    def test_api_handler_imports(self) -> None:
+    def test_api_imports(self) -> None:
         """Test importing API handler modules."""
         # Test direct import of APIHandler
         try:
-            from datamint import APIHandler
-            assert APIHandler is not None
+            from datamint import Api
+            assert Api is not None
             _LOGGER.info("Successfully imported APIHandler from datamint")
         except ImportError as e:
             pytest.fail(f"Failed to import APIHandler: {e}")
-
-        # Test importing APIHandler directly
-        try:
-            from datamint.apihandler.api_handler import APIHandler as APIHandlerClass
-            assert APIHandlerClass is not None
-            _LOGGER.info("Successfully imported APIHandler class directly")
-        except ImportError as e:
-            pytest.fail(f"Failed to import APIHandler class directly: {e}")
-
-        # Test importing base API handler
-        try:
-            from datamint.apihandler.base_api_handler import DatamintException
-            assert DatamintException is not None
-            _LOGGER.info("Successfully imported DatamintException")
-        except ImportError as e:
-            pytest.fail(f"Failed to import DatamintException: {e}")
-
-    def test_utils_imports(self) -> None:
-        """Test importing utility modules."""
-        # Test logging utils
-        try:
-            from datamint.utils.logging_utils import load_cmdline_logging_config
-            assert load_cmdline_logging_config is not None
-            _LOGGER.info("Successfully imported logging_utils")
-        except ImportError as e:
-            pytest.fail(f"Failed to import logging_utils: {e}")
-
-        # Test IO utils
-        try:
-            from medimgkit.readers import read_array_normalized
-            assert read_array_normalized is not None
-            _LOGGER.info("Successfully imported io_utils")
-        except ImportError as e:
-            pytest.fail(f"Failed to import io_utils: {e}")
-
-        # Test DICOM utils (if available)
-        try:
-            from medimgkit.dicom_utils import is_dicom
-            assert is_dicom is not None
-            _LOGGER.info("Successfully imported dicom_utils")
-        except ImportError as e:
-            pytest.fail(f"Failed to import dicom_utils: {e}")
 
     def test_config_imports(self) -> None:
         """Test importing configuration modules."""

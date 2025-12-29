@@ -4,11 +4,7 @@ Ensures the configuration tool works without importing torch or other heavy depe
 """
 import pytest
 import sys
-import subprocess
-import tempfile
-import os
-from unittest.mock import patch, MagicMock
-from pathlib import Path
+from unittest.mock import patch
 import logging
 
 _LOGGER = logging.getLogger(__name__)
