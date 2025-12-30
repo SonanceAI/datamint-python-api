@@ -582,15 +582,21 @@ class BaseApi:
             return bytes_array
         elif mimetype.endswith('nifti'):
             try:
-                return nib.Nifti1Image.from_stream(content_io)
+                ndata = nib.Nifti1Image.from_stream(content_io)
+                ndata.get_fdata() # force loading before IO is closed
+                return ndata
             except Exception as e:
                 if file_path is not None:
-                    return nib.load(file_path)
+                    ndata = nib.load(file_path)
+                    ndata.get_fdata() # force loading before IO is closed
+                    return ndata
                 raise e
         elif mimetype in GZIP_MIME_TYPES:
             # let's hope it's a .nii.gz
             with gzip.open(content_io, 'rb') as f:
-                return nib.Nifti1Image.from_stream(f)
+                ndata = nib.Nifti1Image.from_stream(f)
+                ndata.get_fdata() # force loading before IO is closed
+                return ndata
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 

@@ -5,22 +5,25 @@ from torch import Tensor
 import torchvision.utils
 import torch
 import colorsys
+from collections.abc import Sequence
 
 
-def show(imgs: list[Tensor] | Tensor,
-         figsize: tuple[int, int] = None,
+def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
+         figsize: tuple[int, int] | None = None,
          normalize: bool = False):
     """
     Show a list of images in a grid.
     Args:
-        imgs (list[Tensor] | Tensor): List of images to show.
+        imgs (Sequence[Tensor | np.ndarray] | Tensor | np.ndarray): List of images to show.
             Each image should be a tensor of shape (C, H, W) and dtype uint8 or float.
         figsize (tuple[int, int], optional): Size of the figure. Defaults to None.
         normalize (bool, optional): Whether to normalize the images to [0, 1] range by min-max scaling.
     """
 
-    if not isinstance(imgs, list):
+    if not isinstance(imgs, list) and not isinstance(imgs, tuple):
         imgs = [imgs]
+
+    imgs = [img if isinstance(img, torch.Tensor) else torch.from_numpy(img) for img in imgs]
 
     if normalize:
         for i, img in enumerate(imgs):
@@ -72,10 +75,10 @@ def generate_color_palette(num_objects: int) -> list[tuple[int, int, int]]:
     return colors
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def draw_masks(
-    image: Tensor,
-    masks: Tensor,
+    image: Tensor | np.ndarray,
+    masks: Tensor | np.ndarray,
     alpha: float = 0.5,
     colors: list[str | tuple[int, int, int]] | str | tuple[int, int, int] | None = None,
 ) -> Tensor:
@@ -85,7 +88,7 @@ def draw_masks(
     The image values should be uint8 or float.
 
     Args:
-        image (Tensor): Tensor of shape (3, H, W) and dtype uint8 or float.
+        image (Tensor): Tensor of shape (3, H, W) or (H, W) and dtype uint8 or float.
         masks (Tensor): Tensor of shape (num_masks, H, W) or (H, W) and dtype bool.
         alpha (float): Float number between 0 and 1 denoting the transparency of the masks.
             0 means full transparency, 1 means no transparency.
@@ -97,11 +100,19 @@ def draw_masks(
     Returns:
         img (Tensor[C, H, W]): Image Tensor, with segmentation masks drawn on top.
     """
-    
+
+    if isinstance(image, np.ndarray):
+        image = torch.from_numpy(image)
+
+    if isinstance(masks, np.ndarray):
+        masks = torch.from_numpy(masks)
 
     if image.ndim == 3 and image.shape[0] == 1:
         # convert to RGB
         image = image.expand(3, -1, -1)
+    if image.ndim == 2:
+        # convert to RGB
+        image = image.unsqueeze(0).expand(3, -1, -1)
 
     if masks.dtype != torch.bool:
         masks = masks.bool()
