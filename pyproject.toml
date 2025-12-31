@@ -13,7 +13,7 @@ datamint-config = 'datamint.client_cmd_tools.datamint_config:main'
 [tool.poetry]
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
 include = [{ path = "datamint/logging.yaml", format = ["sdist", "wheel"] }]
-packages = [ { include = "datamint" }]
+packages = [{ include = "datamint" }]
 
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
@@ -37,8 +37,8 @@ Deprecated = ">=1.2.0"
 platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
-lightning = {extras = ['extra'], version = ">=2.0.0, !=2.5.1, !=2.5.1.post0"}
-mlflow = ">=3.0.0" # version 2 has security issues
+lightning = { extras = ['extra'], version = ">=2.0.0, !=2.5.1, !=2.5.1.post0" }
+mlflow = ">=3.0.0"                                                              # version 2 has security issues
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
 medimgkit = ">=0.8.1"
@@ -59,9 +59,10 @@ pytest = { version = "^7.0.0", optional = true }
 pytest-cov = { version = "^4.0.0", optional = true }
 responses = { version = "^0.20.0", optional = true }
 aioresponses = { version = "^0.7.8", optional = true }
+respx = { version = ">=0.22.0", optional = true }
 
 
-[tool.poetry.dev-dependencies]
+[tool.poetry.dev-dependencies] # for `poetry install`
 pytest = "^7.0.0"
 pytest-cov = "^4.0.0"
 responses = "^0.20.0"
@@ -71,7 +72,7 @@ respx = ">=0.22.0"
 # Extra dependencies for docs
 [tool.poetry.extras]
 docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "setuptools"]
-dev = ["pytest", "pytest-cov", "responses", "aioresponses"]
+dev = ["pytest", "pytest-cov", "responses", "aioresponses", "respx"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
