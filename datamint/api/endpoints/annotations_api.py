@@ -788,9 +788,17 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     if name is not None:
                         form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
-                    respdata = await self._make_request_async_json('POST',
-                                                                   f'{self.endpoint_base}/{resource_id}/segmentations/file',
-                                                                   data=form)
+                    try:
+                        respdata = await self._make_request_async_json(
+                            'POST',
+                            f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                            data=form
+                        )
+                    except ResourceNotFoundError as e:
+                        e.resource_type = 'resource'
+                        e.params = {'resource_id': resource_id}
+                        raise e
+
                     if 'error' in respdata:
                         raise DatamintException(respdata['error'])
                     return respdata
@@ -1093,7 +1101,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             save_path (str | Path): The path to save the file.
             session (aiohttp.ClientSession): The aiohttp session to use for the request.
             progress_bar (tqdm | None): Optional progress bar to update after download completion.
-            
+
         Returns:
             dict: A dictionary with 'success' (bool) and optional 'error' (str) keys.
         """
@@ -1138,10 +1146,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Args:
             annotations: A list of annotation unique ids or annotation objects.
             save_paths: A list of paths to save the files or a directory path.
-            
+
         Returns:
             List of dictionaries with 'success', 'annotation_id', and optional 'error' keys.
-            
+
         Note:
             If any downloads fail, they will be logged but the process will continue.
             A summary of failed downloads will be logged at the end.
@@ -1165,7 +1173,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         with tqdm(total=len(annotations), desc="Downloading segmentations", unit="file") as progress_bar:
             loop = asyncio.get_event_loop()
             results = loop.run_until_complete(_download_all_async())
-        
+
         # Log summary of failures
         failures = [r for r in results if not r['success']]
         if failures:
@@ -1175,7 +1183,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 _LOGGER.debug(f"  - {failure['annotation_id']}: {failure['error']}")
         else:
             _USER_LOGGER.info(f"Successfully downloaded all {len(annotations)} annotations")
-        
+
         return results
 
     def bulk_download_file(self,

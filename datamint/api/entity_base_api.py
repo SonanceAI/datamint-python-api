@@ -54,6 +54,11 @@ class EntityBaseApi(BaseApi, Generic[T]):
                              entity_id: str | BaseEntity,
                              add_path: str = '',
                              **kwargs) -> httpx.Response:
+        """
+        Make an HTTP request for a specific entity by its ID.
+        It is basically a wrapper around :py:meth:`_make_request` that
+        constructs the URL for the entity in this form: `/{endpoint_base}/{entity_id}/{add_path}`
+        """
         try:
             entity_id = self._entid(entity_id)
             add_path = '/'.join(add_path.strip().strip('/').split('/'))
@@ -61,6 +66,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+            raise
+        except ResourceNotFoundError as e:
+            e.resource_type = self.endpoint_base
+            e.params = {'id': entity_id}
             raise
 
     @contextlib.asynccontextmanager
@@ -82,6 +91,23 @@ class EntityBaseApi(BaseApi, Generic[T]):
             if e.status == 404:
                 raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
+        except ResourceNotFoundError as e:
+            e.resource_type = self.endpoint_base
+            e.params = {'id': entity_id}
+            raise
+
+    async def _make_entity_request_async_json(self,
+                                              method: str,
+                                              entity_id: str | BaseEntity,
+                                              add_path: str = '',
+                                              session: aiohttp.ClientSession | None = None,
+                                              **kwargs):
+        async with self._make_entity_request_async(method,
+                                                   entity_id,
+                                                   add_path=add_path,
+                                                   session=session,
+                                                   **kwargs) as resp:
+            return await resp.json()
 
     def _stream_entity_request(self,
                                method: str,

@@ -346,10 +346,9 @@ class BaseApi:
                 pass
 
             logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
-            # log the raw response for debugging
             status_code = response.status_code
-            if status_code >= 400 and status_code < 500:
-                if ' not found' in error_msg.lower():
+            if status_code in (400, 404):
+                if ' not found' in error_msg.lower() or 'Not Found' in error_msg:
                     # Will be caught by the caller and properly initialized:
                     raise ResourceNotFoundError('unknown', {})
             raise
@@ -380,9 +379,8 @@ class BaseApi:
             except Exception:
                 logger.debug("Unable to set message attribute on exception")
                 pass
-            # log the raw response for debugging
-            if status_code >= 400 and status_code < 500:
-                if ' not found' in error_msg.lower():
+            if status_code in (400, 404):
+                if ' not found' in error_msg.lower() or 'Not Found' in error_msg:
                     # Will be caught by the caller and properly initialized:
                     raise ResourceNotFoundError('unknown', {})
             raise
