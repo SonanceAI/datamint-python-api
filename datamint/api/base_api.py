@@ -107,18 +107,18 @@ class BaseApi:
             timeout=config.timeout,
             verify=config.verify_ssl,
             limits=httpx.Limits(
-                max_keepalive_connections=5,  
-                max_connections=20, 
+                max_keepalive_connections=5,
+                max_connections=20,
                 keepalive_expiry=8
             )
         )
 
     def _raise_ssl_error(self, original_error: Exception) -> None:
         """Raise a more helpful SSL certificate error with troubleshooting guidance.
-        
+
         Args:
             original_error: The original SSL-related exception
-            
+
         Raises:
             DatamintException: With helpful troubleshooting information
         """
@@ -139,13 +139,13 @@ class BaseApi:
 
     def _create_aiohttp_connector(self) -> aiohttp.TCPConnector:
         """Create aiohttp connector with SSL configuration.
-        
+
         Returns:
             Configured TCPConnector for aiohttp sessions.
         """
         import ssl
         import certifi
-        
+
         limit = 20
         ttl_dns_cache = 300
 
@@ -228,27 +228,15 @@ class BaseApi:
         """
         url = endpoint.lstrip('/')  # Remove leading slash for httpx
 
-        try:
-            if logger.isEnabledFor(logging.DEBUG):
-                curl_command = self._generate_curl_command({"method": method,
-                                                            "url": url,
-                                                            "headers": self.client.headers,
-                                                            **kwargs}, fail_silently=True)
-                logger.debug(f'Equivalent curl command: "{curl_command}"')
-            response = self.client.request(method, url, **kwargs)
-            response.raise_for_status()
-            return response
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error {e.response.status_code} for {method} {endpoint}: {e.response.text}")
-            raise
-        except httpx.ConnectError as e:
-            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "certificate verify failed" in str(e).lower():
-                self._raise_ssl_error(e)
-            logger.error(f"Connection error for {method} {endpoint}: {e}")
-            raise
-        except httpx.RequestError as e:
-            logger.error(f"Request error for {method} {endpoint}: {e}")
-            raise
+        if logger.isEnabledFor(logging.DEBUG):
+            curl_command = self._generate_curl_command({"method": method,
+                                                        "url": url,
+                                                        "headers": self.client.headers,
+                                                        **kwargs}, fail_silently=True)
+            logger.debug(f'Equivalent curl command: "{curl_command}"')
+        response = self.client.request(method, url, **kwargs)
+        self._check_errors_response_httpx(response, url=url)
+        return response
 
     def _generate_curl_command(self,
                                request_args: dict,
@@ -315,7 +303,7 @@ class BaseApi:
             raise
 
     @staticmethod
-    def get_status_code(e: httpx.HTTPStatusError | aiohttp.ClientResponseError) -> int:
+    def get_status_code(e: httpx.HTTPError | aiohttp.ClientError) -> int:
         if hasattr(e, 'response') and e.response is not None:
             # httpx.HTTPStatusError
             return e.response.status_code
@@ -332,27 +320,73 @@ class BaseApi:
                          status_code: int) -> bool:
         return BaseApi.get_status_code(e) == status_code
 
-    def _check_errors_response(self,
-                               response: httpx.Response | aiohttp.ClientResponse,
-                               url: str):
+    def _check_errors_response_httpx(self,
+                                     response: httpx.Response,
+                                     url: str):
+        response_json = None
         try:
+            try:
+                response_json = response.json()
+            except Exception:
+                logger.debug("Failed to parse JSON from error response")
+                pass
             response.raise_for_status()
-        except (httpx.HTTPStatusError, aiohttp.ClientResponseError) as e:
-            logger.error(f"HTTP error occurred: {e}")
-            status_code = BaseApi.get_status_code(e)
-            if status_code >= 500 and status_code < 600:
-                logger.error(f"Error in request to {url}: {e}")
+        except httpx.ConnectError as e:
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) or "certificate verify failed" in str(e).lower():
+                self._raise_ssl_error(e)
+            raise
+        except httpx.HTTPError as e:
+            error_msg = f"{getattr(e, 'message', str(e))} | {getattr(response, 'text', '')}"
+            if response_json:
+                error_msg = f"{error_msg} | {response_json}"
+            try:
+                e.message = error_msg
+            except Exception:
+                logger.debug("Unable to set message attribute on exception")
+                pass
+
+            logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
+            # log the raw response for debugging
+            status_code = response.status_code
             if status_code >= 400 and status_code < 500:
-                if isinstance(e, aiohttp.ClientResponseError):
-                    # aiohttp.ClientResponse does not have .text or .json() methods directly
-                    error_msg = e.message
-                else:
-                    error_msg = e.response.text
-                logger.info(f"Error response: {error_msg}")
                 if ' not found' in error_msg.lower():
                     # Will be caught by the caller and properly initialized:
                     raise ResourceNotFoundError('unknown', {})
             raise
+        return response_json
+
+    async def _check_errors_response_aiohttp(self,
+                                             response: aiohttp.ClientResponse,
+                                             url: str):
+        response_json = None
+        try:
+            try:
+                response_json = await response.json()
+            except Exception:
+                logger.debug("Failed to parse JSON from error response")
+                pass
+            response.raise_for_status()
+        except aiohttp.ClientError as e:
+            error_msg = str(getattr(e, 'message', e))
+            # log the raw response for debugging
+            status_code = BaseApi.get_status_code(e)
+            # Try to extract detailed message from JSON response
+            if response_json:
+                error_msg = f"{error_msg} | {response_json}"
+
+            logger.error(f"HTTP error {status_code} for {url}: {error_msg}")
+            try:
+                e.message = error_msg
+            except Exception:
+                logger.debug("Unable to set message attribute on exception")
+                pass
+            # log the raw response for debugging
+            if status_code >= 400 and status_code < 500:
+                if ' not found' in error_msg.lower():
+                    # Will be caught by the caller and properly initialized:
+                    raise ResourceNotFoundError('unknown', {})
+            raise
+        return response_json
 
     @contextlib.asynccontextmanager
     async def _make_request_async(self,
@@ -414,7 +448,10 @@ class BaseApi:
                     timeout=timeout,
                     **kwargs
                 )
-                self._check_errors_response(response, url=url)
+                data = await self._check_errors_response_aiohttp(response, url=url)
+                if data is None:
+                    data = await response.json()
+                logger.debug(f"Successful {method} request to {endpoint}: {data}")
                 yield response
             except aiohttp.ClientConnectorCertificateError as e:
                 self._raise_ssl_error(e)
@@ -422,7 +459,6 @@ class BaseApi:
                 # Check for SSL errors in other client errors
                 if "certificate" in str(e).lower() or "ssl" in str(e).lower():
                     self._raise_ssl_error(e)
-                logger.error(f"Request error for {method} {endpoint}: {e}")
                 raise
             finally:
                 if response is not None:
@@ -583,19 +619,19 @@ class BaseApi:
         elif mimetype.endswith('nifti'):
             try:
                 ndata = nib.Nifti1Image.from_stream(content_io)
-                ndata.get_fdata() # force loading before IO is closed
+                ndata.get_fdata()  # force loading before IO is closed
                 return ndata
             except Exception as e:
                 if file_path is not None:
                     ndata = nib.load(file_path)
-                    ndata.get_fdata() # force loading before IO is closed
+                    ndata.get_fdata()  # force loading before IO is closed
                     return ndata
                 raise e
         elif mimetype in GZIP_MIME_TYPES:
             # let's hope it's a .nii.gz
             with gzip.open(content_io, 'rb') as f:
                 ndata = nib.Nifti1Image.from_stream(f)
-                ndata.get_fdata() # force loading before IO is closed
+                ndata.get_fdata()  # force loading before IO is closed
                 return ndata
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
