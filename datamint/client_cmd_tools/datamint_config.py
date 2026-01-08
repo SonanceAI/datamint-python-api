@@ -6,7 +6,6 @@ from rich.prompt import Prompt, Confirm
 from rich.console import Console
 import os
 import shutil
-from pathlib import Path
 from rich.table import Table
 
 _LOGGER = logging.getLogger(__name__)
