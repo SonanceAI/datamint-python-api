@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Generator, AsyncGenerator, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING
+from collections.abc import Generator, AsyncGenerator
 import httpx
 from dataclasses import dataclass
 from datamint.exceptions import DatamintException, ResourceNotFoundError
@@ -13,6 +14,7 @@ import gzip
 import contextlib
 import asyncio
 from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess_typez, guess_extension
+from datamint.utils.env import ensure_asyncio_loop
 
 if TYPE_CHECKING:
     from datamint.api.client import Api
@@ -77,6 +79,8 @@ class BaseApi:
         self.client = client or BaseApi._create_client(config)
         self.semaphore = asyncio.Semaphore(20)
         self._api_instance: 'Api | None' = None  # Injected by Api class
+        ensure_asyncio_loop()
+        
 
     @staticmethod
     def _create_client(config: ApiConfig) -> httpx.Client:

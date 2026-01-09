@@ -22,7 +22,6 @@ from tqdm.auto import tqdm
 import asyncio
 import aiohttp
 from pathlib import Path
-import nest_asyncio  # For running asyncio in jupyter notebooks
 from PIL import Image
 import io
 from datamint.types import ImagingData
@@ -71,7 +70,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         from .annotations_api import AnnotationsApi
         from .projects_api import ProjectsApi
         super().__init__(config, Resource, ResourcesApi._ENDPOINT_BASE, client)
-        nest_asyncio.apply()
         self.annotations_api = AnnotationsApi(
             config, client, resources_api=self) if annotations_api is None else annotations_api
         self.projects_api = projects_api or ProjectsApi(config, client, resources_api=self)
