@@ -518,6 +518,18 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             raise ValueError(
                 "upload_resources() only accepts multiple resources. For single resource upload, use upload_resource() instead.")
 
+        if publish_to:
+            publish = True
+            # Check if project exists
+            proj = self.projects_api.get_by_name(publish_to)
+            if proj is None:
+                try:
+                    proj = self.projects_api.get_by_id(publish_to)
+                except Exception:
+                    pass
+                if proj is None:
+                    raise ResourceNotFoundError('Project', {'name_or_id': publish_to})
+
         files_path = ResourcesApi.__process_files_parameter(files_path)
 
         # Discard DICOM reports
