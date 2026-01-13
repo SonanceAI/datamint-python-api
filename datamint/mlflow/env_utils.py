@@ -7,6 +7,7 @@ import os
 import logging
 from urllib.parse import urlparse
 from datamint import configs
+import sys
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ def setup_mlflow_environment(overwrite: bool = False,
     """
     api_key = get_datamint_api_key()
     mlflow_uri = _get_mlflowdatamint_uri()
-    _LOGGER.debug(f"Setting up MLflow environment variables from Datamint configuration: URI={mlflow_uri}, API_KEY={'***' if api_key is not None else None}")
+    _LOGGER.debug(f"Setting up MLflow environment variables from Datamint configuration: URI='{mlflow_uri}', API_KEY={'***' if api_key is not None else None}")
     if not mlflow_uri or not api_key:
         _LOGGER.warning("Datamint configuration incomplete, cannot auto-configure MLflow")
         return False
@@ -81,9 +82,29 @@ def setup_mlflow_environment(overwrite: bool = False,
     if overwrite or not os.getenv('MLFLOW_TRACKING_URI'):
         os.environ['MLFLOW_TRACKING_URI'] = mlflow_uri
 
+    _LOGGER.debug(f'Final MLflow environment variables: MLFLOW_TRACKING_URI={os.getenv("MLFLOW_TRACKING_URI")}, MLFLOW_TRACKING_TOKEN={"***" if os.getenv("MLFLOW_TRACKING_TOKEN") is not None else None}')
+
     if set_mlflow:
         import mlflow
+        _LOGGER.debug(f"Setting MLflow tracking URI to: {mlflow_uri}")
         mlflow.set_tracking_uri(mlflow_uri)
+
+    if 'lightning.pytorch.loggers' in sys.modules:
+        # import lightning.pytorch.loggers
+        # importlib.reload(lightning.pytorch.loggers)
+        from lightning.pytorch.loggers import MLFlowLogger 
+
+        # 1. Convert the immutable defaults tuple to a mutable list
+        current_defaults = list(MLFlowLogger.__init__.__defaults__)
+
+        # 2. Update the default value for 'tracking_uri'
+        # Based on the signature, 'tracking_uri' is the 3rd argument with a default (index 2)
+        # Signature: (experiment_name, run_name, tracking_uri, ...)
+        current_defaults[2] = mlflow_uri
+
+        # 3. Apply the modified defaults back to the class
+        MLFlowLogger.__init__.__defaults__ = tuple(current_defaults)
+
 
     return True
 

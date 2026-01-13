@@ -12,6 +12,8 @@ _LOGGER = logging.getLogger(__name__)
 _original_get_tracking_uri = mlflow_utils.get_tracking_uri
 _SETUP_CALLED_SUCCESSFULLY = False
 
+if mlflow_utils.is_tracking_uri_set():
+    _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
 
 @wraps(_original_get_tracking_uri)
 def _patched_get_tracking_uri(*args, **kwargs):
@@ -30,6 +32,8 @@ def _patched_get_tracking_uri(*args, **kwargs):
     global _SETUP_CALLED_SUCCESSFULLY
     if _SETUP_CALLED_SUCCESSFULLY:
         return _original_get_tracking_uri(*args, **kwargs)
+    if mlflow_utils.is_tracking_uri_set():
+        _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
     try:
         _SETUP_CALLED_SUCCESSFULLY = setup_mlflow_environment(set_mlflow=True)
     except Exception as e:

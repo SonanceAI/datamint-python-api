@@ -2,19 +2,12 @@ import pytest
 from unittest.mock import patch
 from datamint.api.client import Api
 from datamint.exceptions import DatamintException
-import datamint
 import respx
-from aioresponses import aioresponses, CallbackResult
 import pydicom
 from pydicom.data import get_testdata_files
-import datamint.configs
-from medimgkit.dicom_utils import to_bytesio
-import json
 from aiohttp import FormData
 from typing import IO
-import os
 import numpy as np
-from copy import deepcopy
 import httpx
 
 # pytest tests --log-cli-level=INFO

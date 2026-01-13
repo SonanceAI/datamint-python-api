@@ -1,4 +1,4 @@
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import threading
 import logging
 from datamint import Api
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 _PROJECT_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
 
-_ACTIVE_PROJECT_ID: Optional[str] = None
+_ACTIVE_PROJECT_ID: str | None = None
 
 
 def get_active_project_id() -> str | None:

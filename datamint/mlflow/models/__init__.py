@@ -5,7 +5,6 @@ from lightning.pytorch.loggers import MLFlowLogger
 import mlflow
 import os
 from tempfile import TemporaryDirectory
-from torch import nn
 
 _LOGGER = logging.getLogger(__name__)
 

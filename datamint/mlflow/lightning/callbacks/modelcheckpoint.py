@@ -322,6 +322,9 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._has_been_trained = True
         self.__wrap_forward(pl_module)
         logger = _get_MLFlowLogger(trainer)
+        if logger._tracking_uri.startswith('file:'):
+            _LOGGER.error("MLFlowLogger tracking URI is a local file path. "
+                          "Model registration will likely fail if using MLflow Model Registry.")
         if logger.experiment_id is not None:
             mlflow.set_experiment(experiment_id=logger.experiment_id)
         super().on_train_start(trainer, pl_module)
