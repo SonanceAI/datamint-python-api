@@ -45,8 +45,17 @@ def clean_environment():
 @pytest.fixture(autouse=True)
 def mock_datamint_config():
     """Mock Datamint configuration to return test values."""
-    with patch('datamint.mlflow.env_utils.get_datamint_api_url', return_value=TEST_API_URL), \
-         patch('datamint.mlflow.env_utils.get_datamint_api_key', return_value=TEST_API_KEY):
+    from datamint import configs
+    
+    def mock_get_value(key: str, include_envvars: bool = True):
+        """Mock implementation that returns test values based on key."""
+        if key == configs.APIURL_KEY:
+            return TEST_API_URL
+        elif key == configs.APIKEY_KEY:
+            return TEST_API_KEY
+        return None
+    
+    with patch.object(configs, 'get_value', side_effect=mock_get_value):
         yield
 
 
@@ -68,6 +77,7 @@ IMPORT_STATEMENTS = [
 def cleanup_modules():
     """Clean up imported modules to ensure fresh imports."""
     modules_to_remove = [
+        'datamint.mlflow.env_utils',
         'datamint.mlflow',
         'datamint.mlflow.lightning',
         'datamint.mlflow.lightning.callbacks',
@@ -79,8 +89,8 @@ def cleanup_modules():
         'mlflow.tracking._tracking_service.utils',
     ]
     
-    for module in modules_to_remove:
-        if module in sys.modules:
+    for module in list(sys.modules.keys()):
+        if any(module.startswith(m) for m in modules_to_remove):
             del sys.modules[module]
 
 
