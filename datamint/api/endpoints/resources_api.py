@@ -358,9 +358,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 except Exception as e:
                     _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
+            timeout = aiohttp.ClientTimeout(total=300, connect=60, sock_read=300)
             resp_data = await self._make_request_async_json('POST',
                                                             endpoint=self.endpoint_base,
-                                                            data=form)
+                                                            data=form,
+                                                            session=session,
+                                                            timeout=timeout)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
             _LOGGER.debug(f"Response on uploading {filename}: {resp_data}")
@@ -389,7 +392,20 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                       transpose_segmentation: bool = False,
                                       metadata_files: Sequence[str | dict | None] | None = None,
                                       progress_bar: tqdm | None = None,
+                                      session: aiohttp.ClientSession | None = None,
                                       ) -> list[str]:
+        """Upload multiple resources asynchronously.
+
+        Args:
+            session: Optional aiohttp session. If None, uses a shared session managed by
+                this API instance. Callers should NOT close a session they pass in until
+                all async operations complete, as nested calls may reuse it.
+        
+        Note:
+            Session ownership: When session=None (default), a long-lived shared session
+            is automatically used and managed. When explicitly passed, the caller retains
+            ownership and must ensure it remains open for the duration of this call.
+        """
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
 
@@ -399,58 +415,61 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if metadata_files is None:
             metadata_files = _infinite_gen(None)
 
-        async with aiohttp.ClientSession() as session:
-            async def __upload_single_resource(file_path, segfiles: dict[str, list | dict],
-                                               metadata_file: str | dict | None):
-                name = file_path.name if is_io_object(file_path) else file_path
-                name = os.path.basename(name)
-                rid = await self._upload_single_resource_async(
-                    file_path=file_path,
-                    mimetype=mimetype,
-                    anonymize=anonymize,
-                    anonymize_retain_codes=anonymize_retain_codes,
-                    tags=tags,
-                    session=session,
-                    mung_filename=mung_filename,
-                    channel=channel,
-                    modality=modality,
-                    publish=publish,
-                    metadata_file=metadata_file,
-                )
-                if progress_bar:
-                    progress_bar.update(1)
-                    progress_bar.set_postfix(file=name)
-                else:
-                    _USER_LOGGER.info(f'"{name}" uploaded')
+        # Use shared session by default for stability across multiple sequential calls.
+        # This prevents connection churn and intermittent SSL shutdown timeouts.
+        session = session or self._get_aiohttp_session()
 
-                if segfiles is not None:
-                    fpaths = segfiles['files']
-                    names = segfiles.get('names', _infinite_gen(None))
-                    if isinstance(names, dict):
-                        names = _infinite_gen(names)
-                    frame_indices = segfiles.get('frame_index', _infinite_gen(None))
-                    for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
-                                                     desc=f"Uploading segmentations for {file_path}",
-                                                     total=len(fpaths)):
-                        if f is not None:
-                            await self.annotations_api._upload_segmentations_async(
-                                rid,
-                                file_path=f,
-                                name=name,
-                                frame_index=frame_index,
-                                transpose_segmentation=transpose_segmentation
-                            )
-                return rid
+        async def __upload_single_resource(file_path, segfiles: dict[str, list | dict],
+                                           metadata_file: str | dict | None):
+            name = file_path.name if is_io_object(file_path) else file_path
+            name = os.path.basename(name)
+            rid = await self._upload_single_resource_async(
+                file_path=file_path,
+                mimetype=mimetype,
+                anonymize=anonymize,
+                anonymize_retain_codes=anonymize_retain_codes,
+                tags=tags,
+                session=session,
+                mung_filename=mung_filename,
+                channel=channel,
+                modality=modality,
+                publish=publish,
+                metadata_file=metadata_file,
+            )
+            if progress_bar:
+                progress_bar.update(1)
+                progress_bar.set_postfix(file=name)
+            else:
+                _USER_LOGGER.info(f'"{name}" uploaded')
 
-            try:
-                tasks = [__upload_single_resource(f, segfiles, metadata_file)
-                         for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
-            except ValueError:
-                msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
-                _LOGGER.error(msg)
-                _USER_LOGGER.error(msg)
-                raise
-            return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
+            if segfiles is not None:
+                fpaths = segfiles['files']
+                names = segfiles.get('names', _infinite_gen(None))
+                if isinstance(names, dict):
+                    names = _infinite_gen(names)
+                frame_indices = segfiles.get('frame_index', _infinite_gen(None))
+                for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
+                                                 desc=f"Uploading segmentations for {file_path}",
+                                                 total=len(fpaths)):
+                    if f is not None:
+                        await self.annotations_api._upload_segmentations_async(
+                            rid,
+                            file_path=f,
+                            name=name,
+                            frame_index=frame_index,
+                            transpose_segmentation=transpose_segmentation
+                        )
+            return rid
+
+        try:
+            tasks = [__upload_single_resource(f, segfiles, metadata_file)
+                     for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
+        except ValueError:
+            msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
+            _LOGGER.error(msg)
+            _USER_LOGGER.error(msg)
+            raise
+        return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
     def upload_resources(self,
                          files_path: Sequence[str | IO | pydicom.Dataset],
@@ -834,7 +853,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             raise ValueError("resources must be a list of resources")
 
         async def _download_all_async():
-            async with aiohttp.ClientSession() as session:
+            connector = self._create_aiohttp_connector(force_close=True)
+            timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=600)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 tasks = [
                     self._async_download_file(
                         resource=r,

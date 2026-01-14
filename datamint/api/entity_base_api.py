@@ -237,7 +237,9 @@ class DeletableEntityApi(EntityBaseApi[T]):
             httpx.HTTPStatusError: If deletion fails or any entity not found
         """
         async def _delete_all_async():
-            async with aiohttp.ClientSession() as session:
+            connector = self._create_aiohttp_connector(force_close=True)
+            timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=300)
+            async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 tasks = [
                     self._delete_async(entity, session)
                     for entity in entities

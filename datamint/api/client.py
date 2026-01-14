@@ -6,7 +6,9 @@ from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
 from .endpoints.models_api import ModelsApi
 import datamint.configs
 from datamint.exceptions import DatamintException
+import logging
 
+_LOGGER = logging.getLogger(__name__)
 
 class Api:
     """Main API client that provides access to all endpoint handlers."""
@@ -89,6 +91,27 @@ class Api:
         except Exception as e:
             raise DatamintException("Error connecting to the Datamint API." +
                                     f" Please check your api_key and/or other configurations.") from e
+
+    def close(self) -> None:
+        """Close underlying HTTP clients and any shared aiohttp sessions.
+
+        Recommended for notebooks / long-running processes.
+        """
+        # Close per-endpoint resources (aiohttp sessions, etc.)
+        for endpoint in list(self._endpoints.values()):
+            try:
+                endpoint.close()
+            except Exception as e:
+                _LOGGER.warning(f"Error closing endpoint {endpoint}: {e}")
+                pass
+
+        # Close shared httpx clients owned by this Api
+        for client in (self._client, self._highclient, self._mlclient):
+            try:
+                if client is not None:
+                    client.close()
+            except Exception as e:
+                _LOGGER.info(f"Error closing client {client}: {e}")
 
     def _get_endpoint(self, name: str, is_mlflow: bool = False):
         if is_mlflow:

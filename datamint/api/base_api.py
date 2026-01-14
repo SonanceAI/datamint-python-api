@@ -79,6 +79,8 @@ class BaseApi:
         self.client = client or BaseApi._create_client(config)
         self.semaphore = asyncio.Semaphore(20)
         self._api_instance: 'Api | None' = None  # Injected by Api class
+        self._aiohttp_connector: aiohttp.TCPConnector | None = None
+        self._aiohttp_session: aiohttp.ClientSession | None = None
         ensure_asyncio_loop()
         
 
@@ -141,8 +143,11 @@ class BaseApi:
         )
         raise DatamintException(error_msg) from original_error
 
-    def _create_aiohttp_connector(self) -> aiohttp.TCPConnector:
+    def _create_aiohttp_connector(self, force_close: bool = False) -> aiohttp.TCPConnector:
         """Create aiohttp connector with SSL configuration.
+
+        Args:
+            force_close: Whether to force close connections (disable keep-alive)
 
         Returns:
             Configured TCPConnector for aiohttp sessions.
@@ -155,15 +160,61 @@ class BaseApi:
 
         if self.config.verify_ssl is False:
             # Disable SSL verification (not recommended for production)
-            return aiohttp.TCPConnector(ssl=False, limit=limit, ttl_dns_cache=ttl_dns_cache)
+            return aiohttp.TCPConnector(ssl=False, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
         elif isinstance(self.config.verify_ssl, str):
             # Use custom CA bundle
             ssl_context = ssl.create_default_context(cafile=self.config.verify_ssl)
-            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache)
+            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
         else:
             # Use certifi's CA bundle (default behavior)
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache)
+            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
+
+    def _get_aiohttp_session(self) -> aiohttp.ClientSession:
+        """Get or create a shared aiohttp session for this API instance.
+
+        Creating/closing a new TLS connection for each upload can cause intermittent
+        connection shutdown timeouts in long-running processes (notably notebooks).
+        Reusing a single session keeps connections healthy and avoids excessive churn.
+        """
+        if self._aiohttp_session is not None and not self._aiohttp_session.closed:
+            return self._aiohttp_session
+
+        # (Re)create connector and session
+        self._aiohttp_connector = self._create_aiohttp_connector(force_close=False)
+        timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+        self._aiohttp_session = aiohttp.ClientSession(connector=self._aiohttp_connector, timeout=timeout)
+        return self._aiohttp_session
+
+    def _close_aiohttp_session(self) -> None:
+        """Close the shared aiohttp session if it exists.
+
+        This is best-effort; in environments with a running loop we rely on
+        `nest_asyncio` (enabled via `ensure_asyncio_loop`) to allow nested runs.
+        """
+        if self._aiohttp_session is None or self._aiohttp_session.closed:
+            return
+
+        ensure_asyncio_loop()
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        try:
+            loop.run_until_complete(self._aiohttp_session.close())
+        except RuntimeError:
+            # If we're in an environment where the loop is running and not patched,
+            # fall back to scheduling the close.
+            try:
+                loop.create_task(self._aiohttp_session.close())
+            except Exception as e:
+                logger.info(f"Unable to schedule aiohttp session close: {e}")
+                pass
+        finally:
+            self._aiohttp_session = None
+            self._aiohttp_connector = None
 
     def close(self) -> None:
         """Close the HTTP client and release resources.
@@ -171,6 +222,8 @@ class BaseApi:
         Should be called when the API instance is no longer needed.
         Only closes the client if it was created by this instance.
         """
+        # Close shared aiohttp session regardless of httpx client ownership.
+        self._close_aiohttp_session()
         if self._owns_client and self.client is not None:
             self.client.close()
 
@@ -418,10 +471,10 @@ class BaseApi:
         """
 
         if session is None:
-            connector = self._create_aiohttp_connector()
-            async with aiohttp.ClientSession(connector=connector) as temp_session:
-                async with self._make_request_async(method, endpoint, temp_session, **kwargs) as resp:
-                    yield resp
+            session = self._get_aiohttp_session()
+
+            async with self._make_request_async(method, endpoint, session, **kwargs) as resp:
+                yield resp
             return
 
         url = f"{self.config.server_url.rstrip('/')}/{endpoint.lstrip('/')}"
@@ -432,6 +485,9 @@ class BaseApi:
 
         if 'timeout' in kwargs:
             timeout = kwargs.pop('timeout')
+            # Ensure timeout is a ClientTimeout object
+            if isinstance(timeout, (int, float)):
+                timeout = aiohttp.ClientTimeout(total=timeout)
         else:
             timeout = aiohttp.ClientTimeout(total=self.config.timeout)
 
