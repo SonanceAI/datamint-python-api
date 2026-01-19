@@ -10,6 +10,7 @@ from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
 from pydantic import PrivateAttr
 import webbrowser
+import shutil
 from pathlib import Path
 from datamint.api.base_api import BaseApi
 
@@ -134,7 +135,9 @@ class Resource(BaseEntity):
         Args:
             use_cache: If True, uses cached data when available and valid
             auto_convert: If True, automatically converts to appropriate format (pydicom.Dataset, PIL Image, etc.)
-            save_path: Optional path to save the file locally
+            save_path: Optional path to save the file locally. If use_cache is also True,
+                      the file is saved to save_path and cache metadata points to that location
+                      (no duplication - only one file on disk).
 
         Returns:
             File data (format depends on auto_convert and file type)
@@ -144,26 +147,50 @@ class Resource(BaseEntity):
 
         # Try to get from cache
         img_data = None
+        
         if use_cache:
             img_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
             if img_data is not None:
                 logger.debug(f"Using cached image data for resource {self.id}")
-                # Save cached data to save_path if provided
-                if save_path:
-                    with open(save_path, 'wb') as f:
-                        f.write(img_data)
 
         if img_data is None:
-            # Fetch from server using download_resource_file
-            logger.debug(f"Fetching image data from server for resource {self.id}")
-            img_data = self._api.download_resource_file(
-                self,
-                save_path=save_path,
-                auto_convert=False
-            )
-            # Cache the data
-            if use_cache:
-                self._cache.set(self.id, _IMAGE_CACHEKEY, img_data, version_info)
+            # Cache miss - fetch from server
+            if use_cache and save_path:
+                # Download directly to save_path, register location in cache metadata
+                logger.debug(f"Downloading to save_path: {save_path}")
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+                
+                img_data = self._api.download_resource_file(
+                    self,
+                    save_path=save_path,
+                    auto_convert=False
+                )
+                
+                # Register save_path in cache metadata (no file duplication)
+                self._cache.register_file_location(
+                    self.id, _IMAGE_CACHEKEY, save_path, version_info
+                )
+            elif use_cache:
+                # No save_path - download to cache directory
+                cache_path = self._cache.get_expected_path(self.id, _IMAGE_CACHEKEY)
+                logger.debug(f"Downloading to cache: {cache_path}")
+                
+                img_data = self._api.download_resource_file(
+                    self,
+                    save_path=str(cache_path),
+                    auto_convert=False
+                )
+                
+                # Register in cache metadata
+                self._save_into_cache(img_data)
+            else:
+                # No caching - direct download to save_path (or just return bytes)
+                logger.debug(f"Fetching image data from server for resource {self.id}")
+                img_data = self._api.download_resource_file(
+                    self,
+                    save_path=save_path,
+                    auto_convert=False
+                )
 
         if auto_convert:
             try:
