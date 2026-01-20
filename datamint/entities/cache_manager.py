@@ -141,17 +141,26 @@ class CacheManager(Generic[T]):
             Tuple of (metadata, data_path) if valid, (None, None) if cache miss or invalid
         """
         metadata_path = self._get_metadata_path(entity_id)
-        data_path = self._get_data_path(entity_id, data_key)
 
-        if not metadata_path.exists() or not data_path.exists():
-            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key}")
+        if not metadata_path.exists():
+            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key} - no metadata")
             return None, None
 
         try:
+            # Read metadata first to get the actual data path (could be external)
             with open(metadata_path, 'r') as f:
                 jsondata = f.read()
             cached_metadata = CacheManager.ItemMetadata.model_validate_json(jsondata)
+            
+            # Use the data_path from metadata (supports external file locations)
+            data_path = Path(cached_metadata.data_path)
+            
+            # Check if the actual data file exists
+            if not data_path.exists():
+                _LOGGER.debug(f"Cache miss for {entity_id}/{data_key} - data file not found at {data_path}")
+                return None, None
 
+            # Validate version if provided
             if version_info is not None:
                 server_version = self._compute_version_hash(version_info)
                 if server_version != cached_metadata.version_hash:
@@ -213,6 +222,67 @@ class CacheManager(Generic[T]):
         """
         cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
         return data_path
+
+    def get_expected_path(self, entity_id: str, data_key: str) -> Path:
+        """Get the expected cache path for an entity (even if not yet cached).
+
+        This is useful for downloading directly to the cache location.
+
+        Args:
+            entity_id: Unique identifier for the entity
+            data_key: Key identifying the type of data
+
+        Returns:
+            Path where data will be cached
+        """
+        return self._get_data_path(entity_id, data_key)
+
+    def register_file_location(
+        self,
+        entity_id: str,
+        data_key: str,
+        file_path: str | Path,
+        version_info: dict[str, Any] | None = None,
+        mimetype: str = 'application/octet-stream'
+    ) -> None:
+        """Register an external file location in cache metadata without copying data.
+
+        This allows tracking a file stored at an arbitrary location (e.g., user's save_path)
+        while keeping version metadata in the cache directory.
+
+        Args:
+            entity_id: Unique identifier for the entity
+            data_key: Key identifying the type of data
+            file_path: Path to the external file to register
+            version_info: Optional version information from server
+            mimetype: MIME type of the file data
+        """
+        metadata_path = self._get_metadata_path(entity_id)
+        file_path = Path(file_path).resolve().absolute()
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"Cannot register non-existent file: {file_path}")
+
+        try:
+            metadata = CacheManager.ItemMetadata(
+                cached_at=datetime.now(),
+                data_path=str(file_path),
+                data_type='bytes',
+                mimetype=mimetype,
+                entity_id=entity_id
+            )
+
+            if version_info is not None:
+                metadata.version_hash = self._compute_version_hash(version_info)
+                metadata.version_info = version_info
+
+            with open(metadata_path, 'w') as f:
+                f.write(metadata.model_dump_json(indent=2))
+
+            _LOGGER.debug(f"Registered external file for {entity_id}/{data_key}: {file_path}")
+
+        except Exception as e:
+            _LOGGER.warning(f"Error registering file location for {entity_id}/{data_key}: {e}")
 
     def set(
         self,

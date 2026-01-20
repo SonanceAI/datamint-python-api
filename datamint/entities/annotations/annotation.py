@@ -143,24 +143,37 @@ class Annotation(AnnotationBase):
         auto_convert: bool = True,
         use_cache: bool = False,
     ) -> bytes | ImagingData:
+        """Get the file data for this annotation.
+
+        Args:
+            save_path: Optional path to save the file locally. If use_cache is also True,
+                      the file is saved to save_path and cache metadata points to that location
+                      (no duplication - only one file on disk).
+            auto_convert: If True, automatically converts to appropriate format
+            use_cache: If True, uses cached data when available and valid
+
+        Returns:
+            File data (format depends on auto_convert and file type)
+        """
         # Version info for cache validation
         version_info = self._generate_version_info()
 
-        # Try to get from cache
-        img_data = None
-        if use_cache:
-            img_data = self._cache.get(self.id, _ANNOTATION_CACHE_KEY, version_info)
-
-        if img_data is None:
-            # Fetch from server using download_resource_file
-            logger.debug(f"Fetching image data from server for resource {self.id}")
-            img_data = self._api.download_file(
+        # Download callback for the shared caching logic
+        def download_callback(path: str | None) -> bytes:
+            return self._api.download_file(
                 self,
-                fpath_out=save_path
+                fpath_out=path
             )
-            # Cache the data
-            if use_cache:
-                self._cache.set(self.id, _ANNOTATION_CACHE_KEY, img_data, version_info)
+
+        # Use shared caching logic from BaseEntity
+        img_data = self._fetch_and_cache_file_data(
+            cache_manager=self._cache,
+            data_key=_ANNOTATION_CACHE_KEY,
+            version_info=version_info,
+            download_callback=download_callback,
+            save_path=save_path,
+            use_cache=use_cache,
+        )
 
         if auto_convert:
             return self._api.convert_format(img_data)
