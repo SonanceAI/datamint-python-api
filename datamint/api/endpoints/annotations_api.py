@@ -777,6 +777,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(file_path, str):
             if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
                 # Upload NIfTI file directly
+                _LOGGER.debug('uploading segmentation as a volume')
                 with open(file_path, 'rb') as f:
                     filename = os.path.basename(file_path)
                     form = aiohttp.FormData()

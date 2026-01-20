@@ -1,7 +1,8 @@
 """Resource entity module for DataMint API."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional, Any, Sequence
+from typing import TYPE_CHECKING, Optional
+from collections.abc import Sequence
 import logging
 import urllib.parse
 import urllib.request
@@ -145,52 +146,23 @@ class Resource(BaseEntity):
         # Version info for cache validation
         version_info = self._generate_version_info()
 
-        # Try to get from cache
-        img_data = None
-        
-        if use_cache:
-            img_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
-            if img_data is not None:
-                logger.debug(f"Using cached image data for resource {self.id}")
+        # Download callback for the shared caching logic
+        def download_callback(path: str | None) -> bytes:
+            return self._api.download_resource_file(
+                self,
+                save_path=path,
+                auto_convert=False
+            )
 
-        if img_data is None:
-            # Cache miss - fetch from server
-            if use_cache and save_path:
-                # Download directly to save_path, register location in cache metadata
-                logger.debug(f"Downloading to save_path: {save_path}")
-                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-                
-                img_data = self._api.download_resource_file(
-                    self,
-                    save_path=save_path,
-                    auto_convert=False
-                )
-                
-                # Register save_path in cache metadata (no file duplication)
-                self._cache.register_file_location(
-                    self.id, _IMAGE_CACHEKEY, save_path, version_info
-                )
-            elif use_cache:
-                # No save_path - download to cache directory
-                cache_path = self._cache.get_expected_path(self.id, _IMAGE_CACHEKEY)
-                logger.debug(f"Downloading to cache: {cache_path}")
-                
-                img_data = self._api.download_resource_file(
-                    self,
-                    save_path=str(cache_path),
-                    auto_convert=False
-                )
-                
-                # Register in cache metadata
-                self._save_into_cache(img_data)
-            else:
-                # No caching - direct download to save_path (or just return bytes)
-                logger.debug(f"Fetching image data from server for resource {self.id}")
-                img_data = self._api.download_resource_file(
-                    self,
-                    save_path=save_path,
-                    auto_convert=False
-                )
+        # Use shared caching logic from BaseEntity
+        img_data = self._fetch_and_cache_file_data(
+            cache_manager=self._cache,
+            data_key=_IMAGE_CACHEKEY,
+            version_info=version_info,
+            download_callback=download_callback,
+            save_path=save_path,
+            use_cache=use_cache,
+        )
 
         if auto_convert:
             try:

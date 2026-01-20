@@ -141,17 +141,26 @@ class CacheManager(Generic[T]):
             Tuple of (metadata, data_path) if valid, (None, None) if cache miss or invalid
         """
         metadata_path = self._get_metadata_path(entity_id)
-        data_path = self._get_data_path(entity_id, data_key)
 
-        if not metadata_path.exists() or not data_path.exists():
-            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key}")
+        if not metadata_path.exists():
+            _LOGGER.debug(f"Cache miss for {entity_id}/{data_key} - no metadata")
             return None, None
 
         try:
+            # Read metadata first to get the actual data path (could be external)
             with open(metadata_path, 'r') as f:
                 jsondata = f.read()
             cached_metadata = CacheManager.ItemMetadata.model_validate_json(jsondata)
+            
+            # Use the data_path from metadata (supports external file locations)
+            data_path = Path(cached_metadata.data_path)
+            
+            # Check if the actual data file exists
+            if not data_path.exists():
+                _LOGGER.debug(f"Cache miss for {entity_id}/{data_key} - data file not found at {data_path}")
+                return None, None
 
+            # Validate version if provided
             if version_info is not None:
                 server_version = self._compute_version_hash(version_info)
                 if server_version != cached_metadata.version_hash:

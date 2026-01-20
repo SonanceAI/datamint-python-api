@@ -385,7 +385,6 @@ class BaseApi:
             try:
                 response_json = response.json()
             except Exception:
-                logger.debug("Failed to parse JSON from error response")
                 pass
             response.raise_for_status()
         except httpx.ConnectError as e:

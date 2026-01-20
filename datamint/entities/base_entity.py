@@ -115,3 +115,72 @@ class BaseEntity(BaseModel):
             True if any attribute is MISSING_FIELD, False otherwise
         """
         return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
+
+    def _fetch_and_cache_file_data(
+        self,
+        cache_manager: 'Any',  # CacheManager[bytes]
+        data_key: str,
+        version_info: dict[str, Any],
+        download_callback: 'Any',  # Callable[[str | None], bytes]
+        save_path: str | None = None,
+        use_cache: bool = False,
+    ) -> bytes:
+        """Shared logic for fetching and caching file data.
+
+        This method handles the caching strategy for both Resource and Annotation entities.
+
+        Args:
+            cache_manager: The CacheManager instance to use
+            data_key: Key identifying the type of data (e.g., 'image_data', 'annotation_data')
+            version_info: Version information for cache validation
+            download_callback: Function to call to download the file, takes save_path as parameter
+            save_path: Optional path to save the file locally
+            use_cache: If True, uses cached data when available
+
+        Returns:
+            File data as bytes
+        """
+        from pathlib import Path
+
+        # Try to get from cache
+        img_data = None
+        
+        if use_cache:
+            img_data = cache_manager.get(self.id, data_key, version_info)
+            if img_data is not None:
+                _LOGGER.debug(f"Using cached data for {self.__class__.__name__} {self.id}")
+
+        if img_data is None:
+            # Cache miss - fetch from server
+            if use_cache and save_path:
+                # Download directly to save_path, register location in cache metadata
+                _LOGGER.debug(f"Downloading to save_path: {save_path}")
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+                
+                img_data = download_callback(save_path)
+                
+                # Register save_path in cache metadata (no file duplication)
+                cache_manager.register_file_location(
+                    self.id, data_key, save_path, version_info
+                )
+            elif use_cache:
+                # No save_path - download to cache directory
+                cache_path = cache_manager.get_expected_path(self.id, data_key)
+                _LOGGER.debug(f"Downloading to cache: {cache_path}")
+                
+                img_data = download_callback(str(cache_path))
+                
+                # Register in cache metadata
+                cache_manager.set(self.id, data_key, img_data, version_info)
+            else:
+                # No caching - direct download to save_path (or just return bytes)
+                _LOGGER.debug(f"Fetching data from server for {self.__class__.__name__} {self.id}")
+                img_data = download_callback(save_path)
+        elif save_path:
+            # Cached data found, but user wants to save to a specific path
+            _LOGGER.debug(f"Saving cached data to specified path: {save_path}")
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
+            with open(save_path, 'wb') as f:
+                f.write(img_data)
+
+        return img_data

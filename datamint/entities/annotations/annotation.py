@@ -155,54 +155,25 @@ class Annotation(AnnotationBase):
         Returns:
             File data (format depends on auto_convert and file type)
         """
-        from pathlib import Path
-        
         # Version info for cache validation
         version_info = self._generate_version_info()
 
-        # Try to get from cache
-        img_data = None
-        
-        if use_cache:
-            img_data = self._cache.get(self.id, _ANNOTATION_CACHE_KEY, version_info)
-            if img_data is not None:
-                logger.debug(f"Using cached data for annotation {self.id}")
+        # Download callback for the shared caching logic
+        def download_callback(path: str | None) -> bytes:
+            return self._api.download_file(
+                self,
+                fpath_out=path
+            )
 
-        if img_data is None:
-            # Cache miss - fetch from server
-            if use_cache and save_path:
-                # Download directly to save_path, register location in cache metadata
-                logger.debug(f"Downloading to save_path: {save_path}")
-                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-                
-                img_data = self._api.download_file(
-                    self,
-                    fpath_out=str(save_path)
-                )
-                
-                # Register save_path in cache metadata (no file duplication)
-                self._cache.register_file_location(
-                    self.id, _ANNOTATION_CACHE_KEY, save_path, version_info
-                )
-            elif use_cache:
-                # No save_path - download to cache directory
-                cache_path = self._cache.get_expected_path(self.id, _ANNOTATION_CACHE_KEY)
-                logger.debug(f"Downloading to cache: {cache_path}")
-                
-                img_data = self._api.download_file(
-                    self,
-                    fpath_out=str(cache_path)
-                )
-                
-                # Register in cache metadata
-                self._cache.set(self.id, _ANNOTATION_CACHE_KEY, img_data, version_info)
-            else:
-                # No caching - direct download to save_path (or just return bytes)
-                logger.debug(f"Fetching image data from server for annotation {self.id}")
-                img_data = self._api.download_file(
-                    self,
-                    fpath_out=save_path
-                )
+        # Use shared caching logic from BaseEntity
+        img_data = self._fetch_and_cache_file_data(
+            cache_manager=self._cache,
+            data_key=_ANNOTATION_CACHE_KEY,
+            version_info=version_info,
+            download_callback=download_callback,
+            save_path=save_path,
+            use_cache=use_cache,
+        )
 
         if auto_convert:
             return self._api.convert_format(img_data)
