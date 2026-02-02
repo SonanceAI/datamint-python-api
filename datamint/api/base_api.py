@@ -82,7 +82,6 @@ class BaseApi:
         self._aiohttp_connector: aiohttp.TCPConnector | None = None
         self._aiohttp_session: aiohttp.ClientSession | None = None
         ensure_asyncio_loop()
-        
 
     @staticmethod
     def _create_client(config: ApiConfig) -> httpx.Client:
@@ -401,12 +400,11 @@ class BaseApi:
                 logger.debug("Unable to set message attribute on exception")
                 pass
 
-            logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
             status_code = response.status_code
-            if status_code in (400, 404):
-                if ' not found' in error_msg.lower() or 'Not Found' in error_msg:
-                    # Will be caught by the caller and properly initialized:
-                    raise ResourceNotFoundError('unknown', {})
+            if status_code in (400, 404) and (' not found' in error_msg.lower() or 'Not Found' in error_msg):
+                # Will be caught by the caller and properly initialized:
+                raise ResourceNotFoundError('unknown', {})
+            logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
             raise
         return response_json
 
