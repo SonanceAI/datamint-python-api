@@ -81,6 +81,10 @@ class DatamintBaseDataset:
         include_frame_label_names: list[str] | None = None,
         exclude_frame_label_names: list[str] | None = None,
     ):
+        _LOGGER.warning(
+            "DatamintBaseDataset is a legacy class and may be removed in future versions. "
+            "Please use 'from datamint.dataset import ImageDataset, VolumeDataset' instead."
+        )
         self._validate_inputs(project_name, include_annotators, exclude_annotators,
                               include_segmentation_names, exclude_segmentation_names,
                               include_image_label_names, exclude_image_label_names,

@@ -139,7 +139,7 @@ class Project(BaseEntity):
                          auto_update: bool = True,
                          return_as_semantic_segmentation: bool = False):
         from datamint.dataset import Dataset
-        return Dataset(project_name=self.name,
+        return Dataset(project=self,
                        root=root_dir,
                        auto_update=auto_update,
                        return_as_semantic_segmentation=return_as_semantic_segmentation,
