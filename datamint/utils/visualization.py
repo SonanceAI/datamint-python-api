@@ -6,11 +6,13 @@ import torchvision.utils
 import torch
 import colorsys
 from collections.abc import Sequence
+from matplotlib.axes import Axes
 
 
 def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
          figsize: tuple[int, int] | None = None,
-         normalize: bool = False):
+         normalize: bool = False,
+         ax: Axes | Sequence[Axes] | None = None):
     """
     Show a list of images in a grid.
     Args:
@@ -18,6 +20,8 @@ def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
             Each image should be a tensor of shape (C, H, W) and dtype uint8 or float.
         figsize (tuple[int, int], optional): Size of the figure. Defaults to None.
         normalize (bool, optional): Whether to normalize the images to [0, 1] range by min-max scaling.
+        ax (Axes | Sequence[Axes], optional): Matplotlib axes to plot on. If None, new axes are created.
+            If a single Axes is provided and multiple images are given, only the first image is shown.
     """
 
     if not isinstance(imgs, list) and not isinstance(imgs, tuple):
@@ -32,15 +36,25 @@ def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
             img = img / img.max()
             imgs[i] = img
 
-    if figsize is not None:
-        fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
+    if ax is None:
+        if figsize is not None:
+            fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
+        else:
+            fig, axs = plt.subplots(ncols=len(imgs), squeeze=False)
+        axs = axs[0]
     else:
-        fig, axs = plt.subplots(ncols=len(imgs), squeeze=False)
+        if isinstance(ax, Axes):
+            axs = [ax]
+        else:
+            axs = list(ax)
+    
     for i, img in enumerate(imgs):
+        if i >= len(axs):
+            break
         img = img.detach()
         img = F.to_pil_image(img)
-        axs[0, i].imshow(np.asarray(img))
-        axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+        axs[i].imshow(np.asarray(img))
+        axs[i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
 
 _COLORS = [(255, 0, 0), (0, 255, 0), (0, 0, 255),
