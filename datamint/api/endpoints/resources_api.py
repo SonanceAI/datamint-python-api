@@ -1,4 +1,4 @@
-from typing import TypeAlias, Literal, IO
+from typing import TypeAlias, Literal, IO, overload
 from collections.abc import Sequence
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
@@ -890,12 +890,45 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         return final_save_paths
 
+    @overload
+    def download_resource_file(self,
+                               resource: str | Resource,
+                               save_path: str | None = None,
+                               auto_convert: Literal[True] = True,
+                               add_extension: Literal[False] = False
+                               ) -> ImagingData: ...
+    @overload
+    def download_resource_file(self,
+                               resource: str | Resource,
+                               save_path: str | None = None,
+                               auto_convert: Literal[True] = True,
+                               *,
+                               add_extension: Literal[True]
+                               ) -> tuple[ImagingData, str]: ...
+    @overload
+    def download_resource_file(self,
+                               resource: str | Resource,
+                               save_path: str | None = None,
+                               *,
+                               auto_convert: Literal[False],
+                               add_extension: Literal[False] = False
+                               ) -> bytes: ...
+    
+    @overload
+    def download_resource_file(self,
+                               resource: str | Resource,
+                               save_path: str | None = None,
+                               *,
+                               auto_convert: Literal[False],
+                               add_extension: Literal[True]
+                               ) -> tuple[bytes, str]: ...
+
     def download_resource_file(self,
                                resource: str | Resource,
                                save_path: str | None = None,
                                auto_convert: bool = True,
                                add_extension: bool = False
-                               ) -> ImagingData | tuple[ImagingData, str] | bytes:
+                               ) -> ImagingData | tuple[ImagingData, str] | tuple[bytes, str] | bytes:
         """
         Download a resource file.
 
