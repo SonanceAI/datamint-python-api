@@ -1,18 +1,19 @@
 """Resource entity module for DataMint API."""
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
-from collections.abc import Sequence
 import logging
+import shutil
 import urllib.parse
 import urllib.request
+import webbrowser
+from pathlib import Path
+from typing import TYPE_CHECKING, Literal, overload
+from collections.abc import Sequence
+
+from pydantic import PrivateAttr
 
 from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
-from pydantic import PrivateAttr
-import webbrowser
-import shutil
-from pathlib import Path
 from datamint.api.base_api import BaseApi
 
 if TYPE_CHECKING:
@@ -86,7 +87,7 @@ class Resource(BaseEntity):
     published: bool
     deleted: bool
     upload_mechanism: str | None = None
-    # metadata: dict[str,Any] = {}
+    metadata: dict = {}
     modality: str | None = None
     source_filepath: str | None = None
     # projects: list[dict[str, Any]] | None = None
@@ -94,12 +95,12 @@ class Resource(BaseEntity):
     published_by: str | None = None
     tags: list[str] | None = None
     # publish_transforms: dict[str, Any] | None = None
-    deleted_at: Optional[str] = None
-    deleted_by: Optional[str] = None
-    instance_uid: Optional[str] = None
-    series_uid: Optional[str] = None
-    study_uid: Optional[str] = None
-    patient_id: Optional[str] = None
+    deleted_at: str | None = None
+    deleted_by: str | None = None
+    instance_uid: str | None = None
+    series_uid: str | None = None
+    study_uid: str | None = None
+    patient_id: str | None = None
     # segmentations: Optional[Any] = None  # TODO: Define proper type when spec available
     # measurements: Optional[Any] = None  # TODO: Define proper type when spec available
     # categories: Optional[Any] = None  # TODO: Define proper type when spec available
@@ -121,6 +122,22 @@ class Resource(BaseEntity):
         if not hasattr(self, '__cache'):
             self.__cache = CacheManager[bytes]('resources')
         return self.__cache
+
+    @overload
+    def fetch_file_data(
+        self,
+        auto_convert: Literal[True] = True,
+        save_path: str | None = None,
+        use_cache: bool = False,
+    ) -> 'ImagingData': ...
+
+    @overload
+    def fetch_file_data(
+        self,
+        auto_convert: Literal[False],
+        save_path: str | None = None,
+        use_cache: bool = False,
+    ) -> bytes: ...
 
     def fetch_file_data(
         self,
@@ -197,7 +214,7 @@ class Resource(BaseEntity):
         version_info = self._generate_version_info()
         cached_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
         return cached_data is not None
-    
+
     @property
     def filepath_cached(self) -> Path | None:
         """Get the file path of the cached resource data, if available.
@@ -253,6 +270,28 @@ class Resource(BaseEntity):
             True if the resource is a DICOM file, False otherwise
         """
         return self.mimetype == 'application/dicom' or self.storage == 'DicomResource'
+
+    def is_nifti(self) -> bool:
+        """Check if the resource is a NIfTI file.
+
+        Returns:
+            True if the resource is a NIfTI file, False otherwise
+        """
+        if self.mimetype == 'application/nifti':
+            return True
+        return self.mimetype in 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+
+    def get_depth(self) -> int:
+        if self.is_dicom() or self.is_nifti():
+            return self.metadata['frame_count']
+        if self.mimetype.startswith('image/'):
+            return 1
+        if self.mimetype.startswith('video/'):
+            for st in self.metadata['streams']:
+                if st['codec_type'] == 'video':
+                    return st['nb_frames']
+                
+        raise ValueError(f"Cannot determine depth for resource with mimetype {self.mimetype}")
 
     # def get_project_names(self) -> list[str]:
     #     """Get list of project names this resource belongs to.
@@ -461,6 +500,24 @@ class LocalResource(Resource):
                 local_filepath=str(file_path),
                 raw_data=None,
             )
+
+    @overload
+    def fetch_file_data(
+        self,
+        *args,
+        auto_convert: Literal[True] = True,
+        save_path: str | None = None,
+        **kwargs,
+    ) -> 'ImagingData': ...
+
+    @overload
+    def fetch_file_data(
+        self,
+        *args,
+        auto_convert: Literal[False],
+        save_path: str | None = None,
+        **kwargs,
+    ) -> bytes: ...
 
     def fetch_file_data(
         self, *args,

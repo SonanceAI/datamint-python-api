@@ -5,9 +5,8 @@ This module defines the Annotation model used to represent annotation
 records returned by the DataMint API.
 """
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 import logging
-import os
 
 from ..base_entity import BaseEntity, MISSING_FIELD
 from ..cache_manager import CacheManager
@@ -36,16 +35,16 @@ _ANNOTATION_CACHE_KEY = "annotation_data"
 
 class AnnotationBase(BaseEntity):
     """Minimal base class for creating annotations.
-    
+
     This class contains only the essential fields needed to create annotations.
     Use this for creating specific annotation types like ImageClassification.
     """
-    
+
     identifier: str
     scope: str
     annotation_type: AnnotationType
     confiability: float = 1.0
-    
+
     def __init__(self, **data):
         """Initialize the annotation base entity."""
         super().__init__(**data)
@@ -54,6 +53,7 @@ class AnnotationBase(BaseEntity):
     def name(self) -> str:
         """Get the annotation name (alias for identifier)."""
         return self.identifier
+
 
 class Annotation(AnnotationBase):
     """Pydantic Model representing a DataMint annotation.
@@ -137,12 +137,28 @@ class Annotation(AnnotationBase):
             self._resource = self._api._get_resource(self)
         return self._resource
 
+    @overload
     def fetch_file_data(
         self,
-        save_path: os.PathLike | str | None = None,
-        auto_convert: bool = True,
+        auto_convert: Literal[True] = True,
+        save_path: str | None = None,
         use_cache: bool = False,
-    ) -> bytes | ImagingData:
+    ) -> 'ImagingData': ...
+
+    @overload
+    def fetch_file_data(
+        self,
+        auto_convert: Literal[False],
+        save_path: str | None = None,
+        use_cache: bool = False,
+    ) -> bytes: ...
+
+    def fetch_file_data(
+        self,
+        auto_convert: bool = True,
+        save_path: str | None = None,
+        use_cache: bool = False,
+    ) -> 'bytes | ImagingData':
         """Get the file data for this annotation.
 
         Args:
