@@ -13,10 +13,11 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
+from datamint.apihandler.dto.annotation_dto import AnnotationType
 from datamint.exceptions import DatamintException
 from datamint.entities import Annotation
-from datamint import Api
 from .annotation_processor import AnnotationProcessor, MergeStrategy
+from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
 
 if TYPE_CHECKING:
     from datamint.entities import Resource, Project
@@ -63,13 +64,13 @@ class DatamintBaseDataset(ABC):
     """
 
     resources: Sequence['Resource']
-    resource_annotations: Sequence[Sequence[Annotation]]
+    resource_annotations: list[Sequence[Annotation]]
     project: 'Project | None'
 
     def __init__(
         self,
         project: 'str | Project | None' = None,
-        resources: 'Sequence[Resource] | Sequence[str] | None' = None,
+        resources: 'Sequence[Resource] | None' = None,
         auto_update: bool = True,
         api_key: str | None = None,
         server_url: str | None = None,
@@ -89,6 +90,7 @@ class DatamintBaseDataset(ABC):
         include_frame_label_names: list[str] | None = None,
         exclude_frame_label_names: list[str] | None = None,
     ):
+        from datamint import Api
         # Validate mutually exclusive parameters
         if project is not None and resources is not None:
             raise DatamintDatasetException(
@@ -123,10 +125,10 @@ class DatamintBaseDataset(ABC):
 
         # Initialize from project or resources
         if resources is not None:
-            self.resources = self._initialize_from_resources(resources, self._api)
+            self.resources = self._initialize_from_resources(resources)
             self.project = None
         else:
-            self.project, self.resources = self._initialize_from_project(project, self._api)  # type: ignore
+            self.project, self.resources = self._initialize_from_project(project)  # type: ignore
 
         # Fetch annotations
         self.resource_annotations = list(self._api.annotations.get_list(
@@ -198,19 +200,18 @@ class DatamintBaseDataset(ABC):
     def _initialize_from_project(
         self,
         project: 'str | Project',
-        api: Api
     ) -> tuple['Project', list['Resource']]:
         """Initialize dataset from a project (name or object)."""
 
         # Handle Project object vs string
         if isinstance(project, str):
-            project = api.projects.get_by_name(project)
+            project = self._api.projects.get_by_name(project)
             if project is None:
                 raise DatamintDatasetException(f"Project '{project}' not found.")
         else:
             # Attach API to project if not already set
             if not hasattr(project, '_api') or project._api is None:
-                project._api = api.projects
+                project._api = self._api.projects
 
         # Fetch resources
         resources = list(project.fetch_resources())
@@ -218,26 +219,14 @@ class DatamintBaseDataset(ABC):
 
     def _initialize_from_resources(
         self,
-        resources: 'Sequence[Resource] | Sequence[str]',
-        api: Api
-    ) -> list['Resource']:
+        resources: Sequence['Resource'],
+    ) -> Sequence['Resource']:
         """Initialize dataset from a list of resources."""
-        # Normalize resources (handle IDs vs objects)
-        resource_list: list[Resource] = []
-        if resources:
-            first_item = resources[0] if len(resources) > 0 else None
-            if isinstance(first_item, str):
-                # Fetch Resource objects from IDs
-                resource_list = [api.resources.get_by_id(rid) for rid in resources]  # type: ignore
-            else:
-                resource_list = list(resources)  # type: ignore
-
-        # Attach API to resources if needed
-        for res in resource_list:
+        for res in resources:
             if not hasattr(res, '_api') or res._api is None:
-                res._api = api.resources
+                res._api = self._api.resources
 
-        return resource_list
+        return resources
 
     def _setup_dataset(self) -> None:
         """Setup dataset after initialization."""
@@ -259,12 +248,26 @@ class DatamintBaseDataset(ABC):
 
     def _setup_labels(self) -> None:
         """Setup label sets and mappings."""
-        # Frame and image labels
-        self.frame_lsets, self.frame_lcodes = self._get_labels_set(framed=True)
-        self.image_lsets, self.image_lcodes = self._get_labels_set(framed=False)
 
-        # Segmentation labels
-        self.seglabel_list, self.seglabel2code = self._get_segmentation_labels()
+        if self.project is not None:
+            worklist_schema = self._api.annotationsets._get_by_id(self.project.worklist_id)
+            annotations_specs: Sequence['AnnotationSpec'] = worklist_schema['annotations']
+            frame_annotations_specs = [annspec for annspec in annotations_specs
+                                       if annspec.scope == 'frame']
+            image_annotations_specs = [annspec for annspec in annotations_specs
+                                       if annspec.scope == 'image']
+            self.frame_lsets, self.frame_lcodes = self._process_annotation_specs(frame_annotations_specs)
+            self.image_lsets, self.image_lcodes = self._process_annotation_specs(image_annotations_specs)
+
+            # Segmentation labels
+            self.seglabel_list, self.seglabel2code = self._process_segmentation_group(
+                worklist_schema['segmentation_group']
+            )
+        else:
+            _LOGGER.info("No project provided; inferring labels from annotations.")
+            self.frame_lsets, self.frame_lcodes = self._infer_labels_set(framed=True)
+            self.image_lsets, self.image_lcodes = self._infer_labels_set(framed=False)
+            self.seglabel_list, self.seglabel2code = self._infer_segmentation_group()
 
     def _setup_annotation_processor(self) -> None:
         """Initialize the annotation processor.
@@ -359,11 +362,40 @@ class DatamintBaseDataset(ABC):
             return name not in self.exclude_frame_label_names
         return True
 
-    def _get_labels_set(self, framed: bool) -> tuple[dict, dict[str, dict[str, int]]]:
+    def _process_annotation_specs(self,
+                                  annotations_specs: Sequence['AnnotationSpec']
+                                  ) -> tuple[dict[str, list], dict[str, dict[str, int]]]:
+        multilabel_list: list[str] = []
+        multiclass_list: list[tuple[str, str]] = []
+
+        for annspec in annotations_specs:
+            if annspec.type == AnnotationType.LABEL:
+                multilabel_list.append(annspec.identifier)
+            elif isinstance(annspec, CategoryAnnotationSpec):
+                for val in annspec.values:
+                    multiclass_list.append((annspec.identifier, val))
+
+        sets = {
+            'multilabel': multilabel_list,
+            'multiclass': multiclass_list
+        }
+        codes = {
+            'multilabel': self.__build_label_codemap(multilabel_list),
+            'multiclass': self.__build_label_codemap(multiclass_list)
+        }
+
+        return sets, codes
+
+    @staticmethod
+    def __build_label_codemap(labels: Sequence) -> dict[str, int]:
+        """Build label to code mapping."""
+        return {label: idx for idx, label in enumerate(labels)}
+
+    def _infer_labels_set(self, framed: bool) -> tuple[dict[str, list], dict[str, dict[str, int]]]:
         """Get label sets and codes."""
         scope = 'frame' if framed else 'image'
         multilabel_set: set[str] = set()
-        multiclass_set: set[tuple[str, Any]] = set()
+        multiclass_set: set[tuple[str, str]] = set()
 
         for annotations in self.resource_annotations:
             for ann in annotations:
@@ -384,8 +416,8 @@ class DatamintBaseDataset(ABC):
             'multiclass': multiclass_list
         }
         codes = {
-            'multilabel': {label: idx for idx, label in enumerate(multilabel_list)},
-            'multiclass': {label: idx for idx, label in enumerate(multiclass_list)}
+            'multilabel': self.__build_label_codemap(multilabel_list),
+            'multiclass': self.__build_label_codemap(multiclass_list)
         }
 
         return sets, codes
@@ -405,11 +437,27 @@ class DatamintBaseDataset(ABC):
         """Segmentation label names."""
         return self.seglabel_list
 
-    def _get_segmentation_labels(self) -> tuple[list[str], dict[str, int]]:
+    def _infer_segmentation_group(self) -> tuple[list[str], dict[str, int]]:
+        """Infer segmentation labels from annotations when no project is provided."""
+        seglabel_set: set[str] = set()
+
+        for annotations in self.resource_annotations:
+            for ann in annotations:
+                if ann.annotation_type == 'segmentation':
+                    # Extract label from the segmentation annotation
+                    # Assuming segmentation annotations have an identifier field
+                    if hasattr(ann, 'identifier') and ann.identifier:
+                        seglabel_set.add(ann.identifier)
+
+        seglabel_list = sorted(seglabel_set)
+        seglabel2code = {label: idx + 1 for idx, label in enumerate(seglabel_list)}
+
+        return seglabel_list, seglabel2code
+
+    def _process_segmentation_group(self, groups: dict) -> tuple[list[str], dict[str, int]]:
         """Get segmentation labels from the server."""
         try:
-            worklist_id = getattr(self.project, 'worklist_id', None)
-            groups: dict[str, dict] = self._api.annotationsets.get_segmentation_group(worklist_id)['groups']
+            # groups = self._api.annotationsets.get_segmentation_group(self.project.worklist_id)['groups']
 
             if not groups:
                 return [], {}
@@ -500,8 +548,8 @@ class DatamintBaseDataset(ABC):
         # Process segmentations
         if self.return_segmentations:
             seg_anns = AnnotationProcessor.filter_annotations(annotations,
-                                                                   type='segmentation',
-                                                                   scope='all')
+                                                              type='segmentation',
+                                                              scope='all')
             segmentations, seg_labels, _ = self.annotation_processor.load_segmentations(seg_anns)
             # Apply albumentations if present
             if self.alb_transform:
@@ -529,6 +577,16 @@ class DatamintBaseDataset(ABC):
         img: np.ndarray,
         segmentations: dict[str, np.ndarray]
     ) -> dict[str, Any]:
+        """Apply albumentations transform to image and masks.
+
+        Returns:
+            Dict with transformed 'image' and 'segmentations' (dict).
+                It is recommended that 'image' has shape (C, depth, H, W)
+                and each segmentation of 'segmentations' has shape (num_instances, depth, H, W), so that
+                common downstream processing can be applied.
+                If not, please override :py:meth:`_process_segmentations` accordingly.
+
+        """
         pass
 
     def __len__(self) -> int:

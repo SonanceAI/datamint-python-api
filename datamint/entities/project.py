@@ -1,7 +1,8 @@
 """Project entity module for DataMint API."""
 from datetime import datetime
 import logging
-from typing import Sequence, Literal, TYPE_CHECKING
+from typing import Literal, TYPE_CHECKING
+from collections.abc import Sequence
 from .base_entity import BaseEntity, MISSING_FIELD
 from typing import Any
 import webbrowser
@@ -10,6 +11,7 @@ from pydantic import PrivateAttr
 if TYPE_CHECKING:
     from datamint.api.endpoints.projects_api import ProjectsApi
     from .resource import Resource
+    from datamint.entities.annotations.annotation_spec import AnnotationSpec
 
 logger = logging.getLogger(__name__)
 
@@ -144,3 +146,11 @@ class Project(BaseEntity):
                        auto_update=auto_update,
                        return_as_semantic_segmentation=return_as_semantic_segmentation,
                        all_annotations=True)
+
+    def get_annotations_specs(self) -> Sequence['AnnotationSpec']:
+        """Get the annotations specs for this project.
+
+        Returns:
+            Sequence of AnnotationSpec instances for the project.
+        """
+        return self._api.get_annotations_specs(self)

@@ -1,10 +1,13 @@
-from typing import Sequence, Literal, TYPE_CHECKING, overload
+from typing import Literal, TYPE_CHECKING, overload
+from collections.abc import Sequence
+
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 import httpx
 from datamint.entities.resource import Resource
 if TYPE_CHECKING:
-    from .resources_api import ResourcesApi
+    from . import AnnotationSetsApi, ResourcesApi
+    from datamint.entities.annotations.annotation_spec import AnnotationSpec
 
 
 class ProjectsApi(CRUDEntityApi[Project]):
@@ -20,9 +23,11 @@ class ProjectsApi(CRUDEntityApi[Project]):
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
-        from .resources_api import ResourcesApi
+        from . import AnnotationSetsApi, ResourcesApi
+
         super().__init__(config, Project, 'projects', client)
         self.resources_api = resources_api or ResourcesApi(config, client, projects_api=self)
+        self.annotationsets_api = AnnotationSetsApi(config, client)
 
     def get_project_resources(self, project: Project | str) -> list[Resource]:
         """Get resources associated with a specific project.
@@ -37,7 +42,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
         resources_data = response.json()
         resources = [self.resources_api._init_entity_obj(**item) for item in resources_data]
         return resources
-
 
     @overload
     def create(self,
@@ -234,3 +238,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                   entity_id=proj_id,
                                   add_path=f'resources/{resource_id}/status',
                                   json=jsondata)
+
+    def get_annotations_specs(self, project: str | Project) -> Sequence['AnnotationSpec']:
+        """Get the annotations specs for a given project.
+
+        Args:
+            project: The project id or Project instance.
+
+        Returns:
+            A sequence of AnnotationSpec instances.
+        """
+
+        if isinstance(project, str):
+            project = self.get_by_id(project)
+        return self.annotationsets_api.get_annotations_specs(project)

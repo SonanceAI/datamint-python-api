@@ -4,7 +4,6 @@ from typing import Any, TYPE_CHECKING
 from pydantic import ConfigDict, BaseModel, PrivateAttr
 
 if TYPE_CHECKING:
-    from datamint.api.client import Api
     from datamint.api.entity_base_api import EntityBaseApi
 
 if sys.version_info >= (3, 11):

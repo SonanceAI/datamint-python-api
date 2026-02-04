@@ -8,6 +8,7 @@ from .resource import Resource
 from .user import User  # new export
 from .datasetinfo import DatasetInfo
 from .cache_manager import CacheManager
+from .annotations.annotation_spec import AnnotationSpec
 
 __all__ = [
     'Annotation',
@@ -19,4 +20,5 @@ __all__ = [
     'Project',
     'Resource',
     'User',
+    'AnnotationSpec'
 ]

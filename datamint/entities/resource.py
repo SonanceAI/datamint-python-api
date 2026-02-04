@@ -113,10 +113,6 @@ class Resource(BaseEntity):
             return super().__new__(LocalResource)
         return super().__new__(cls)
 
-    def __init__(self, **data):
-        """Initialize the resource entity."""
-        super().__init__(**data)
-
     @property
     def _cache(self) -> CacheManager[bytes]:
         if not hasattr(self, '__cache'):
