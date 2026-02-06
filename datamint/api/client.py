@@ -1,7 +1,8 @@
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         ChannelsApi, UsersApi, DatasetsInfoApi,
-                        AnnotationSetsApi, DeployModelApi
+                        AnnotationSetsApi, DeployModelApi,
+                        InferenceApi
                         )
 from .endpoints.models_api import ModelsApi
 import datamint.configs
@@ -26,6 +27,7 @@ class Api:
         'models': ModelsApi,
         'annotationsets': AnnotationSetsApi,
         'deploy': DeployModelApi,
+        'inference': InferenceApi,
     }
 
     def __init__(self,
@@ -174,3 +176,8 @@ class Api:
     def deploy(self) -> DeployModelApi:
         """Access deployment management endpoints."""
         return self._get_endpoint('deploy', is_mlflow=True)
+
+    @property
+    def inference(self) -> InferenceApi:
+        """Access model inference endpoints."""
+        return self._get_endpoint('inference', is_mlflow=True)
