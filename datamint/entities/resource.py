@@ -87,7 +87,7 @@ class Resource(BaseEntity):
     published: bool
     deleted: bool
     upload_mechanism: str | None = None
-    metadata: dict = {}
+    # metadata: dict = {}
     modality: str | None = None
     source_filepath: str | None = None
     # projects: list[dict[str, Any]] | None = None
@@ -122,7 +122,7 @@ class Resource(BaseEntity):
         if not hasattr(self, '__cache'):
             self.__cache = CacheManager[bytes]('resources')
         return self.__cache
-
+    
     @overload
     def fetch_file_data(
         self,
@@ -290,7 +290,7 @@ class Resource(BaseEntity):
             for st in self.metadata['streams']:
                 if st['codec_type'] == 'video':
                     return st['nb_frames']
-                
+
         raise ValueError(f"Cannot determine depth for resource with mimetype {self.mimetype}")
 
     # def get_project_names(self) -> list[str]:
