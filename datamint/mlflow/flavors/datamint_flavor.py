@@ -11,8 +11,23 @@ from packaging.requirements import Requirement
 
 FLAVOR_NAME = 'datamint'
 
-_LOGGER = logging.getLogger(__name__)
 
+def _process_signature(signature: ModelSignature | None) -> ModelSignature:
+    from mlflow.types import ParamSchema, ParamSpec
+
+    # Define inference parameters
+    params_schema = ParamSchema(
+        [
+            ParamSpec("mode", "string", "default"),  # Default mode
+        ]
+    )
+
+    if signature is None:
+        signature = ModelSignature(params=params_schema)
+    else:
+        signature.params = params_schema
+    return signature
+    
 
 def save_model(datamint_model: DatamintModel,
                path,
@@ -76,6 +91,8 @@ def save_model(datamint_model: DatamintModel,
 
 
     datamint_model._clear_linked_models_cache()
+
+    signature = _process_signature(signature)
 
     return mlflow.pyfunc.save_model(
         path=path,

@@ -15,6 +15,7 @@ _SETUP_CALLED_SUCCESSFULLY = False
 if mlflow_utils.is_tracking_uri_set():
     _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
 
+
 @wraps(_original_get_tracking_uri)
 def _patched_get_tracking_uri(*args, **kwargs):
     """Patched version of get_tracking_uri that ensures MLflow environment is set up first.
@@ -47,6 +48,56 @@ setup_mlflow_environment(set_mlflow=False)
 # Replace the original function with our patched version
 mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
 
+_ALREADY_CONFIGURED_LOGGING = False
+
+
+def _configure_mlflow_loggers():
+    global _ALREADY_CONFIGURED_LOGGING
+    if _ALREADY_CONFIGURED_LOGGING:
+        return
+
+    from mlflow.environment_variables import MLFLOW_LOGGING_LEVEL
+    from mlflow.utils.logging_utils import SuppressLogFilter, get_mlflow_log_level
+    import logging.config
+    import rich.logging
+    import os
+
+    if 'MLFLOW_SCORING_SERVER_REQUEST_TIMEOUT' not in os.environ:
+        # probably not running in mlflow server, so no need to configure our mlflow loggers
+        return
+
+    _ALREADY_CONFIGURED_LOGGING = True
+
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "handlers": {
+                "datamint_mlflow_handler": {
+                    "class": "rich.logging.RichHandler",
+                    "filters": ["suppress_in_thread"],
+                },
+            },
+            "loggers": {
+                'datamint.mlflow': {
+                    "handlers": ["datamint_mlflow_handler"],
+                    "level": get_mlflow_log_level(),
+                    "propagate": False,
+                },
+            },
+            "filters": {
+                "suppress_in_thread": {
+                    "()": SuppressLogFilter,
+                }
+            },
+        }
+    )
+    _LOGGER.info("Configured MLflow loggers with RichHandler and level %s", get_mlflow_log_level())
+
+try:
+    _configure_mlflow_loggers()
+except Exception as e:
+    _LOGGER.error("Failed to configure MLflow loggers: %s", e)
 
 if TYPE_CHECKING:
     from .flavors.model import DatamintModel
@@ -61,5 +112,6 @@ else:
             "flavors.datamint_flavor": ["log_model", "load_model"],
         },
     )
+
 
 __all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'DatamintModel']
