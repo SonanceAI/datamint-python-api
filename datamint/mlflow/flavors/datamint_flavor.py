@@ -8,14 +8,13 @@ import logging
 from collections.abc import Sequence
 from dataclasses import asdict
 from packaging.requirements import Requirement
+from typing import Any
 
 FLAVOR_NAME = 'datamint'
 
 
-def _process_signature(signature: ModelSignature | None,
-                       input_example: ModelInputExample | None) -> ModelSignature:
+def _process_signature(signature: ModelSignature) -> ModelSignature:
     from mlflow.types import ParamSchema, ParamSpec
-    from mlflow.models import infer_signature
 
     # Define inference parameters
     params_schema = ParamSchema(
@@ -24,24 +23,32 @@ def _process_signature(signature: ModelSignature | None,
         ]
     )
 
-    if signature is None:
-        if input_example is None:
-            signature = ModelSignature(params=params_schema)
-        else:
-            signature = infer_signature(model_input=input_example)
-            signature.params = params_schema
+    current_params_sig = signature.params
+    # append our params to the existing signature
+    if current_params_sig is None:
+        signature.params = params_schema
     else:
-        current_params_sig = signature.params
-        # append our params to the existing signature
-        if current_params_sig is None:
-            signature.params = params_schema
-        else:
-            # Merge existing params with our new params, ensuring no duplicates
-            existing_param_names = {param.name for param in current_params_sig.params}
-            new_params = [param for param in params_schema.params if param.name not in existing_param_names]
-            signature.params = ParamSchema(current_params_sig.params + new_params)
+        # Merge existing params with our new params, ensuring no duplicates
+        existing_param_names = {param.name for param in current_params_sig.params}
+        new_params = [param for param in params_schema.params if param.name not in existing_param_names]
+        signature.params = ParamSchema(current_params_sig.params + new_params)
 
     return signature
+
+
+def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample | None, dict[str, Any]]:
+    datamint_params = {
+        "mode": "default",
+    }
+    if input_example is None or not isinstance(input_example, tuple):
+        return (input_example, datamint_params)
+    data_example, params_example = input_example
+    # merge params_example with datamint_params, giving precedence to datamint_params in case of conflicts
+    if params_example is not None:
+        merged_params = {**params_example, **datamint_params}
+    else:
+        merged_params = datamint_params
+    return (data_example, merged_params)
 
 
 def save_model(datamint_model: DatamintModel,
@@ -106,7 +113,9 @@ def save_model(datamint_model: DatamintModel,
 
     datamint_model._clear_linked_models_cache()
 
-    signature = _process_signature(signature, input_example=input_example)
+    if signature is not None:
+        signature = _process_signature(signature)
+    input_example = _process_input_example(input_example)
 
     return mlflow.pyfunc.save_model(
         path=path,
