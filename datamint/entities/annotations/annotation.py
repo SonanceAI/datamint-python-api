@@ -7,13 +7,15 @@ records returned by the DataMint API.
 
 from typing import TYPE_CHECKING, Any, Literal, overload
 import logging
+from datetime import datetime
+
+from pydantic import ConfigDict, Field, PrivateAttr
+
+from datamint.api.dto import AnnotationType
+from datamint.types import ImagingData
 
 from ..base_entity import BaseEntity, MISSING_FIELD
 from ..cache_manager import CacheManager
-from pydantic import PrivateAttr
-from datetime import datetime
-from datamint.api.dto import AnnotationType
-from datamint.types import ImagingData
 
 
 if TYPE_CHECKING:
@@ -40,7 +42,9 @@ class AnnotationBase(BaseEntity):
     Use this for creating specific annotation types like ImageClassification.
     """
 
-    identifier: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    identifier: str = Field(alias="name")
     scope: str
     annotation_type: AnnotationType
     confiability: float = 1.0
@@ -90,7 +94,7 @@ class Annotation(AnnotationBase):
     """
 
     id: str | None = None
-    identifier: str
+    identifier: str = Field(alias="name")
     scope: str
     frame_index: int | None = None
     text_value: str | None = None
