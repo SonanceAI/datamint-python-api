@@ -379,7 +379,7 @@ class DatamintModel(ABC, PythonModel):
         Args:
             model_input: List of Resource objects to process
             params: Optional configuration dictionary with keys:
-                   - mode (str): Prediction mode (default: 'standard')
+                   - mode (str): Prediction mode (default: 'default')
                    - confidence_threshold (float): Filter by confidence
                    - batch_size (int): Batch size for processing
                    - render_annotation (bool): Return rendered images

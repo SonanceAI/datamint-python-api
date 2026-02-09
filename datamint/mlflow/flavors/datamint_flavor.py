@@ -4,7 +4,6 @@ import datamint
 import datamint.mlflow.flavors
 from mlflow import pyfunc
 from .model import DatamintModel
-import logging
 from collections.abc import Sequence
 from dataclasses import asdict
 from packaging.requirements import Requirement
@@ -13,8 +12,10 @@ from typing import Any
 FLAVOR_NAME = 'datamint'
 
 
-def _process_signature(signature: ModelSignature) -> ModelSignature:
+def _process_signature(signature: ModelSignature | None,
+                       python_model: DatamintModel) -> ModelSignature:
     from mlflow.types import ParamSchema, ParamSpec
+    from mlflow.models.signature import _infer_signature_from_type_hints
 
     # Define inference parameters
     params_schema = ParamSchema(
@@ -23,7 +24,19 @@ def _process_signature(signature: ModelSignature) -> ModelSignature:
         ]
     )
 
-    current_params_sig = signature.params
+    if signature is not None:
+        current_params_sig = signature.params
+    else:
+        type_hints = python_model.predict_type_hints
+        # context is only loaded when input_example exists
+        signature = _infer_signature_from_type_hints(
+            python_model=python_model,
+            context=None,
+            type_hints=type_hints,
+            input_example=None,
+        )
+        current_params_sig = signature.params
+
     # append our params to the existing signature
     if current_params_sig is None:
         signature.params = params_schema
@@ -40,7 +53,11 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
     datamint_params = {
         "mode": "default",
     }
-    if input_example is None or not isinstance(input_example, tuple):
+    if input_example is None:
+        from datamint.entities.resource import LocalResource
+        input_resource = LocalResource(raw_data=bytes()).model_dump(mode='json')
+        return [input_resource], datamint_params
+    if not isinstance(input_example, tuple):
         return (input_example, datamint_params)
     data_example, params_example = input_example
     # merge params_example with datamint_params, giving precedence to datamint_params in case of conflicts
@@ -114,7 +131,7 @@ def save_model(datamint_model: DatamintModel,
     datamint_model._clear_linked_models_cache()
 
     if signature is not None:
-        signature = _process_signature(signature)
+        signature = _process_signature(signature, datamint_model)
     input_example = _process_input_example(input_example)
 
     return mlflow.pyfunc.save_model(
