@@ -12,8 +12,10 @@ from packaging.requirements import Requirement
 FLAVOR_NAME = 'datamint'
 
 
-def _process_signature(signature: ModelSignature | None) -> ModelSignature:
+def _process_signature(signature: ModelSignature | None,
+                       input_example: ModelInputExample | None) -> ModelSignature:
     from mlflow.types import ParamSchema, ParamSpec
+    from mlflow.models import infer_signature
 
     # Define inference parameters
     params_schema = ParamSchema(
@@ -23,11 +25,24 @@ def _process_signature(signature: ModelSignature | None) -> ModelSignature:
     )
 
     if signature is None:
-        signature = ModelSignature(params=params_schema)
+        if input_example is None:
+            signature = ModelSignature(params=params_schema)
+        else:
+            signature = infer_signature(model_input=input_example)
+            signature.params = params_schema
     else:
-        signature.params = params_schema
+        current_params_sig = signature.params
+        # append our params to the existing signature
+        if current_params_sig is None:
+            signature.params = params_schema
+        else:
+            # Merge existing params with our new params, ensuring no duplicates
+            existing_param_names = {param.name for param in current_params_sig.params}
+            new_params = [param for param in params_schema.params if param.name not in existing_param_names]
+            signature.params = ParamSchema(current_params_sig.params + new_params)
+
     return signature
-    
+
 
 def save_model(datamint_model: DatamintModel,
                path,
@@ -61,7 +76,7 @@ def save_model(datamint_model: DatamintModel,
 
     model_config = model_config or {}
     model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
-    
+
     def _get_req_name(req):
         try:
             return Requirement(req).name.lower()
@@ -69,16 +84,16 @@ def save_model(datamint_model: DatamintModel,
             return req.split("==")[0].strip().lower()
 
     datamint_requirements = ['datamint=={}'.format(datamint.__version__), 'medimgkit=={}'.format(medimgkit.__version__)]
-    
+
     user_requirements = []
     # Check if requirements are lists (not strings which are also Sequences)
     if pip_requirements and isinstance(pip_requirements, Sequence) and not isinstance(pip_requirements, str):
         user_requirements.extend(pip_requirements)
     if extra_pip_requirements and isinstance(extra_pip_requirements, Sequence) and not isinstance(extra_pip_requirements, str):
         user_requirements.extend(extra_pip_requirements)
-        
+
     user_req_names = {_get_req_name(req) for req in user_requirements}
-    
+
     missing_requirements = [req for req in datamint_requirements if _get_req_name(req) not in user_req_names]
 
     if missing_requirements:
@@ -87,12 +102,11 @@ def save_model(datamint_model: DatamintModel,
         elif isinstance(extra_pip_requirements, Sequence) and not isinstance(extra_pip_requirements, str):
             extra_pip_requirements = list(extra_pip_requirements) + missing_requirements
         elif pip_requirements and isinstance(pip_requirements, Sequence) and not isinstance(pip_requirements, str):
-             pip_requirements = list(pip_requirements) + missing_requirements
-
+            pip_requirements = list(pip_requirements) + missing_requirements
 
     datamint_model._clear_linked_models_cache()
 
-    signature = _process_signature(signature)
+    signature = _process_signature(signature, input_example=input_example)
 
     return mlflow.pyfunc.save_model(
         path=path,
