@@ -57,7 +57,7 @@ def _configure_mlflow_loggers():
         return
 
     from mlflow.environment_variables import MLFLOW_LOGGING_LEVEL
-    from mlflow.utils.logging_utils import SuppressLogFilter, get_mlflow_log_level
+    from mlflow.utils.logging_utils import SuppressLogFilter
     import logging.config
     import rich.logging
     import os
@@ -67,6 +67,7 @@ def _configure_mlflow_loggers():
         return
 
     _ALREADY_CONFIGURED_LOGGING = True
+    mlflow_log_level = (MLFLOW_LOGGING_LEVEL.get() or "INFO").upper()
 
     logging.config.dictConfig(
         {
@@ -81,7 +82,7 @@ def _configure_mlflow_loggers():
             "loggers": {
                 'datamint.mlflow': {
                     "handlers": ["datamint_mlflow_handler"],
-                    "level": get_mlflow_log_level(),
+                    "level": mlflow_log_level,
                     "propagate": False,
                 },
             },
@@ -92,7 +93,7 @@ def _configure_mlflow_loggers():
             },
         }
     )
-    _LOGGER.info("Configured MLflow loggers with RichHandler and level %s", get_mlflow_log_level())
+    _LOGGER.info("Configured MLflow loggers with RichHandler and level %s", mlflow_log_level)
 
 try:
     _configure_mlflow_loggers()
