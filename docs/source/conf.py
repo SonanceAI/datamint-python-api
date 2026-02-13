@@ -40,7 +40,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx_rtd_theme",
     "sphinx.ext.autosummary",
-    'sphinx_tabs.tabs',
+    'sphinx_design',
     'myst_parser',
     'sphinx_substitution_extensions',
     'sphinx.ext.autodoc',

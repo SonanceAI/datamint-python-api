@@ -401,10 +401,11 @@ class BaseApi:
                 pass
 
             status_code = response.status_code
-            if status_code in (400, 404) and (' not found' in error_msg.lower() or 'Not Found' in error_msg):
-                # Will be caught by the caller and properly initialized:
-                raise ResourceNotFoundError('unknown', {})
-            logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
+            if status_code in (400, 404):
+                new_error_msg = error_msg.replace('404 Not Found', '')
+                if ' not found' in new_error_msg.lower() or 'Not Found' in new_error_msg:
+                    # Will be caught by the caller and properly initialized:
+                    raise ResourceNotFoundError('unknown', {})
             raise
         return response_json
 

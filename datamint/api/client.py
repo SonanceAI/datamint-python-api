@@ -1,7 +1,8 @@
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         ChannelsApi, UsersApi, DatasetsInfoApi,
-                        AnnotationSetsApi, DeployModelApi
+                        AnnotationSetsApi, DeployModelApi,
+                        InferenceApi
                         )
 from .endpoints.models_api import ModelsApi
 import datamint.configs
@@ -9,6 +10,7 @@ from datamint.exceptions import DatamintException
 import logging
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class Api:
     """Main API client that provides access to all endpoint handlers."""
@@ -25,6 +27,7 @@ class Api:
         'models': ModelsApi,
         'annotationsets': AnnotationSetsApi,
         'deploy': DeployModelApi,
+        'inference': InferenceApi,
     }
 
     def __init__(self,
@@ -70,8 +73,10 @@ class Api:
             max_retries=max_retries,
             verify_ssl=verify_ssl,
         )
+        mlflow_server_url = server_url.replace('https://', 'http://')
+        _LOGGER.debug("NOTE: Replacing https:// with http:// for mlflow server URL")
         self.mlflow_config = ApiConfig(
-            server_url=server_url,
+            server_url=mlflow_server_url,
             api_key=api_key,
             timeout=timeout,
             max_retries=max_retries,
@@ -128,7 +133,7 @@ class Api:
             client = self._client
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
-            endpoint = api_class(self.config, client)
+            endpoint = api_class(self.config, client=client)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self
             self._endpoints[name] = endpoint
@@ -171,3 +176,8 @@ class Api:
     def deploy(self) -> DeployModelApi:
         """Access deployment management endpoints."""
         return self._get_endpoint('deploy', is_mlflow=True)
+
+    @property
+    def inference(self) -> InferenceApi:
+        """Access model inference endpoints."""
+        return self._get_endpoint('inference', is_mlflow=True)

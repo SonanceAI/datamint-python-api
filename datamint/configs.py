@@ -42,8 +42,12 @@ def read_config() -> dict[str, Any]:
 
 def set_value(key: str,
               value):
+    set_values({key: value})
+
+
+def set_values(values: dict[str, Any]):
     config = read_config()
-    config[key] = value
+    config.update(values)
     if not os.path.exists(DIRS.user_config_dir):
         os.makedirs(DIRS.user_config_dir, exist_ok=True)
     with open(CONFIG_FILE, 'w') as configfile:

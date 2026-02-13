@@ -379,7 +379,7 @@ class DatamintModel(ABC, PythonModel):
         Args:
             model_input: List of Resource objects to process
             params: Optional configuration dictionary with keys:
-                   - mode (str): Prediction mode (default: 'standard')
+                   - mode (str): Prediction mode (default: 'default')
                    - confidence_threshold (float): Filter by confidence
                    - batch_size (int): Batch size for processing
                    - render_annotation (bool): Return rendered images
@@ -399,6 +399,7 @@ class DatamintModel(ABC, PythonModel):
 
         # Parse and validate mode
         mode = self._parse_mode(model_input=model_input, params=params)
+        logger.info(f"Received prediction request with {len(model_input)} resources and params {params} with mode '{mode.value}'")
 
         # Route to appropriate prediction method
         try:
@@ -408,7 +409,7 @@ class DatamintModel(ABC, PythonModel):
                     mode = PredictionMode.DEFAULT
                 else:
                     raise NotImplementedError
-            logger.debug(f"Routing to '{mode.value}' mode for {len(model_input)} resources")
+            logger.info(f"Routing to '{mode.value}' mode for {len(model_input)} resources")
             result = self._route_prediction(model_input, mode, params)
 
             # Apply common post-processing

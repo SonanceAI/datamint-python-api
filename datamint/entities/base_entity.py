@@ -41,7 +41,7 @@ class BaseEntity(BaseModel):
         super().__init__(**data)
         # check attributes for MISSING_FIELD and delete them
         for field_name in self.__pydantic_fields__.keys():
-            if hasattr(self, field_name) and getattr(self, field_name) == MISSING_FIELD:
+            if hasattr(self, field_name) and type(getattr(self, field_name)) == str and getattr(self, field_name) == MISSING_FIELD:
                 delattr(self, field_name)
 
     def asdict(self) -> dict[str, Any]:

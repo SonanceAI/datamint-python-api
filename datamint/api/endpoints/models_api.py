@@ -1,23 +1,12 @@
 """Deprecated: Use MLFlow API instead."""
-from typing import Sequence
-from ..entity_base_api import ApiConfig, BaseApi
+from collections.abc import Sequence
+from ..entity_base_api import BaseApi
 import httpx
 from datamint.exceptions import EntityAlreadyExistsError
 
 
 class ModelsApi(BaseApi):
     """API handler for project-related endpoints."""
-
-    def __init__(self,
-                 config: ApiConfig,
-                 client: httpx.Client | None = None) -> None:
-        """Initialize the projects API handler.
-
-        Args:
-            config: API configuration containing base URL, API key, etc.
-            client: Optional HTTP client instance. If None, a new one will be created.
-        """
-        super().__init__(config, client=client)
 
     def create(self,
                name: str) -> dict:

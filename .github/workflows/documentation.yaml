@@ -25,3 +25,9 @@ jobs:
       with:
         documentation_path: docs/source
         cache: true
+      env:
+        # Avoid installing CUDA-enabled PyTorch wheels (they are huge and unnecessary for docs builds).
+        # By making the PyTorch CPU wheel index the primary index, `pip install .[...]` will resolve
+        # `torch`/`torchvision` from there, while everything else is still fetched from PyPI.
+        PIP_INDEX_URL: https://download.pytorch.org/whl/cpu
+        PIP_EXTRA_INDEX_URL: https://pypi.org/simple

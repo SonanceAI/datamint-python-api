@@ -13,17 +13,21 @@ Method 2: Environment variable
 ------------------------------
 Specify the API key as an environment variable.
 
-.. tabs::
+.. tab-set::
 
-    .. code-tab:: bash
+    .. tab-item:: Bash
 
-        export DATAMINT_API_KEY="my_api_key"
-        # run your commands (e.g., `datamint-upload`, `python script.py`)
+        .. code-block:: bash
 
-    .. code-tab:: python
+            export DATAMINT_API_KEY="my_api_key"
+            # run your commands (e.g., `datamint-upload`, `python script.py`)
 
-        import os
-        os.environ["DATAMINT_API_KEY"] = "my_api_key"
+    .. tab-item:: Python
+
+        .. code-block:: python
+
+            import os
+            os.environ["DATAMINT_API_KEY"] = "my_api_key"
 
 Method 3: Api constructor
 -------------------------

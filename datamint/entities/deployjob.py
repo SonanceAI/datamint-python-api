@@ -5,6 +5,7 @@ class DeployJob(BaseEntity):
     id: str
     status: str
     model_name: str
+    build_logs: str
     model_version: int | None = None
     model_alias: str | None = None
     image_name: str | None = None

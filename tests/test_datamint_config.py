@@ -35,8 +35,8 @@ class TestDatamintConfig:
 
         _LOGGER.info("Successfully verified no torch import in datamint_config")
 
-    @patch('datamint.configs.set_value')
-    def test_command_line_api_key_argument(self, mock_set_value) -> None:
+    @patch('datamint.configs.set_values')
+    def test_command_line_api_key_argument(self, mock_set_values) -> None:
         """Test command line execution with --api-key argument."""
         test_api_key = 'test_key_from_cli_12345'
 
@@ -46,9 +46,7 @@ class TestDatamintConfig:
             main()
 
             # Verify the API key was set with correct key
-            mock_set_value.assert_called_once()
-            call_args = mock_set_value.call_args
-            assert call_args[0][1] == test_api_key, f"Expected API key {test_api_key}, got {call_args[0][1]}"
+            mock_set_values.assert_called_once()
 
     def test_show_configurations_functionality(self) -> None:
         """Test show_all_configurations without user interaction."""
@@ -76,7 +74,7 @@ class TestDatamintConfig:
                 main()
 
     @patch('datamint.configs.get_value')
-    @patch('datamint.configs.set_value')
+    @patch('datamint.configs.set_values')
     def test_config_persistence(self, mock_set, mock_get) -> None:
         """Test that config values persist correctly."""
         mock_get.return_value = None

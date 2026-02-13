@@ -8,6 +8,7 @@ from .resource import Resource
 from .user import User  # new export
 from .datasetinfo import DatasetInfo
 from .cache_manager import CacheManager
+from .inferencejob import InferenceJob
 from .annotations.annotation_spec import AnnotationSpec
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     'Channel',
     'ChannelResourceData',
     'DatasetInfo',
+    'InferenceJob',
     'Project',
     'Resource',
     'User',

@@ -8,6 +8,7 @@ from .users_api import UsersApi
 from .datasetsinfo_api import DatasetsInfoApi
 from .annotationsets_api import AnnotationSetsApi
 from .deploy_model_api import DeployModelApi
+from .inference_api import InferenceApi
 
 __all__ = [
     'AnnotationsApi',
@@ -18,4 +19,5 @@ __all__ = [
     'DatasetsInfoApi',
     'AnnotationSetsApi',
     'DeployModelApi',
+    'InferenceApi',
 ]
