@@ -402,17 +402,24 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
 
     args = parser.parse_args()
 
+    config_updates: dict[str, str] = {}
+
     if args.api_key is not None:
-        configs.set_value(configs.APIKEY_KEY, args.api_key)
-        console.print("[success]✅ API key saved.[/success]")
+        config_updates[configs.APIKEY_KEY] = args.api_key
 
     if args.default_url is not None:
         # Basic URL validation
         if not (args.default_url.startswith('http://') or args.default_url.startswith('https://')):
             console.print("[error]❌ URL must start with http:// or https://[/error]")
             return
-        configs.set_value(configs.APIURL_KEY, args.default_url)
-        console.print("[success]✅ Default URL saved.[/success]")
+        config_updates[configs.APIURL_KEY] = args.default_url
+
+    if config_updates:
+        configs.set_values(config_updates)
+        if args.api_key is not None:
+            console.print("[success]✅ API key saved.[/success]")
+        if args.default_url is not None:
+            console.print("[success]✅ Default URL saved.[/success]")
 
     if args.list_datasets:
         show_local_datasets()
