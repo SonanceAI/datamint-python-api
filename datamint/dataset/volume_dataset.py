@@ -5,7 +5,7 @@ Handles NIfTI volumes, DICOM series, and other 3D medical imaging data
 with support for different slice orientations and affine preservation.
 """
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from typing_extensions import override
 
 import torch
@@ -14,6 +14,9 @@ import albumentations
 
 from medimgkit.readers import read_array_normalized
 from .base import DatamintBaseDataset
+
+if TYPE_CHECKING:
+    from .sliced_dataset import SlicedVolumeDataset
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,3 +112,36 @@ class VolumeDataset(DatamintBaseDataset):
     def __repr__(self) -> str:
         base = super().__repr__()
         return f"VolumeDataset\n{base}"
+
+    def slice(self, axis: str | int = 'axial') -> 'SlicedVolumeDataset':
+        """Create a 2D dataset by slicing this volume along an axis.
+
+        Each 3D volume is expanded into multiple 2D slices, one per depth index
+        along the given axis. The returned dataset yields 2D items with shape
+        ``(C, H, W)`` instead of ``(C, D, H, W)``.
+
+        Parsed volumes are cached to disk as gzip-compressed ``.npy.gz`` files.
+        A shared in-memory LRU cache also keeps recently used full volumes to
+        avoid repeated decompression when iterating neighboring slices.
+
+        Args:
+            axis: Slice orientation. One of ``'axial'`` (depth), ``'coronal'``
+                (height), ``'sagittal'`` (width), or an integer axis index (0--2).
+
+        Returns:
+            A :class:`SlicedVolumeDataset` that iterates over individual 2D slices.
+
+        Example::
+
+            vol_ds = VolumeDataset(project='my_ct_project')
+            sliced = vol_ds.slice(axis='axial')
+            print(len(sliced))  # total number of axial slices across all volumes
+            item = sliced[0]
+            print(item['image'].shape)  # (C, H, W)
+        """
+        from .sliced_dataset import SlicedVolumeDataset
+
+        return SlicedVolumeDataset(
+            parent_dataset=self,
+            slice_axis=axis,
+        )

@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, ClassVar, Literal, overload
 from collections.abc import Sequence
 
 from pydantic import PrivateAttr
@@ -107,6 +107,7 @@ class Resource(BaseEntity):
     user_info: dict[str, str | None] = MISSING_FIELD
 
     _api: 'ResourcesApi' = PrivateAttr()
+    _shared_cache: ClassVar[CacheManager[bytes] | None] = None
 
     def __new__(cls, *args, **kwargs):
         if cls is Resource and ('local_filepath' in kwargs or 'raw_data' in kwargs):
@@ -115,10 +116,12 @@ class Resource(BaseEntity):
 
     @property
     def _cache(self) -> CacheManager[bytes]:
-        if not hasattr(self, '__cache'):
-            self.__cache = CacheManager[bytes]('resources')
-        return self.__cache
-    
+        if Resource._shared_cache is None:
+            Resource._shared_cache = CacheManager[bytes]('resources',
+                                                         enable_memory_cache=True,
+                                                         memory_cache_maxsize=2)
+        return Resource._shared_cache
+
     @overload
     def fetch_file_data(
         self,

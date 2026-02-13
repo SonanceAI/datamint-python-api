@@ -38,7 +38,7 @@ platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
 lightning = { extras = ['extra'], version = ">=2.0.0, !=2.5.1, !=2.5.1.post0" }
-mlflow = ">=3.8.1"                                                              # version 2 has security issues
+mlflow-skinny = "==3.8.1"
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
 medimgkit = ">=0.11.2"
@@ -46,6 +46,7 @@ typing_extensions = ">=4.0.0"
 pydantic = ">=2.6.4"
 certifi = ">=2025.0.0"
 httpx = "*"
+cachetools = ">=6.0.0"
 backports-strenum = { version = "*", python = "<3.11" }
 # For compatibility with the datamintapi package
 # datamintapi = "0.0.*"

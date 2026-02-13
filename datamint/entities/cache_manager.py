@@ -8,10 +8,13 @@ import hashlib
 import json
 import logging
 import pickle
+import gzip
+import numpy as np
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar, Generic
 from pydantic import BaseModel
+from cachetools import LRUCache
 # import appdirs
 import datamint.configs
 
@@ -51,12 +54,21 @@ class CacheManager(Generic[T]):
         version_info: dict | None = None
         entity_id: str | None = None
 
-    def __init__(self, entity_type: str, cache_root: Path | str | None = None):
+    def __init__(
+        self,
+        entity_type: str,
+        cache_root: Path | str | None = None,
+        enable_memory_cache: bool = False,
+        memory_cache_maxsize: int = 2,
+    ):
         """Initialize the cache manager.
 
         Args:
             entity_type: Type of entity (e.g., 'resources', 'annotations')
             cache_root: Root directory for cache. If None, uses system cache directory.
+            enable_memory_cache: Whether to enable an in-process LRU memory cache.
+                Disabled by default.
+            memory_cache_maxsize: Maximum number of entries in the in-memory LRU cache.
         """
         self.entity_type = entity_type
 
@@ -69,6 +81,56 @@ class CacheManager(Generic[T]):
             cache_root = Path(cache_root)
 
         self.cache_root = cache_root / entity_type
+        self._memory_cache: LRUCache[tuple[str, str, str | None], T] | None = None
+        if enable_memory_cache:
+            self._memory_cache = LRUCache(maxsize=memory_cache_maxsize)
+
+    def _get_memory_key(
+        self,
+        entity_id: str,
+        data_key: str,
+        version_info: dict[str, Any] | None = None,
+    ) -> tuple[str, str, str | None]:
+        version_hash = None
+        if version_info is not None:
+            version_hash = self._compute_version_hash(version_info)
+        return (entity_id, data_key, version_hash)
+
+    def get_memory(
+        self,
+        entity_id: str,
+        data_key: str,
+        version_info: dict[str, Any] | None = None,
+    ) -> T | None:
+        if self._memory_cache is None:
+            return None
+        key = self._get_memory_key(entity_id, data_key, version_info)
+        return self._memory_cache.get(key)
+
+    def set_memory(
+        self,
+        entity_id: str,
+        data_key: str,
+        data: T,
+        version_info: dict[str, Any] | None = None,
+    ) -> None:
+        if self._memory_cache is None:
+            return
+        key = self._get_memory_key(entity_id, data_key, version_info)
+        self._memory_cache[key] = data
+
+    def invalidate_memory(self, entity_id: str, data_key: str | None = None) -> None:
+        if self._memory_cache is None:
+            return
+        keys_to_remove = []
+        for eid, dkey, vhash in self._memory_cache.keys():
+            if eid != entity_id:
+                continue
+            if data_key is not None and dkey != data_key:
+                continue
+            keys_to_remove.append((eid, dkey, vhash))
+        for key in keys_to_remove:
+            self._memory_cache.pop(key, None)
 
     def _get_entity_cache_dir(self, entity_id: str) -> Path:
         """Get the cache directory for a specific entity.
@@ -191,6 +253,11 @@ class CacheManager(Generic[T]):
         Returns:
             Cached data if valid, None if cache miss or invalid
         """
+        mem_data = self.get_memory(entity_id, data_key, version_info)
+        if mem_data is not None:
+            _LOGGER.debug(f"Memory cache hit for {entity_id}/{data_key}")
+            return mem_data
+
         cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
         
         if cached_metadata is None:
@@ -198,6 +265,7 @@ class CacheManager(Generic[T]):
 
         try:
             data = self._load_data(cached_metadata)
+            self.set_memory(entity_id, data_key, data, version_info)
             _LOGGER.debug(f"Cache hit for {entity_id}/{data_key}")
             return data
         except Exception as e:
@@ -243,7 +311,8 @@ class CacheManager(Generic[T]):
         data_key: str,
         file_path: str | Path,
         version_info: dict[str, Any] | None = None,
-        mimetype: str = 'application/octet-stream'
+        mimetype: str = 'application/octet-stream',
+        data: T | None = None,
     ) -> None:
         """Register an external file location in cache metadata without copying data.
 
@@ -256,6 +325,7 @@ class CacheManager(Generic[T]):
             file_path: Path to the external file to register
             version_info: Optional version information from server
             mimetype: MIME type of the file data
+            data: Optional data object to populate the in-memory cache immediately.
         """
         metadata_path = self._get_metadata_path(entity_id)
         file_path = Path(file_path).resolve().absolute()
@@ -278,6 +348,9 @@ class CacheManager(Generic[T]):
 
             with open(metadata_path, 'w') as f:
                 f.write(metadata.model_dump_json(indent=2))
+
+            if data is not None:
+                self.set_memory(entity_id, data_key, data, version_info)
 
             _LOGGER.debug(f"Registered external file for {entity_id}/{data_key}: {file_path}")
 
@@ -324,6 +397,7 @@ class CacheManager(Generic[T]):
             with open(metadata_path, 'w') as f:
                 f.write(metadata.model_dump_json(indent=2))
 
+            self.set_memory(entity_id, data_key, data, version_info)
             _LOGGER.debug(f"Cached data for {entity_id}/{data_key}")
 
         except Exception as e:
@@ -335,6 +409,11 @@ class CacheManager(Generic[T]):
         if metadata.mimetype == 'application/octet-stream':
             with open(path, 'rb') as f:
                 return f.read()
+        elif metadata.mimetype == 'application/gzip':
+            with gzip.open(path, 'rb') as f:
+                return np.load(f)
+        elif metadata.mimetype == 'application/x-numpy':
+            return np.load(path)
         else:
             with open(path, 'rb') as f:
                 return pickle.load(f)
@@ -360,6 +439,7 @@ class CacheManager(Generic[T]):
             entity_id: Unique identifier for the entity
             data_key: Optional key for specific data. If None, invalidates all data for entity.
         """
+        self.invalidate_memory(entity_id, data_key)
         if data_key is None:
             # Invalidate entire entity cache
             entity_dir = self._get_entity_cache_dir(entity_id)
@@ -388,6 +468,8 @@ class CacheManager(Generic[T]):
 
     def clear_all(self) -> None:
         """Clear all cached data for this entity type."""
+        if self._memory_cache is not None:
+            self._memory_cache.clear()
         if self.cache_root.exists():
             import shutil
             shutil.rmtree(self.cache_root)
