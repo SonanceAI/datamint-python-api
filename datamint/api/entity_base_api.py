@@ -8,6 +8,12 @@ import aiohttp
 import asyncio
 from .base_api import ApiConfig, BaseApi
 import contextlib
+import re
+
+_UUID_PATTERN = re.compile(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    re.IGNORECASE
+)
 
 logger = logging.getLogger(__name__)
 T = TypeVar('T', bound=BaseEntity)
@@ -61,6 +67,9 @@ class EntityBaseApi(BaseApi, Generic[T]):
         """
         try:
             entity_id = self._entid(entity_id)
+            if not _UUID_PATTERN.match(entity_id):
+                raise ValueError(f"Invalid entity ID format: {entity_id!r}. Expected a UUID "
+                                 f"(e.g. '1b9f74fe-278e-48a9-82f4-5c3a6fcf2c50').")
             add_path = '/'.join(add_path.strip().strip('/').split('/'))
             return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
         except httpx.HTTPStatusError as e:
@@ -165,14 +174,20 @@ class EntityBaseApi(BaseApi, Generic[T]):
         """Get a specific entity by its ID.
 
         Args:
-            entity_id: Unique identifier for the entity.
+            entity_id: Unique identifier for the entity. Must be a valid UUID
+                (e.g. ``"1b9f74fe-278e-48a9-82f4-5c3a6fcf2c50"``).
 
         Returns:
             Entity instance.
 
         Raises:
-            httpx.HTTPStatusError: If the entity is not found or request fails.
+            ValueError: If ``entity_id`` is not a valid UUID.
+            ResourceNotFoundError: If the entity is not found.
+            httpx.HTTPStatusError: If the request fails for other reasons.
         """
+        if not self._UUID_PATTERN.match(entity_id):
+            raise ValueError(f"Invalid entity ID format: {entity_id!r}. Expected a UUID "
+                             f"(e.g. '1b9f74fe-278e-48a9-82f4-5c3a6fcf2c50').")
         response = self._make_entity_request('GET', entity_id)
         return self._init_entity_obj(**response.json())
 
