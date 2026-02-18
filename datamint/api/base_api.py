@@ -15,6 +15,7 @@ import contextlib
 import asyncio
 from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess_typez, guess_extension
 from datamint.utils.env import ensure_asyncio_loop
+import os
 
 if TYPE_CHECKING:
     from datamint.api.client import Api
@@ -261,6 +262,7 @@ class BaseApi:
                 for chunk in response.iter_bytes():
                     process_chunk(chunk)
         """
+        self._ensure_client_fresh()
         url = endpoint.lstrip('/')  # Remove leading slash for httpx
 
         try:
@@ -268,6 +270,36 @@ class BaseApi:
         except httpx.RequestError as e:
             logger.error(f"Request error for streaming {method} {endpoint}: {e}")
             raise
+
+    def _ensure_client_fresh(self) -> None:
+        """Recreate the HTTP client if the process has been forked.
+
+        PyTorch DataLoader forks worker processes that inherit the parent's
+        httpx.Client with its open connection pool. Those inherited connections
+        are in a corrupt state (the server sees the TCP socket closed/reused
+        and replies with chunked data the worker misinterprets as an HTTP
+        status line). Detecting a PID change and recreating the client
+        avoids this issue.
+        """
+        current_pid = os.getpid()
+        if current_pid != self._pid:
+            logger.debug(
+                f"PID changed from {self._pid} to {current_pid} (DataLoader fork detected). "
+                "Recreating httpx client."
+            )
+            # Close the inherited client without going through our normal
+            # close() path (which would also close the aiohttp session).
+            try:
+                self.client.close()
+            except Exception:
+                pass
+            self.client = BaseApi._create_client(self.config)
+            self._owns_client = True
+            self._pid = current_pid
+            # Invalidate any inherited aiohttp session as well.
+            self._aiohttp_session = None
+            self._aiohttp_connector = None
+
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Make HTTP request with error handling and retries.
@@ -283,6 +315,7 @@ class BaseApi:
         Raises:
             httpx.HTTPStatusError: If the request fails
         """
+        self._ensure_client_fresh()
         url = endpoint.lstrip('/')  # Remove leading slash for httpx
 
         if logger.isEnabledFor(logging.DEBUG):
