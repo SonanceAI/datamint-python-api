@@ -185,7 +185,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
             ResourceNotFoundError: If the entity is not found.
             httpx.HTTPStatusError: If the request fails for other reasons.
         """
-        if not self._UUID_PATTERN.match(entity_id):
+        if not _UUID_PATTERN.match(entity_id):
             raise ValueError(f"Invalid entity ID format: {entity_id!r}. Expected a UUID "
                              f"(e.g. '1b9f74fe-278e-48a9-82f4-5c3a6fcf2c50').")
         response = self._make_entity_request('GET', entity_id)
