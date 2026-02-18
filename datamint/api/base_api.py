@@ -77,6 +77,7 @@ class BaseApi:
         """
         self.config = config
         self._owns_client = client is None  # Track if we created the client
+        self._pid = os.getpid()  # Track PID to detect DataLoader worker forks
         self.client = client or BaseApi._create_client(config)
         self.semaphore = asyncio.Semaphore(20)
         self._api_instance: 'Api | None' = None  # Injected by Api class
