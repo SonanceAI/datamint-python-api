@@ -41,6 +41,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                  log_model_at_end_only: bool = True,
                  additional_metadata: dict[str, Any] | None = None,
                  extra_pip_requirements: list[str] | None = None,
+                 log_model_metrics: bool = True,
                  **kwargs):
         """
         MLFlowModelCheckpoint is a custom callback for PyTorch Lightning that integrates with MLFlow to log and register models.
@@ -52,6 +53,8 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of the training instead of after every checkpoint save.
             additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
             extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model.
+            log_model_metrics (bool): If True, automatically log test metrics to the MLflow LoggedModel entity
+                after testing. Requires MLflow 3.x with LoggedModel support. Defaults to True.
             **kwargs: Keyword arguments for ModelCheckpoint.
         """
         # Ensure MLflow is configured when callback is initialized
@@ -75,7 +78,9 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self.register_model_on = register_model_on
         self.registered_model_info = None
         self.log_model_at_end_only = log_model_at_end_only
+        self.log_model_metrics = log_model_metrics
         self._last_model_uri = None
+        self._last_model_id: str | None = None
         self.last_saved_model_info = None
         self._inferred_signature = None
         self._input_example = None
@@ -237,6 +242,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
         model.to(device=orig_device)  # Move the model back to its original device
         self._last_model_uri = modelinfo.model_uri
+        self._last_model_id = getattr(modelinfo, 'model_id', None)
         self.last_saved_model_info = modelinfo
 
         # Log additional metadata after the model is saved
@@ -349,6 +355,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         """
         logger = _get_MLFlowLogger(trainer)
         self._last_model_uri = None
+        self._last_model_id = None
         self.last_saved_model_info = None
         if logger is None:
             _LOGGER.warning("No MLFlowLogger found. Cannot restore model URI.")
@@ -372,6 +379,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             return
         # get the most recent one
         self._last_model_uri = retrieved_logged_models[0].model_uri
+        self._last_model_id = getattr(retrieved_logged_models[0], 'model_id', None)
         try:
             self.last_saved_model_info = mlflow.models.get_model_info(self._last_model_uri)
         except mlflow.exceptions.MlflowException as e:
@@ -388,8 +396,41 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self._restore_model_uri(trainer)
         return super().on_predict_start(trainer, pl_module)
 
+    def _log_test_metrics_to_model(self, trainer: L.Trainer) -> None:
+        """Log test metrics from trainer.callback_metrics to the MLflow LoggedModel.
+
+        Filters metrics to only include those prefixed with 'test/' or 'test_',
+        converts tensor values to floats, and logs them to the LoggedModel
+        identified by ``self._last_model_id``.
+        """
+        if self._last_model_id is None:
+            _LOGGER.debug("No model_id available. Skipping model metrics logging.")
+            return
+
+        metrics: dict[str, float] = {}
+        for key, value in trainer.callback_metrics.items():
+            if not key.startswith(("test/", "test_")):
+                continue
+            try:
+                metrics[key] = float(value)
+            except (TypeError, ValueError):
+                _LOGGER.debug(f"Skipping non-numeric metric '{key}': {value}")
+
+        if not metrics:
+            _LOGGER.info("No test metrics found in callback_metrics to log.")
+            return
+
+        try:
+            mlflow.log_metrics(metrics, model_id=self._last_model_id)
+            _LOGGER.info(f"Logged {len(metrics)} test metrics to model {self._last_model_id}.")
+        except Exception as e:
+            _LOGGER.warning(f"Failed to log test metrics to model: {e}")
+
     def on_test_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_test_end(trainer, pl_module)
+
+        if self.log_model_metrics:
+            self._log_test_metrics_to_model(trainer)
 
         if self.register_model_on == 'test' and self.register_model_name:
             self._update_signature(trainer)
