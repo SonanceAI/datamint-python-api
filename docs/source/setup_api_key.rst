@@ -2,8 +2,31 @@
 
 Setup API key
 =============
-To use the Datamint API, you need to setup your API key (ask your administrator if you don't have one).
-Use one of the following methods to setup your API key:
+To use the Datamint API, you need to set up your API key.
+If you have the necessary permissions, you can obtain one from the UI:
+
+1. In the left sidebar, select **Teams**.
+2. Click **Edit** on your user profile.
+
+.. image:: ../images/how_to_get_api_key.png
+   :align: center
+   :alt: Navigating to the Teams page and editing your profile
+
+|
+
+3. Click **Generate API key** to create a new API key.
+
+.. image:: ../images/how_to_get_api_key_2.png
+   :align: center
+   :alt: Generating an API key
+
+.. note::
+
+   If you don't have the necessary permissions, ask your administrator.
+
+|
+
+Once you have your API key, use one of the following methods to configure it:
 
 Method 1: Command-line tool (recommended)
 -------------------------------------------
