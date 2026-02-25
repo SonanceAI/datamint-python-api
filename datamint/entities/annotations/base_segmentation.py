@@ -11,7 +11,7 @@ import gzip
 import io
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal, overload
+from typing import Annotated, Any, Literal, overload
 
 import numpy as np
 from PIL import Image
@@ -19,9 +19,7 @@ from pydantic import BeforeValidator, PlainSerializer
 
 from .annotation import Annotation
 from datamint.types import ImagingData
-
-if TYPE_CHECKING:
-    from nibabel.nifti1 import Nifti1Image
+from nibabel.nifti1 import Nifti1Image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,88 +27,210 @@ _LOGGER = logging.getLogger(__name__)
 # Serialisation helpers (support ndarray, Nifti1Image and PIL Image)
 # ---------------------------------------------------------------------------
 
+# Legacy type string → canonical MIME type
+_LEGACY_TYPE_TO_MIMETYPE: dict[str, str] = {
+    "ndarray": "application/x-numpy",
+    "pil": "image/png",
+    "nifti": "application/nifti",
+}
+
+
 def _serialize_segmentation_data(
     value: np.ndarray | Image.Image | Any | None,
+    serialize_as_mimetype: str | None = 'application/nifti',
 ) -> dict | None:
     """Serialise segmentation data to a JSON-compatible dict.
 
-    Supported types:
+    Supported types and their output MIME types:
 
-    * ``np.ndarray``      – gzip-compressed ``.npy`` bytes, base64-encoded.
-    * ``PIL.Image.Image`` – gzip-compressed PNG bytes, base64-encoded.
-    * ``Nifti1Image``     – gzip-compressed NIfTI bytes, base64-encoded.
+    * ``np.ndarray``      → ``application/x-numpy``  (gzip-compressed ``.npy``)
+    * ``PIL.Image.Image`` → ``image/png``             (uncompressed PNG)
+    * ``Nifti1Image``     → ``application/nifti``  (gzip-compressed NIfTI)
+
+    Args:
+        value: The segmentation data to serialise.
+        serialize_as_mimetype: When provided, force encoding to the given MIME
+            type regardless of the Python type of *value*.  Supported values
+            are ``"image/png"`` and ``"application/nifti"``.
+
+    Returns:
+        A JSON-compatible dict with keys ``"mimetype"``, ``"data"`` (base64)
+        and optionally ``"compressed": true`` when gzip compression was
+        applied, or ``None`` when *value* is ``None``.
     """
     if value is None:
         return None
 
+    # ------------------------------------------------------------------ #
+    # Forced encoding via serialize_as_mimetype                           #
+    # ------------------------------------------------------------------ #
+    # Determine the original Python type before any forced conversion
+    if isinstance(value, np.ndarray):
+        original_type = "ndarray"
+    elif isinstance(value, Image.Image):
+        original_type = "pil"
+    else:
+        original_type = "nifti"
+
+    if serialize_as_mimetype == "image/png":
+        if isinstance(value, np.ndarray):
+            value = Image.fromarray(value)
+        elif isinstance(value, Nifti1Image):
+            value = Image.fromarray(np.squeeze(np.asarray(value.dataobj)))
+        elif not isinstance(value, Image.Image):
+            raise TypeError(
+                f"Cannot serialise {type(value)} as image/png; "
+                "expected np.ndarray or PIL.Image.Image"
+            )
+        buf = io.BytesIO()
+        value.save(buf, format="PNG")
+        return {
+            "mimetype": "image/png",
+            "data": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "compressed": False,
+            "type": original_type,
+        }
+
+    if serialize_as_mimetype == "application/nifti":
+        if isinstance(value, np.ndarray):
+            value = Nifti1Image(value, affine=np.eye(4))
+        elif isinstance(value, Image.Image):
+            value = Nifti1Image(np.array(value), affine=np.eye(4))
+        elif not isinstance(value, Nifti1Image):
+            raise TypeError(
+                f"Cannot serialise {type(value)} as application/nifti; "
+                "expected np.ndarray, PIL.Image.Image or Nifti1Image"
+            )
+
+        return {
+            "mimetype": "application/nifti",
+            "data": base64.b64encode(gzip.compress(value.to_bytes())).decode("ascii"),
+            "compressed": True,
+            "type": original_type,
+        }
+
+    if serialize_as_mimetype is not None and serialize_as_mimetype != 'auto':
+        raise ValueError(f"Unsupported serialize_as_mimetype: {serialize_as_mimetype!r}")
+
+    # ------------------------------------------------------------------ #
+    # Auto-detect encoding from Python type                               #
+    # ------------------------------------------------------------------ #
     if isinstance(value, np.ndarray):
         buf = io.BytesIO()
         np.save(buf, value)
-        compressed = gzip.compress(buf.getvalue())
         return {
+            "mimetype": "application/x-numpy",
+            "data": base64.b64encode(gzip.compress(buf.getvalue())).decode("ascii"),
+            "compressed": True,
             "type": "ndarray",
-            "data": base64.b64encode(compressed).decode("ascii"),
         }
 
     if isinstance(value, Image.Image):
         buf = io.BytesIO()
         value.save(buf, format="PNG")
-        compressed = gzip.compress(buf.getvalue())
+        # PNG is already an efficient binary format – no gzip on top
         return {
+            "mimetype": "image/png",
+            "data": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "compressed": False,
             "type": "pil",
-            "data": base64.b64encode(compressed).decode("ascii"),
         }
 
-    # Defer Nifti1Image import to avoid hard dependency when not needed
-    try:
-        from nibabel.nifti1 import Nifti1Image
-        if isinstance(value, Nifti1Image):
-            compressed = gzip.compress(value.to_bytes())
-            return {
-                "type": "nifti",
-                "data": base64.b64encode(compressed).decode("ascii"),
-            }
-    except ImportError:
-        pass
-
-    raise TypeError(f"Cannot serialise segmentation_data of type {type(value)}")
+    return {
+        "mimetype": "application/nifti",
+        "data": base64.b64encode(gzip.compress(value.to_bytes())).decode("ascii"),
+        "compressed": True,
+        "type": "nifti",
+    }
 
 
 def _deserialize_segmentation_data(
     value: dict | np.ndarray | Image.Image | Any | None,
 ) -> np.ndarray | Image.Image | Any | None:
-    """Deserialise segmentation data from a JSON-compatible dict or pass-through native types."""
+    """Deserialise segmentation data from a JSON-compatible dict or pass-through native types.
+
+    Supports both the current format (``"mimetype"`` key) and the legacy
+    format (``"type"`` key) for backward compatibility.
+    """
     if value is None:
         return None
 
     # Already a native type – constructed in code, not from JSON
-    if isinstance(value, (np.ndarray, Image.Image)):
+    if isinstance(value, (np.ndarray, Image.Image, Nifti1Image)):
         return value
-
-    try:
-        from nibabel.nifti1 import Nifti1Image
-        if isinstance(value, Nifti1Image):
-            return value
-    except ImportError:
-        pass
 
     if not isinstance(value, dict):
         raise ValueError(f"Cannot deserialise segmentation_data from {type(value)}")
 
-    raw = gzip.decompress(base64.b64decode(value["data"]))
+    # Resolve MIME type: prefer "mimetype", fall back to legacy "type" key
+    if "mimetype" in value:
+        mimetype = value["mimetype"]
+        is_legacy = False
+    elif "type" in value:
+        legacy_type = value["type"]
+        mimetype = _LEGACY_TYPE_TO_MIMETYPE.get(legacy_type)
+        if mimetype is None:
+            raise ValueError(f"Unknown legacy segmentation_data type: {legacy_type!r}")
+        is_legacy = True
+    else:
+        raise ValueError("segmentation_data dict must contain 'mimetype' or 'type' key")
 
-    dtype = value["type"]
-    if dtype == "ndarray":
-        return np.load(io.BytesIO(raw))
+    raw_bytes = base64.b64decode(value["data"])
 
-    if dtype == "pil":
-        return Image.open(io.BytesIO(raw))
+    # Decompress when explicitly flagged or when reading the legacy format
+    # (which always gzip-compressed every payload, including PIL images).
+    if value.get("compressed", False) or is_legacy:
+        raw_bytes = gzip.decompress(raw_bytes)
 
-    if dtype == "nifti":
-        from nibabel.nifti1 import Nifti1Image
-        return Nifti1Image.from_bytes(raw)
+    # Decode based on mimetype
+    if mimetype == "application/x-numpy":
+        decoded = np.load(io.BytesIO(raw_bytes))
+    elif mimetype == "image/png":
+        decoded = Image.open(io.BytesIO(raw_bytes))
+    elif mimetype == "application/nifti":
+        decoded = Nifti1Image.from_bytes(raw_bytes)
+    else:
+        raise ValueError(f"Unknown segmentation_data mimetype: {mimetype!r}")
 
-    raise ValueError(f"Unknown segmentation_data type: {dtype!r}")
+    # Convert to the original Python type recorded during serialisation
+    target_type = value.get("type")
+    if target_type is None or is_legacy:
+        return decoded
+
+    # Already the right type
+    if (
+        (target_type == "ndarray" and isinstance(decoded, np.ndarray))
+        or (target_type == "pil" and isinstance(decoded, Image.Image))
+    ):
+        return decoded
+
+    if target_type == "nifti" and isinstance(decoded, Nifti1Image):
+        return decoded
+
+    if target_type == "ndarray":
+        if isinstance(decoded, Image.Image):
+            return np.array(decoded)
+        if isinstance(decoded, Nifti1Image):
+            return np.asarray(decoded.dataobj)
+
+    if target_type == "pil":
+        if isinstance(decoded, np.ndarray):
+            return Image.fromarray(decoded)
+        if isinstance(decoded, Nifti1Image):
+            return Image.fromarray(np.squeeze(np.asarray(decoded.dataobj)))
+
+    if target_type == "nifti":
+        if isinstance(decoded, np.ndarray):
+            return Nifti1Image(decoded, affine=np.eye(4))
+        if isinstance(decoded, Image.Image):
+            return Nifti1Image(np.array(decoded), affine=np.eye(4))
+
+    _LOGGER.warning(
+        "Could not convert decoded type %s to target type %r; returning as-is.",
+        type(decoded).__name__,
+        target_type,
+    )
+    return decoded
 
 
 SegmentationDataType = Annotated[
