@@ -1,252 +1,157 @@
 """Image segmentation annotation entity module for DataMint API.
 
-This module defines the ImageSegmentation class for representing 2D segmentation
-annotations in medical images.
+This module defines the ImageSegmentation class for representing 2D binary
+segmentation annotations in medical images.
 """
 
-from .annotation import Annotation
-from datamint.api.dto import AnnotationType
+from __future__ import annotations
+
+import logging
+
 import numpy as np
 from PIL import Image
-from pydantic import PrivateAttr
-import logging
+
+from datamint.api.dto import AnnotationType
+from .base_segmentation import BaseSegmentationAnnotation
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class ImageSegmentation(Annotation):
+class ImageSegmentation(BaseSegmentationAnnotation):
     """
-    Image-level (2D) segmentation annotation entity.
-    
-    Represents a 2D segmentation mask for a single 2d image.
-    Supports both binary segmentation (single class) and multi-class 
-    semantic segmentation.
-    
-    This class provides factory methods to create annotations from numpy 
-    arrays or PIL Images, which can then be uploaded via AnnotationsApi.
-    
+    Image-level (2D) binary segmentation annotation entity.
+
+    Represents a binary segmentation mask (foreground / background) for a
+    single image.  The stored mask always contains only ``0`` and ``1``
+    values; any non-zero input pixel is normalised to ``1``.
+
+    :attr:`segmentation_data` stores the mask as a ``np.ndarray`` with
+    ``dtype=uint8`` and is automatically serialised/deserialised when the
+    annotation is persisted or loaded.
+
+    The annotation name (the class label) is stored in the inherited
+    ``identifier`` field and accessible via the :attr:`name` property.
+
     Example:
-        >>> # From binary mask
         >>> mask = np.zeros((256, 256), dtype=np.uint8)
-        >>> mask[100:150, 100:150] = 1  # lesion region
-        >>> img_seg = ImageSegmentation.from_mask(
-        ...     mask=mask,
-        ...     name='lesion'
-        ... )
-        >>> 
-        >>> # Upload via API
-        >>> api.annotations.upload_segmentations(
-        ...     resource='resource_id',
-        ...     file_path=img_seg.mask,
-        ...     name=img_seg.name
-        ... )
+        >>> mask[100:150, 100:150] = 1  # foreground region
+        >>> img_seg = ImageSegmentation.from_mask(mask=mask, name='lesion')
+        >>> img_seg.name
+        'lesion'
     """
 
-    _mask: np.ndarray | Image.Image | None = PrivateAttr(default=None)
-    _class_name: str | None = PrivateAttr(default=None)
+    def __init__(
+        self,
+        segmentation_data: np.ndarray | Image.Image | None = None,
+        **kwargs,
+    ) -> None:
+        """Initialize an ImageSegmentation annotation.  
+        The segmentation data is validated and normalised to a binary mask.
 
-    def __init__(self,
-                 name: str | None = None,
-                 mask: np.ndarray | Image.Image | None = None,
-                 **kwargs):
-        """
-        Initialize an ImageSegmentation annotation.
-        
         Args:
-            name: The name/label for this segmentation class
-            mask: Optional 2D numpy array or PIL Image containing the segmentation mask
+            segmentation_data: 2D binary mask as a numpy array or PIL Image.
             **kwargs: Additional fields passed to parent Annotation class
         """
-        super().__init__(
-            identifier=name or "",
-            scope='image',
-            annotation_type=AnnotationType.SEGMENTATION,
-            **kwargs
-        )
-        
-        self._mask = mask
-        self._class_name = name
+        kwargs['scope'] = 'image'
+        kwargs['annotation_type'] = AnnotationType.SEGMENTATION
 
-    @classmethod
-    def from_mask(cls,
-                  mask: np.ndarray | Image.Image,
-                  name: str,
-                  **kwargs) -> 'ImageSegmentation':
-        """
-        Create ImageSegmentation from a binary or class mask.
-        
-        Args:
-            mask: 2D numpy array (H x W) with integer labels or binary values,
-                or a PIL Image
-            name: The name/label for this segmentation
-            **kwargs: Additional annotation fields (imported_from, model_id, etc.)
-        
-        Returns:
-            ImageSegmentation instance ready for upload
-        
-        Raises:
-            ValueError: If mask shape is invalid or data types are incorrect
-        
-        Example:
-            >>> mask = np.zeros((512, 512), dtype=np.uint8)
-            >>> mask[200:300, 200:300] = 255  # binary mask
-            >>> img_seg = ImageSegmentation.from_mask(
-            ...     mask=mask,
-            ...     name='tumor',
-            ... )
-        """
-        # Convert PIL Image to numpy if needed
-        if isinstance(mask, Image.Image):
-            mask_array = np.array(mask)
-        else:
-            mask_array = mask
-        
-        # Validate mask array
-        mask_array = cls._validate_mask_array(mask_array)
-        
-        instance = cls(
-            name=name,
-            mask=mask_array,
-            **kwargs
-        )
-        
-        return instance
+        if isinstance(segmentation_data, np.ndarray):
+            segmentation_data = ImageSegmentation._validate_mask_array(segmentation_data)
+        super().__init__(segmentation_data=segmentation_data, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Validation helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _validate_mask_array(arr: np.ndarray) -> np.ndarray:
         """
-        Validate mask array shape and dtype.
-        
+        Validate and normalise a binary mask array.
+
+        * Must be 2D.
+        * Must have integer or float dtype (floats are accepted only when they
+          represent integer values).
+        * No negative values.
+        * Non-zero values are normalised to ``1`` (``dtype=uint8``).
+
         Args:
-            arr: Input array to validate
-        
+            arr: Input array to validate.
+
         Returns:
-            Validated array (possibly with dtype conversion)
-        
+            Validated binary ``uint8`` array with values in ``{0, 1}``.
+
         Raises:
-            ValueError: If array is invalid
+            ValueError: If the array is invalid.
         """
-        if not isinstance(arr, np.ndarray):
-            raise ValueError(f"Expected numpy array, got {type(arr)}")
-        
-        # Check dimensionality - should be 2D (H x W)
         if arr.ndim != 2:
             raise ValueError(
-                f"Mask must be 2D (H x W), got shape {arr.shape}"
+                f"Mask must be 2D (H × W), got shape {arr.shape}"
             )
-        
-        # Check dtype - convert floats to int if they're effectively integers
+
         if np.issubdtype(arr.dtype, np.floating):
             if not np.allclose(arr, arr.astype(int)):
-                raise ValueError(
-                    "Mask array contains non-integer float values"
-                )
-            arr = arr.astype(np.uint8)
+                raise ValueError("Mask array contains non-integer float values")
+            arr = arr.astype(np.int32)
         elif not np.issubdtype(arr.dtype, np.integer):
-            raise ValueError(
-                f"Mask must have integer dtype, got {arr.dtype}"
-            )
-        
-        # Check for negative values
+            raise ValueError(f"Mask must have integer dtype, got {arr.dtype}")
+
         if np.any(arr < 0):
             raise ValueError("Mask array contains negative values")
-        
-        return arr
+
+        # Normalise to strict binary {0, 1}
+        return (arr > 0).astype(np.uint8)
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
-    def mask(self) -> np.ndarray | None:
-        """
-        Get the stored segmentation mask.
-        
-        Returns:
-            2D numpy array or None if not stored
-        """
-        return self._mask
+    def mask(self) -> np.ndarray | Image.Image | None:
+        """Alias for :attr:`segmentation_data`."""
+        return self.segmentation_data
 
     @property
     def mask_shape(self) -> tuple[int, int] | None:
         """
-        Get the shape of the stored mask.
-        
+        Shape of the stored mask.
+
         Returns:
-            Shape tuple (H, W) or None if no mask stored
+            ``(H, W)`` or ``None`` if no mask is stored.
         """
-        if self._mask is None:
+        data = self.segmentation_data
+        if data is None:
             return None
-        
-        if isinstance(self._mask, Image.Image):
-            return (self._mask.height, self._mask.width)
-        
-        return self._mask.shape
+        if isinstance(data, Image.Image):
+            return (data.height, data.width)
+        return data.shape  # type: ignore[return-value]
 
-    @property
-    def class_name(self) -> str | None:
-        """
-        Get the class name for this segmentation.
-        
-        Returns:
-            Class name string or None
-        """
-        return self._class_name
-
-    @property
-    def name(self) -> str | None:
-        """
-        Alias for class_name.
-        
-        Returns:
-            Class name string or None
-        """
-        return self._class_name
+    # ------------------------------------------------------------------
+    # Conversion helpers
+    # ------------------------------------------------------------------
 
     def to_pil_image(self) -> Image.Image | None:
         """
-        Convert the mask to a PIL Image.
-        
-        Returns:
-            PIL Image or None if no mask stored
-        """
-        if self._mask is None:
-            return None
-        
-        if isinstance(self._mask, Image.Image):
-            return self._mask
-        
-        return Image.fromarray(self._mask)
+        Convert the mask to a PIL ``Image``.
 
-    def get_binary_mask(self, threshold: int = 0) -> np.ndarray | None:
-        """
-        Get a binary version of the mask.
-        
-        Args:
-            threshold: Values above this threshold are set to 1
-        
         Returns:
-            Binary numpy array (0s and 1s) or None if no mask stored
+            :class:`PIL.Image.Image` or ``None`` if no mask is stored.
         """
-        if self._mask is None:
+        data = self.segmentation_data
+        if data is None:
             return None
-        
-        if isinstance(self._mask, Image.Image):
-            mask_array = np.array(self._mask)
-        else:
-            mask_array = self._mask
-        
-        return (mask_array > threshold).astype(np.uint8)
+        if isinstance(data, Image.Image):
+            return data
+        return Image.fromarray(data)
 
     def get_area(self) -> int | None:
         """
-        Get the area (number of positive pixels) of the mask.
-        
+        Return the number of foreground (non-zero) pixels in the mask.
+
         Returns:
-            Number of non-zero pixels or None if no mask stored
+            Foreground pixel count or ``None`` if no mask is stored.
         """
-        if self._mask is None:
+        data = self.segmentation_data
+        if data is None:
             return None
-        
-        if isinstance(self._mask, Image.Image):
-            mask_array = np.array(self._mask)
-        else:
-            mask_array = self._mask
-        
-        return int(np.count_nonzero(mask_array))
+        arr = np.array(data) if isinstance(data, Image.Image) else data
+        return int(np.count_nonzero(arr))
