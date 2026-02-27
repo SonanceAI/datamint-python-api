@@ -525,8 +525,8 @@ class DatamintBaseDataset(ABC):
                     )
                     _LOGGER.debug(f"Merged segmentation shape: {segmentations.shape}")
 
+                # In semantic format, we don't need `seg_labels`, as the label info is at the new dimension (axis=0) of the semantic segmentation array.
                 seg_labels = None
-                _LOGGER.debug(f'merged segmentations. Final shape: {segmentations.shape}')
 
         return segmentations, seg_labels
 

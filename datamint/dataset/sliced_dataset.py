@@ -6,6 +6,7 @@ enabling training of 2D models on volumetric medical imaging data.
 """
 import gzip
 import logging
+from functools import cached_property
 from typing import Any, Literal, TYPE_CHECKING
 from typing_extensions import override
 from collections.abc import Sequence
@@ -49,21 +50,47 @@ class SlicedVolumeResource:
     Args:
         parent: The original 3D volume Resource.
         slice_index: The index of the slice along the given axis.
-        slice_axis: The spatial axis to slice along (0=axial/depth, 1=coronal/height, 2=sagittal/width).
+        slice_axis: The spatial axis to slice along ('axial', 'coronal', 'sagittal').
         sliced_vols_cache: Shared :class:`CacheManager` for disk-based volume caching.
     """
+
+    _CACHE_MANAGER_NAMESPACE = "sliced_volumes"
 
     def __init__(
         self,
         parent: 'Resource',
         slice_index: int,
-        slice_axis: int,
-        sliced_vols_cache: CacheManager,
+        slice_axis: str,
+        sliced_vols_cache: CacheManager | None = None,
     ):
         self._parent = parent
         self.slice_index = slice_index
         self.slice_axis = slice_axis
+        if sliced_vols_cache is None:
+            sliced_vols_cache = CacheManager(SlicedVolumeResource._CACHE_MANAGER_NAMESPACE)
         self._volume_cache = sliced_vols_cache
+
+    @staticmethod
+    def slice_over(resource: 'Resource',
+                   slice_axis: Literal['axial', 'coronal', 'sagittal'],
+                   volume_cache: CacheManager | None = None) -> list['SlicedVolumeResource']:
+        sliced_resources = []
+        res_data = resource.fetch_file_data(auto_convert=True, use_cache=True)
+        if resource.is_dicom():
+            axis_size = dicom_utils.get_dim_size(res_data, slice_axis)
+        elif resource.is_nifti():
+            axis_size = nifti_utils.get_dim_size(res_data, slice_axis)
+        else:
+            raise ValueError(f"Unsupported resource type for slicing axis: {resource.filename}|{resource.mimetype}")
+
+        # anns = resource_annotations[i]
+
+        for s in range(axis_size):
+            sliced_resources.append(
+                SlicedVolumeResource(resource, s, slice_axis, volume_cache)
+            )
+
+        return sliced_resources
 
     def __getattr__(self, name: str) -> Any:
         """Delegate all unresolved attributes to the parent Resource."""
@@ -102,10 +129,19 @@ class SlicedVolumeResource:
             return np.ascontiguousarray(cached_slice)
 
         raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
-        vol, _meta = read_array_normalized(raw, return_metainfo=True)
-        vol = vol.transpose(1, 0, 2, 3)
+        vol, self.data_metainfo = read_array_normalized(raw, return_metainfo=True)
+        # vol.shape is (D,C,H,W)
 
-        sliced = np.take(vol, self.slice_index, axis=self.slice_axis + 1)
+        _LOGGER.debug(
+            f"Slicing {self._parent.filename} along axis {self.slice_axis=} ({self.slice_axis_idx_std=}) at index {self.slice_index=} with shape {vol.shape=}")
+        sliced = np.take(vol, self.slice_index, axis=self.slice_axis_idx_std)
+        # vol is (D, C, H, W); after np.take the sliced axis is removed.
+        # C was at index 1. If we sliced axis 0 (D), C shifts to index 0 — already correct.
+        # If we sliced axis 2 (H) or 3 (W), C stays at index 1 → move it to 0.
+        channel_axis_in_result = 1 if self.slice_axis_idx_std > 1 else 0
+        if channel_axis_in_result != 0:
+            sliced = np.moveaxis(sliced, channel_axis_in_result, 0)
+        # sliced is now (C, DIM1, DIM2)
         sliced = np.ascontiguousarray(sliced)
 
         gz_path = self._volume_cache.get_expected_path(cache_entity_id, _SLICE_ARRAY_CACHEKEY)
@@ -123,7 +159,39 @@ class SlicedVolumeResource:
             data=sliced,
         )
 
+        _LOGGER.debug(f'Sliced shape: {sliced.shape}')
+
         return sliced
+
+    @cached_property
+    def data_metainfo(self) -> dict:
+        """Volume metadata. Loaded once and cached for the lifetime of this resource."""
+        raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
+        _, metainfo = read_array_normalized(raw, return_metainfo=True)
+        return metainfo
+
+    @cached_property
+    def slice_axis_idx(self) -> int:
+        """Raw axis index for the slice axis. Computed once and cached."""
+        if self._parent.is_dicom():
+            return dicom_utils.get_plane_axis(self.data_metainfo, self.slice_axis)
+        elif self._parent.is_nifti():
+            return nifti_utils.get_plane_axis(self.data_metainfo, self.slice_axis)
+        else:
+            raise ValueError(
+                "Unsupported resource type for slicing axis:"
+                f" {self._parent.filename}|{self._parent.mimetype}|{self.slice_axis}")
+
+    @cached_property
+    def slice_axis_idx_std(self) -> int:
+        """Standardised axis index for the slice axis. Computed once and cached."""
+        if self._parent.is_dicom():
+            return dicom_utils.rawplaneaxis2stdplaneaxis_idx(self.slice_axis_idx)
+        elif self._parent.is_nifti():
+            return nifti_utils.rawplaneaxis2stdplaneaxis_idx(self.slice_axis_idx)
+        else:
+            raise ValueError(
+                f"Unsupported resource type for slicing axis: {self._parent.filename}|{self._parent.mimetype}")
 
     @property
     def parent_resource(self) -> 'Resource':
@@ -137,6 +205,13 @@ class SlicedVolumeResource:
             f"SlicedVolumeResource(filename='{self._parent.filename}', "
             f"axis='{axis_name}', slice={self.slice_index})"
         )
+
+    def __getattribute__(self, name: str) -> Any:
+        try:
+            return super().__getattribute__(name)
+        except AttributeError:
+            parent = super().__getattribute__('_parent')
+            return getattr(parent, name)
 
 
 # # Axis mapping for anatomical orientations
@@ -237,24 +312,6 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         self.resources = expanded_resources  # type: ignore[assignment]
         self.resource_annotations = expanded_annotations
 
-    @staticmethod
-    def _get_slice_axis_int(r: 'Resource',
-                            slice_axis: Literal['axial', 'coronal', 'sagittal']) -> int:
-        if r.is_dicom():
-            dicom_data = r.fetch_file_data(auto_convert=True, use_cache=True)
-            ret = dicom_utils.get_plane_axis(dicom_data, plane=slice_axis)
-            if ret is None:
-                raise ValueError(f"Could not determine slice axis for DICOM resource {r.id} with plane '{slice_axis}'")
-            return ret
-        elif r.is_nifti():
-            nifti_data = r.fetch_file_data(auto_convert=True, use_cache=True)
-            ret = nifti_utils.get_plane_axis(nifti_data, plane=slice_axis)
-            if ret is None:
-                raise ValueError(f"Could not determine slice axis for NIfTI resource {r.id} with plane '{slice_axis}'")
-            return ret
-        else:
-            raise ValueError(f"Unsupported resource type for slice axis inference: {r.filename} | {r.mimetype}")
-
     def _expand_resources(
         self,
         resources: Sequence['Resource'],
@@ -275,34 +332,10 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         sliced_annotations: list[Sequence['Annotation']] = []
 
         for i, r in enumerate(resources):
-            if not hasattr(self, '_slice_axis_int'):
-                res_data = r.fetch_file_data(auto_convert=True, use_cache=True)
-                if r.is_dicom():
-                    axis_int = dicom_utils.get_plane_axis(res_data, plane=self._slice_axis)
-
-                    if axis_int is None:
-                        raise ValueError(
-                            f"Could not determine slice axis for DICOM resource {r.id} with plane '{self._slice_axis}'")
-                    axis_size = dicom_utils.get_dim_size(res_data, axis_int)
-                elif r.is_nifti():
-                    axis_int = nifti_utils.get_plane_axis(res_data, plane=self._slice_axis)
-                    if axis_int is None:
-                        raise ValueError(
-                            f"Could not determine slice axis for NIfTI resource {r.id} with plane '{self._slice_axis}'")
-                    axis_size = nifti_utils.get_dim_size(res_data, axis_int)
-                else:
-                    raise ValueError(f"Unsupported resource type for slice axis inference: {r.filename} | {r.mimetype}")
-            else:
-                # TODO
-                raise NotImplementedError
-
             anns = resource_annotations[i]
-
-            for s in range(axis_size):
-                sliced_resources.append(
-                    SlicedVolumeResource(r, s, axis_int, volume_cache)
-                )
-                sliced_annotations.append(anns)
+            per_slice = SlicedVolumeResource.slice_over(r, self._slice_axis, volume_cache)
+            sliced_resources.extend(per_slice)
+            sliced_annotations.extend(anns for _ in per_slice)
 
         return sliced_resources, sliced_annotations
 
@@ -311,21 +344,21 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         """Load a single 2D slice and its annotations.
 
         Returns dict with:
-        - 'image': np.ndarray of shape (C, 1, H, W) — depth=1 to match pipeline expectations.
+        - 'image': np.ndarray of shape (C, 1, DIM1, DIM2) — depth=1 to match pipeline expectations.
         - 'metainfo': dict with volume metadata.
         - 'annotations': Sequence of Annotation objects.
         - 'resource': The SlicedVolumeResource proxy.
         """
         resource: SlicedVolumeResource = self.resources[index]  # type: ignore[assignment]
-        img = resource.fetch_slice_data()  # shape: (C, H, W)
+        img = resource.fetch_slice_data()  # ndims=3.
 
-        # Add depth dim to match the pipeline expectation: (C, 1, H, W)
-        img = np.expand_dims(img, axis=1)
+        # # Add depth dim to match the pipeline expectation: (C, 1, DIM1, DIM2)
+        # img = np.expand_dims(img, axis=1)
 
         anns = self.resource_annotations[index]
 
         return {
-            'image': img,  # shape: (C, 1, H, W)
+            'image': img,  # shape: (C, 1, DIM1, DIM2)
             'annotations': anns,
             'resource': resource,
         }
@@ -349,7 +382,6 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             img = self._preprocess_image_array(img)
         annotations = result['annotations']
         resource: SlicedVolumeResource = result['resource']
-        _LOGGER.debug(f"Loaded slice {resource.slice_index} from {resource.filename} with shape {img.shape}")
 
         # Process segmentations
         # FIXME: This currently re-loads the slice data for each segmentation annotation, which is inefficient. We should ideally load the slice once and reuse it for all segmentations. This may require refactoring how annotations are processed to avoid redundant data loading.
@@ -362,13 +394,20 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             # Slice segmentations along the same axis as the image
             # segmentations[author] shape: (#instances, D, H, W)
             slice_idx = resource.slice_index
+            slice_axis_idx_std = resource.slice_axis_idx_std
+            # resource normalized is always (D, C, H, W)
+            map_slice_axis_idx_std = {
+                0: 1,
+                2: 2,
+                3: 3,
+            }
+            seg_slice_axis_idx = map_slice_axis_idx_std[slice_axis_idx_std]
             sliced_segs: dict[str, np.ndarray] = {}
             for author, seg_array in segmentations.items():
                 # seg_array shape: (#instances, D, H, W)
-                # Select the slice: (#instances, H, W)
-                axis_index = resource.slice_axis + 1  # account for instance dimension
-                sliced_segs[author] = np.take(seg_array, slice_idx, axis=axis_index)
-                # Add depth=1 dim back for consistency with pipeline: (#instances, 1, H, W)
+                # Select the slice: (#instances, DIM1, DIM2) where DIM1 and DIM2 depend on the slice axis
+                sliced_segs[author] = np.take(seg_array, slice_idx, axis=seg_slice_axis_idx)
+                # Add a dummy dimension for consistency with pipeline: (#instances, 1, DIM1, DIM2)
                 sliced_segs[author] = np.expand_dims(sliced_segs[author], axis=1)
 
             # Apply albumentations if present
@@ -379,8 +418,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 sliced_segs = aug_result['segmentations']
 
             segmentations_processed, seg_labels_out = self._process_segmentations(sliced_segs, seg_labels)
-
-            # Squeeze depth=1 dimension from segmentations
+            # remove temporary dummy dimension: (#instances, 1, DIM1, DIM2) -> (#instances, DIM1, DIM2)
             if isinstance(segmentations_processed, (Tensor, np.ndarray)):
                 segmentations_processed = segmentations_processed.squeeze(1)
             elif isinstance(segmentations_processed, dict):
@@ -395,14 +433,15 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
 
-        # Squeeze depth=1 from image: (C, 1, H, W) -> (C, H, W)
-        img = result['image']
-        if isinstance(img, (np.ndarray, Tensor)) and img.ndim == 4 and img.shape[1] == 1:
-            if isinstance(img, np.ndarray):
-                img = img.squeeze(axis=1)
-            else:
-                img = img.squeeze(1)
-        result['image'] = img
+        # # Squeeze depth=1 from image: (C, 1, H, W) -> (C, H, W)
+        # img = result['image']
+        # _LOGGER.debug(f"Final image shape before squeezing depth: {img.shape}")
+        # if isinstance(img, (np.ndarray, Tensor)) and img.ndim == 4 and img.shape[1] == 1:
+        #     if isinstance(img, np.ndarray):
+        #         img = img.squeeze(axis=1)
+        #     else:
+        #         img = img.squeeze(1)
+        # result['image'] = img
 
         return result
 

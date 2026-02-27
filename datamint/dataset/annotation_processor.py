@@ -68,7 +68,6 @@ class AnnotationProcessor:
             try:
                 seg = self.load_segmentation_data(ann)
                 seg_code_i = self.seglabel2code.get(ann.identifier, 0)
-                _LOGGER.debug(f'Processing frame annotation {ann.id} at index {ann.frame_index} with shape {seg.shape}')
                 if seg_code != -1 and seg_code != seg_code_i:
                     raise ValueError(f"Conflicting segmentation codes for frame annotations: "
                                      f"{seg_code} vs {seg_code_i}")
@@ -189,9 +188,6 @@ class AnnotationProcessor:
         seg_labels = defaultdict(list)
         seg_anns = defaultdict(list)
 
-        _LOGGER.debug(
-            f"Found {len(seg_frame_anns_map)} unique (author, identifier) groups for frame-level segmentations")
-
         for (author, identifier), fr_anns in seg_frame_anns_map.items():
             stacked_seg, seg_code = self.collate_frame_segmentations(fr_anns)
             if stacked_seg is None:
@@ -210,7 +206,6 @@ class AnnotationProcessor:
         final_segmentations: dict[str, np.ndarray] = {}
         final_seg_labels: dict[str, np.ndarray] = {}
         for author in segmentations:
-            _LOGGER.debug(f"Author {author} has {len(segmentations[author])} segmentations to stack")
             final_segmentations[author] = np.stack(segmentations[author], axis=0)  # (#num_instances, Z, H, W)
             final_seg_labels[author] = np.array(seg_labels[author], dtype=np.int32)
 
@@ -399,8 +394,6 @@ class AnnotationProcessor:
                 segmentations = {author: torch.from_numpy(seg) for author, seg in segmentations.items()}
                 return self.apply_merge_strategy(segmentations, strategy, output_shape).numpy()
 
-        _LOGGER.debug(
-            f"Applying merge strategy '{strategy}' to {len(segmentations)} segmentations of type {type(next(iter(segmentations.values())))}")
         if strategy == 'union':
             merged = self._merge_union(segmentations)
         elif strategy == 'intersection':
