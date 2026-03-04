@@ -53,6 +53,9 @@ class VolumeSegmentation(BaseSegmentationAnnotation):
         """
         kwargs['scope'] = 'image'
         kwargs['annotation_type'] = AnnotationType.SEGMENTATION
+        if isinstance(kwargs.get('class_map'), str):
+            raise ValueError("class_map must be dict[int, str], not str."
+                             " Use from_semantic_segmentation factory method for string class_map.")
 
         kwargs.setdefault('identifier', '')
         super().__init__(**kwargs)
@@ -166,7 +169,7 @@ class VolumeSegmentation(BaseSegmentationAnnotation):
         Convert class_map to standard dict[int, str] format.
 
         Args:
-            class_map: Either a dict or a single class name for binary seg
+            class_map: Either a dict or a single class name for binary segmentation
             segmentation: The segmentation array to infer labels from
 
         Returns:
@@ -176,7 +179,7 @@ class VolumeSegmentation(BaseSegmentationAnnotation):
             ValueError: If class_map format is invalid
         """
         if isinstance(class_map, str):
-            # Binary segmentation: assume label 1 = class_map, 0 = background
+            # Binary segmentation: class_map is a single class name
             unique_labels = np.unique(segmentation)
             unique_labels = unique_labels[unique_labels > 0]  # Exclude 0
 

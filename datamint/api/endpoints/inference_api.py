@@ -160,7 +160,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         *,
         on_status: Callable[[InferenceJob], None] | None = None,
         poll_interval: float = 2.0,
-        timeout: float | None = None,
+        timeout: float | None = 1800,
     ) -> InferenceJob:
         """Block until an inference job reaches a terminal state.
 

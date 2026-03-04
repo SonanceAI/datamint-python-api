@@ -733,7 +733,7 @@ class BaseApi:
 
         Args:
             content: Raw file content bytes
-            declared_mimetype: Optional MIME type declared by the source
+            declared_mimetype: Optional MIME type declared by the source, used as a fallback if content-based detection fails
 
         Returns:
             Tuple of (inferred_mimetype, file_extension)
@@ -744,10 +744,7 @@ class BaseApi:
 
         # get mimetype from resource info if not detected
         if declared_mimetype is not None:
-            if mimetype is None:
-                mimetype = declared_mimetype
-                ext = guess_extension(mimetype)
-            elif mimetype == DEFAULT_MIME_TYPE:
+            if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
                 mimetype = declared_mimetype
                 ext = guess_extension(mimetype)
 

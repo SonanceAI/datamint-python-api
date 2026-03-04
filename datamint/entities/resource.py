@@ -182,7 +182,7 @@ class Resource(BaseEntity):
 
         if auto_convert:
             try:
-                mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
+                mimetype, _ = BaseApi._determine_mimetype(img_data, self.mimetype)
                 img_data = BaseApi.convert_format(img_data,
                                                   mimetype=mimetype,
                                                   file_path=save_path)
