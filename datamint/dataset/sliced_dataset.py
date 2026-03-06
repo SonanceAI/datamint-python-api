@@ -665,11 +665,12 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             raise ValueError("alb_transform is not set")
 
         # Squeeze depth=1 if present
-        if img.ndim == 4:
+        orig_dim = img.ndim
+        if orig_dim == 4:
             if img.shape[1] != 1:
                 raise ValueError(f"Expected depth=1, got shape {img.shape}")
             img = img.squeeze(1)  # (C, 1, H, W) -> (C, H, W)
-        elif img.ndim != 3:
+        elif orig_dim != 3:
             raise ValueError(f"Expected 3D or 4D image array, got shape {img.shape}")
 
         # Transpose to (H, W, C) for albumentations
@@ -701,8 +702,9 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             else:
                 aug_img = aug_img.permute(2, 0, 1)
 
-        # Add depth=1 back: (C, 1, H, W)
-        aug_img = aug_img[:, np.newaxis, :, :]
+        # Add depth=1 back: (C, 1, H, W) if original had it, else keep (C, H, W)
+        if orig_dim == 4:
+            aug_img = aug_img[:, np.newaxis, :, :]
 
         return {
             'image': aug_img,
