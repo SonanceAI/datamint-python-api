@@ -1,5 +1,4 @@
 # Monkey patch mlflow.tracking._tracking_service.utils.get_tracking_uri
-from .tracking.fluent import set_project
 import mlflow.tracking._tracking_service.utils as mlflow_utils
 from functools import wraps
 import logging
@@ -11,9 +10,6 @@ _LOGGER = logging.getLogger(__name__)
 # Store reference to original function
 _original_get_tracking_uri = mlflow_utils.get_tracking_uri
 _SETUP_CALLED_SUCCESSFULLY = False
-
-if mlflow_utils.is_tracking_uri_set():
-    _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
 
 
 @wraps(_original_get_tracking_uri)
@@ -43,10 +39,6 @@ def _patched_get_tracking_uri(*args, **kwargs):
     ret = _original_get_tracking_uri(*args, **kwargs)
     return ret
 
-
-setup_mlflow_environment(set_mlflow=False)
-# Replace the original function with our patched version
-mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
 
 _ALREADY_CONFIGURED_LOGGING = False
 
@@ -95,14 +87,20 @@ def _configure_mlflow_loggers():
     )
     _LOGGER.info("Configured MLflow loggers with RichHandler and level %s", mlflow_log_level)
 
-try:
-    _configure_mlflow_loggers()
-except Exception as e:
-    _LOGGER.error("Failed to configure MLflow loggers: %s", e)
 
 if TYPE_CHECKING:
     from .flavors.model import DatamintModel
+    from .tracking.fluent import set_project
 else:
+    if mlflow_utils.is_tracking_uri_set():
+        _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
+    setup_mlflow_environment(set_mlflow=False)
+    # Replace the original function with our patched version
+    mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
+    try:
+        _configure_mlflow_loggers()
+    except Exception as e:
+        _LOGGER.error("Failed to configure MLflow loggers: %s", e)
     import lazy_loader as lazy
 
     __getattr__, __dir__, __all__ = lazy.attach(
@@ -111,6 +109,7 @@ else:
         submod_attrs={
             "flavors.model": ["DatamintModel"],
             "flavors.datamint_flavor": ["log_model", "load_model"],
+            "tracking.fluent": ["set_project"],
         },
     )
 

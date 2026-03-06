@@ -1,12 +1,11 @@
 """Project entity module for DataMint API."""
-from datetime import datetime
 import logging
 from typing import Literal, TYPE_CHECKING
 from collections.abc import Sequence
 from .base_entity import BaseEntity, MISSING_FIELD
 from typing import Any
 import webbrowser
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, Field
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.projects_api import ProjectsApi
@@ -54,17 +53,17 @@ class Project(BaseEntity):
     description: str | None
     viewable_ai_segs: list | None
     editable_ai_segs: list | None
-    registered_model: Any | None = MISSING_FIELD
-    ai_model_id: str | None = MISSING_FIELD
-    closed_resources_count: int = MISSING_FIELD
-    resources_to_annotate_count: int = MISSING_FIELD
-    most_recent_experiment: str | None = MISSING_FIELD
-    annotators: list[dict] = MISSING_FIELD
-    archived_on: str | None = MISSING_FIELD
-    archived_by: str | None = MISSING_FIELD
-    is_active_learning: bool = MISSING_FIELD
-    two_up_display: bool = MISSING_FIELD
-    require_review: bool = MISSING_FIELD
+    registered_model: Any | None = Field(default=MISSING_FIELD)
+    ai_model_id: str | None = Field(default=MISSING_FIELD)
+    closed_resources_count: int = Field(default=MISSING_FIELD)
+    resources_to_annotate_count: int = Field(default=MISSING_FIELD)
+    most_recent_experiment: str | None = Field(default=MISSING_FIELD)
+    annotators: list[dict] = Field(default=MISSING_FIELD)
+    archived_on: str | None = Field(default=MISSING_FIELD)
+    archived_by: str | None = Field(default=MISSING_FIELD)
+    is_active_learning: bool = Field(default=MISSING_FIELD)
+    two_up_display: bool = Field(default=MISSING_FIELD)
+    require_review: bool = Field(default=MISSING_FIELD)
 
     _api: 'ProjectsApi' = PrivateAttr()
 

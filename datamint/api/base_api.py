@@ -8,12 +8,10 @@ import aiohttp
 import json
 from PIL import Image
 import cv2
-import nibabel as nib
 from io import BytesIO
 import gzip
 import contextlib
 import asyncio
-from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess_typez, guess_extension
 from datamint.utils.env import ensure_asyncio_loop
 import os
 
@@ -688,6 +686,8 @@ class BaseApi:
 
         """
         import pydicom
+        import nibabel as nib
+        from medimgkit.format_detection import GZIP_MIME_TYPES
 
         if mimetype is None:
             mimetype, ext = BaseApi._determine_mimetype(bytes_array)
@@ -738,6 +738,7 @@ class BaseApi:
         Returns:
             Tuple of (inferred_mimetype, file_extension)
         """
+        from medimgkit.format_detection import DEFAULT_MIME_TYPE, guess_typez, guess_extension
         # Determine mimetype from file content
         mimetype_list, ext = guess_typez(content, use_magic=True)
         mimetype = mimetype_list[-1]
