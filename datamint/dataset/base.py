@@ -15,12 +15,11 @@ from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
 from datamint.apihandler.dto.annotation_dto import AnnotationType
 from datamint.exceptions import DatamintException
-from datamint.entities import Annotation
 from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
 
 if TYPE_CHECKING:
-    from datamint.entities import Resource, Project
+    from datamint.entities import Resource, Project, Annotation
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,10 +60,14 @@ class DatamintBaseDataset(ABC):
         exclude_image_label_names: Blacklist of image labels.
         include_frame_label_names: Whitelist of frame labels.
         exclude_frame_label_names: Blacklist of frame labels.
+        allow_external_annotations: If True, allow and automatically include annotation
+            labels that are not part of the project's official schema (e.g., labels
+            from other projects or legacy annotations). If False, these annotations
+            will be filtered out.
     """
 
     resources: Sequence['Resource']
-    resource_annotations: list[Sequence[Annotation]]
+    resource_annotations: list[Sequence['Annotation']]
     project: 'Project | None'
 
     def __init__(
@@ -89,6 +92,7 @@ class DatamintBaseDataset(ABC):
         exclude_image_label_names: list[str] | None = None,
         include_frame_label_names: list[str] | None = None,
         exclude_frame_label_names: list[str] | None = None,
+        allow_external_annotations: bool = False,
     ):
         from datamint import Api
         # Validate mutually exclusive parameters
@@ -155,6 +159,7 @@ class DatamintBaseDataset(ABC):
         self.exclude_image_label_names = exclude_image_label_names
         self.include_frame_label_names = include_frame_label_names
         self.exclude_frame_label_names = exclude_frame_label_names
+        self.allow_external_annotations = allow_external_annotations
 
         # Internal state
         self._logged_uint16_conversion = False
@@ -164,7 +169,7 @@ class DatamintBaseDataset(ABC):
 
     def _extract_image_labels(
         self,
-        annotations: Sequence[Annotation],
+        annotations: Sequence['Annotation'],
     ) -> dict[str, torch.Tensor]:
         """Extract image-level label annotations.
 
@@ -263,11 +268,50 @@ class DatamintBaseDataset(ABC):
             self.seglabel_list, self.seglabel2code = self._process_segmentation_group(
                 worklist_schema['segmentation_group']
             )
+
+            if self.allow_external_annotations:
+                self._augment_labels_from_annotations()
         else:
             _LOGGER.info("No project provided; inferring labels from annotations.")
             self.frame_lsets, self.frame_lcodes = self._infer_labels_set(framed=True)
             self.image_lsets, self.image_lcodes = self._infer_labels_set(framed=False)
             self.seglabel_list, self.seglabel2code = self._infer_segmentation_group()
+
+    def _augment_labels_from_annotations(self) -> None:
+        """Augment project-defined label sets with identifiers found in actual annotations.
+
+        Scans resource annotations for identifiers not present in the project's
+        annotations_specs and adds them to the corresponding label/segmentation mappings.
+        """
+        inferred_frame_lsets, inferred_frame_lcodes = self._infer_labels_set(framed=True)
+        inferred_image_lsets, inferred_image_lcodes = self._infer_labels_set(framed=False)
+        inferred_seglabel_list, _ = self._infer_segmentation_group()
+
+        # Augment frame labels
+        for kind in ('multilabel', 'multiclass'):
+            existing = set(self.frame_lsets[kind])
+            new_labels = sorted([label for label in inferred_frame_lsets[kind] if label not in existing])
+            for label in new_labels:
+                _LOGGER.info(f"Allowing external frame label '{label}' not in project specs.")
+                self.frame_lsets[kind].append(label)
+            self.frame_lcodes[kind] = self.__build_label_codemap(self.frame_lsets[kind])
+
+        # Augment image labels
+        for kind in ('multilabel', 'multiclass'):
+            existing = set(self.image_lsets[kind])
+            new_labels = sorted([label for label in inferred_image_lsets[kind] if label not in existing])
+            for label in new_labels:
+                _LOGGER.info(f"Allowing external image label '{label}' not in project specs.")
+                self.image_lsets[kind].append(label)
+            self.image_lcodes[kind] = self.__build_label_codemap(self.image_lsets[kind])
+
+        # Augment segmentation labels
+        existing_segs = set(self.seglabel_list)
+        new_segs = sorted([label for label in inferred_seglabel_list if label not in existing_segs])
+        for label in new_segs:
+            _LOGGER.info(f"Allowing external segmentation label '{label}' not in project specs.")
+            self.seglabel_list.append(label)
+            self.seglabel2code[label] = len(self.seglabel_list)  # 1-based code
 
     def _setup_annotation_processor(self) -> None:
         """Initialize the annotation processor.
@@ -279,6 +323,7 @@ class DatamintBaseDataset(ABC):
             seglabel2code=self.seglabel2code,
             image_labels_set=self.image_labels_set,
             image_lcodes=self.image_lcodes,
+            allow_external_annotations=self.allow_external_annotations,
         )
 
     def _apply_annotation_filters(self) -> None:
@@ -312,11 +357,11 @@ class DatamintBaseDataset(ABC):
         self.resources = filtered_resources
         self.resource_annotations = filtered_annotations
 
-    def _filter_annotations(self, annotations: Sequence[Annotation]) -> list[Annotation]:
+    def _filter_annotations(self, annotations: Sequence['Annotation']) -> list['Annotation']:
         """Filter annotations based on include/exclude settings."""
         return [ann for ann in annotations if self._should_include_annotation(ann)]
 
-    def _should_include_annotation(self, ann: Annotation) -> bool:
+    def _should_include_annotation(self, ann: 'Annotation') -> bool:
         """Check if annotation should be included."""
         # Check annotator
         annotator = ann.created_by
@@ -331,6 +376,12 @@ class DatamintBaseDataset(ABC):
                 return self._should_include_image_label(ann.identifier)
             else:  # frame-level
                 return self._should_include_frame_label(ann.identifier)
+        elif ann.annotation_type == 'category':
+            if not self.allow_external_annotations:
+                lsets = self.image_lsets if ann.frame_index is None else self.frame_lsets
+                valid_identifiers = {ident for ident, _ in lsets.get('multiclass', [])}
+                if ann.identifier not in valid_identifiers:
+                    return False
 
         return True
 
@@ -342,6 +393,8 @@ class DatamintBaseDataset(ABC):
         return True
 
     def _should_include_segmentation(self, name: str) -> bool:
+        if not self.allow_external_annotations and name not in self.segmentation_labels_set:
+            return False
         if self.include_segmentation_names is not None:
             return name in self.include_segmentation_names
         if self.exclude_segmentation_names is not None:
@@ -349,6 +402,8 @@ class DatamintBaseDataset(ABC):
         return True
 
     def _should_include_image_label(self, name: str) -> bool:
+        if not self.allow_external_annotations and name not in self.image_labels_set:
+            return False
         if self.include_image_label_names is not None:
             return name in self.include_image_label_names
         if self.exclude_image_label_names is not None:
@@ -356,6 +411,8 @@ class DatamintBaseDataset(ABC):
         return True
 
     def _should_include_frame_label(self, name: str) -> bool:
+        if not self.allow_external_annotations and name not in self.frame_labels_set:
+            return False
         if self.include_frame_label_names is not None:
             return name in self.include_frame_label_names
         if self.exclude_frame_label_names is not None:
@@ -505,7 +562,16 @@ class DatamintBaseDataset(ABC):
 
     def _process_segmentations(self,
                                segmentations: dict,
-                               seg_labels: dict) -> tuple[Tensor | np.ndarray | dict, dict | None]:
+                               seg_labels: dict,
+                               output_shape: tuple | None = None) -> tuple[Tensor | np.ndarray | dict, dict | None]:
+        """
+        Process segmentations by optionally converting to semantic format and applying merge strategy.
+
+        Args:
+            segmentations: Dict of annotator_id -> segmentation array (num_instances, depth, H, W).
+            seg_labels: Dict of annotator_id -> list of label names corresponding to each instance in the segmentation array.
+            output_shape: Fallback output shape to use when outputting as semantic segmentation and no segmentations are present to infer from. Should NOT have the number of classes dimension. Example: (depth, H, W)
+        """
         # segmentations['author'] shape: (#instances, depth, H, W)
         if self.return_as_semantic_segmentation:
             sem_segs = {}
@@ -518,12 +584,22 @@ class DatamintBaseDataset(ABC):
             _LOGGER.debug(
                 f'Converted to semantic segmentation. Shapes: {[segmentations[a].shape for a in segmentations]}')
             if self.semantic_seg_merge_strategy:
-                if segmentations:
+                if len(segmentations) > 0:
                     segmentations = self.annotation_processor.apply_merge_strategy(
                         segmentations,
                         strategy=self.semantic_seg_merge_strategy
                     )
                     _LOGGER.debug(f"Merged segmentation shape: {segmentations.shape}")
+                else:
+                    if output_shape is None:
+                        raise ValueError("output_shape must be provided when no segmentations are present"
+                                         " to infer shape from.")
+                    # Create empty semantic segmentation with just background class
+                    segmentations = torch.zeros((len(self.segmentation_labels_set), *output_shape),
+                                                dtype=torch.get_default_dtype())
+                    segmentations[0] = 1  # background
+                    _LOGGER.debug("No segmentations found. "
+                                  f"Created empty semantic segmentation with shape: {segmentations.shape}")
 
                 # In semantic format, we don't need `seg_labels`, as the label info is at the new dimension (axis=0) of the semantic segmentation array.
                 seg_labels = None
@@ -560,7 +636,8 @@ class DatamintBaseDataset(ABC):
                 _LOGGER.debug(
                     f"Applied albumentations transform. Image shape: {img.shape} and segs shape: {[segmentations[a].shape for a in segmentations]}")
 
-            segmentations, seg_labels = self._process_segmentations(segmentations, seg_labels)
+            segmentations, seg_labels = self._process_segmentations(segmentations, seg_labels,
+                                                                    output_shape=img.shape[1:])
 
             result['segmentations'] = segmentations
             if seg_labels:

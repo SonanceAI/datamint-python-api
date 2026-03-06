@@ -53,10 +53,12 @@ class AnnotationProcessor:
         seglabel2code: dict[str, int],
         image_labels_set: list[str],
         image_lcodes: dict[str, dict[str, int]],
+        allow_external_annotations: bool = False,
     ):
         self.seglabel2code = seglabel2code
         self.image_labels_set = image_labels_set
         self.image_lcodes = image_lcodes
+        self.allow_external_annotations = allow_external_annotations
 
     def collate_frame_segmentations(self,
                                     fr_anns: Sequence['Annotation'],
@@ -67,7 +69,15 @@ class AnnotationProcessor:
         for ann in fr_anns:
             try:
                 seg = self.load_segmentation_data(ann)
-                seg_code_i = self.seglabel2code.get(ann.identifier, 0)
+                seg_code_i = self.seglabel2code.get(ann.identifier)
+                if seg_code_i is None:
+                    if self.allow_external_annotations and ann.identifier:
+                        seg_code_i = max(self.seglabel2code.values(), default=0) + 1
+                        self.seglabel2code[ann.identifier] = seg_code_i
+                        _LOGGER.info(f"Dynamically added segmentation label '{ann.identifier}' with code {seg_code_i}")
+                    else:
+                        raise ValueError(f"Unknown segmentation label '{ann.identifier}' and external annotations are not allowed")
+
                 if seg_code != -1 and seg_code != seg_code_i:
                     raise ValueError(f"Conflicting segmentation codes for frame annotations: "
                                      f"{seg_code} vs {seg_code_i}")
@@ -145,8 +155,17 @@ class AnnotationProcessor:
             author = ann.created_by or ann.created_by_model or "unknown"
 
             try:
+                seg_code = self.seglabel2code.get(ann.identifier)
+                if seg_code is None:
+                    if self.allow_external_annotations:
+                        seg_code = max(self.seglabel2code.values(), default=0) + 1
+                        self.seglabel2code[ann.identifier] = seg_code
+                        _LOGGER.info(f"Dynamically added segmentation label '{ann.identifier}' with code {seg_code}")
+                    else:
+                        raise ValueError(f"Segmentation annotation {ann.id} has unknown identifier "
+                                         f"{ann.identifier} with no corresponding code in {self.seglabel2code=}")
                 seg = self.load_segmentation_data(ann)
-                seg_code = self.seglabel2code.get(ann.identifier, 0)
+
                 # seg shape: (#slices, H, W)
             except Exception as e:
                 _LOGGER.error(f"Failed to load segmentation for annotation {ann.id}: {e}")
@@ -331,9 +350,20 @@ class AnnotationProcessor:
         Returns:
             Dict of annotator_id -> one-hot tensor of shape (num_labels,).
         """
-        labels_ret_size = (len(self.image_labels_set),)
         label2code = self.image_lcodes.get('multilabel', {})
 
+        # If allow_external_annotations, first pass to discover unknown labels
+        if self.allow_external_annotations:
+            for ann in annotations:
+                if ann.annotation_type != 'label':
+                    continue
+                if ann.identifier not in label2code:
+                    new_code = len(self.image_labels_set)
+                    self.image_labels_set.append(ann.identifier)
+                    label2code[ann.identifier] = new_code
+                    _LOGGER.info(f"Dynamically added image label '{ann.identifier}' with code {new_code}")
+
+        labels_ret_size = (len(self.image_labels_set),)
         labels_by_user: dict[str, torch.Tensor] = {}
 
         for ann in annotations:
@@ -355,7 +385,6 @@ class AnnotationProcessor:
         self,
         segmentations: dict[str, Tensor],
         strategy: MergeStrategy,
-        output_shape: tuple[int, ...] | None = None,
     ) -> Tensor: ...
 
     @overload
@@ -363,36 +392,29 @@ class AnnotationProcessor:
         self,
         segmentations: dict[str, np.ndarray],
         strategy: MergeStrategy,
-        output_shape: tuple[int, ...] | None = None,
     ) -> np.ndarray: ...
 
     def apply_merge_strategy(
         self,
         segmentations: dict[str, Tensor] | dict[str, np.ndarray],
         strategy: MergeStrategy,
-        output_shape: tuple[int, ...] | None = None,
     ) -> Tensor | np.ndarray:
         """Merge semantic segmentations from multiple annotators.
 
         Args:
             segmentations: Dict of author -> semantic segmentation tensor.
-            output_shape: Shape for empty result if no segmentations are present.
             strategy: Merge strategy ('union', 'intersection', 'mode').
 
         Returns:
             Merged tensor if strategy is specified, otherwise original dict.
         """
         if len(segmentations) == 0:
-            if output_shape is None:
-                raise ValueError("output_shape must be provided when no segmentations are present")
-            empty_segs = torch.zeros(output_shape, dtype=torch.get_default_dtype())
-            empty_segs[0] = 1  # background
-            return empty_segs
+            raise ValueError("No segmentations to merge")
 
         if isinstance(next(iter(segmentations.values())), np.ndarray):
             with torch.no_grad():
                 segmentations = {author: torch.from_numpy(seg) for author, seg in segmentations.items()}
-                return self.apply_merge_strategy(segmentations, strategy, output_shape).numpy()
+                return self.apply_merge_strategy(segmentations, strategy).numpy()
 
         if strategy == 'union':
             merged = self._merge_union(segmentations)

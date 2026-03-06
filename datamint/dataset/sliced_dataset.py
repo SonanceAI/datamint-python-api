@@ -417,7 +417,8 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 result['image'] = img
                 sliced_segs = aug_result['segmentations']
 
-            segmentations_processed, seg_labels_out = self._process_segmentations(sliced_segs, seg_labels)
+            segmentations_processed, seg_labels_out = self._process_segmentations(sliced_segs, seg_labels,
+                                                                                  output_shape=img.shape[1:])
             # remove temporary dummy dimension: (#instances, 1, DIM1, DIM2) -> (#instances, DIM1, DIM2)
             if isinstance(segmentations_processed, (Tensor, np.ndarray)):
                 segmentations_processed = segmentations_processed.squeeze(1)
