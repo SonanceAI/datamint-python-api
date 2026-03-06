@@ -60,6 +60,39 @@ class AnnotationProcessor:
         self.image_lcodes = image_lcodes
         self.allow_external_annotations = allow_external_annotations
 
+    def resolve_seg_code(self, identifier: str) -> int:
+        """Resolve a segmentation label name to its integer code.
+
+        If the label is unknown and ``allow_external_annotations`` is True, a new
+        code is assigned and stored in :attr:`seglabel2code`. Otherwise raises
+        :exc:`ValueError`.
+
+        Args:
+            identifier: Segmentation label name.
+
+        Returns:
+            Integer code for the label.
+        """
+        code = self.seglabel2code.get(identifier)
+        if code is not None:
+            return code
+        if self.allow_external_annotations and identifier:
+            code = max(self.seglabel2code.values(), default=0) + 1
+            self.seglabel2code[identifier] = code
+            _LOGGER.info(f"Dynamically added segmentation label '{identifier}' with code {code}")
+            return code
+        raise ValueError(
+            f"Unknown segmentation label '{identifier}' and external annotations are not allowed"
+        )
+
+    @staticmethod
+    def get_author(ann: 'Annotation') -> str:
+        """Return a consistent author key for an annotation.
+
+        Prefers ``created_by``, falls back to ``created_by_model``, then ``"unknown"``.
+        """
+        return ann.created_by or getattr(ann, 'created_by_model', None) or "unknown"
+
     def collate_frame_segmentations(self,
                                     fr_anns: Sequence['Annotation'],
                                     depth: int | None = None) -> tuple[np.ndarray | None, int]:
@@ -69,18 +102,12 @@ class AnnotationProcessor:
         for ann in fr_anns:
             try:
                 seg = self.load_segmentation_data(ann)
-                seg_code_i = self.seglabel2code.get(ann.identifier)
-                if seg_code_i is None:
-                    if self.allow_external_annotations and ann.identifier:
-                        seg_code_i = max(self.seglabel2code.values(), default=0) + 1
-                        self.seglabel2code[ann.identifier] = seg_code_i
-                        _LOGGER.info(f"Dynamically added segmentation label '{ann.identifier}' with code {seg_code_i}")
-                    else:
-                        raise ValueError(f"Unknown segmentation label '{ann.identifier}' and external annotations are not allowed")
+                seg_code_i = self.resolve_seg_code(ann.identifier)
 
                 if seg_code != -1 and seg_code != seg_code_i:
-                    raise ValueError(f"Conflicting segmentation codes for frame annotations: "
-                                     f"{seg_code} vs {seg_code_i}")
+                    raise ValueError(
+                        f"Conflicting segmentation codes for frame annotations: {seg_code} vs {seg_code_i}"
+                    )
                 seg_code = seg_code_i
                 # seg shape: (1, H, W)
                 seg = seg[0]  # -> (H, W)
@@ -119,7 +146,7 @@ class AnnotationProcessor:
         for ann in annotations:
             key_parts = []
             if by_author:
-                author = ann.created_by or "unknown"
+                author = self.get_author(ann)
                 key_parts.append(author)
             if by_identifier:
                 identifier = ann.identifier
@@ -152,18 +179,10 @@ class AnnotationProcessor:
         seg_image_annotations = [ann for ann in annotations
                                  if ann.scope == 'image' and ann.annotation_type == 'segmentation']
         for ann in seg_image_annotations:
-            author = ann.created_by or ann.created_by_model or "unknown"
+            author = self.get_author(ann)
 
             try:
-                seg_code = self.seglabel2code.get(ann.identifier)
-                if seg_code is None:
-                    if self.allow_external_annotations:
-                        seg_code = max(self.seglabel2code.values(), default=0) + 1
-                        self.seglabel2code[ann.identifier] = seg_code
-                        _LOGGER.info(f"Dynamically added segmentation label '{ann.identifier}' with code {seg_code}")
-                    else:
-                        raise ValueError(f"Segmentation annotation {ann.id} has unknown identifier "
-                                         f"{ann.identifier} with no corresponding code in {self.seglabel2code=}")
+                seg_code = self.resolve_seg_code(ann.identifier)
                 seg = self.load_segmentation_data(ann)
 
                 # seg shape: (#slices, H, W)
