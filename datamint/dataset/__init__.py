@@ -13,7 +13,7 @@ Use `create_dataset()` for automatic type detection, or instantiate directly.
 from .base import DatamintBaseDataset, DatamintDatasetException
 from .image_dataset import ImageDataset
 from .volume_dataset import VolumeDataset
-from .sliced_dataset import SlicedVolumeDataset, SlicedVolumeResource
+from .sliced_dataset import SlicedVolumeDataset
 
 __all__ = [
     # Core
@@ -22,6 +22,5 @@ __all__ = [
     # Specialized datasets
     'ImageDataset',
     'VolumeDataset',
-    'SlicedVolumeDataset',
-    'SlicedVolumeResource',
+    'SlicedVolumeDataset'
 ]

@@ -2,7 +2,6 @@
 
 from datetime import datetime
 import logging
-import shutil
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -18,7 +17,7 @@ from datamint.api.base_api import BaseApi
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
-    from .project import Project
+    from medimgkit import ViewPlane
     from .annotations.annotation import Annotation
     from datamint.types import ImagingData
     from datamint.api.dto import AnnotationType
@@ -338,6 +337,32 @@ class Resource(BaseEntity):
             file_path: Path to the local file
         """
         return LocalResource(local_filepath=file_path)
+
+    @property
+    def _slice_cache_manager(self) -> CacheManager:
+        """Cache manager for sliced volumes derived from this resource."""
+        if not hasattr(self, '__slice_cache_manager'):
+            self.__slice_cache_manager = CacheManager(
+                'sliced_volumes',
+                enable_memory_cache=True,
+                memory_cache_maxsize=1,
+            )
+        return self.__slice_cache_manager
+
+    def get_slice(self, axis: 'ViewPlane', index: int):
+        """Get a specific slice of the volume as a SlicedVolumeResource.
+
+        Args:
+            axis: The anatomical plane to slice along (e.g., 'axial', 'coronal', 'sagittal')
+            index: The index of the slice along the specified axis
+        Returns:
+            A numpy array representing the specified slice
+        """
+        from .sliced_resource import SlicedVolumeResource
+        sr = SlicedVolumeResource(self, index,
+                                  slice_axis=axis,
+                                  sliced_vols_cache=self._slice_cache_manager)
+        return sr.fetch_slice_data()
 
 
 class LocalResource(Resource):
