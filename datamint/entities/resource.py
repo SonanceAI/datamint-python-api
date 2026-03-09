@@ -277,14 +277,22 @@ class Resource(BaseEntity):
         """
         if self.mimetype == 'application/nifti':
             return True
-        return self.mimetype in 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+        return self.mimetype == 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+
+    def is_video(self) -> bool:
+        """Check if the resource is a video file.
+
+        Returns:
+            True if the resource is a video file, False otherwise
+        """
+        return self.mimetype.startswith('video/') or self.storage == 'VideoResourceHandler'
 
     def get_depth(self) -> int:
         if self.is_dicom() or self.is_nifti():
             return self.metadata['frame_count']
         if self.mimetype.startswith('image/'):
             return 1
-        if self.mimetype.startswith('video/'):
+        if self.is_video():
             for st in self.metadata['streams']:
                 if st['codec_type'] == 'video':
                     return st['nb_frames']

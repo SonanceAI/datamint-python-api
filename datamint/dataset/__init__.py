@@ -11,16 +11,22 @@ Use `create_dataset()` for automatic type detection, or instantiate directly.
 
 # New modular architecture
 from .base import DatamintBaseDataset, DatamintDatasetException
+from .multiframe_dataset import MultiFrameDataset
 from .image_dataset import ImageDataset
 from .volume_dataset import VolumeDataset
+from .video_dataset import VideoDataset
 from .sliced_dataset import SlicedVolumeDataset
+from .sliced_video_dataset import SlicedVideoDataset
 
 __all__ = [
     # Core
     'DatamintBaseDataset',
     'DatamintDatasetException',
+    'MultiFrameDataset',
     # Specialized datasets
     'ImageDataset',
     'VolumeDataset',
-    'SlicedVolumeDataset'
+    'VideoDataset',
+    'SlicedVolumeDataset',
+    'SlicedVideoDataset',
 ]

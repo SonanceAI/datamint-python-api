@@ -27,9 +27,6 @@ if TYPE_CHECKING:
 _SEG_SLICE_CACHEKEY = "seg_slice_array"
 
 
-
-
-
 # # Axis mapping for anatomical orientations
 # SLICE_AXIS_MAP = {
 #     'axial': 0,      # slicing along depth (superior-inferior)
@@ -218,7 +215,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             Tuple of (sliced_resources, sliced_annotations).
         """
         from datamint.entities.sliced_resource import SlicedVolumeResource
-        
+
         sliced_resources: list[SlicedVolumeResource] = []
         sliced_annotations: list[Sequence['Annotation']] = []
 
@@ -326,7 +323,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
     def _fetch_sliced_seg_annotation(
         self,
-        ann: 'Annotation',
+        ann: Annotation,
         resource: SlicedVolumeResource,
         seg_slice_axis: int,
     ) -> np.ndarray:

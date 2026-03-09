@@ -595,7 +595,7 @@ class DatamintBaseDataset(ABC):
                         raise ValueError("output_shape must be provided when no segmentations are present"
                                          " to infer shape from.")
                     # Create empty semantic segmentation with just background class
-                    segmentations = torch.zeros((len(self.segmentation_labels_set), *output_shape),
+                    segmentations = torch.zeros((len(self.segmentation_labels_set)+1, *output_shape),
                                                 dtype=torch.get_default_dtype())
                     segmentations[0] = 1  # background
                     _LOGGER.debug("No segmentations found. "
