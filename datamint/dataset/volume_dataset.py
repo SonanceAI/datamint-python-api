@@ -141,7 +141,7 @@ class VolumeDataset(DatamintBaseDataset):
         """
         from .sliced_dataset import SlicedVolumeDataset
 
-        return SlicedVolumeDataset(
+        return SlicedVolumeDataset.from_dataset(
             parent_dataset=self,
             slice_axis=axis,
         )

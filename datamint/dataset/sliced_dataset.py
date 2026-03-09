@@ -6,7 +6,7 @@ enabling training of 2D models on volumetric medical imaging data.
 """
 from __future__ import annotations
 import hashlib
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from typing_extensions import override
 from collections.abc import Sequence
 import numpy as np
@@ -15,12 +15,13 @@ from torch import Tensor
 import albumentations
 
 from .base import DatamintBaseDataset
-from .annotation_processor import AnnotationProcessor, MergeStrategy
+from .annotation_processor import AnnotationProcessor
 
 from datamint.entities.cache_manager import CacheManager
 if TYPE_CHECKING:
     from datamint.entities import Annotation, Resource
     from datamint.entities.sliced_resource import SlicedVolumeResource
+    from medimgkit import ViewPlane
 
 # Cache key for sliced segmentation numpy arrays
 _SEG_SLICE_CACHEKEY = "seg_slice_array"
@@ -46,25 +47,25 @@ class SlicedVolumeDataset(DatamintBaseDataset):
     The ``__getitem__`` returns arrays with shape ``(C, H, W)`` for images
     and ``(num_instances, H, W)`` or ``(num_labels+1, H, W)`` for segmentations.
 
-    Typically created via :meth:`VolumeDataset.slice`, but can also be
-    instantiated directly.
+    Can be instantiated directly with all the same parameters as
+    :class:`DatamintBaseDataset` plus ``slice_axis``, or created from an
+    already-loaded dataset via the :meth:`from_dataset` factory classmethod
+    (which avoids additional server calls).
 
     Args:
-        parent_dataset: The source :class:`DatamintBaseDataset` (e.g. VolumeDataset)
-            providing resources, annotations, and configuration.
+        project: Project name, Project object, or None. Mutually exclusive with resources.
+        resources: List of Resource objects, or None. Mutually exclusive with project.
         slice_axis: Slice orientation. One of ``'axial'`` (depth), ``'coronal'``
             (height), ``'sagittal'`` (width), or an integer axis index (0--2).
+        See :class:`DatamintBaseDataset` for all remaining parameters.
     """
 
     def __init__(
         self,
-        parent_dataset: DatamintBaseDataset,
-        slice_axis: Literal['axial', 'coronal', 'sagittal'] | int = 'axial',
+        *args,
+        slice_axis: ViewPlane | int = 'axial',
+        **kwargs,
     ):
-        # We intentionally do NOT call super().__init__() because that
-        # requires project/API interaction. Instead, copy needed state
-        # from the parent dataset.
-
         # --- Resolve axis ---
         if isinstance(slice_axis, str):
             valid_slice_axis = ['axial', 'coronal', 'sagittal']
@@ -79,39 +80,10 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 raise ValueError(f"axis must be 0, 1, or 2, got {slice_axis}")
             self._slice_axis_int = slice_axis
 
-        self.project = parent_dataset.project
-
-        # Copy configuration from parent
-        self.return_metainfo = parent_dataset.return_metainfo
-        self.return_segmentations = parent_dataset.return_segmentations
-        self.return_as_semantic_segmentation = parent_dataset.return_as_semantic_segmentation
-        self.semantic_seg_merge_strategy: MergeStrategy | None = parent_dataset.semantic_seg_merge_strategy
-        self.include_unannotated = parent_dataset.include_unannotated
-
-        # Transforms
-        self.alb_transform = parent_dataset.alb_transform
-
-        # Filtering (already applied on parent's annotations)
-        self.include_annotators = parent_dataset.include_annotators
-        self.exclude_annotators = parent_dataset.exclude_annotators
-        self.include_segmentation_names = parent_dataset.include_segmentation_names
-        self.exclude_segmentation_names = parent_dataset.exclude_segmentation_names
-        self.include_image_label_names = parent_dataset.include_image_label_names
-        self.exclude_image_label_names = parent_dataset.exclude_image_label_names
-        self.include_frame_label_names = parent_dataset.include_frame_label_names
-        self.exclude_frame_label_names = parent_dataset.exclude_frame_label_names
-
-        # Copy label sets and processor from parent
-        self.annotation_processor = parent_dataset.annotation_processor
-        self.frame_lsets = parent_dataset.frame_lsets
-        self.frame_lcodes = parent_dataset.frame_lcodes
-        self.image_lsets = parent_dataset.image_lsets
-        self.image_lcodes = parent_dataset.image_lcodes
-        self.seglabel_list = parent_dataset.seglabel_list
-        self.seglabel2code = parent_dataset.seglabel2code
-
-        # Internal state
-        self._logged_uint16_conversion = False
+        super().__init__(
+            *args,
+            **kwargs,
+        )
 
         # --- Segmentation slice cache ---
         self._seg_slice_cache = CacheManager(
@@ -127,12 +99,107 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             memory_cache_maxsize=2,
         )
         expanded_resources, expanded_annotations = self._expand_resources(
-            parent_dataset.resources,
-            parent_dataset.resource_annotations,
+            self.resources,
+            self.resource_annotations,
             volume_cache,
         )
         self.resources = expanded_resources  # type: ignore[assignment]
         self.resource_annotations = expanded_annotations
+
+    @classmethod
+    def from_dataset(
+        cls,
+        parent_dataset: DatamintBaseDataset,
+        slice_axis: 'ViewPlane | int' = 'axial',
+    ) -> 'SlicedVolumeDataset':
+        """Create a SlicedVolumeDataset from an existing dataset without additional server calls.
+
+        Copies all configuration, label mappings, and already-loaded resources
+        from ``parent_dataset``, then expands them into per-slice proxy resources.
+        Use this factory when you already have a loaded dataset and want to obtain
+        2D slices without triggering new API requests.
+
+        Args:
+            parent_dataset: The source :class:`DatamintBaseDataset` (e.g. VolumeDataset)
+                providing resources, annotations, and configuration.
+            slice_axis: Slice orientation. One of ``'axial'`` (depth), ``'coronal'``
+                (height), ``'sagittal'`` (width), or an integer axis index (0--2).
+
+        Returns:
+            A new :class:`SlicedVolumeDataset` instance.
+        """
+        instance: SlicedVolumeDataset = cls.__new__(cls)
+
+        # --- Resolve axis ---
+        if isinstance(slice_axis, str):
+            valid_slice_axis = ['axial', 'coronal', 'sagittal']
+            if slice_axis not in valid_slice_axis:
+                raise ValueError(
+                    f"Unknown axis '{slice_axis}'. "
+                    f"Must be one of {valid_slice_axis} or an int 0-2."
+                )
+            instance._slice_axis = slice_axis
+        else:
+            if not (0 <= slice_axis <= 2):
+                raise ValueError(f"axis must be 0, 1, or 2, got {slice_axis}")
+            instance._slice_axis_int = slice_axis
+
+        instance.project = parent_dataset.project
+
+        # Copy configuration from parent
+        instance.return_metainfo = parent_dataset.return_metainfo
+        instance.return_segmentations = parent_dataset.return_segmentations
+        instance.return_as_semantic_segmentation = parent_dataset.return_as_semantic_segmentation
+        instance.semantic_seg_merge_strategy = parent_dataset.semantic_seg_merge_strategy
+        instance.include_unannotated = parent_dataset.include_unannotated
+
+        # Transforms
+        instance.alb_transform = parent_dataset.alb_transform
+
+        # Filtering (already applied on parent's annotations)
+        instance.include_annotators = parent_dataset.include_annotators
+        instance.exclude_annotators = parent_dataset.exclude_annotators
+        instance.include_segmentation_names = parent_dataset.include_segmentation_names
+        instance.exclude_segmentation_names = parent_dataset.exclude_segmentation_names
+        instance.include_image_label_names = parent_dataset.include_image_label_names
+        instance.exclude_image_label_names = parent_dataset.exclude_image_label_names
+        instance.include_frame_label_names = parent_dataset.include_frame_label_names
+        instance.exclude_frame_label_names = parent_dataset.exclude_frame_label_names
+
+        # Copy label sets and processor from parent
+        instance.annotation_processor = parent_dataset.annotation_processor
+        instance.frame_lsets = parent_dataset.frame_lsets
+        instance.frame_lcodes = parent_dataset.frame_lcodes
+        instance.image_lsets = parent_dataset.image_lsets
+        instance.image_lcodes = parent_dataset.image_lcodes
+        instance.seglabel_list = parent_dataset.seglabel_list
+        instance.seglabel2code = parent_dataset.seglabel2code
+
+        # Internal state
+        instance._logged_uint16_conversion = False
+
+        # --- Segmentation slice cache ---
+        instance._seg_slice_cache = CacheManager(
+            'sliced_segmentations',
+            enable_memory_cache=True,
+            memory_cache_maxsize=8,
+        )
+
+        # --- Build sliced resources ---
+        volume_cache = CacheManager(
+            'sliced_volumes',
+            enable_memory_cache=True,
+            memory_cache_maxsize=2,
+        )
+        expanded_resources, expanded_annotations = instance._expand_resources(
+            parent_dataset.resources,
+            parent_dataset.resource_annotations,
+            volume_cache,
+        )
+        instance.resources = expanded_resources  # type: ignore[assignment]
+        instance.resource_annotations = expanded_annotations
+
+        return instance
 
     def _expand_resources(
         self,
