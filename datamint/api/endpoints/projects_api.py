@@ -46,6 +46,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                resources_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
+               segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
                return_entity: Literal[True] = True
                ) -> Project: ...
@@ -57,6 +58,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                resources_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
+               segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
                return_entity: Literal[False]
                ) -> str: ...
@@ -67,6 +69,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                resources_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
+               segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
                return_entity: bool = True
                ) -> str | Project:
@@ -84,15 +87,14 @@ class ProjectsApi(CRUDEntityApi[Project]):
             The id of the created project.
         """
         resources_ids = resources_ids or []
+
         project_data = {'name': name,
                         'is_active_learning': is_active_learning,
                         'resource_ids': resources_ids,
+                        "segmentationData": { "segmentationValueType": segmentation_spec, "definitions": [] },
                         'annotation_set': {
-                            "annotators": [],
                             "resource_ids": resources_ids,
                             "annotations": [],
-                            "frame_labels": [],
-                            "image_labels": [],
                         },
                         "two_up_display": two_up_display,
                         "require_review": False,

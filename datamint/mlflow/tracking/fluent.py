@@ -49,12 +49,15 @@ def _find_project_by_name(project_name: str):
 
 def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
     dt_client = Api(check_connection=False)
-    # If length >= 32, likely an ID
-    if len(project_name_or_id) >= 32 and ' ' not in project_name_or_id:
+    # If length == 36, likely an ID
+    if len(project_name_or_id) == 36 and ' ' not in project_name_or_id:
         # Try to get by ID first
-        project = dt_client.projects.get_by_id(project_name_or_id)
-        if project is not None:
-            return project
+        try:
+            project = dt_client.projects.get_by_id(project_name_or_id)
+            if project is not None:
+                return project
+        except ValueError:
+            pass  # Not a valid UUID, treat as name
     project = dt_client.projects.get_by_name(project_name_or_id)
     if project is None:
         raise DatamintException(f"Project '{project_name_or_id}' does not exist.")
