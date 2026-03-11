@@ -115,6 +115,24 @@ class BaseEntity(BaseModel):
         """
         return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
 
+    def __getstate__(self) -> dict:
+        state = super().__getstate__()
+        # Strip _api (contains unpicklable connections)
+        if state.get('__pydantic_private__') is not None:
+            state = dict(state)
+            state['__pydantic_private__'] = {
+                k: v for k, v in state['__pydantic_private__'].items() if k != '_api'
+            }
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        if state.get('__pydantic_private__') is not None:
+            state = dict(state)
+            private = dict(state['__pydantic_private__'])
+            private['_api'] = None  # placeholder;
+            state['__pydantic_private__'] = private
+        super().__setstate__(state)
+
     def _fetch_and_cache_file_data(
         self,
         cache_manager: 'Any',  # CacheManager[bytes]

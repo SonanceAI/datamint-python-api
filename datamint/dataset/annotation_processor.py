@@ -114,7 +114,7 @@ class AnnotationProcessor:
                 if stacked_seg is None:
                     if depth is None:
                         depth = ann.resource.get_depth()
-                    stacked_seg = np.zeros((depth, *seg.shape), dtype=bool)
+                    stacked_seg = np.zeros((depth, *seg.shape), dtype=np.uint8)
                 if ann.frame_index is None:
                     raise ValueError(f"Frame-level annotation {ann.id} missing frame_index")
                 stacked_seg[ann.frame_index] = seg
@@ -333,21 +333,21 @@ class AnnotationProcessor:
         if ann_data_array.shape[1] != 1:
             raise ValueError(f"Segmentation must have 1 channel, got shape {ann_data_array.shape}")
         ann_data_array = ann_data_array[:, 0, :, :]  # (N, H, W)
-        return ann_data_array != 0  # binary mask
+        return (ann_data_array != 0).astype(np.uint8)  # binary mask
 
     def _merge_union(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Union merge: pixel is labeled if ANY annotator labeled it."""
         new_segmentations = torch.zeros_like(list(segmentations.values())[0])
         for seg in segmentations.values():
             new_segmentations += seg
-        return new_segmentations.bool()
+        return new_segmentations.bool().to(torch.uint8)
 
     def _merge_intersection(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Intersection merge: pixel is labeled if ALL annotators labeled it."""
         new_segmentations = torch.ones_like(list(segmentations.values())[0])
         for seg in segmentations.values():
             new_segmentations *= seg
-        return new_segmentations.bool()
+        return new_segmentations.bool().to(torch.uint8)
 
     def _merge_mode(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Mode merge: pixel is labeled if majority of annotators labeled it."""
@@ -355,7 +355,7 @@ class AnnotationProcessor:
         for seg in segmentations.values():
             new_segmentations += seg
         new_segmentations = new_segmentations >= len(segmentations) / 2
-        return new_segmentations
+        return new_segmentations.bool().to(torch.uint8)
 
     def convert_image_labels(
         self,

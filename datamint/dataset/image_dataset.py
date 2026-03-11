@@ -69,8 +69,6 @@ class ImageDataset(VolumeDataset):
         img = np.transpose(img, (1, 2, 0))
 
         replay_alb_transf = albumentations.ReplayCompose([self.alb_transform])
-        _LOGGER.debug(
-            f'before alb transform image shape: {img.shape} | segmentations shape: {[segmentations[a].shape for a in segmentations]}')
 
         aug_data = replay_alb_transf(image=img)  # First call
         replay_data = aug_data['replay']
@@ -80,6 +78,8 @@ class ImageDataset(VolumeDataset):
         for author, segs in segmentations.items():
             if segs.ndim == 4 and segs.shape[1] == 1:
                 segs = segs.squeeze(1)  # (num_instances, 1, H, W) -> (num_instances, H, W)
+            # if segs.dtype == bool:
+            #     segs = segs.astype(np.uint8)
             aug_segs = replay_alb_transf.replay(replay_data, masks=segs)['masks']
             # store back with original shape
             if segs.ndim == 3:

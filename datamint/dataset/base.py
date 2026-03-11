@@ -20,6 +20,7 @@ from datamint.entities.annotations.annotation_spec import AnnotationSpec, Catego
 
 if TYPE_CHECKING:
     from datamint.entities import Resource, Project, Annotation
+    from albumentations import BaseCompose
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ class DatamintBaseDataset(ABC):
         return_segmentations: bool = True,
         return_as_semantic_segmentation: bool = False,
         semantic_seg_merge_strategy: MergeStrategy | None = None,
-        alb_transform: Callable | None = None,
+        alb_transform: 'Callable | BaseCompose | None' = None,
         include_unannotated: bool = True,
         include_annotators: list[str] | None = None,
         exclude_annotators: list[str] | None = None,
@@ -94,7 +95,6 @@ class DatamintBaseDataset(ABC):
         exclude_frame_label_names: list[str] | None = None,
         allow_external_annotations: bool = False,
     ):
-        from datamint import Api
         # Validate mutually exclusive parameters
         if project is not None and resources is not None:
             raise DatamintDatasetException(
@@ -120,25 +120,12 @@ class DatamintBaseDataset(ABC):
         if semantic_seg_merge_strategy and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy requires return_as_semantic_segmentation=True")
 
-        # Initialize API
-        self._api = Api(
-            server_url=server_url,
-            api_key=api_key,
-            check_connection=auto_update
-        )
-
-        # Initialize from project or resources
-        if resources is not None:
-            self.resources = self._initialize_from_resources(resources)
-            self.project = None
-        else:
-            self.project, self.resources = self._initialize_from_project(project)  # type: ignore
-
-        # Fetch annotations
-        self.resource_annotations = list(self._api.annotations.get_list(
-            resource=self.resources,
-            group_by_resource=True,
-        ))
+        # Store API configuration for (possibly deferred) initialization
+        self._server_url = server_url
+        self._api_key = api_key
+        self._auto_update = auto_update
+        self._init_project = project
+        self._init_resources = resources
 
         # Store configuration
         self.return_metainfo = return_metainfo
@@ -148,7 +135,7 @@ class DatamintBaseDataset(ABC):
         self.include_unannotated = include_unannotated
 
         # Transforms
-        self.alb_transform = alb_transform
+        self.set_transform(alb_transform)
 
         # Filtering
         self.include_annotators = include_annotators
@@ -163,9 +150,99 @@ class DatamintBaseDataset(ABC):
 
         # Internal state
         self._logged_uint16_conversion = False
+        self._is_prepared = False
 
-        # Setup
+    def __getattr__(self, name: str) -> Any:
+        # __getattr__ is only invoked when normal attribute lookup fails —
+        # i.e. for attributes populated by _prepare() (resources, project,
+        # label sets, annotation_processor, …). Guard against recursion for
+        # attributes not yet written during __init__ itself.
+        if self.__dict__.get('_is_prepared') is not False:
+            raise AttributeError(name)
+        self._prepare()
+        return object.__getattribute__(self, name)
+
+    def _prepare(self) -> None:
+        """Fetch data from the API and set up the dataset.
+
+        Called automatically on first access of any attribute that requires
+        server data (e.g. ``resources``, ``project``, label sets).
+        Idempotent — safe to call multiple times.
+        """
+        if self._is_prepared:
+            return
+
+        from datamint import Api
+
+        # Initialize API
+        self._api = Api(
+            server_url=self._server_url,
+            api_key=self._api_key,
+            check_connection=self._auto_update,
+        )
+
+        # Initialize from project or resources
+        if self._init_resources is not None:
+            self.resources = self._initialize_from_resources(self._init_resources)
+            self.project = None
+        else:
+            self.project, self.resources = self._initialize_from_project(self._init_project)  # type: ignore
+
+        # Fetch annotations
+        self.resource_annotations = list(self._api.annotations.get_list(
+            resource=self.resources,
+            group_by_resource=True,
+        ))
+
+        # Setup dataset (labels, annotation processor, filters)
         self._setup_dataset()
+
+        self._is_prepared = True
+
+        # Clean up temporary attributes used only for deferred initialisation
+        del self._server_url, self._api_key, self._auto_update
+        del self._init_project, self._init_resources
+
+    # def __getstate__(self) -> object:
+    #     # print the size in MB
+    #     print(f'>>>{len(str(self.__dict__))/1024/1024:.2f} MB')
+
+    #     return super().__getstate__()
+
+    def __setstate__(self, state: dict) -> None:
+        vars(self).update(state)
+        if self._is_prepared:
+            self._reinit_api()
+
+    def _reinit_api(self) -> None:
+        """Re-inject sub-API handles into entities after unpickling in a worker.
+
+        ``self._api`` is already a fresh ``Api`` instance (reconstructed by
+        ``Api.__setstate__``); we only need to wire its per-resource/annotation
+        sub-APIs back into the individual entity objects.
+        """
+        resources_api = self._api.resources
+        annotations_api = self._api.annotations
+        projects_api = self._api.projects
+        for res in self.resources:
+            res._api = resources_api
+        if self.project is not None:
+            self.project._api = projects_api
+        for ann_list in self.resource_annotations:
+            for ann in ann_list:
+                ann._api = annotations_api
+
+    def set_transform(self, alb_transform: 'BaseCompose | None' = None) -> None:
+        """Set transforms after initialization."""
+        self.alb_transform = alb_transform
+
+    def add_transform(self, alb_transform: 'BaseCompose') -> None:
+        import albumentations as A
+        """Add an albumentations transform, composing with existing one if present."""
+        if self.alb_transform is not None:
+            self.alb_transform = A.Compose([self.alb_transform, alb_transform])
+        else:
+            self.alb_transform = alb_transform
 
     def _extract_image_labels(
         self,
@@ -617,9 +694,8 @@ class DatamintBaseDataset(ABC):
         if isinstance(img, np.ndarray):
             img = self._preprocess_image_array(img)
         annotations = result['annotations']
-        resource = result['resource']
-        _LOGGER.debug(f"Loaded image {resource.filename} with shape {img.shape}")
-        _LOGGER.debug(f"Annotations: {len(annotations)} found")
+        # resource = result['resource']
+        # _LOGGER.debug(f"Loaded image {resource.filename} with shape {img.shape}")
 
         # Process segmentations
         if self.return_segmentations:
@@ -633,8 +709,6 @@ class DatamintBaseDataset(ABC):
                 img = aug_result['image']
                 result['image'] = img
                 segmentations = aug_result['segmentations']
-                _LOGGER.debug(
-                    f"Applied albumentations transform. Image shape: {img.shape} and segs shape: {[segmentations[a].shape for a in segmentations]}")
 
             segmentations, seg_labels = self._process_segmentations(segmentations, seg_labels,
                                                                     output_shape=img.shape[1:])
@@ -679,9 +753,6 @@ class DatamintBaseDataset(ABC):
         """Concatenate datasets."""
         return ConcatDataset([self, other])  # type: ignore[list-item]
 
-    def subset(self, indices: list[int]) -> 'DatamintBaseDataset':
-        pass
-
     def get_dataloader(self, *args, **kwargs) -> DataLoader:
         """Get DataLoader with proper collate function."""
         return DataLoader(self, *args, collate_fn=self.get_collate_fn(), **kwargs)  # type: ignore[arg-type]
@@ -706,13 +777,29 @@ class DatamintBaseDataset(ABC):
                         _LOGGER.warning(f"Different shapes for {key}: {shapes}")
                         collated[key] = values
                 elif isinstance(values[0], np.ndarray):
-                    collated[key] = np.stack(values)
+                    shapes = [a.shape for a in values]
+                    if all(s == shapes[0] for s in shapes):
+                        collated[key] = np.stack(values)
+                    else:
+                        _LOGGER.warning(f"Different shapes for {key}: {shapes}")
+                        collated[key] = values
                 else:
                     collated[key] = values
 
             return collated
 
         return collate_fn
+    
+    def subset(self, indices: list[int]) -> 'DatamintBaseDataset':
+        """Create a dataset subset by slicing resources and annotations."""
+        import copy
+        new_ds = copy.copy(self)
+        try:
+            new_ds.resources = [self.resources[i] for i in indices]
+            new_ds.resource_annotations = [self.resource_annotations[i] for i in indices]
+        except IndexError as e:
+            raise IndexError(f"Subset indices out of bounds for dataset of length {len(self)}.") from e
+        return new_ds
 
     def __repr__(self) -> str:
         name = self.project.name if self.project else "<Custom>"
@@ -739,3 +826,208 @@ class DatamintBaseDataset(ABC):
 
         lines = [head] + ["    " + line for line in body]
         return "\n".join(lines)
+
+    def split(
+        self,
+        *,
+        seed: int | None = None,
+        use_server_splits: bool | None = None,
+        **splits: float,
+    ) -> dict[str, 'DatamintBaseDataset']:
+        """Split the dataset into multiple named subsets.
+
+        The mode is selected automatically when *use_server_splits* is not
+        given:
+
+        - If ratio kwargs are provided (e.g. ``train=0.7``), local splitting
+          is used (equivalent to ``use_server_splits=False``).
+        - If no ratio kwargs are provided, server-side ``split:*`` tags on
+          resources are used (equivalent to ``use_server_splits=True``).
+
+        Examples::
+
+            # Local split — ratios infer use_server_splits=False
+            parts = dataset.split(train=0.7, val=0.15, test=0.15, seed=42)
+            train_ds = parts['train']
+
+            # Server-side split — no ratios, infers use_server_splits=True
+            parts = dataset.split()
+
+            # Explicit override
+            parts = dataset.split(use_server_splits=True)
+
+        Args:
+            seed: Random seed for reproducible local splitting.
+            use_server_splits: If ``True``, read ``split:*`` tags from each
+                resource instead of performing a random split. If ``None``
+                (default), inferred from whether ratio kwargs are provided.
+            **splits: Named split ratios (e.g. ``train=0.7, test=0.3``).
+                Must sum to 1.0 (±0.01 tolerance). Must be empty when
+                *use_server_splits* is ``True``.
+
+        Returns:
+            Dictionary mapping split names to new dataset instances.
+
+        Raises:
+            ValueError: If ratios are invalid or arguments conflict.
+        """
+        if use_server_splits is None:
+            use_server_splits = not splits  # True when no ratios given
+
+        if use_server_splits:
+            return self._split_by_server_tags(splits)
+
+        return self._split_locally(splits, seed)
+
+    def _split_by_server_tags(
+        self,
+        splits: dict[str, float],
+    ) -> dict[str, 'DatamintBaseDataset']:
+        """Group resources by ``split:<name>`` tags."""
+        if splits:
+            raise ValueError(
+                "Ratio kwargs (e.g. train=0.7) must not be provided when "
+                "use_server_splits=True."
+            )
+
+        from collections import defaultdict
+        split_indices: dict[str, list[int]] = defaultdict(list)
+
+        for idx, resource in enumerate(self.resources):
+            tags = resource.tags or []
+            for tag in tags:
+                if tag.startswith("split:"):
+                    split_name = tag[len("split:"):]
+                    split_indices[split_name].append(idx)
+
+        if not split_indices:
+            raise ValueError(
+                "No resources have 'split:*' tags. Tag resources on the "
+                "server first or use local splitting (use_server_splits=False)."
+            )
+
+        return {name: self.subset(indices) for name, indices in split_indices.items()}
+
+    def _split_locally(
+        self,
+        splits: dict[str, float],
+        seed: int | None,
+    ) -> dict[str, 'DatamintBaseDataset']:
+        """Randomly partition resources by ratios."""
+        if len(splits) < 2:
+            raise ValueError("At least 2 splits are required (e.g. train=0.7, test=0.3).")
+
+        for name, ratio in splits.items():
+            if ratio <= 0:
+                raise ValueError(f"Split ratio for '{name}' must be positive, got {ratio}.")
+
+        total = sum(splits.values())
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(
+                f"Split ratios must sum to 1.0 (got {total:.4f}). "
+                f"Provided: {splits}"
+            )
+
+        import random
+        n = len(self)
+        indices = list(range(n))
+        rng = random.Random(seed)
+        rng.shuffle(indices)
+
+        result: dict[str, DatamintBaseDataset] = {}
+        start = 0
+        split_items = list(splits.items())
+
+        for i, (name, ratio) in enumerate(split_items):
+            if i == len(split_items) - 1:
+                # Last split gets all remaining indices to avoid rounding issues
+                end = n
+            else:
+                end = start + round(ratio * n)
+            result[name] = self.subset(indices[start:end])
+            start = end
+
+        return result
+
+    def filter(
+        self,
+        *,
+        tags: list[str] | None = None,
+        filename_pattern: str | None = None,
+        has_annotations: bool | None = None,
+        annotation_names: list[str] | None = None,
+        custom_fn: 'Callable[[Resource, Sequence[Annotation]], bool] | None' = None,
+    ) -> 'DatamintBaseDataset':
+        """Return a new dataset containing only resources that match **all**
+        specified criteria.
+
+        This method is chainable — the returned dataset supports the same
+        interface, so you can write::
+
+            filtered = dataset.filter(tags=['busi']).filter(has_annotations=True)
+
+        or combine with :meth:`split`::
+
+            parts = dataset.filter(tags=['ultrasound']).split(train=0.8, test=0.2)
+
+        Args:
+            tags: Keep resources whose tags contain **any** of the given values.
+            filename_pattern: Keep resources whose filename matches this
+                pattern (interpreted as :func:`fnmatch.fnmatch` glob).
+            has_annotations: If ``True``, keep only resources with at least one
+                annotation.  If ``False``, keep only those **without**
+                annotations.
+            annotation_names: Keep resources that have at least one annotation
+                whose ``identifier`` is in this list.
+            custom_fn: Arbitrary predicate receiving ``(resource, annotations)``
+                and returning ``True`` to keep the resource.
+
+        Returns:
+            A new :class:`DatamintBaseDataset` containing only the matching
+            resources.
+
+        Raises:
+            ValueError: If no filter criteria are specified.
+        """
+        if all(v is None for v in (tags, filename_pattern, has_annotations,
+                                    annotation_names, custom_fn)):
+            raise ValueError("At least one filter criterion must be specified.")
+
+        import fnmatch
+
+        passing_indices: list[int] = []
+
+        for idx, (resource, annotations) in enumerate(
+            zip(self.resources, self.resource_annotations)
+        ):
+            # --- tags (OR within this criterion) ---
+            if tags is not None:
+                resource_tags = resource.tags or []
+                if not any(t in resource_tags for t in tags):
+                    continue
+
+            # --- filename_pattern ---
+            if filename_pattern is not None:
+                if not fnmatch.fnmatch(resource.filename, filename_pattern):
+                    continue
+
+            # --- has_annotations ---
+            if has_annotations is not None:
+                has_any = len(annotations) > 0
+                if has_any != has_annotations:
+                    continue
+
+            # --- annotation_names ---
+            if annotation_names is not None:
+                ann_identifiers = {a.identifier for a in annotations}
+                if not ann_identifiers.intersection(annotation_names):
+                    continue
+
+            # --- custom_fn ---
+            if custom_fn is not None:
+                if not custom_fn(resource, annotations):
+                    continue
+
+            passing_indices.append(idx)
+
+        return self.subset(passing_indices)
