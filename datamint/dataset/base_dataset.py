@@ -55,7 +55,6 @@ class DatamintBaseDataset:
         exclude_frame_label_names: List of frame label names to exclude. If None, no frame labels will be excluded.
     """
 
-    
     DATAMINT_DATASETS_DIR = "datasets"
 
     def __init__(
@@ -313,7 +312,7 @@ class DatamintBaseDataset:
             return
         # order by 'index' key
         max_index = max([g['index'] for g in groups.values()])
-        self.seglabel_list : list[str] = ['UNKNOWN'] * max_index  # 1-based
+        self.seglabel_list: list[str] = ['UNKNOWN'] * max_index  # 1-based
         for segname, g in groups.items():
             self.seglabel_list[g['index'] - 1] = segname
 
@@ -536,15 +535,46 @@ class DatamintBaseDataset:
         return distribution
 
     def _check_integrity(self) -> None:
-        """Check if all image files exist."""
+        """Check if all image files exist and are not empty. Empty files will be redownloaded."""
         missing_files = []
+        empty_resources = []
         for imginfo in self.images_metainfo:
             filepath = os.path.join(self.dataset_dir, imginfo['file'])
             if not os.path.isfile(filepath):
                 missing_files.append(imginfo['file'])
+            elif os.path.getsize(filepath) == 0:
+                # File exists but is empty, consider it as missing and attempt to redownload
+                # delete
+                os.remove(filepath)
+                empty_resources.append(imginfo)
 
         if missing_files:
             raise DatamintDatasetException(f"Image files not found: {missing_files}")
+
+        if empty_resources:
+            _LOGGER.warning(
+                f"Found {len(empty_resources)} empty image file(s). Attempting to redownload..."
+            )
+            self._redownload_resources(empty_resources)
+
+    def _redownload_resources(self, resources: list[dict]) -> None:
+        """Attempt to redownload the given resources by ID."""
+        resource_ids = [r['id'] for r in resources]
+        resource_paths = [Path(self.dataset_dir) / r['file'] for r in resources]
+        try:
+            new_res_paths = self.api.resources.download_multiple_resources(
+                resource_ids,
+                save_path=resource_paths,
+                add_extension=True
+            )
+            for new_rpath, r in zip(new_res_paths, resources):
+                r['file'] = str(Path(new_rpath).relative_to(self.dataset_dir))
+            _LOGGER.info(f"Successfully redownloaded {len(resources)} resource(s).")
+        except Exception as e:
+            empty_file_names = [r['file'] for r in resources]
+            raise DatamintDatasetException(
+                f"Empty image files found and could not be redownloaded: {empty_file_names}"
+            ) from e
 
     def _get_datasetinfo(self) -> DatasetInfo:
         """Get dataset information from API."""
@@ -662,15 +692,22 @@ class DatamintBaseDataset:
 
         self.metainfo['all_annotations'] = self.all_annotations
 
-    def _load_image(self, filepath: str, index: int | None = None) -> tuple[Tensor, FileDataset | None]:
+    def _load_image(self, filepath: str, index: int | None = None, mimetype: str | None = None) -> tuple[Tensor, FileDataset | None]:
         """Load image from file with optional frame index."""
         if os.path.isdir(filepath):
             raise NotImplementedError("Loading an image from a directory is not supported yet.")
 
+        # check if file is empty
+        if os.path.getsize(filepath) == 0:
+            raise DatamintDatasetException(f"File is empty: {filepath}")
+
+        if mimetype == 'application/octet-stream':
+            mimetype = None
+
         if self.return_frame_by_frame:
-            img, ds = read_array_normalized(filepath, return_metainfo=True, index=index)
+            img, ds = read_array_normalized(filepath, return_metainfo=True, index=index, mime_type=mimetype)
         else:
-            img, ds = read_array_normalized(filepath, return_metainfo=True)
+            img, ds = read_array_normalized(filepath, return_metainfo=True, mime_type=mimetype)
 
         img = self._process_image_array(img)
         return img, ds
@@ -740,7 +777,7 @@ class DatamintBaseDataset:
             return {'metainfo': img_metainfo}
 
         filepath = os.path.join(self.dataset_dir, img_metainfo['file'])
-        img, ds = self._load_image(filepath, frame_idx)
+        img, ds = self._load_image(filepath, frame_idx, mimetype=img_metainfo.get('mimetype'))
 
         return self._build_item_dict(img, ds, img_metainfo)
 
@@ -985,20 +1022,22 @@ class DatamintBaseDataset:
             download_results = self.api.annotations.download_multiple_files(
                 segmentations_to_download, segmentation_paths
             )
-            
+
             # Process failed downloads
             failed_annotations = [result['annotation_id'] for result in download_results if not result['success']]
             if failed_annotations:
-                _LOGGER.warning(f"Failed to download {len(failed_annotations)} annotations, removing them from metadata")
-                
+                _LOGGER.warning(
+                    f"Failed to download {len(failed_annotations)} annotations, removing them from metadata")
+
                 # Remove failed annotations from each resource's annotation list
                 for resource in self.images_metainfo:
                     resource['annotations'] = [
                         ann for ann in resource['annotations']
                         if ann.id not in failed_annotations
                     ]
-            
-            _LOGGER.info(f"Successfully downloaded {len(segmentations_to_download) - len(failed_annotations)} segmentation files.")
+
+            _LOGGER.info(
+                f"Successfully downloaded {len(segmentations_to_download) - len(failed_annotations)} segmentation files.")
 
         ###################
         # update metadata
