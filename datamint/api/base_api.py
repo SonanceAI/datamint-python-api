@@ -413,16 +413,16 @@ class BaseApi:
                                      url: str):
         response_json = None
         try:
-            try:
-                response_json = response.json()
-            except Exception:
-                pass
             response.raise_for_status()
         except httpx.ConnectError as e:
             if "CERTIFICATE_VERIFY_FAILED" in str(e) or "certificate verify failed" in str(e).lower():
                 self._raise_ssl_error(e)
             raise
         except httpx.HTTPError as e:
+            try:
+                response_json = response.json()
+            except Exception:
+                pass
             error_msg = f"{getattr(e, 'message', str(e))} | {getattr(response, 'text', '')}"
             if response_json:
                 error_msg = f"{error_msg} | {response_json}"
@@ -446,17 +446,17 @@ class BaseApi:
                                              url: str):
         response_json = None
         try:
-            try:
-                response_json = await response.json()
-            except Exception:
-                logger.debug("Failed to parse JSON from error response")
-                pass
             response.raise_for_status()
         except aiohttp.ClientError as e:
             error_msg = str(getattr(e, 'message', e))
             # log the raw response for debugging
             status_code = BaseApi.get_status_code(e)
-            # Try to extract detailed message from JSON response
+            # Only read the body on error to get detailed message; do NOT read on success
+            # as that would exhaust the stream before callers can iterate over it.
+            try:
+                response_json = await response.json()
+            except Exception:
+                logger.debug("Failed to parse JSON from error response")
             if response_json:
                 error_msg = f"{error_msg} | {response_json}"
 
@@ -536,10 +536,7 @@ class BaseApi:
                     timeout=timeout,
                     **kwargs
                 )
-                data = await self._check_errors_response_aiohttp(response, url=url)
-                if data is None:
-                    data = await response.json()
-                logger.debug(f"Successful {method} request to {endpoint}: {data}")
+                await self._check_errors_response_aiohttp(response, url=url)
                 yield response
             except aiohttp.ClientConnectorCertificateError as e:
                 self._raise_ssl_error(e)
