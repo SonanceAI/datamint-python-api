@@ -157,6 +157,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             payload['resource_id'] = resource_id
             resource_ids = None
         elif resource is not None:
+            if len(resource) == 0:
+                _LOGGER.info("Empty resource list provided, returning empty annotations list.")
+                return [] if not group_by_resource else [[]]
             resource_ids = [self._entid(res) for res in resource]
             payload['resource_ids'] = resource_ids
         else:
