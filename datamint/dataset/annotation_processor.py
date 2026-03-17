@@ -399,6 +399,123 @@ class AnnotationProcessor:
 
         return labels_by_user
 
+    def convert_image_categories(
+        self,
+        annotations: Sequence['Annotation'],
+    ) -> dict[str, torch.Tensor]:
+        """Convert image-level category annotations to class index tensors.
+
+        For multiclass classification, we expect exclusively one valid category 
+        per image (per user), representing the target class index in CrossEntropyLoss.
+        If multiple categories exist, the first one encountered is used.
+
+        Args:
+            annotations: List of category annotations (image-scoped).
+
+        Returns:
+            Dict of annotator_id -> 0-D long tensor containing the class index.
+        """
+        category2code = self.image_lcodes.get('multiclass', {})
+
+        # If allow_external_annotations, discover unknown labels
+        if self.allow_external_annotations:
+            for ann in annotations:
+                if ann.annotation_type != 'category':
+                    continue
+                key = (ann.identifier, ann.value)
+                if key not in category2code:
+                    new_code = len(category2code)
+                    category2code[key] = new_code
+                    _LOGGER.info(f"Dynamically added category {key} with code {new_code}")
+                    # Notice we don't strictly need to update self.images_labels_set as category2code tracks it
+
+        categories_by_user: dict[str, torch.Tensor] = {}
+
+        for ann in annotations:
+            if ann.annotation_type != 'category':
+                continue
+
+            user_id = ann.created_by or "unknown"
+            if user_id in categories_by_user:
+                continue  # already populated one category for this user
+
+            key = (ann.identifier, ann.value)
+            code = category2code.get(key)
+            if code is not None:
+                categories_by_user[user_id] = torch.tensor(code, dtype=torch.long)
+
+        return categories_by_user
+
+    def merge_image_labels(
+        self,
+        labels_by_user: dict[str, Tensor],
+        strategy: MergeStrategy,
+    ) -> Tensor:
+        """Merge per-annotator label tensors into a single binary tensor.
+
+        Args:
+            labels_by_user: Dict of annotator_id -> binary label tensor of shape (num_labels,).
+            strategy: One of 'union', 'intersection', or 'mode'.
+
+        Returns:
+            Merged label tensor of shape (num_labels,), dtype int32.
+        """
+        if not labels_by_user:
+            return torch.zeros(len(self.image_labels_set), dtype=torch.int32)
+        stacked = torch.stack(list(labels_by_user.values()), dim=0).float()  # (num_users, num_labels)
+        if strategy == 'union':
+            return (stacked.max(dim=0).values > 0).int()
+        if strategy == 'intersection':
+            return (stacked.min(dim=0).values > 0).int()
+        if strategy == 'mode':
+            return (stacked.mean(dim=0) >= 0.5).int()
+        raise ValueError(f"Unknown merge strategy: {strategy!r}")
+
+    @staticmethod
+    def merge_image_categories(
+        categories_by_user: dict[str, Tensor],
+        strategy: MergeStrategy,
+        num_categories: int,
+    ) -> Tensor:
+        """Merge per-annotator category tensors into a single tensor.
+
+        For ``'mode'``, returns a scalar long tensor with the majority class index (-1 if empty).
+        For ``'union'`` and ``'intersection'``, returns a multi-hot int tensor of shape
+        ``(num_categories,)``.
+
+        Args:
+            categories_by_user: Dict of annotator_id -> scalar long tensor (class index).
+            strategy: One of 'union', 'intersection', or 'mode'.
+            num_categories: Total number of (identifier, value) category classes.
+
+        Returns:
+            Scalar long tensor for 'mode'; multi-hot int tensor for 'union'/'intersection'.
+        """
+        if not categories_by_user:
+            if strategy == 'mode':
+                return torch.tensor(-1, dtype=torch.long)
+            return torch.zeros(num_categories, dtype=torch.int32)
+
+        if strategy == 'mode':
+            valid = torch.stack([t for t in categories_by_user.values() if t.item() >= 0])
+            if valid.numel() == 0:
+                return torch.tensor(-1, dtype=torch.long)
+            counts = torch.bincount(valid, minlength=max(num_categories, 1))
+            return counts.argmax().long()
+
+        user_hots = []
+        for t in categories_by_user.values():
+            h = torch.zeros(num_categories, dtype=torch.float32)
+            if t.item() >= 0:
+                h[t] = 1.0
+            user_hots.append(h)
+        stacked = torch.stack(user_hots, dim=0)  # (num_users, num_categories)
+        if strategy == 'union':
+            return (stacked.max(dim=0).values > 0).int()
+        if strategy == 'intersection':
+            return (stacked.min(dim=0).values > 0).int()
+        raise ValueError(f"Unknown merge strategy: {strategy!r}")
+
     @overload
     def apply_merge_strategy(
         self,

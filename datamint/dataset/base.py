@@ -94,7 +94,22 @@ class DatamintBaseDataset(ABC):
         include_frame_label_names: list[str] | None = None,
         exclude_frame_label_names: list[str] | None = None,
         allow_external_annotations: bool = False,
+        image_labels_merge_strategy: MergeStrategy | None = None,
+        image_categories_merge_strategy: MergeStrategy | None = None,
     ):
+        # Validate merge strategy values
+        _valid_strategies = ('union', 'intersection', 'mode', None)
+        if image_labels_merge_strategy not in _valid_strategies:
+            raise ValueError(
+                f"image_labels_merge_strategy must be one of {_valid_strategies[:-1]!r}, "
+                f"got {image_labels_merge_strategy!r}"
+            )
+        if image_categories_merge_strategy not in _valid_strategies:
+            raise ValueError(
+                f"image_categories_merge_strategy must be one of {_valid_strategies[:-1]!r}, "
+                f"got {image_categories_merge_strategy!r}"
+            )
+
         # Validate mutually exclusive parameters
         if project is not None and resources is not None:
             raise DatamintDatasetException(
@@ -147,6 +162,8 @@ class DatamintBaseDataset(ABC):
         self.include_frame_label_names = include_frame_label_names
         self.exclude_frame_label_names = exclude_frame_label_names
         self.allow_external_annotations = allow_external_annotations
+        self.image_labels_merge_strategy: MergeStrategy | None = image_labels_merge_strategy
+        self.image_categories_merge_strategy: MergeStrategy | None = image_categories_merge_strategy
 
         # Internal state
         self._logged_uint16_conversion = False
@@ -247,19 +264,60 @@ class DatamintBaseDataset(ABC):
     def _extract_image_labels(
         self,
         annotations: Sequence['Annotation'],
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor] | torch.Tensor:
         """Extract image-level label annotations.
+
+        When ``image_labels_merge_strategy`` is ``None`` (default), returns a dict
+        mapping each annotator id to its binary label tensor of shape ``(num_labels,)``.
+        When a strategy is set, returns a single merged tensor of the same shape.
 
         Args:
             annotations: All annotations for the item.
 
         Returns:
-            Dict of annotator_id -> label tensor.
+            Dict[annotator_id, Tensor] or merged Tensor depending on
+            :attr:`image_labels_merge_strategy`.
         """
         label_annotations = AnnotationProcessor.filter_annotations(
             annotations, type='label', scope='image'
         )
-        return self.annotation_processor.convert_image_labels(label_annotations)
+        labels_dict = self.annotation_processor.convert_image_labels(label_annotations)
+        if self.image_labels_merge_strategy is None:
+            return labels_dict
+        return self.annotation_processor.merge_image_labels(
+            labels_dict, self.image_labels_merge_strategy
+        )
+
+    def _extract_image_categories(
+        self,
+        annotations: Sequence['Annotation'],
+    ) -> dict[str, torch.Tensor] | torch.Tensor:
+        """Extract image-level category annotations.
+
+        When ``image_categories_merge_strategy`` is ``None`` (default), returns a dict
+        mapping each annotator id to a scalar long tensor with the class index.
+        When a strategy is set:
+        - ``'mode'``: scalar long tensor (majority class index, -1 if no annotations).
+        - ``'union'``/``'intersection'``: multi-hot int tensor of shape ``(num_categories,)``.
+
+        Args:
+            annotations: All annotations for the item.
+
+        Returns:
+            Dict[annotator_id, Tensor] or merged Tensor depending on
+            :attr:`image_categories_merge_strategy`.
+        """
+        category_annotations = AnnotationProcessor.filter_annotations(
+            annotations, type='category', scope='image'
+        )
+        categories_dict = self.annotation_processor.convert_image_categories(category_annotations)
+        if self.image_categories_merge_strategy is None:
+            return categories_dict
+        return AnnotationProcessor.merge_image_categories(
+            categories_dict,
+            self.image_categories_merge_strategy,
+            num_categories=len(self.image_categories_set),
+        )
 
     def _validate_filter_params(
         self,
@@ -564,7 +622,12 @@ class DatamintBaseDataset(ABC):
     @property
     def image_labels_set(self) -> list[str]:
         """Image-level label names."""
-        return self.image_lsets['multilabel']
+        return self.image_lsets.get('multilabel', [])
+
+    @property
+    def image_categories_set(self) -> list[tuple[str, str]]:
+        """Image-level classification category names/values."""
+        return self.image_lsets.get('multiclass', [])
 
     @property
     def segmentation_labels_set(self) -> list[str]:
@@ -719,6 +782,7 @@ class DatamintBaseDataset(ABC):
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
+        result['image_categories'] = self._extract_image_categories(annotations)
 
         return result
 

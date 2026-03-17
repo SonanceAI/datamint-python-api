@@ -596,7 +596,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
-            _LOGGER.info(f"Uploading NIfTI segmentation file: {file_path}")
+            _LOGGER.info("Uploading NIfTI segmentation file: %s", file_path)
             if frame_index is not None:
                 raise ValueError("Do not provide frame_index for NIfTI segmentations.")
 
