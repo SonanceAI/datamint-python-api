@@ -1,3 +1,4 @@
+import torch
 from torchmetrics.classification import Recall, Precision, F1Score, Specificity
 from torchmetrics.wrappers.abstract import WrapperMetric
 import torchmetrics
@@ -62,9 +63,26 @@ class SegmentationToClassificationWrapper(WrapperMetric):
 
         return cls_pred, cls_target
 
-# # test
-# cls_metric = Recall(task="multilabel", average="macro", num_labels=3)
-# metric = SegmentationToClassificationWrapper(cls_metric, iou_threshold=0.33)
-# metric(preds=torch.randint(0, 2, size=(4, 3, 32, 32)),
-#        target=torch.randint(0, 2, size=(4, 3, 32, 32))
-#        )
+class CombinedLoss(torch.nn.Module):
+    """
+    Combines multiple loss functions into a single loss by summing them up.
+
+    Each loss can be specified as:
+    - A loss module: ``loss_fn``
+    - A tuple of (loss module, weight): ``(loss_fn, weight)``
+
+    Args:
+        *losses: Loss functions to combine. Each can be a ``torch.nn.Module`` or a
+            ``(torch.nn.Module, float)`` tuple.
+    """
+
+    def __init__(self, *losses: torch.nn.Module | tuple[torch.nn.Module, float]):
+        super().__init__()
+        parsed = [(l[0], l[1]) if isinstance(l, tuple) else (l, 1.0) for l in losses]
+        self.losses, self.weights = zip(*parsed)
+
+    def forward(self, preds: Tensor, target: Tensor) -> Tensor:
+        total_loss = 0.0
+        for loss, weight in zip(self.losses, self.weights):
+            total_loss += weight * loss(preds, target)
+        return total_loss
