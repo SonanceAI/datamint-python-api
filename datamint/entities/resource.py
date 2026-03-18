@@ -584,8 +584,8 @@ class LocalResource(Resource):
                                                   mimetype=mimetype,
                                                   file_path=local_filepath)
             except Exception as e:
-                logger.error(f"Failed to auto-convert local resource: {e}")
-                logger.error(e, exc_info=True)
+                logger.error(f"Failed to auto-convert local resource {self}: {e}")
+                raise
 
         return img_data
 

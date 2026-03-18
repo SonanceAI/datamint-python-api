@@ -720,6 +720,8 @@ class BaseApi:
                 ndata = nib.Nifti1Image.from_stream(f)
                 ndata.get_fdata()  # force loading before IO is closed
                 return ndata
+        elif mimetype == 'application/x-empty':
+            raise ValueError("Empty file content.")
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 
