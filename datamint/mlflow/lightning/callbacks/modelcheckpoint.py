@@ -407,6 +407,11 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.debug("No model_id available. Skipping model metrics logging.")
             return
 
+        logger = _get_MLFlowLogger(trainer)
+        if logger is None or logger.run_id is None:
+            _LOGGER.warning("No MLFlowLogger run_id found. Skipping model metrics logging.")
+            return
+
         metrics: dict[str, float] = {}
         for key, value in trainer.callback_metrics.items():
             if not key.startswith(("test/", "test_")):
@@ -421,7 +426,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             return
 
         try:
-            mlflow.log_metrics(metrics, model_id=self._last_model_id)
+            mlflow.log_metrics(metrics, model_id=self._last_model_id, run_id=logger.run_id)
             _LOGGER.info(f"Logged {len(metrics)} test metrics to model {self._last_model_id}.")
         except Exception as e:
             _LOGGER.warning(f"Failed to log test metrics to model: {e}")
