@@ -91,6 +91,7 @@ class DatamintDataModule(L.LightningDataModule):
         eval_transform: Callable | None = None,
     ) -> None:
         super().__init__()
+        # TODO: save the transforms as strings in the hyperparameters
         self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform"])
 
         self._dataset = dataset

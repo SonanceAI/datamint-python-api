@@ -37,7 +37,7 @@ Deprecated = ">=1.2.0"
 platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
-lightning = { extras = ['extra'], version = ">=2.0.0, !=2.5.1, !=2.5.1.post0" }
+lightning = { extras = ['extra'], version = ">=2.5.6" }
 mlflow-skinny = "==3.8.1"
 Flask = { version = "<4" }
 Flask-Cors = { version = "<7" }
