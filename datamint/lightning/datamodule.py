@@ -91,7 +91,7 @@ class DatamintDataModule(L.LightningDataModule):
         eval_transform: Callable | None = None,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["dataset"])
+        self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform"])
 
         self._dataset = dataset
         self._batch_size = batch_size
