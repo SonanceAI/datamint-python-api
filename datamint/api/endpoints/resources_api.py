@@ -395,8 +395,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 except Exception as e:
                     _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
-            # Scale total/read timeout proportionally for large files (min 300 s, ≥2 s/MB)
-            _upload_secs = max(300, file_size // (512 * 1024)) if file_size else 300
+            # Scale total/read timeout proportionally for large files (min 1800 s, ≥2 s/MB)
+            _upload_secs = max(1800, file_size // (512 * 1024)) if file_size else 1800
             timeout = aiohttp.ClientTimeout(total=_upload_secs, connect=60, sock_read=_upload_secs)
             resp_data = await self._make_request_async_json('POST',
                                                             endpoint=self.endpoint_base,
