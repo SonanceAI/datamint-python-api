@@ -1,12 +1,14 @@
 """Image classification trainers."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, TYPE_CHECKING
 
 import lightning as L
 from torch import nn
 
 from datamint.dataset import ImageDataset
+from functools import partial
 
 from .lightning_modules import ClassificationModule
 from .base_trainer import BaseTrainer
@@ -25,16 +27,16 @@ class ClassificationTrainer(BaseTrainer):
     * **Monitor** – ``val/accuracy`` (maximise).
     """
 
-    def _default_loss(self) -> nn.Module:
+    def _loss(self) -> nn.Module:
         return nn.CrossEntropyLoss()
 
-    def _default_metrics(self) -> dict[str, Any]:
+    def _metrics(self) -> dict[str, Callable]:
         from torchmetrics.classification import MulticlassAccuracy, MulticlassF1Score
 
         nc = len(self.dataset.image_categories_set)
         return {
-            'accuracy': lambda: MulticlassAccuracy(num_classes=nc),
-            'f1': lambda: MulticlassF1Score(num_classes=nc, average='macro'),
+            'accuracy': partial(MulticlassAccuracy, num_classes=nc),
+            'f1': partial(MulticlassF1Score, num_classes=nc, average='macro'),
         }
 
     def _monitor_metric(self) -> tuple[str, str]:
@@ -69,7 +71,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_default_dataset(self, project: 'str | Project') -> ImageDataset:
+    def _build_dataset(self, project: 'str | Project') -> ImageDataset:
         return ImageDataset(
             project=project,
             return_segmentations=False,
@@ -77,7 +79,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
             image_categories_merge_strategy='mode',
         )
 
-    def _build_default_model(
+    def _build_model(
         self,
         loss_fn: nn.Module,
         metrics: dict[str, Any],
@@ -87,10 +89,12 @@ class ImageClassificationTrainer(ClassificationTrainer):
             num_classes=len(self.dataset.image_categories_set),
             loss_fn=loss_fn,
             metrics_factories=metrics,
+            class_names=list(self.dataset.image_categories_set),
+            image_size=self.image_size,
             pretrained=self.pretrained,
         )
 
-    def _default_train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -103,7 +107,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
             ToTensorV2(),
         ])
 
-    def _default_eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 

@@ -1,51 +1,51 @@
 """LightningModule wrapper for segmentation tasks."""
 from __future__ import annotations
 
+from abc import abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-import lightning as L
 import torch
 from torch import Tensor, nn
 
+from .base import DatamintLightningModule
 
-class SegmentationModule(L.LightningModule):
-    """Generic segmentation module backed by ``segmentation_models_pytorch``.
+
+class SegmentationModule(DatamintLightningModule):
+    """Base segmentation module for semantic segmentation tasks.
+
+    Subclasses must implement :meth:`_build_model` to return the model.
 
     Args:
-        arch: SMP architecture name (e.g. ``'UnetPlusPlus'``, ``'DeepLabV3Plus'``).
-        encoder_name: Backbone encoder (e.g. ``'resnet34'``).
         in_channels: Number of input channels.
         num_classes: Number of segmentation classes **excluding** background.
         loss_fn: Loss module.
         metrics_factories: ``{name: callable}`` where each callable returns a
             fresh :class:`torchmetrics.Metric`.  One instance is created per
             stage (train / val / test).
+        class_names: Human-readable label for each class.
+        image_size: ``(height, width)`` used during inference.
         lr: Learning rate for AdamW.
     """
 
     def __init__(
         self,
-        arch: str,
-        encoder_name: str,
         in_channels: int,
         num_classes: int,
         loss_fn: nn.Module,
         metrics_factories: dict[str, Callable[[], Any]],
+        class_names: list[str],
+        image_size: tuple[int, int],
         lr: float = 1e-4,
     ) -> None:
         super().__init__()
+        self.in_channels = in_channels
+        self.num_classes = num_classes
         self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories'])
+        self.class_names = class_names
+        self.image_size = image_size
 
-        import segmentation_models_pytorch as smp
-
-        arch_cls = getattr(smp, arch)
-        self.model = arch_cls(
-            encoder_name=encoder_name,
-            encoder_weights='imagenet',
-            in_channels=in_channels,
-            classes=num_classes,
-        )
+        self.model = self._build_model()
         self.criterion = loss_fn
 
         # Create per-stage metrics
@@ -54,7 +54,13 @@ class SegmentationModule(L.LightningModule):
             for name, factory in metrics_factories.items():
                 self.add_module(f'{stage}_{name}', factory())
 
-    def forward(self, x: Tensor) -> Tensor:
+    @abstractmethod
+    def _build_model(self) -> nn.Module:
+        """Instantiate and return the model. Subclasses may access
+        ``self.in_channels`` and ``self.num_classes``."""
+        ...
+
+    def forward(self, x: Tensor) -> Tensor:  # type: ignore[override]
         return self.model(x)
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:
@@ -105,3 +111,41 @@ class SegmentationModule(L.LightningModule):
             lr=self.hparams['lr'],
             weight_decay=1e-4,
         )
+
+    def predict_default(
+        self,
+        model_input,
+        **kwargs: Any,
+    ):
+        """Run segmentation inference, returning :class:`~datamint.entities.annotations.ImageSegmentation` per resource."""
+        import cv2
+        import numpy as np
+        import albumentations as A
+        from albumentations.pytorch import ToTensorV2
+        from datamint.entities.annotations import ImageSegmentation
+
+        transform = A.Compose([
+            A.Resize(*self.image_size),
+            A.Normalize(),
+            ToTensorV2(),
+        ])
+        device = self.inference_device
+        self.eval()
+        all_preds: list[list] = []
+        with torch.inference_mode():
+            for res in model_input:
+                image = np.array(res.fetch_file_data(auto_convert=True, use_cache=True))
+                oh, ow = image.shape[:2]
+                tensor = transform(image=image)['image'].to(device)
+                logits = self(tensor.unsqueeze(0))
+                pred = (logits[0] > 0).cpu().numpy().astype(np.uint8)
+                anns: list = []
+                for i, name in enumerate(self.class_names):
+                    mask = cv2.resize(
+                        pred[i], (ow, oh),
+                        interpolation=cv2.INTER_NEAREST,
+                    ) * 255
+                    if mask.any():
+                        anns.append(ImageSegmentation(name=name, mask=mask))
+                all_preds.append(anns)
+        return all_preds

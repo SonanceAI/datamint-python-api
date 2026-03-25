@@ -7,14 +7,18 @@ annotation system. It supports various prediction modes for different data types
 
 from typing import Any, TypeAlias
 from abc import ABC
-from enum import Enum
 from dataclasses import dataclass
+from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
 from datamint.entities.resource import Resource
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
+from datamint.mlflow.flavors.prediction_modes import PredictionMode
 from datamint.mlflow.flavors.prediction_router import PredictionRouter
 import logging
+from functools import cached_property
+import torch
+from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 
 logger = logging.getLogger(__name__)
 
@@ -37,56 +41,167 @@ class ModelSettings:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'ModelSettings':
         """Create config from dictionary, raising error on unknown keys."""
-        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        valid_fields = set(cls.__dataclass_fields__)
         invalid_fields = set(data.keys()) - valid_fields
         if invalid_fields:
             raise ValueError(f"Invalid fields for ModelSettings: {', '.join(sorted(invalid_fields))}")
         return cls(**data)
 
 
-class PredictionMode(str, Enum):
+class BaseDatamintModel(PythonModel, ABC):
+    """Core prediction gateway that any MLflow :class:`~mlflow.pyfunc.PythonModel` can build on.
+
+    Owns:
+
+    * :attr:`settings` — hardware / deployment configuration.
+    * Device detection (``_detect_device`` / :attr:`inference_device`).
+    * Prediction dispatch via :class:`~datamint.mlflow.flavors.prediction_router.PredictionRouter`.
+    * Pickle-safe serialization.
+
+    Use :class:`DatamintModel` when you need to load linked models at serve time.
+
+    Subclasses only need to implement :meth:`predict_default` (and optionally
+    other ``predict_*`` hooks registered with ``@prediction_mode``).
     """
-    Enumeration of supported prediction modes.
 
-    Each mode corresponds to a specific method signature in DatamintModel.
-    """
-    # Standard modes
-    DEFAULT = 'default'                # Default: process entire resource as-is
+    def __init__(
+        self,
+        settings: ModelSettings | dict[str, Any] | None = None,
+    ) -> None:
+        self.settings = settings
+        self._inference_device: str | None = None
 
-    # Simple modes
-    IMAGE = 'image'                    # Process single 2d image resource
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        return PredictionRouter(self, BaseDatamintModel)
 
-    # Video/temporal modes
-    FRAME = 'frame'                    # Extract and process specific frame
-    FRAME_RANGE = 'frame_range'        # Process contiguous frame range
-    ALL_FRAMES = 'all_frames'          # Process all frames independently
-    TEMPORAL_SEQUENCE = 'temporal_sequence'  # Process with temporal context window
+    @property
+    def settings(self) -> ModelSettings:
+        if not hasattr(self, "_settings"):
+            self._settings = ModelSettings()
+        return self._settings
 
-    # 3D volume modes
-    SLICE = 'slice'                    # Extract and process specific slice
-    SLICE_RANGE = 'slice_range'        # Process contiguous slice range
-    PRIMARY_SLICE = 'primary_slice'    # Process center/primary slice
-    # MULTI_PLANE = 'multi_plane'        # Process multiple anatomical planes
-    VOLUME = 'volume'                  # Process entire 3D volume
+    @settings.setter
+    def settings(self, value: ModelSettings | dict[str, Any] | None) -> None:
+        if isinstance(value, dict):
+            self._settings = ModelSettings.from_dict(value)
+        elif isinstance(value, ModelSettings):
+            self._settings = value
+        else:
+            self._settings = ModelSettings()
 
-    # Spatial modes
-    # ROI = 'roi'                        # Process single region of interest
-    # MULTI_ROI = 'multi_roi'            # Process multiple regions
-    # TILE = 'tile'                      # Split into tiles (whole slide imaging)
-    # PATCH = 'patch'                    # Extract patches around points
+    # ------------------------------------------------------------------
+    # Device management
+    # ------------------------------------------------------------------
 
-    # Advanced modes
-    INTERACTIVE = 'interactive'        # With user prompts (SAM-like)
-    FEW_SHOT = 'few_shot'             # With context examples
-    # MULTI_VIEW = 'multi_view'          # Multiple views of same subject
+    @property
+    def inference_device(self) -> str:
+        """The device that will be used for inference.
+
+        Returns ``_inference_device`` if already set, then falls back to the
+        ``MLFLOW_DEFAULT_PREDICTION_DEVICE`` environment variable, then ``'cpu'``.
+        """
+        if self._inference_device is not None:
+            return self._inference_device
+        env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+        if env_device:
+            logger.info("Inference device not set; using environment variable (%s)", env_device)
+            return env_device
+        logger.warning("Inference device not set; defaulting to 'cpu'")
+        return "cpu"
+
+    def _detect_device(self, context: PythonModelContext | None) -> str:
+        """Detect and store the inference device from context / env / hardware.
+
+        Sets :attr:`_inference_device` and returns the detected device string.
+        Priority: ``context.model_config['device']`` > env var > CUDA > CPU.
+        """
+        device = None
+        if context and context.model_config:
+            device = context.model_config.get("device", None)
+            logger.info("Model config device: %s", device)
+        if device is None:
+            env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+            if env_device:
+                device = env_device
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
+
+        logger.info("Set inference device: %s", device)
+        self._inference_device = device
+        return device
+
+    # ------------------------------------------------------------------
+    # MLflow lifecycle
+    # ------------------------------------------------------------------
+
+    def load_context(self, context: PythonModelContext) -> None:
+        """Detect the inference device.
+
+        Override in subclasses to perform additional loading (e.g. linked
+        models) — but always call ``super().load_context(context)`` first
+        so that :attr:`inference_device` is set before any model loading.
+        """
+        logger.info("Loading model context %s and detecting device...",
+                    f'{context.artifacts=} | {context.model_config=}')
+        self._detect_device(context)
+
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state.pop("_router", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+
+    # ------------------------------------------------------------------
+    # Prediction dispatch
+    # ------------------------------------------------------------------
+    def predict(
+        self,
+        model_input: list[Resource],
+        params: dict[str, Any] | None = None,
+    ) -> PredictionResult:
+        """Main prediction entry point.
+
+        Routes to the appropriate handler based on ``params['mode']``.
+        **Do not override** — implement :meth:`predict_default` (or other
+        ``predict_*`` hooks) instead.
+        """
+        return self._router.dispatch(model_input, params or {})
+
+    def get_supported_modes(self) -> list[str]:
+        """Return the list of prediction modes supported by this model."""
+        return self._router.supported_modes()
+
+    def predict_default(
+        self,
+        model_input: list[Resource],
+        **kwargs: Any,
+    ) -> PredictionResult:
+        """Default prediction on entire resources.
+
+        Override this in your subclass.
+        """
+        raise NotImplementedError(
+            "predict_default() must be implemented in your DatamintModel subclass."
+        )
 
 
-class DatamintModel(ABC, PythonModel):
+class DatamintModel(BaseDatamintModel):
     """Abstract adapter for wrapping ML models to produce Datamint annotations.
 
-    Delegates model lifecycle to :class:`LinkedModelLoader` and prediction
-    dispatch to :class:`PredictionRouter`.  Subclasses only need to override
-    ``predict_default`` (and optionally other ``predict_*`` hooks).
+    Extends :class:`BaseDatamintModel` with support for loading external
+    ("linked") MLflow models at serve time via :class:`LinkedModelLoader`.
+    Subclasses only need to override ``predict_default`` (and optionally
+    other ``predict_*`` hooks).
 
     Quick Start::
 
@@ -101,49 +216,82 @@ class DatamintModel(ABC, PythonModel):
                 device = self.inference_device
                 model = self.get_mlflow_models()['model'].get_raw_model().to(device)
                 return predictions
+
+    You can also pass pre-instantiated ``torch.nn.Module`` objects directly::
+
+        class MyModel(DatamintModel):
+            def __init__(self):
+                net = MyTorchNet()
+                super().__init__(torch_model=net)
+
+            def predict_default(self, model_input, **kwargs):
+                net = self.get_mlflow_torch_models()['net']
+                return net(preprocess(model_input))
     """
 
     # Keep for backward compat with subclass references
     LINKED_MODELS_DIR = "linked_models"
+    _PYTORCH_ARTIFACT_NAME = "pytorch_model"
 
     def __init__(
         self,
         settings: ModelSettings | dict[str, Any] | None = None,
         mlflow_torch_models_uri: dict[str, str] | None = None,
         mlflow_models_uri: dict[str, str] | None = None,
+        torch_model: torch.nn.Module | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(settings=settings)
         self._loader = LinkedModelLoader(
             mlflow_models_uri=mlflow_models_uri,
             mlflow_torch_models_uri=mlflow_torch_models_uri,
+            torch_model=torch_model,
         )
-        if isinstance(settings, dict):
-            self.settings = ModelSettings.from_dict(settings)
-        elif isinstance(settings, ModelSettings):
-            self.settings = settings
-        else:
-            self.settings = ModelSettings()
-        self._router: PredictionRouter | None = None
+
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        r = PredictionRouter(self, BaseDatamintModel)
+        if self._loader._torch_model_instance is not None:
+            r.update_registry(self._loader._torch_model_instance, BaseDatamintModel)
+        return r
 
     # ------------------------------------------------------------------
-    # Lifecycle (delegates to loader)
+    # Lifecycle — overrides base to also load linked models
     # ------------------------------------------------------------------
 
     def load_context(self, context: PythonModelContext) -> None:
-        """Called by MLflow when loading the model."""
-        self._loader.load_all(context)
+        """Detect device and load all linked MLflow models."""
+        super().load_context(context)  # sets inference_device
+        self._loader.load_all(self.inference_device)
 
-    @property
-    def inference_device(self) -> str:
-        return self._loader.inference_device
+        if self._PYTORCH_ARTIFACT_NAME in context.artifacts:
+            model_path = context.artifacts[self._PYTORCH_ARTIFACT_NAME]
+            self._loader._torch_model_instance = torch.load(model_path,
+                                                            weights_only=False,
+                                                            map_location=self.inference_device,
+                                                            pickle_module=mlflow_pytorch_pickle_module)
+            self._loader._torch_model_instance.eval()
+
+    # ------------------------------------------------------------------
+    # Linked-model access
+    # ------------------------------------------------------------------
 
     def get_mlflow_models(self) -> dict[str, PyFuncModel]:
-        """Access loaded MLflow models."""
+        """Access loaded MLflow pyfunc models."""
         return self._loader.mlflow_models
 
     def get_mlflow_torch_models(self) -> dict[str, Any]:
         """Access loaded MLflow PyTorch models."""
         return self._loader.torch_models
+
+    def get_pytorch_model(self) -> torch.nn.Module | None:
+        torch_model = self._loader._torch_model_instance
+        if torch_model is not None:
+            return torch_model
+        torch_models = self.get_mlflow_torch_models()
+        if len(torch_models) == 1:
+            return next(iter(torch_models.values()))
+        return torch_models.get("default", None)
 
     # ------------------------------------------------------------------
     # Backward-compat aliases
@@ -171,60 +319,37 @@ class DatamintModel(ABC, PythonModel):
     def _clear_linked_models_cache(self) -> None:
         self._loader.clear_cache()
 
-    # ------------------------------------------------------------------
-    # Serialization
-    # ------------------------------------------------------------------
+    def _clear_ptmodel(self) -> None:
+        self._loader._torch_model_instance = None
 
-    def __getstate__(self) -> dict:
-        state = self.__dict__.copy()
-        state.pop("_router", None)
-        return state
+    # ------------------------------------------------------------------
+    # Serialization — also clears loader cache on restore
+    # ------------------------------------------------------------------
 
     def __setstate__(self, state: dict) -> None:
-        self.__dict__.update(state)
-        self._router = None
+        super().__setstate__(state)
         self._loader.clear_cache()
 
-    # ------------------------------------------------------------------
-    # Prediction (delegates to router)
-    # ------------------------------------------------------------------
 
-    def predict(
-        self,
-        model_input: list[Resource],
-        params: dict[str, Any] | None = None,
-    ) -> PredictionResult:
-        """Main prediction entry point.
+class _DatamintModelWrapper(BaseDatamintModel):
+    def __init__(self, another_model: Any) -> None:
+        super().__init__(settings=another_model.settings)
+        self.another_model = another_model
 
-        Routes to the appropriate handler based on ``params['mode']``.
-        **Do not override** — implement ``predict_default`` (or other
-        ``predict_*`` hooks) instead.
-        """
-        if self._router is None:
-            self._router = PredictionRouter(self, DatamintModel)
-        return self._router.dispatch(model_input, params or {})
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        return PredictionRouter(self.another_model, type(self.another_model))
 
+    def load_context(self, context: PythonModelContext) -> None:
+        self.another_model.load_context(context)
+
+
+    def predict(self, model_input: list[Resource], params: dict[str, Any] | None = None) -> PredictionResult:
+        return self.another_model.predict(model_input, params)
+    
     def get_supported_modes(self) -> list[str]:
-        """Get list of prediction modes supported by this model."""
-        if self._router is None:
-            self._router = PredictionRouter(self, DatamintModel)
-        return self._router.supported_modes()
-
-    # ------------------------------------------------------------------
-    # The only overridable prediction hook in the base
-    # ------------------------------------------------------------------
-
-    def predict_default(
-        self,
-        model_input: list[Resource],
-        **kwargs: Any,
-    ) -> PredictionResult:
-        """Default prediction on entire resources.
-
-        Override this in your subclass.
-        """
-        raise NotImplementedError(
-            "predict_default() must be implemented in your DatamintModel subclass."
-        )
-
-
+        return self.another_model.get_supported_modes()
+    
+    def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
+        return self.another_model.predict_default(model_input, **kwargs)

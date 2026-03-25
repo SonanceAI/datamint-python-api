@@ -1,8 +1,10 @@
 """Shared base for segmentation trainers (2-D and 3-D)."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
+from functools import partial
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -41,16 +43,16 @@ class SegmentationTrainer(BaseTrainer):
     * **Monitor** – ``val/iou`` (maximise).
     """
 
-    def _default_loss(self) -> nn.Module:
+    def _loss(self) -> nn.Module:
         return _BCEDiceLoss()
 
-    def _default_metrics(self) -> dict[str, Any]:
+    def _metrics(self) -> dict[str, Callable]:
         from torchmetrics.segmentation import GeneralizedDiceScore, MeanIoU
 
         num_classes = len(self.dataset.seglabel_list)
         return {
-            'iou': lambda: MeanIoU(num_classes=num_classes, input_format='one-hot'),
-            'dice': lambda: GeneralizedDiceScore(num_classes=num_classes, input_format='one-hot'),
+            'iou': partial(MeanIoU, num_classes=num_classes, input_format='one-hot'),
+            'dice': partial(GeneralizedDiceScore, num_classes=num_classes, input_format='one-hot'),
         }
 
     def _monitor_metric(self) -> tuple[str, str]:

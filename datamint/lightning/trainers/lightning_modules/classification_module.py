@@ -8,8 +8,10 @@ import lightning as L
 import torch
 from torch import Tensor, nn
 
+from .base import DatamintLightningModule
 
-class ClassificationModule(L.LightningModule):
+
+class ClassificationModule(DatamintLightningModule):
     """Generic image classification module backed by ``timm``.
 
     Args:
@@ -27,11 +29,15 @@ class ClassificationModule(L.LightningModule):
         num_classes: int,
         loss_fn: nn.Module,
         metrics_factories: dict[str, Callable[[], Any]],
+        class_names: list[str],
+        image_size: tuple[int, int],
         lr: float = 1e-4,
         pretrained: bool = True,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories'])
+        self.class_names = class_names
+        self.image_size = image_size
 
         import timm
 
@@ -97,3 +103,32 @@ class ClassificationModule(L.LightningModule):
             lr=self.hparams['lr'],
             weight_decay=1e-4,
         )
+
+    def predict_default(
+        self,
+        model_input,
+        **kwargs: Any,
+    ):
+        """Run classification inference, returning :class:`~datamint.entities.annotations.ImageClassification` per resource."""
+        import numpy as np
+        import albumentations as A
+        from albumentations.pytorch import ToTensorV2
+        from datamint.entities.annotations import ImageClassification
+
+        transform = A.Compose([
+            A.Resize(*self.image_size),
+            A.Normalize(),
+            ToTensorV2(),
+        ])
+        device = self.inference_device
+        self.eval()
+        all_preds: list[list] = []
+        with torch.inference_mode():
+            for res in model_input:
+                image = np.array(res.fetch_file_data(auto_convert=True, use_cache=True))
+                tensor = transform(image=image)['image'].to(device)
+                logits = self(tensor.unsqueeze(0))
+                pred_idx = int(logits.argmax(dim=1).item())
+                class_name = self.class_names[pred_idx]
+                all_preds.append([ImageClassification(name='category', value=class_name)])
+        return all_preds

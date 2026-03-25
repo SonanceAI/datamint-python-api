@@ -52,7 +52,7 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_default_dataset(self, project: 'str | Project'):
+    def _build_dataset(self, project: 'str | Project'):
         vol_ds = VolumeDataset(
             project=project,
             return_as_semantic_segmentation=True,
@@ -62,7 +62,7 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
         )
         return vol_ds.slice(axis=self.slice_axis)
 
-    def _build_default_model(
+    def _build_model(
         self,
         loss_fn: nn.Module,
         metrics: dict[str, Any],
@@ -74,9 +74,11 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
             num_classes=len(self.dataset.seglabel_list),
             loss_fn=loss_fn,
             metrics_factories=metrics,
+            class_names=list(self.dataset.seglabel_list),
+            image_size=self.image_size,
         )
 
-    def _default_train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -89,7 +91,7 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
             ToTensorV2(),
         ])
 
-    def _default_eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 

@@ -33,7 +33,14 @@ def help_infer_signature(x):
     return x
 
 
-class MLFlowModelCheckpoint(ModelCheckpoint):
+class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
+    """Base class for MLflow-integrated model checkpoint callbacks.
+
+    Provides all shared logic for checkpointing, model registration, signature updates,
+    and metric logging. Subclasses must implement :meth:`log_model_to_mlflow` and
+    :meth:`_wrap_forward` for their specific MLflow flavor and signature-inference strategy.
+    """
+
     def __init__(self, *args,
                  register_model_name: str | None = None,
                  register_model_on: Literal["train", "val", "test", "predict"] = 'test',
@@ -44,20 +51,23 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
                  log_model_metrics: bool = True,
                  **kwargs):
         """
-        MLFlowModelCheckpoint is a custom callback for PyTorch Lightning that integrates with MLFlow to log and register models.
-
         Args:
-            register_model_name (str | None): The name to register the model under in MLFlow. If None, the model will not be registered.
-            register_model_on (Literal["train", "val", "test", "predict"]): The stage at which to register the model. It registers at the end of the specified stage.
-            code_paths (list[str] | None): List of paths to Python files that should be included in the MLFlow model.
-            log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of the training instead of after every checkpoint save.
-            additional_metadata (dict[str, Any] | None): Additional metadata to log with the model as a JSON file.
-            extra_pip_requirements (list[str] | None): Additional pip requirements to include with the MLFlow model.
-            log_model_metrics (bool): If True, automatically log test metrics to the MLflow LoggedModel entity
-                after testing. Requires MLflow 3.x with LoggedModel support. Defaults to True.
+            register_model_name (str | None): The name to register the model under in MLFlow.
+                If None, the model will not be registered.
+            register_model_on (Literal["train", "val", "test", "predict"]): The stage at which
+                to register the model. It registers at the end of the specified stage.
+            code_paths (list[str] | None): List of paths to Python files that should be
+                included in the MLFlow model.
+            log_model_at_end_only (bool): If True, only log the model to MLFlow at the end of
+                training instead of after every checkpoint save.
+            additional_metadata (dict[str, Any] | None): Additional metadata to log with the
+                model as a JSON file.
+            extra_pip_requirements (list[str] | None): Additional pip requirements to include
+                with the MLFlow model.
+            log_model_metrics (bool): If True, automatically log test metrics to the MLflow
+                LoggedModel entity after testing. Requires MLflow 3.x. Defaults to True.
             **kwargs: Keyword arguments for ModelCheckpoint.
         """
-        # Ensure MLflow is configured when callback is initialized
         ensure_mlflow_configured()
 
         super().__init__(*args, **kwargs)
@@ -87,7 +97,7 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         self.code_paths = code_paths
         self.additional_metadata = additional_metadata or {}
         self.extra_pip_requirements = extra_pip_requirements or []
-        self._last_registered_state_hash: str = "None"
+        self._last_registered_state_hash: str | None = None
         self._has_been_trained: bool = False
 
     def _compute_registration_state_hash(self) -> str:
@@ -133,45 +143,6 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         _LOGGER.info("Model already registered with same configuration. Skipping registration.")
         return False
 
-    def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
-        """Extract metadata from the model's forward method signature.
-
-        Returns:
-            A tuple of dicts, each containing parameter metadata ordered by position.
-        """
-        forward_method = getattr(model.__class__, 'forward', None)
-
-        if forward_method is None:
-            return ()
-
-        try:
-            sig = inspect.signature(forward_method)
-            params_list = []
-
-            for param_name, param in sig.parameters.items():
-                if param_name == 'self':
-                    continue
-
-                param_info = {
-                    'name': param_name,
-                    'kind': param.kind.name,
-                    'annotation': param.annotation if param.annotation != inspect.Parameter.empty else None,
-                    'default': param.default if param.default != inspect.Parameter.empty else None,
-                }
-                params_list.append(param_info)
-
-            # Add return annotation if available as the last element
-            return_annotation = sig.return_annotation
-            if return_annotation != inspect.Signature.empty:
-                return_info = {'_return_annotation': str(return_annotation)}
-                params_list.append(return_info)
-
-            return tuple(params_list)
-
-        except Exception as e:
-            _LOGGER.warning(f"Failed to infer forward method parameters: {e}")
-            return ()
-
     def _save_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
         trainer.save_checkpoint(filepath, self.save_weights_only)
 
@@ -210,45 +181,12 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
 
     def log_model_to_mlflow(self,
                             model: nn.Module,
-                            run_id: str | MLFlowLogger
-                            ) -> None:
-        """Log the model to MLflow."""
-        if isinstance(run_id, MLFlowLogger):
-            logger = run_id
-            if logger.run_id is None:
-                raise ValueError("MLFlowLogger has no run_id. Cannot log model to MLFlow.")
-            run_id = logger.run_id
+                            run_id: str | MLFlowLogger) -> None:
+        """Log the model to MLflow using the appropriate flavor.
 
-        if self._last_checkpoint_saved is None or self._last_checkpoint_saved == '':
-            _LOGGER.warning("No checkpoint saved yet. Cannot log model to MLFlow.")
-            return
-
-        orig_device = next(model.parameters()).device
-        model = model.cpu()  # Ensure the model is on CPU for logging
-
-        requirements = list(self.extra_pip_requirements)
-        # check if lightning is in the requirements
-        if not any('lightning' in req.lower() for req in requirements):
-            requirements.append(f'lightning=={L.__version__}')
-
-        modelinfo = mlflow.pytorch.log_model(
-            pytorch_model=model,
-            name=Path(self._last_checkpoint_saved).stem,
-            signature=self._inferred_signature,
-            run_id=run_id,
-            extra_pip_requirements=requirements,
-            code_paths=self.code_paths
-        )
-
-        model.to(device=orig_device)  # Move the model back to its original device
-        self._last_model_uri = modelinfo.model_uri
-        self._last_model_id = getattr(modelinfo, 'model_id', None)
-        self.last_saved_model_info = modelinfo
-
-        # Log additional metadata after the model is saved
-        log_model_metadata(self.additional_metadata,
-                           model_path=modelinfo.artifact_path,
-                           run_id=run_id)
+        Must be implemented by subclasses.
+        """
+        raise NotImplementedError
 
     def _remove_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
         super()._remove_checkpoint(trainer, filepath)
@@ -297,36 +235,16 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         except mlflow.exceptions.MlflowException as e:
             _LOGGER.warning(f"Failed to update model signature. Check if model actually exists. {e}")
 
-    def __wrap_forward(self, pl_module: nn.Module):
-        original_forward = pl_module.forward
+    def _wrap_forward(self, pl_module: nn.Module) -> None:
+        """Intercept the first forward call to infer the MLflow model signature.
 
-        def wrapped_forward(x, *args, **kwargs):
-            x0 = help_infer_signature(x)
-            infered_params = self._infer_params(pl_module)
-            if len(infered_params) > 1:
-                infered_params = {param['name']: param['default']
-                                  for param in infered_params[1:] if 'name' in param}
-            else:
-                infered_params = None
-
-            self._inferred_signature = mlflow.models.infer_signature(model_input=x0,
-                                                                     params=infered_params)
-
-            # run once and get back to the original forward
-            pl_module.forward = original_forward
-            method = getattr(pl_module, 'forward')
-            out = method(x, *args, **kwargs)
-
-            output_sig = mlflow.models.infer_signature(model_output=help_infer_signature(out))
-            self._inferred_signature.outputs = output_sig.outputs
-
-            return out
-
-        pl_module.forward = wrapped_forward
+        Must be implemented by subclasses.
+        """
+        raise NotImplementedError
 
     def on_train_start(self, trainer, pl_module):
         self._has_been_trained = True
-        self.__wrap_forward(pl_module)
+        self._wrap_forward(pl_module)
         logger = _get_MLFlowLogger(trainer)
         if logger._tracking_uri.startswith('file:'):
             _LOGGER.error("MLFlowLogger tracking URI is a local file path. "
@@ -387,12 +305,12 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
             self.last_saved_model_info = None
 
     def on_test_start(self, trainer, pl_module):
-        self.__wrap_forward(pl_module)
+        self._wrap_forward(pl_module)
         self._restore_model_uri(trainer)
         return super().on_test_start(trainer, pl_module)
 
     def on_predict_start(self, trainer, pl_module):
-        self.__wrap_forward(pl_module)
+        self._wrap_forward(pl_module)
         self._restore_model_uri(trainer)
         return super().on_predict_start(trainer, pl_module)
 
@@ -454,3 +372,173 @@ class MLFlowModelCheckpoint(ModelCheckpoint):
         if self.register_model_on == 'val' and self.register_model_name:
             self._update_signature(trainer)
             self.register_model(trainer)
+
+
+class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
+    """MLflow model checkpoint for standard PyTorch Lightning modules.
+
+    Logs models using :func:`mlflow.pytorch.log_model` and infers the MLflow
+    model signature by intercepting the first call to ``pl_module.forward``.
+    """
+
+    def _infer_params(self, model: nn.Module) -> tuple[dict, ...]:
+        """Extract metadata from the model's forward method signature.
+
+        Returns:
+            A tuple of dicts, each containing parameter metadata ordered by position.
+        """
+        forward_method = getattr(model.__class__, 'forward', None)
+
+        if forward_method is None:
+            return ()
+
+        try:
+            sig = inspect.signature(forward_method)
+            params_list = []
+
+            for param_name, param in sig.parameters.items():
+                if param_name == 'self':
+                    continue
+
+                param_info = {
+                    'name': param_name,
+                    'kind': param.kind.name,
+                    'annotation': param.annotation if param.annotation != inspect.Parameter.empty else None,
+                    'default': param.default if param.default != inspect.Parameter.empty else None,
+                }
+                params_list.append(param_info)
+
+            # Add return annotation if available as the last element
+            return_annotation = sig.return_annotation
+            if return_annotation != inspect.Signature.empty:
+                return_info = {'_return_annotation': str(return_annotation)}
+                params_list.append(return_info)
+
+            return tuple(params_list)
+
+        except Exception as e:
+            _LOGGER.warning(f"Failed to infer forward method parameters: {e}")
+            return ()
+
+    def _wrap_forward(self, pl_module: nn.Module) -> None:
+        """Wrap ``pl_module.forward`` to infer the MLflow signature on the first call."""
+        original_forward = pl_module.forward
+
+        def wrapped_forward(x, *args, **kwargs):
+            x0 = help_infer_signature(x)
+            infered_params = self._infer_params(pl_module)
+            if len(infered_params) > 1:
+                infered_params = {param['name']: param['default']
+                                  for param in infered_params[1:] if 'name' in param}
+            else:
+                infered_params = None
+
+            self._inferred_signature = mlflow.models.infer_signature(model_input=x0,
+                                                                     params=infered_params)
+
+            # run once and get back to the original forward
+            pl_module.forward = original_forward
+            method = getattr(pl_module, 'forward')
+            out = method(x, *args, **kwargs)
+
+            output_sig = mlflow.models.infer_signature(model_output=help_infer_signature(out))
+            self._inferred_signature.outputs = output_sig.outputs
+
+            return out
+
+        pl_module.forward = wrapped_forward
+
+    def log_model_to_mlflow(self,
+                            model: nn.Module,
+                            run_id: str | MLFlowLogger) -> None:
+        """Log the model to MLflow using the pytorch flavor."""
+        if isinstance(run_id, MLFlowLogger):
+            logger = run_id
+            if logger.run_id is None:
+                raise ValueError("MLFlowLogger has no run_id. Cannot log model to MLFlow.")
+            run_id = logger.run_id
+
+        if self._last_checkpoint_saved is None or self._last_checkpoint_saved == '':
+            _LOGGER.warning("No checkpoint saved yet. Cannot log model to MLFlow.")
+            return
+
+        orig_device = next(model.parameters()).device
+        model = model.cpu()  # Ensure the model is on CPU for logging
+
+        requirements = list(self.extra_pip_requirements)
+        if not any('lightning' in req.lower() for req in requirements):
+            requirements.append(f'lightning=={L.__version__}')
+
+        _LOGGER.debug("Logging model using pytorch flavor with name %s", Path(self._last_checkpoint_saved).stem)
+        modelinfo = mlflow.pytorch.log_model(
+            pytorch_model=model,
+            name=Path(self._last_checkpoint_saved).stem,
+            signature=self._inferred_signature,
+            run_id=run_id,
+            extra_pip_requirements=requirements,
+            code_paths=self.code_paths,
+        )
+
+        model.to(device=orig_device)  # Move the model back to its original device
+        self._last_model_uri = modelinfo.model_uri
+        self._last_model_id = getattr(modelinfo, 'model_id', None)
+        self.last_saved_model_info = modelinfo
+
+        log_model_metadata(self.additional_metadata,
+                           model_path=modelinfo.artifact_path,
+                           run_id=run_id)
+
+
+class MLFlowDatamintModelCheckpoint(_BaseMLFlowModelCheckpoint):
+    """MLflow model checkpoint for :class:`~datamint.mlflow.flavors.model.BaseDatamintModel`-based
+    Lightning modules.
+
+    Logs models using the datamint custom flavor (which wraps ``mlflow.pyfunc``).
+    Signature inference is delegated to the datamint flavor via ``predict_type_hints``,
+    so no forward-wrapping is performed.
+    """
+
+    def _wrap_forward(self, pl_module: nn.Module) -> None:
+        # Signature inference is delegated to the datamint flavor; nothing to do here.
+        pass
+
+    def log_model_to_mlflow(self,
+                            model: nn.Module,
+                            run_id: str | MLFlowLogger) -> None:
+        """Log the model to MLflow using the datamint flavor."""
+        if isinstance(run_id, MLFlowLogger):
+            logger = run_id
+            if logger.run_id is None:
+                raise ValueError("MLFlowLogger has no run_id. Cannot log model to MLFlow.")
+            run_id = logger.run_id
+
+        if self._last_checkpoint_saved is None or self._last_checkpoint_saved == '':
+            _LOGGER.warning("No checkpoint saved yet. Cannot log model to MLFlow.")
+            return
+
+        requirements = list(self.extra_pip_requirements)
+        if not any('lightning' in req.lower() for req in requirements):
+            requirements.append(f'lightning=={L.__version__}')
+
+        from datamint.mlflow.flavors import datamint_flavor
+        _LOGGER.debug("Logging model using datamint flavor with name %s", Path(self._last_checkpoint_saved).stem)
+        modelinfo = datamint_flavor.log_model(
+            model,
+            name=Path(self._last_checkpoint_saved).stem,
+            signature=self._inferred_signature,
+            run_id=run_id,
+            extra_pip_requirements=requirements,
+            code_paths=self.code_paths,
+        )
+
+        self._last_model_uri = modelinfo.model_uri
+        self._last_model_id = getattr(modelinfo, 'model_id', None)
+        self.last_saved_model_info = modelinfo
+
+        log_model_metadata(self.additional_metadata,
+                           model_path=modelinfo.artifact_path,
+                           run_id=run_id)
+
+
+# Backward-compatibility alias
+MLFlowModelCheckpoint = MLFlowPyTorchModelCheckpoint

@@ -393,3 +393,5 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         response = self._make_request('POST', f'/{self.endpoint_base}/predict-volume', json=payload)
         data = response.json()
         return self.get_status(data['job_id'])
+    
+    predict = submit  # Alias for generic prediction endpoint

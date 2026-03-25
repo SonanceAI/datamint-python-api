@@ -10,10 +10,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from datamint.mlflow.flavors.model import PredictionMode
+from typing import Any
+from .prediction_modes import PredictionMode
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,52 +64,70 @@ class PredictionRouter:
 
     _RESERVED_PARAMS = frozenset({"mode", "confidence_threshold"})
 
-    def __init__(self, model_instance: Any, base_class: type) -> None:
-        from .model import PredictionMode  # local import to avoid circular deps
-
-        self._PredictionMode = PredictionMode
-        self._model = model_instance
-        self._base_class = base_class
-        self._registry: dict[PredictionMode, tuple[Callable, ModeSpec]] = {}
-        self._discover()
+    def __init__(self, model_instance: Any,
+                 base_class: type | None = None) -> None:
+        self._registry = self.discover(model_instance, base_class)
 
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
 
-    def _discover(self) -> None:
+    @staticmethod
+    def discover(model: Any, base_class: type | None) -> dict[PredictionMode, tuple[Callable, ModeSpec]]:
         """Build the mode -> handler registry from the model instance."""
-        PredictionMode = self._PredictionMode
+        registry: dict[PredictionMode, tuple] = {}
 
-        # Pass 1: decorator-based
-        for attr_name in dir(self._model):
-            if attr_name.startswith("_"):
-                continue
-            method = getattr(self._model, attr_name, None)
-            spec: ModeSpec | None = getattr(method, "_mode_spec", None)
-            if spec is not None:
-                self._registry[spec.mode] = (method, spec)
+        # Pass 1: decorator-based — walk the MRO __dict__ to avoid triggering
+        # arbitrary property getters or descriptors on the instance.
+        for cls in type(model).__mro__:
+            for attr_name, raw in vars(cls).items():
+                if attr_name.startswith("_"):
+                    continue
+                spec: ModeSpec | None = getattr(raw, "_mode_spec", None)
+                if spec is not None and spec.mode not in registry:
+                    registry[spec.mode] = (getattr(model, attr_name), spec)
 
         # Pass 2: convention-named (backward compat), skip if already registered
         for mode in PredictionMode:
-            if mode in self._registry:
+            if mode in registry:
                 continue
             method_name = f"predict_{mode.value}"
-            method = getattr(self._model, method_name, None)
+            method = getattr(model, method_name, None)
             if method is None:
                 continue
             # Skip if the method is the unoverridden base-class stub
-            base_method = getattr(self._base_class, method_name, None)
-            if base_method is not None and getattr(method, "__func__", None) is base_method:
-                continue
-            self._registry[mode] = (method, ModeSpec(mode=mode))
+            if base_class is not None:
+                base_method = getattr(base_class, method_name, None)
+                if base_method is not None and getattr(method, "__func__", None) is base_method:
+                    continue
+            registry[mode] = (method, ModeSpec(mode=mode))
+
+        return registry
+
+    def update_registry(self, model_instance: Any,
+                        base_class: type | None = None,
+                        overwrite: bool = False) -> None:
+        """Update the registry with handlers from a new model instance (e.g. linked model)."""
+        new_entries = self.discover(model_instance, base_class)
+        for mode, entry in new_entries.items():
+            if mode in self._registry:
+                if not overwrite:
+                    _LOGGER.warning(
+                        "Prediction handler for mode '%s' already exists. Use overwrite=True to replace it.",
+                        mode.value,
+                    )
+                    continue
+                _LOGGER.info(
+                    "Updating prediction handler for mode '%s' with new handler from linked model instance.",
+                    mode.value,
+                )
+            self._registry[mode] = entry
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def supported_modes(self) -> list[str]:
-        PredictionMode = self._PredictionMode
         return [mode.value for mode in PredictionMode if mode in self._registry]
 
     def dispatch(
@@ -134,8 +150,7 @@ class PredictionRouter:
     # Internals
     # ------------------------------------------------------------------
 
-    def _resolve_mode(self, model_input: list, params: dict) -> Any:
-        PredictionMode = self._PredictionMode
+    def _resolve_mode(self, model_input: list, params: dict) -> PredictionMode:
         mode_str = params.get("mode", PredictionMode.DEFAULT.value)
         try:
             is_all_image = all(
@@ -157,13 +172,13 @@ class PredictionRouter:
                 f"Valid modes: {', '.join(valid)}"
             )
 
-    def _get_handler(self, mode: Any) -> tuple[Callable, ModeSpec]:
-        PredictionMode = self._PredictionMode
+    def _get_handler(self, mode: PredictionMode) -> tuple[Callable, ModeSpec]:
         if mode in self._registry:
             return self._registry[mode]
         if PredictionMode.DEFAULT in self._registry:
             _LOGGER.info("Mode '%s' not implemented, falling back to default", mode.value)
             return self._registry[PredictionMode.DEFAULT]
+
         available = self.supported_modes()
         raise NotImplementedError(
             f"Prediction mode '{mode.value}' is not supported by this model.\n"

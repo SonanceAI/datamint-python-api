@@ -89,7 +89,7 @@ def _configure_mlflow_loggers():
 
 
 if TYPE_CHECKING:
-    from .flavors.model import DatamintModel
+    from .flavors.model import BaseDatamintModel, DatamintModel
     from .tracking.fluent import set_project
 else:
     if mlflow_utils.is_tracking_uri_set():
@@ -107,11 +107,11 @@ else:
         __name__,
         submodules=['flavors.model', 'flavors.datamint_flavor'],
         submod_attrs={
-            "flavors.model": ["DatamintModel"],
+            "flavors.model": ["BaseDatamintModel", "DatamintModel"],
             "flavors.datamint_flavor": ["log_model", "load_model"],
             "tracking.fluent": ["set_project"],
         },
     )
 
 
-__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'DatamintModel']
+__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'BaseDatamintModel', 'DatamintModel']

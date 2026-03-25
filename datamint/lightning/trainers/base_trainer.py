@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any, TYPE_CHECKING
 from functools import cached_property
 
@@ -38,16 +39,16 @@ class BaseTrainer(ABC):
             auto-build a dataset when *dataset* is ``None``.
         model: A user-provided :class:`~lightning.LightningModule`.
             When ``None`` the trainer builds a default one via
-            :meth:`_build_default_model`.
+            :meth:`_build_model`.
         loss_fn: Custom loss function forwarded to the default model.
             Ignored when *model* is provided (the user's module owns
             its own loss).
         batch_size: Training batch size.
         num_workers: DataLoader workers.
         train_transform: Albumentations transform for training.  When
-            ``None`` the trainer uses :meth:`_default_train_transform`.
+            ``None`` the trainer uses :meth:`_train_transform`.
         eval_transform: Albumentations transform for val/test.  When
-            ``None`` the trainer uses :meth:`_default_eval_transform`.
+            ``None`` the trainer uses :meth:`_eval_transform`.
         image_size: Target image size ``(H, W)`` or a single int for
             square images.  Forwarded to default transforms.  When
             ``None`` a sensible default is chosen.
@@ -112,7 +113,6 @@ class BaseTrainer(ABC):
 
         # Populated during fit()
         self._datamodule: DatamintDataModule | None = None
-        self._model: L.LightningModule | None = None
         self._lightning_trainer: L.Trainer | None = None
 
     @cached_property
@@ -128,23 +128,22 @@ class BaseTrainer(ABC):
             ``'test_results'``, and ``'adapter'`` (when
             *auto_deploy_adapter* is enabled).
         """
-        # 1. Resolve dataset
-        self.dataset = self._resolve_dataset()
+        # clear cached properties in case of multiple calls to fit()
+        for attr in ('dataset', 'model'):
+            if attr in self.__dict__:
+                del self.__dict__[attr]
+        # 1. Resolve dataset (triggers @cached_property)
+        _ = self.dataset
 
         # 2. Build transforms
-        train_tf = self._user_train_transform or self._default_train_transform()
-        eval_tf = self._user_eval_transform or self._default_eval_transform()
+        train_tf = self._user_train_transform or self._train_transform()
+        eval_tf = self._user_eval_transform or self._eval_transform()
 
         # 3. Build DataModule
         self._datamodule = self._build_datamodule(self.dataset, train_tf, eval_tf)
 
         # 4. Build model
-        if self._user_model is not None:
-            self._model = self._user_model
-        else:
-            loss = self._loss_fn or self._default_loss()
-            metrics = self._default_metrics()
-            self._model = self._build_default_model(loss, metrics)
+        _ = self.model  # triggers @cached_property to build the model
 
         # 5. Build callbacks & logger
         callbacks = self._build_callbacks()
@@ -160,19 +159,20 @@ class BaseTrainer(ABC):
         )
 
         # 7. Train
-        self._lightning_trainer.fit(self._model, datamodule=self._datamodule)
+        self._lightning_trainer.fit(self.model, datamodule=self._datamodule)
 
         # 8. Test
         test_results = self._lightning_trainer.test(datamodule=self._datamodule)
 
-        # 9. Deploy adapter
+        # 9. Deploy adapter (only needed when the model is not already a DatamintModel)
+        from datamint.mlflow.flavors.model import BaseDatamintModel
         adapter = None
-        if self.auto_deploy_adapter:
+        if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
             adapter = self._build_deploy_adapter()
 
         return {
             'trainer': self._lightning_trainer,
-            'model': self._model,
+            'model': self.model,
             'test_results': test_results,
             'adapter': adapter,
         }
@@ -180,37 +180,46 @@ class BaseTrainer(ABC):
     # ── Template hooks (subclasses override these) ──────────────
 
     @abstractmethod
-    def _build_default_dataset(self, project: 'str | Project') -> DatamintBaseDataset:
+    def _build_dataset(self, project: 'str | Project') -> DatamintBaseDataset:
         """Build the appropriate dataset for this task."""
         ...
 
+    @cached_property
+    def model(self) -> L.LightningModule:
+        if self._user_model is not None:
+            return self._user_model
+        else:
+            loss = self._loss_fn or self._loss()
+            metrics = self._metrics()
+            return self._build_model(loss, metrics)
+
     @abstractmethod
-    def _build_default_model(
+    def _build_model(
         self,
         loss_fn: nn.Module,
-        metrics: dict[str, Any],
+        metrics: dict[str, Callable],
     ) -> L.LightningModule:
         """Build the default LightningModule for this task."""
         ...
 
     @abstractmethod
-    def _default_train_transform(self) -> 'BaseCompose':
-        """Return the default training augmentation pipeline."""
+    def _train_transform(self) -> 'BaseCompose':
+        """Return the training augmentation pipeline."""
         ...
 
     @abstractmethod
-    def _default_eval_transform(self) -> 'BaseCompose':
-        """Return the default eval/test transform pipeline."""
+    def _eval_transform(self) -> 'BaseCompose':
+        """Return the eval/test transform pipeline."""
         ...
 
     @abstractmethod
-    def _default_loss(self) -> nn.Module:
-        """Return the default loss function for this task."""
+    def _loss(self) -> nn.Module:
+        """Return the loss function for this task."""
         ...
 
     @abstractmethod
-    def _default_metrics(self) -> dict[str, Any]:
-        """Return default metrics as ``{name: factory_callable}``."""
+    def _metrics(self) -> dict[str, Callable]:
+        """Return metrics as ``{name: factory_callable}``."""
         ...
 
     @abstractmethod
@@ -228,7 +237,7 @@ class BaseTrainer(ABC):
         if self._user_dataset is not None:
             return self._user_dataset
         assert self._user_project is not None  # guaranteed by __init__ validation
-        return self._build_default_dataset(self._user_project)
+        return self._build_dataset(self._user_project)
 
     def _build_datamodule(
         self,
@@ -245,22 +254,27 @@ class BaseTrainer(ABC):
         )
 
     def _build_callbacks(self) -> list:
-        from datamint.mlflow.lightning.callbacks import MLFlowModelCheckpoint
+        from datamint.mlflow.lightning.callbacks import MLFlowPyTorchModelCheckpoint, MLFlowDatamintModelCheckpoint
         from lightning.pytorch.callbacks import EarlyStopping
+        from mlflow.pyfunc.model import PythonModel
 
         metric_name, mode = self._monitor_metric()
         project_name = self.dataset.project.name if self.dataset.project else 'datamint'
         model_name = self.register_model_name or project_name
 
+        if isinstance(self.model, PythonModel):
+            checkpoint_cls = MLFlowDatamintModelCheckpoint
+        else:
+            checkpoint_cls = MLFlowPyTorchModelCheckpoint
+
         callbacks: list = [
-            MLFlowModelCheckpoint(
+            checkpoint_cls(
                 monitor=metric_name,
                 mode=mode,
                 save_top_k=1,
                 register_model_name=model_name,
                 register_model_on='test',
-            ),
-        ]
+            )]
 
         if self.early_stopping_patience is not None:
             callbacks.append(EarlyStopping(
