@@ -75,7 +75,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         model_version: int | None = None,
         model_alias: str | None = None,
         resource_id: str | None = None,
-        resource_ids: list[str] | None = None,
+        # resource_ids: list[str] | None = None,
         file_path: str | None = None,
         file_paths: list[str] | None = None,
         save_results: bool = False,
@@ -106,8 +106,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results=save_results,
             params=params,
         )
-        if resource_ids is not None:
-            payload["resource_ids"] = resource_ids
+        # if resource_ids is not None:
+        #     payload["resource_ids"] = resource_ids
         if file_paths is not None:
             payload["file_paths"] = file_paths
 

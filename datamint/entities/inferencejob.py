@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 from collections.abc import Callable
 
 from datamint.entities.base_entity import BaseEntity, MISSING_FIELD
+from datamint.entities.annotations import annotation_from_dict
 
 if TYPE_CHECKING:
+    import numpy as np
+    from matplotlib.figure import Figure
     from datamint.api.endpoints.inference_api import InferenceApi
+    from datamint.entities.annotations import Annotation
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class InferenceJob(BaseEntity):
@@ -32,6 +39,25 @@ class InferenceJob(BaseEntity):
     def is_finished(self) -> bool:
         """Whether the job has reached a terminal state."""
         return self.status.lower() in {'completed', 'failed', 'cancelled', 'error'}
+    
+    @property
+    def predictions(self) -> 'list[list[Annotation]] | None':
+        """
+        Returns a list of annotations resulting from this inference job, if available.
+
+        Each element of the outer list corresponds to one input resource;
+        the inner list contains the annotations produced for that resource.
+
+        Returns:
+            ``list[list[Annotation]]`` (one outer list for each input resource) or ``None`` when no predictions are
+            stored in :attr:`result_data`.
+        """
+        if self.result_data and 'predictions' in self.result_data:
+            return [
+                [annotation_from_dict(ann) for ann in group]
+                for group in self.result_data['predictions']
+            ]
+        return None
 
     def wait(
         self,

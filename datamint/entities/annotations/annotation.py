@@ -71,7 +71,7 @@ class Annotation(AnnotationBase):
         text_value: Optional text value associated with the annotation.
         numeric_value: Optional numeric value associated with the annotation.
         units: Optional units for numeric_value.
-        geometry: Optional geometry payload (e.g., polygons, masks) as a list.
+        geometry: Optional geometry payload (e.g., polygons) as a list.
         created_at: ISO timestamp for when the annotation was created.
         created_by: Email or identifier of the creating user.
         annotation_worklist_id: Optional worklist ID associated with the annotation.

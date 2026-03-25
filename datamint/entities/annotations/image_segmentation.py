@@ -102,30 +102,6 @@ class ImageSegmentation(BaseSegmentationAnnotation):
         return (arr > 0).astype(np.uint8)
 
     # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
-
-    @property
-    def mask(self) -> np.ndarray | Image.Image | None:
-        """Alias for :attr:`segmentation_data`."""
-        return self.segmentation_data
-
-    @property
-    def mask_shape(self) -> tuple[int, int] | None:
-        """
-        Shape of the stored mask.
-
-        Returns:
-            ``(H, W)`` or ``None`` if no mask is stored.
-        """
-        data = self.segmentation_data
-        if data is None:
-            return None
-        if isinstance(data, Image.Image):
-            return (data.height, data.width)
-        return data.shape  # type: ignore[return-value]
-
-    # ------------------------------------------------------------------
     # Conversion helpers
     # ------------------------------------------------------------------
 
