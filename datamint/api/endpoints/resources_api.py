@@ -39,9 +39,22 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 """
 
 
+_LARGE_FILE_THRESHOLD = 300 * 1024 * 1024  # 300 MB
+
+
 def _infinite_gen(x):
     while True:
         yield x
+
+
+async def _tracked_file_gen(file_obj: IO, pbar: tqdm, chunk_size: int = 65536):
+    """Async generator that reads a file in chunks and updates a bytes progress bar."""
+    while True:
+        chunk = file_obj.read(chunk_size)
+        if not chunk:
+            break
+        pbar.update(len(chunk))
+        yield chunk
 
 
 def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
@@ -305,6 +318,29 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         else:
             f = _open_io(file_path)
 
+        # Determine file size for potential large-file upload progress bar
+        try:
+            file_size = os.fstat(f.fileno()).st_size
+        except (AttributeError, OSError):
+            try:
+                pos = f.tell()
+                f.seek(0, 2)
+                file_size = f.tell()
+                f.seek(pos)
+            except (AttributeError, OSError):
+                file_size = 0
+
+        upload_pbar: tqdm | None = None
+        if file_size > _LARGE_FILE_THRESHOLD:
+            upload_pbar = tqdm(
+                total=file_size,
+                unit='B',
+                unit_scale=True,
+                unit_divisor=1024,
+                desc=f"Uploading {filename}",
+                leave=False,
+            )
+
         try:
             metadata_content = None
             metadata_dict = None
@@ -337,7 +373,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             file_key = 'resource'
             form.add_field('source', 'api')
 
-            form.add_field(file_key, f, filename=filename, content_type=mimetype)
+            file_payload = _tracked_file_gen(f, upload_pbar) if upload_pbar is not None else f
+            form.add_field(file_key, file_payload, filename=filename, content_type=mimetype)
             form.add_field('source_filepath', source_filepath)  # full path to the file
             if mimetype is not None:
                 form.add_field('mimetype', mimetype)
@@ -358,7 +395,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 except Exception as e:
                     _LOGGER.warning(f"Failed to add metadata to form: {e}")
 
-            timeout = aiohttp.ClientTimeout(total=300, connect=60, sock_read=300)
+            # Scale total/read timeout proportionally for large files (min 1800 s, ≥2 s/MB)
+            _upload_secs = max(1800, file_size // (512 * 1024)) if file_size else 1800
+            timeout = aiohttp.ClientTimeout(total=_upload_secs, connect=60, sock_read=_upload_secs)
             resp_data = await self._make_request_async_json('POST',
                                                             endpoint=self.endpoint_base,
                                                             data=form,
@@ -375,6 +414,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 _LOGGER.error(f"Error uploading {file_path}: {e}")
             raise
         finally:
+            if upload_pbar is not None:
+                upload_pbar.close()
             f.close()
 
     async def _upload_resources_async(self,
