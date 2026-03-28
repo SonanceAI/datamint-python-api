@@ -298,26 +298,55 @@ class CreatableEntityApi(EntityBaseApi[T]):
 
     @overload
     def _create(self, entity_data: dict[str, Any],
-                return_entity: Literal[True] = True) -> T | list[T]: ...
+                return_entity: Literal[True] = True,
+                exists_ok: bool = False) -> T | list[T] | None: ...
 
     @overload
     def _create(self, entity_data: dict[str, Any],
-                return_entity: Literal[False]) -> str | list: ...
+                return_entity: Literal[False],
+                exists_ok: bool = False) -> str | list | None: ...
 
     def _create(self, entity_data: dict[str, Any],
-                return_entity: bool = False) -> str | T | list:
+                return_entity: bool = False,
+                exists_ok: bool = False) -> str | T | list | None:
         """Create a new entity.
 
         Args:
             entity_data: Dictionary containing entity data for creation.
+            exists_ok: If ``True``, do not raise an error when the entity already exists
+                (HTTP 409 Conflict). Instead, attempt to return the existing entity from
+                the conflict response body. Returns ``None`` if the existing entity cannot
+                be recovered from the response.
 
         Returns:
-            The id of the created entity.
+            The id of the created entity, or the entity instance when *return_entity* is
+            ``True``. Returns ``None`` when *exists_ok* is ``True`` and the entity already
+            existed but could not be recovered from the response.
 
         Raises:
-            httpx.HTTPStatusError: If creation fails.
+            httpx.HTTPStatusError: If creation fails (or if the entity already exists and
+                *exists_ok* is ``False``).
         """
-        response = self._make_request('POST', f'/{self.endpoint_base}', json=entity_data)
+        try:
+            response = self._make_request('POST', f'/{self.endpoint_base}', json=entity_data)
+        except httpx.HTTPStatusError as e:
+            if exists_ok and e.response.status_code == 409:
+                try:
+                    existing_data = e.response.json()
+                    if isinstance(existing_data, dict):
+                        if return_entity:
+                            try:
+                                return self._init_entity_obj(**existing_data)
+                            except Exception:
+                                entity_id = existing_data.get('id')
+                                if entity_id:
+                                    return self.get_by_id(entity_id)
+                        else:
+                            return existing_data.get('id')
+                except Exception:
+                    pass
+                return None
+            raise
         respdata = response.json()
         if isinstance(respdata, str):
             if return_entity:
@@ -341,13 +370,14 @@ class CreatableEntityApi(EntityBaseApi[T]):
         return respdata
 
     @overload
-    def create(self, *args, return_entity: Literal[True] = True, **kwargs) -> T: ...
+    def create(self, *args, return_entity: Literal[True] = True, exists_ok: bool = False, **kwargs) -> T: ...
 
     @overload
-    def create(self, *args, return_entity: Literal[False], **kwargs) -> str: ...
+    def create(self, *args, return_entity: Literal[False], exists_ok: bool = False, **kwargs) -> str: ...
 
     def create(self, *args,
                return_entity: bool = True,
+               exists_ok: bool = False,
                **kwargs) -> str | T:
         raise NotImplementedError("Subclasses must implement the create method with their own custom parameters")
 

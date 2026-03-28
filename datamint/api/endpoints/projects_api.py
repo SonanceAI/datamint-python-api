@@ -5,6 +5,7 @@ from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 import httpx
 from datamint.entities.resource import Resource
+from datamint.exceptions import EntityAlreadyExistsError
 if TYPE_CHECKING:
     from . import AnnotationSetsApi, ResourcesApi
     from datamint.entities.annotations.annotation_spec import AnnotationSpec
@@ -52,7 +53,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: Literal[True] = True
+               return_entity: Literal[True] = True,
+               exists_ok: bool = False
                ) -> Project: ...
 
     @overload
@@ -64,7 +66,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: Literal[False]
+               return_entity: Literal[False],
+               exists_ok: bool = False
                ) -> str: ...
 
     def create(self,
@@ -75,7 +78,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: bool = True
+               return_entity: bool = True,
+               exists_ok: bool = False
                ) -> str | Project:
         """Create a new project.
 
@@ -86,10 +90,19 @@ class ProjectsApi(CRUDEntityApi[Project]):
             is_active_learning: Whether the project is an active learning project or not.
             two_up_display: Allow annotators to display multiple resources for annotation.
             return_entity: Whether to return the created Project instance or just its ID.
+            exists_ok: If ``True``, do not raise an error when a project with the same
+                name already exists. Instead, the existing project is returned when
+                possible.
 
         Returns:
             The id of the created project.
         """
+        proj = self.get_by_name(name, include_archived=True)
+        if proj is not None:
+            if exists_ok:
+                return proj if return_entity else proj.id
+            else:
+                raise EntityAlreadyExistsError(entity_type='Project', params={'name': name})
         resources_ids = resources_ids or []
 
         project_data = {'name': name,
@@ -104,7 +117,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                         "require_review": False,
                         'description': description}
 
-        return self._create(project_data, return_entity=return_entity)
+        return self._create(project_data, return_entity=return_entity, exists_ok=exists_ok)  # type: ignore[return-value]
 
     def get_all(self, limit: int | None = None) -> Sequence[Project]:
         """Get all projects.
