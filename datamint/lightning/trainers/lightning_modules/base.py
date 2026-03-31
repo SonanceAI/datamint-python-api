@@ -10,6 +10,9 @@ from torch import Tensor
 from datamint.mlflow.flavors.model import BaseDatamintModel, ModelSettings
 from mlflow.pyfunc.model import PythonModelContext
 
+if TYPE_CHECKING:
+    from datamint.mlflow.data import DatamintMLflowDataset
+
 _LOGGER = logging.getLogger(__name__)
 _SAMPLE_META_KEYS = {'resource_id', 'slice_index'}
 
@@ -28,8 +31,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         BaseDatamintModel.__init__(self, settings=settings)
         self._log_sample_metrics: bool = False
         self._sample_buffer: list[dict[str, Any]] = []
-        self.mlflow_model_id: str | None = None
-        self.mlflow_dataset: Any = None  # Set at runtime
+        self.mlflow_model_id: str | None = None  # Injected by modelcheckpoint at runtime. FIXME: This is a bit hacky
 
     # ------------------------------------------------------------------
     # Per-sample metrics logging
@@ -95,8 +97,25 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             return
 
         run_id = logger.run_id
+        mlflow_dataset: DatamintMLflowDataset | None = getattr(logger, '_mlflow_dataset', None)
+        if mlflow_dataset is None:
+            _LOGGER.info(
+                "MLFlowLogger does not have '_mlflow_dataset' attribute. "
+                "Per-sample metrics will be logged without dataset association."
+            )
+            dataset_name = None
+            dataset_digest = None
+        else:
+            dataset_name = mlflow_dataset.name
+            dataset_digest = mlflow_dataset.digest
 
         # Log per-sample metrics with step = sample index.
+        # Build a flat list of Metric objects and send in one log_batch call
+        # instead of one log_metrics call per sample (N → 1 HTTP round-trips).
+        import time
+        from mlflow.entities import Metric
+        from mlflow.tracking import MlflowClient
+
         metric_keys = {
             key
             for entry in self._sample_buffer
@@ -104,23 +123,27 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             if key not in _SAMPLE_META_KEYS
         }
 
-        for step, entry in enumerate(self._sample_buffer):
-            metrics = {
-                f"test/sample/{key}": float(entry[key])
-                for key in metric_keys
-                if entry.get(key) is not None
-            }
-            if metrics:
-                try:
-                    mlflow.log_metrics(metrics=metrics,
-                                       step=step,
-                                       run_id=run_id,
-                                       dataset=self.mlflow_dataset,
-                                       model_id=self.mlflow_model_id)
-                except Exception as e:
-                    _LOGGER.error(
-                        f"Failed to log sample metrics at step {step}: {e}"
-                    )
+        timestamp_ms = int(time.time() * 1000)
+        all_metrics: list[Metric] = [
+            Metric(key=f"test/sample/{key}", value=float(entry[key]),
+                   timestamp=timestamp_ms, step=step,
+                   dataset_name=dataset_name, dataset_digest=dataset_digest,
+                   run_id=run_id,
+                   model_id=self.mlflow_model_id)
+            for step, entry in enumerate(self._sample_buffer)
+            for key in metric_keys
+            if entry.get(key) is not None
+        ]
+
+        if all_metrics:
+            # log_batch accepts at most 1000 metrics per request.
+            _BATCH_SIZE = 1000
+            client = MlflowClient()
+            try:
+                for i in range(0, len(all_metrics), _BATCH_SIZE):
+                    client.log_batch(run_id, metrics=all_metrics[i:i + _BATCH_SIZE])
+            except Exception as e:
+                _LOGGER.error(f"Failed to log sample metrics batch: {e}")
 
         # Log resource_id → step mapping table as artifact.
         mapping_data: dict[str, list[Any]] = {
@@ -140,9 +163,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         except Exception as e:
             _LOGGER.warning(f"Failed to log sample mapping table: {e}")
 
-        _LOGGER.info(
-            f"Flushed {len(self._sample_buffer)} per-sample metrics to MLflow."
-        )
+        _LOGGER.info("Flushed %d per-sample metrics to MLflow.", len(self._sample_buffer))
         self._sample_buffer.clear()
 
     def on_test_start(self) -> None:
