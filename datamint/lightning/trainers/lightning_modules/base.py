@@ -109,6 +109,12 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             dataset_name = mlflow_dataset.name
             dataset_digest = mlflow_dataset.digest
 
+        if self.mlflow_model_id is None:
+            _LOGGER.warning(
+                "MLflow model ID is not set on the LightningModule. "
+                "Per-sample metrics will be logged without model association."
+            )
+
         # Log per-sample metrics with step = sample index.
         # Build a flat list of Metric objects and send in one log_batch call
         # instead of one log_metrics call per sample (N → 1 HTTP round-trips).
