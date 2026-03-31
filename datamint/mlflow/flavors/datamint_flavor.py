@@ -50,6 +50,10 @@ def _process_signature(signature: ModelSignature | None,
 
 
 def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample | None, dict[str, Any]]:
+
+    logger.info('Processing input example is disabled for now')
+    raise NotImplementedError('Processing input example is disabled for now')
+
     datamint_params = {
         "mode": "default",
     }
@@ -66,7 +70,7 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
 
 def _resolve_requirements(pip_requirements, extra_pip_requirements):
     import medimgkit
-    
+
     def _get_req_name(req):
         try:
             return Requirement(req).name.lower()
@@ -115,6 +119,10 @@ def save_model(datamint_model: BaseDatamintModel,
                model_config=None,
                streamable=None,
                **kwargs):
+    logger.debug(f"Saving DatamintModel to path: {path} "
+                 f" class name: {datamint_model.__class__.__name__} "
+                 f' has_input_example: {input_example is not None} ')
+
     if not isinstance(datamint_model, DatamintModel):
         datamint_model = _DatamintModelWrapper(datamint_model)
 
@@ -131,7 +139,13 @@ def save_model(datamint_model: BaseDatamintModel,
 
     if signature is not None:
         signature = _process_signature(signature, datamint_model)
-    input_example = _process_input_example(input_example)
+    try:
+        input_example = _process_input_example(input_example)
+    except NotImplementedError:
+        input_example = None
+    except Exception as e:
+        logger.warning(f"Failed to process input example. Proceeding without input example. Error: {e}")
+        input_example = None
 
     linked_models = datamint_model._get_linked_models_uri() if hasattr(datamint_model, '_get_linked_models_uri') else {}
     flavor_params = {
@@ -169,8 +183,11 @@ def save_model(datamint_model: BaseDatamintModel,
             logger.debug(f"Saving PyTorch model to temporary file {tmp_file.name}")
             torch.save(pt_model, tmp_file.name, pickle_module=mlflow_pytorch_pickle_module)
             pyfunc_kwargs['artifacts'] = {**(artifacts or {}), DatamintModel._PYTORCH_ARTIFACT_NAME: tmp_file.name}
+
+            logger.debug(f'Saving PyFunc model with PyTorch artifact for model {datamint_model.__class__.__name__}...')
             return mlflow.pyfunc.save_model(**pyfunc_kwargs)
 
+    logger.debug(f'Saving PyFunc model for model {datamint_model.__class__.__name__}...')
     return mlflow.pyfunc.save_model(**pyfunc_kwargs)
 
 
@@ -219,8 +236,6 @@ def load_model(model_uri: str, device: str | None = None) -> DatamintModel:
     local_path = _download_artifact_from_uri(artifact_uri=model_uri)
 
     return _load_pyfunc(local_path, model_config=model_config).unwrap_python_model()
-
-
 
 
 def _load_pyfunc(path: str, model_config=None) -> pyfunc.PyFuncModel:
