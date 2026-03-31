@@ -188,7 +188,7 @@ class SlicedVideoDataset(DatamintBaseDataset):
                 - seg_labels: dict[author -> np.ndarray of int codes]
                 - seg_metainfos: dict[author -> list]
         """
-        seg_anns = [ann for ann in annotations if ann.annotation_type == 'segmentation']
+        seg_anns = [ann for ann in annotations if ann.is_segmentation()]
         if not seg_anns:
             return {}, {}, {}
 

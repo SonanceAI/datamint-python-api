@@ -1,3 +1,4 @@
+import warnings
 import os
 import requests
 from typing import Optional, Callable, Any, Literal, Sequence
@@ -20,6 +21,7 @@ from datamint.entities import Annotation, DatasetInfo
 import cv2
 from datamint.entities import Resource
 import datamint.configs
+from deprecated import deprecated
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,6 +30,8 @@ class DatamintDatasetException(DatamintException):
     pass
 
 
+@deprecated(reason="DatamintBaseDataset is deprecated and may be removed in future versions. "
+            "Please use 'from datamint.dataset import ImageDataset, VolumeDataset' instead.")
 class DatamintBaseDataset:
     """Class to download and load datasets from the Datamint API.
 
@@ -80,6 +84,12 @@ class DatamintBaseDataset:
         include_frame_label_names: list[str] | None = None,
         exclude_frame_label_names: list[str] | None = None,
     ):
+        warnings.warn(
+            "DatamintBaseDataset is deprecated and may be removed in future versions. "
+            "Please use 'from datamint.dataset import ImageDataset, VolumeDataset' instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         _LOGGER.warning(
             "DatamintBaseDataset is a legacy class and may be removed in future versions. "
             "Please use 'from datamint.dataset import ImageDataset, VolumeDataset' instead."
