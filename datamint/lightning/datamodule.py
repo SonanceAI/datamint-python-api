@@ -9,11 +9,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import lightning as L
 from torch.utils.data import DataLoader
 
 from datamint.dataset.base import DatamintBaseDataset
+
+if TYPE_CHECKING:
+    from datamint.mlflow.data import DatamintMLflowDataset
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,7 +98,7 @@ class DatamintDataModule(L.LightningDataModule):
         # TODO: save the transforms as strings in the hyperparameters
         self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform"])
 
-        self._dataset = dataset
+        self.dataset = dataset
         self._batch_size = batch_size
         self._train_batch_size = train_batch_size or batch_size
         self._val_batch_size = val_batch_size or batch_size
@@ -122,23 +126,19 @@ class DatamintDataModule(L.LightningDataModule):
         # Cache the split result so setup() is idempotent
         self._splits_resolved = False
 
-    @property
-    def dataset(self) -> DatamintBaseDataset:
-        """The wrapped Datamint dataset."""
-        return self._dataset
-
     # ------------------------------------------------------------------
     # LightningDataModule lifecycle
     # ------------------------------------------------------------------
+
     def prepare_data(self) -> None:
-        self._dataset._prepare()
+        self.dataset._prepare()
 
     def setup(self, stage: str | None = None) -> None:
         if self._splits_resolved:
             return
 
         if self._split or self._split_cfg is not None or self._use_server_splits:
-            parts = self._dataset.split(
+            parts = self.dataset.split(
                 seed=self._split_seed,
                 use_server_splits=self._use_server_splits,
                 **(self._split_cfg or {}),
@@ -154,9 +154,9 @@ class DatamintDataModule(L.LightningDataModule):
                 )
         else:
             # No split config: use the full dataset for every stage.
-            self._train_dataset = self._dataset
+            self._train_dataset = self.dataset
             self._val_dataset = None
-            self._test_dataset = self._dataset
+            self._test_dataset = self.dataset
 
         # Apply stage-specific transforms after splits are resolved.
         if self._train_transform is not None and self._train_dataset is not None:
@@ -182,7 +182,7 @@ class DatamintDataModule(L.LightningDataModule):
             drop_last=self._drop_last_train,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            collate_fn=self._dataset.get_collate_fn(),
+            collate_fn=self.dataset.get_collate_fn(),
         )
 
     def val_dataloader(self) -> DataLoader | None:
@@ -194,26 +194,60 @@ class DatamintDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            collate_fn=self._dataset.get_collate_fn(),
+            collate_fn=self.dataset.get_collate_fn(),
         )
 
     def test_dataloader(self) -> DataLoader:
-        ds = self._test_dataset if self._test_dataset is not None else self._dataset
+        ds = self._test_dataset if self._test_dataset is not None else self.dataset
         return DataLoader(
             ds,
             batch_size=self._test_batch_size,
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            collate_fn=self._dataset.get_collate_fn(),
+            collate_fn=self.dataset.get_collate_fn(),
         )
 
-    def predict_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self._dataset,
-            batch_size=self._test_batch_size,
-            shuffle=False,
-            num_workers=self._num_workers,
-            pin_memory=self._pin_memory,
-            collate_fn=self._dataset.get_collate_fn(),
-        )
+    def get_mlflow_dataset_split(self, split: str) -> 'DatamintMLflowDataset | None':
+        """Return a :class:`~datamint.mlflow.data.DatamintMLflowDataset` for the given split.
+
+        Delegates to the corresponding split dataset's
+        :meth:`~datamint.dataset.base.DatamintBaseDataset.build_mlflow_dataset`.
+        Falls back to the full dataset when the requested split is not available.
+
+        Args:
+            split: One of ``'train'``, ``'val'``, or ``'test'``.
+        """
+        ds = self.get_dataset_split(split)
+        if ds is None:
+            return None
+        mlds = ds.build_mlflow_dataset()
+        if getattr(mlds.source, "_split", "") != split:
+            _LOGGER.warning(
+                f"Requested MLflow dataset for split '{split}', but the dataset's "
+                f"split is '{getattr(mlds.source, "_split", "")}'. This may cause confusion in MLflow."
+            )
+        return mlds
+
+    def get_mlflow_dataset(self):
+        """Return an MLflow dataset for the full dataset (without split context)."""
+        return self.dataset.build_mlflow_dataset()
+
+    def get_dataset_split(self, split: str) -> 'DatamintBaseDataset | None':
+        """Return the Datamint dataset for the given split. Falls back to the full dataset when the requested split is not available."""
+        split_ds_map = {
+            'train': self._train_dataset,
+            'val': self._val_dataset,
+            'test': self._test_dataset,
+        }
+        return split_ds_map.get(split)
+
+    # def predict_dataloader(self) -> DataLoader:
+    #     return DataLoader(
+    #         self.dataset,
+    #         batch_size=self._test_batch_size,
+    #         shuffle=False,
+    #         num_workers=self._num_workers,
+    #         pin_memory=self._pin_memory,
+    #         collate_fn=self.dataset.get_collate_fn(),
+    #     )

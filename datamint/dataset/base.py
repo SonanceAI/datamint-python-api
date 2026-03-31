@@ -21,6 +21,7 @@ from datamint.entities.annotations.annotation_spec import AnnotationSpec, Catego
 if TYPE_CHECKING:
     from datamint.entities import Resource, Project, Annotation
     from albumentations import BaseCompose
+    from datamint.mlflow.data import DatamintMLflowDataset
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class DatamintDatasetException(DatamintException):
     pass
 
 
-class DatamintBaseDataset(ABC):
+class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
     """Abstract base class for Datamint datasets.
 
     This class provides the PyTorch Dataset interface with:
@@ -168,6 +169,7 @@ class DatamintBaseDataset(ABC):
         # Internal state
         self._logged_uint16_conversion = False
         self._is_prepared = False
+        self.split_name: str | None = None
 
     def __getattr__(self, name: str) -> Any:
         # __getattr__ is only invoked when normal attribute lookup fails —
@@ -504,14 +506,14 @@ class DatamintBaseDataset(ABC):
             return False
 
         # Check by annotation type
-        if ann.annotation_type == 'segmentation':
+        if ann.is_segmentation():
             return self._should_include_segmentation(ann.identifier)
-        elif ann.annotation_type == 'label':
+        elif ann.is_label():
             if ann.frame_index is None:  # image-level
                 return self._should_include_image_label(ann.identifier)
             else:  # frame-level
                 return self._should_include_frame_label(ann.identifier)
-        elif ann.annotation_type == 'category':
+        elif ann.is_category():
             if not self.allow_external_annotations:
                 lsets = self.image_lsets if ann.frame_index is None else self.frame_lsets
                 valid_identifiers = {ident for ident, _ in lsets.get('multiclass', [])}
@@ -595,9 +597,9 @@ class DatamintBaseDataset(ABC):
                 if ann_scope != scope:
                     continue
 
-                if ann.annotation_type == 'label':
+                if ann.is_label():
                     multilabel_set.add(ann.identifier)
-                elif ann.annotation_type == 'category':
+                elif ann.is_category():
                     multiclass_set.add((ann.identifier, ann.value))
 
         multilabel_list = sorted(multilabel_set)
@@ -817,6 +819,39 @@ class DatamintBaseDataset(ABC):
         """Concatenate datasets."""
         return ConcatDataset([self, other])  # type: ignore[list-item]
 
+    def build_mlflow_dataset(self) -> 'DatamintMLflowDataset':
+        """Create a :class:`~datamint.mlflow.data.DatamintMLflowDataset` for this dataset.
+
+        Args:
+            split: The split name (e.g. ``'train'``, ``'val'``, ``'test'``).
+        """
+        from datamint.mlflow.data import DatamintMLflowDataset
+
+        project = getattr(self, 'project', None)
+        project_name = getattr(project, 'name', 'unknown') if project is not None else 'unknown'
+        project_id = getattr(project, 'id', 'unknown') if project is not None else 'unknown'
+
+        extra_params = {
+            'return_as_semantic_segmentation': self.return_as_semantic_segmentation,
+            'semantic_seg_merge_strategy': str(self.semantic_seg_merge_strategy),
+            'include_unannotated': self.include_unannotated,
+            'include_annotators': self.include_annotators,
+            'exclude_annotators': self.exclude_annotators,
+            'include_segmentation_names': self.include_segmentation_names,
+            'exclude_segmentation_names': self.exclude_segmentation_names,
+            'include_image_label_names': self.include_image_label_names,
+            'exclude_image_label_names': self.exclude_image_label_names,
+            'include_frame_label_names': self.include_frame_label_names,
+            'exclude_frame_label_names': self.exclude_frame_label_names,
+        }
+        return DatamintMLflowDataset(
+            project_id=project_id,
+            project_name=project_name,
+            split=self.split_name,
+            resources=self.resources,
+            extra_params=extra_params
+        )
+
     def get_dataloader(self, *args, **kwargs) -> DataLoader:
         """Get DataLoader with proper collate function."""
         return DataLoader(self, *args, collate_fn=self.get_collate_fn(), **kwargs)  # type: ignore[arg-type]
@@ -853,7 +888,7 @@ class DatamintBaseDataset(ABC):
             return collated
 
         return collate_fn
-    
+
     def subset(self, indices: list[int]) -> 'DatamintBaseDataset':
         """Create a dataset subset by slicing resources and annotations."""
         import copy
@@ -869,6 +904,8 @@ class DatamintBaseDataset(ABC):
         name = self.project.name if self.project else "<Custom>"
         head = f"Dataset {name}"
         body = [f"Number of datapoints: {len(self)}"]
+        if self.split_name is not None:
+            body.append(f"Split: {self.split_name}")
 
         # if self.manager.root is not None:
         #    body.append(f"Location: {self.manager.dataset_dir}")
@@ -970,7 +1007,10 @@ class DatamintBaseDataset(ABC):
                 "server first or use local splitting (use_server_splits=False)."
             )
 
-        return {name: self.subset(indices) for name, indices in split_indices.items()}
+        result = {name: self.subset(indices) for name, indices in split_indices.items()}
+        for name, ds in result.items():
+            ds.split_name = name
+        return result
 
     def _split_locally(
         self,
@@ -1009,6 +1049,7 @@ class DatamintBaseDataset(ABC):
             else:
                 end = start + round(ratio * n)
             result[name] = self.subset(indices[start:end])
+            result[name].split_name = name
             start = end
 
         return result
@@ -1054,7 +1095,7 @@ class DatamintBaseDataset(ABC):
             ValueError: If no filter criteria are specified.
         """
         if all(v is None for v in (tags, filename_pattern, has_annotations,
-                                    annotation_names, custom_fn)):
+                                   annotation_names, custom_fn)):
             raise ValueError("At least one filter criterion must be specified.")
 
         import fnmatch

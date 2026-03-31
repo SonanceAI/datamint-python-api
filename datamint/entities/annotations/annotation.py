@@ -5,11 +5,11 @@ This module defines the Annotation model used to represent annotation
 records returned by the DataMint API.
 """
 
-from typing import TYPE_CHECKING, Any, Literal, overload
-import logging
 from datetime import datetime
+import logging
+from typing import TYPE_CHECKING, Any, Literal, overload
 
-from pydantic import ConfigDict, Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 from datamint.api.dto import AnnotationType
 from datamint.types import ImagingData
@@ -46,8 +46,22 @@ class AnnotationBase(BaseEntity):
 
     identifier: str = Field(alias="name")
     scope: str
-    annotation_type: AnnotationType
+    annotation_type: str  # AnnotationType # mlflow model signature does not support enum types
     confiability: float = 1.0
+
+    @field_validator("annotation_type", mode="before")
+    @classmethod
+    def _validate_annotation_type(cls, value: AnnotationType | str) -> str:
+        if isinstance(value, AnnotationType):
+            return value.value
+
+        try:
+            return AnnotationType(value).value
+        except ValueError as exc:
+            valid_types = ", ".join(member.value for member in AnnotationType)
+            raise ValueError(
+                f"Invalid annotation_type {value!r}. Expected one of: {valid_types}"
+            ) from exc
 
     def __init__(self, **data):
         """Initialize the annotation base entity."""
@@ -57,6 +71,18 @@ class AnnotationBase(BaseEntity):
     def name(self) -> str:
         """Get the annotation name (alias for identifier)."""
         return self.identifier
+    
+    def is_segmentation(self) -> bool:
+        """Check if this is a segmentation annotation."""
+        return self.annotation_type == AnnotationType.SEGMENTATION.value
+
+    def is_label(self) -> bool:
+        """Check if this is a label annotation."""
+        return self.annotation_type == AnnotationType.LABEL.value
+
+    def is_category(self) -> bool:
+        """Check if this is a category annotation."""
+        return self.annotation_type == AnnotationType.CATEGORY.value
 
 
 class Annotation(AnnotationBase):
@@ -263,18 +289,6 @@ class Annotation(AnnotationBase):
     def added_by(self) -> str:
         """Get the creator email (alias for created_by)."""
         return self.created_by
-
-    def is_segmentation(self) -> bool:
-        """Check if this is a segmentation annotation."""
-        return self.annotation_type == 'segmentation'
-
-    def is_label(self) -> bool:
-        """Check if this is a label annotation."""
-        return self.annotation_type == 'label'
-
-    def is_category(self) -> bool:
-        """Check if this is a category annotation."""
-        return self.annotation_type == 'category'
 
     def is_frame_scoped(self) -> bool:
         """Check if this annotation is frame-scoped."""

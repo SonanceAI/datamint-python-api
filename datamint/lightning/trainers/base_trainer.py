@@ -13,9 +13,12 @@ from functools import cached_property
 
 import lightning as L
 from torch import nn
+import mlflow
 
 from datamint.dataset.base import DatamintBaseDataset
 from datamint.lightning.datamodule import DatamintDataModule
+from datamint.mlflow import set_project
+from datamint.mlflow.flavors.model import BaseDatamintModel
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
@@ -112,12 +115,29 @@ class BaseTrainer(ABC):
         self.trainer_kwargs = trainer_kwargs or {}
 
         # Populated during fit()
-        self._datamodule: DatamintDataModule | None = None
         self._lightning_trainer: L.Trainer | None = None
 
     @cached_property
     def dataset(self) -> DatamintBaseDataset:
         return self._resolve_dataset()
+
+    @property
+    def _project_name(self) -> str:
+        if self._user_project is None:
+            project_name = self.dataset.project.name if self.dataset.project else 'datamint'
+        elif isinstance(self._user_project, str):
+            project_name = self._user_project
+        else:
+            project_name = self._user_project.name
+
+        return project_name
+
+    @property
+    def experiment_name(self) -> str:
+        return self.mlflow_experiment_name or f"{self._project_name}_training"
+
+    def _with_project(self):
+        set_project(self._project_name)
 
     # ── Public API ──────────────────────────────────────────────
     def fit(self) -> dict[str, Any]:
@@ -132,43 +152,43 @@ class BaseTrainer(ABC):
         for attr in ('dataset', 'model'):
             if attr in self.__dict__:
                 del self.__dict__[attr]
-        # 1. Resolve dataset (triggers @cached_property)
-        _ = self.dataset
 
-        # 2. Build transforms
-        train_tf = self._user_train_transform or self._train_transform()
-        eval_tf = self._user_eval_transform or self._eval_transform()
+        self._with_project()  # ensure MLflow project context is set for the entire training pipeline
+        exp = mlflow.set_experiment(self.experiment_name)  # ensure experiment is set for MLflowLogger and callbacks
 
-        # 3. Build DataModule
-        self._datamodule = self._build_datamodule(self.dataset, train_tf, eval_tf)
+        with mlflow.start_run(experiment_id=exp.experiment_id) as run:
+            # 1. Resolve dataset (triggers @cached_property)
+            _ = self.dataset
 
-        # 4. Build model
-        _ = self.model  # triggers @cached_property to build the model
+            # 2 . Build datamodule (triggers @cached_property)
+            _ = self.datamodule
 
-        # 5. Build callbacks & logger
-        callbacks = self._build_callbacks()
-        logger = self._build_logger()
+            # 3. Build model
+            _ = self.model  # triggers @cached_property to build the model
 
-        # 6. Build Lightning Trainer
-        self._lightning_trainer = L.Trainer(
-            max_epochs=self.max_epochs,
-            logger=logger,
-            callbacks=callbacks,
-            accelerator='auto',
-            **self.trainer_kwargs,
-        )
+            # 4. Build callbacks & logger
+            callbacks = self._build_default_callbacks() + list(self._build_callbacks())
+            logger = self._build_logger(run_id=run.info.run_id)
 
-        # 7. Train
-        self._lightning_trainer.fit(self.model, datamodule=self._datamodule)
+            # 5. Build Lightning Trainer
+            self._lightning_trainer = L.Trainer(
+                max_epochs=self.max_epochs,
+                logger=logger,
+                callbacks=callbacks,
+                accelerator='auto',
+                **self.trainer_kwargs,
+            )
 
-        # 8. Test
-        test_results = self._lightning_trainer.test(datamodule=self._datamodule)
+            # 6. Train
+            self._lightning_trainer.fit(self.model, datamodule=self.datamodule)
 
-        # 9. Deploy adapter (only needed when the model is not already a DatamintModel)
-        from datamint.mlflow.flavors.model import BaseDatamintModel
-        adapter = None
-        if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
-            adapter = self._build_deploy_adapter()
+            # 7. Test
+            test_results = self._lightning_trainer.test(datamodule=self.datamodule)
+
+            # 8. Build deploy adapter (only needed when the model is not already a DatamintModel)
+            adapter = None
+            if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
+                adapter = self._build_deploy_adapter()
 
         return {
             'trainer': self._lightning_trainer,
@@ -239,6 +259,15 @@ class BaseTrainer(ABC):
         assert self._user_project is not None  # guaranteed by __init__ validation
         return self._build_dataset(self._user_project)
 
+    @cached_property
+    def datamodule(self) -> DatamintDataModule:
+        # Build transforms
+        train_tf = self._user_train_transform or self._train_transform()
+        eval_tf = self._user_eval_transform or self._eval_transform()
+
+        datamodule = self._build_datamodule(self.dataset, train_tf, eval_tf)
+        return datamodule
+
     def _build_datamodule(
         self,
         dataset: DatamintBaseDataset,
@@ -253,19 +282,20 @@ class BaseTrainer(ABC):
             eval_transform=eval_transform,
         )
 
-    def _build_callbacks(self) -> list:
+    def _build_default_callbacks(self) -> list:
         from datamint.mlflow.lightning.callbacks import MLFlowPyTorchModelCheckpoint, MLFlowDatamintModelCheckpoint
-        from lightning.pytorch.callbacks import EarlyStopping
         from mlflow.pyfunc.model import PythonModel
 
         metric_name, mode = self._monitor_metric()
-        project_name = self.dataset.project.name if self.dataset.project else 'datamint'
-        model_name = self.register_model_name or project_name
+        model_name = self.register_model_name or self._project_name
 
         if isinstance(self.model, PythonModel):
             checkpoint_cls = MLFlowDatamintModelCheckpoint
         else:
             checkpoint_cls = MLFlowPyTorchModelCheckpoint
+
+        _LOGGER.debug(
+            f"Using {checkpoint_cls.__name__} for model checkpointing with monitor='{metric_name}' mode='{mode}'")
 
         callbacks: list = [
             checkpoint_cls(
@@ -274,8 +304,19 @@ class BaseTrainer(ABC):
                 save_top_k=1,
                 register_model_name=model_name,
                 register_model_on='test',
+                log_model_metrics=True,  # TODO: move this functionality to a separate callback or here
             )]
 
+        callbacks.append(_LogDatasetSplitsCallback(self))
+
+        return callbacks
+
+    def _build_callbacks(self) -> list:
+        from lightning.pytorch.callbacks import EarlyStopping
+
+        metric_name, mode = self._monitor_metric()
+
+        callbacks = []
         if self.early_stopping_patience is not None:
             callbacks.append(EarlyStopping(
                 monitor=metric_name,
@@ -285,12 +326,45 @@ class BaseTrainer(ABC):
 
         return callbacks
 
-    def _build_logger(self):
+    def _build_logger(self, run_id: str | None = None):
         from lightning.pytorch.loggers import MLFlowLogger
-        from datamint.mlflow import set_project
 
-        project_name = self.dataset.project.name if self.dataset.project else 'datamint'
-        set_project(project_name)
+        self._with_project()
 
-        experiment_name = self.mlflow_experiment_name or f"{project_name}_training"
-        return MLFlowLogger(experiment_name=experiment_name)
+        mlflow_logger = MLFlowLogger(experiment_name=self.experiment_name, run_id=run_id)
+        # Injecting dataset for _BaseMLFlowModelCheckpoint:_log_test_metrics_to_model
+        dataset = self.datamodule.get_mlflow_dataset_split('test')
+        if dataset is None:
+            dataset = self.datamodule.get_mlflow_dataset()
+        mlflow_logger._mlflow_dataset = dataset
+        return mlflow_logger
+
+
+class _LogDatasetSplitsCallback(L.Callback):
+    """Lightning callback to retrieve resolved dataset splits from the datamodule after setup()."""
+
+    LIGHTNING_STAGE_TO_DATAMINT_SPLIT = {
+        'fit': 'train',
+        'validate': 'val',
+        'test': 'test',
+    }
+
+    def __init__(self, dttrainer: BaseTrainer) -> None:
+        super().__init__()
+        self.dttrainer = dttrainer
+
+    def setup(self, trainer: "L.Trainer", pl_module: "L.LightningModule", stage: str) -> None:
+
+        split = self.LIGHTNING_STAGE_TO_DATAMINT_SPLIT.get(stage)
+        if split is None:
+            return
+
+        mlflow_dataset = self.dttrainer.datamodule.get_mlflow_dataset_split(split)
+        if mlflow_dataset is None:
+            return
+        try:
+            _LOGGER.info(f"Logging dataset split '{split}' to MLflow for model context...")
+            mlflow.log_input(mlflow_dataset, context=split)
+            _LOGGER.debug(f"Successfully logged dataset split '{split}' to MLflow.")
+        except Exception as e:
+            _LOGGER.warning(f"Failed to log dataset input: {e}")

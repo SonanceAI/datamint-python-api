@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from functools import partial
 import torch
@@ -22,9 +21,9 @@ class _BCEDiceLoss(nn.Module):
         target: ``(B, C, H, W)`` binary masks (float)
     """
 
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(self, pred: torch.Tensor, target: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:
         target = target.float()
-        bce = F.binary_cross_entropy_with_logits(pred, target)
+        bce = F.binary_cross_entropy_with_logits(pred, target, reduction=reduction)
         probs = torch.sigmoid(pred)
         dims = (0, 2, 3)
         intersection = (probs * target).sum(dim=dims)

@@ -7,7 +7,7 @@ from collections.abc import Callable
 import lightning as L
 from torch import nn
 
-from datamint.dataset import ImageDataset
+from datamint.dataset import ImageDataset, SlicedVolumeDataset
 
 from .lightning_modules import UNetPPModule
 from .segmentation_trainer import SegmentationTrainer
@@ -15,6 +15,7 @@ from .segmentation_trainer import SegmentationTrainer
 if TYPE_CHECKING:
     from albumentations import BaseCompose
     from datamint.entities import Project
+
 
 class SemanticSegmentation2DTrainer(SegmentationTrainer):
     """Trainer for 2-D semantic segmentation.
@@ -45,6 +46,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
     # ── Template hooks ──────────────────────────────────────────
 
     def _build_dataset(self, project: 'str | Project') -> ImageDataset:
+        # TODO: automatically check if project is composed of 3D volumes or 2D images and choose SlicedVolumeDataset vs ImageDataset accordingly.
         return ImageDataset(
             project=project,
             return_as_semantic_segmentation=True,
@@ -63,7 +65,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.5),
-            A.Normalize(), # Imagenet stats is the default
+            A.Normalize(),  # Imagenet stats is the default
             ToTensorV2(),
         ])
 

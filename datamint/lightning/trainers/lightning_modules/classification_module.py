@@ -4,9 +4,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-import lightning as L
 import torch
 from torch import Tensor, nn
+import inspect
+import warnings
 
 from .base import DatamintLightningModule
 
@@ -56,11 +57,28 @@ class ClassificationModule(DatamintLightningModule):
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
 
+    def _compute_unreduced_loss(self, logits: Tensor, labels: Tensor) -> Tensor:
+        """Compute per-sample loss without reduction."""
+        if 'reduction' in inspect.signature(self.criterion.forward).parameters:
+            return self.criterion(logits, labels, reduction='none')
+        else:
+            warnings.warn(
+                f"Loss function {self.criterion.__class__.__name__} does not support 'reduction' argument; "
+                "per-sample logging will be inaccurate.",
+            )
+            return self.criterion(logits, labels).unsqueeze(0).expand(logits.shape[0])
+
     def _common_step(self, batch: dict, stage: str) -> Tensor:
         images = batch['image']
         labels = batch['image_categories']
         logits = self(images)
-        loss = self.criterion(logits, labels)
+
+        if self._log_sample_metrics:
+            loss_unreduced = self._compute_unreduced_loss(logits, labels) # (B,)
+            loss = loss_unreduced.mean()
+            self._accumulate_sample_data(batch, logits, loss_unreduced, stage)
+        else:
+            loss = self.criterion(logits, labels)
 
         preds = logits.argmax(dim=1)
         for name in self._metric_names:
@@ -72,6 +90,22 @@ class ClassificationModule(DatamintLightningModule):
             prog_bar=True, batch_size=len(images),
         )
         return loss
+
+    def _compute_sample_confidence(self, logits: Tensor) -> dict[str, Tensor]:
+        """Softmax-based confidence: max probability and per-class probabilities."""
+        probs = torch.softmax(logits, dim=1)  # (B, C)
+        result: dict[str, Tensor] = {
+            'confidence': probs.max(dim=1).values,  # (B,)
+        }
+        for i, name in enumerate(self.class_names):
+            result[f'confidence/{name}'] = probs[:, i]
+        return result
+
+    def _compute_sample_metrics(self, logits: Tensor, batch: dict) -> dict[str, Tensor]:
+        """Per-sample accuracy (1.0 if correct, 0.0 otherwise)."""
+        labels = batch['image_categories']
+        correct = (logits.argmax(dim=1) == labels).float()
+        return {'accuracy': correct}
 
     def _on_epoch_end(self, stage: str) -> None:
         for i, name in enumerate(self._metric_names):
@@ -96,6 +130,7 @@ class ClassificationModule(DatamintLightningModule):
 
     def on_test_epoch_end(self) -> None:
         self._on_epoch_end('test')
+        super().on_test_epoch_end()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(
@@ -128,7 +163,13 @@ class ClassificationModule(DatamintLightningModule):
                 image = np.array(res.fetch_file_data(auto_convert=True, use_cache=True))
                 tensor = transform(image=image)['image'].to(device)
                 logits = self(tensor.unsqueeze(0))
+                # Per-sample confidence
+                probs = torch.softmax(logits, dim=1)
+                confidence = float(probs.max(dim=1).values.item())
                 pred_idx = int(logits.argmax(dim=1).item())
                 class_name = self.class_names[pred_idx]
-                all_preds.append([ImageClassification(name='category', value=class_name)])
+                all_preds.append([ImageClassification(
+                    name='category', value=class_name,
+                    confiability=confidence,
+                )])
         return all_preds
