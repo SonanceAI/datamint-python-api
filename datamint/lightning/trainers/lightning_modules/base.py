@@ -135,13 +135,12 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             if entry.get(key) is not None
         ]
 
+        _LOGGER.info("Flushing %d per-sample metrics (of %d samples) to MLflow...", len(all_metrics), len(self._sample_buffer))
+
         if all_metrics:
-            # log_batch accepts at most 1000 metrics per request.
-            _BATCH_SIZE = 1000
             client = MlflowClient()
             try:
-                for i in range(0, len(all_metrics), _BATCH_SIZE):
-                    client.log_batch(run_id, metrics=all_metrics[i:i + _BATCH_SIZE])
+                client.log_batch(run_id, metrics=all_metrics, synchronous=True)
             except Exception as e:
                 _LOGGER.error(f"Failed to log sample metrics batch: {e}")
 
@@ -163,7 +162,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         except Exception as e:
             _LOGGER.warning(f"Failed to log sample mapping table: {e}")
 
-        _LOGGER.info("Flushed %d per-sample metrics to MLflow.", len(self._sample_buffer))
+        _LOGGER.info("Flushed per-sample metrics of %d samples to MLflow.", len(self._sample_buffer))
         self._sample_buffer.clear()
 
     def on_test_start(self) -> None:
