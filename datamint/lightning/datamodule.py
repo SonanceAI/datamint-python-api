@@ -22,6 +22,16 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+def _serialize_transform(transform: Callable) -> dict | str:
+    """Serialize a transform to a dict (albumentations) or repr string."""
+    if hasattr(transform, 'to_dict'):
+        try:
+            return transform.to_dict()
+        except Exception:
+            pass
+    return repr(transform)
+
+
 class DatamintDataModule(L.LightningDataModule):
     """A :class:`~lightning.pytorch.core.LightningDataModule` that wraps a
     :class:`~datamint.dataset.base.DatamintBaseDataset`.
@@ -95,8 +105,11 @@ class DatamintDataModule(L.LightningDataModule):
         eval_transform: Callable | None = None,
     ) -> None:
         super().__init__()
-        # TODO: save the transforms as strings in the hyperparameters
         self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform"])
+        if train_transform is not None:
+            self.hparams["train_transform"] = _serialize_transform(train_transform)
+        if eval_transform is not None:
+            self.hparams["eval_transform"] = _serialize_transform(eval_transform)
 
         self.dataset = dataset
         self._batch_size = batch_size
