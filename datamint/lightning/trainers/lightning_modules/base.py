@@ -9,12 +9,16 @@ from torch import Tensor
 
 from datamint.mlflow.flavors.model import BaseDatamintModel, ModelSettings
 from mlflow.pyfunc.model import PythonModelContext
+import time
+from mlflow.entities import Metric
+from mlflow.tracking import MlflowClient
 
 if TYPE_CHECKING:
     from datamint.mlflow.data import DatamintMLflowDataset
 
 _LOGGER = logging.getLogger(__name__)
 _SAMPLE_META_KEYS = {'resource_id', 'slice_index'}
+SAMPLE_MAPPING_FILE = "test_sample_mapping.json"
 
 
 class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
@@ -118,10 +122,6 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         # Log per-sample metrics with step = sample index.
         # Build a flat list of Metric objects and send in one log_batch call
         # instead of one log_metrics call per sample (N → 1 HTTP round-trips).
-        import time
-        from mlflow.entities import Metric
-        from mlflow.tracking import MlflowClient
-
         metric_keys = {
             key
             for entry in self._sample_buffer
@@ -141,7 +141,8 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             if entry.get(key) is not None
         ]
 
-        _LOGGER.info("Flushing %d per-sample metrics (of %d samples) to MLflow...", len(all_metrics), len(self._sample_buffer))
+        _LOGGER.info("Flushing %d per-sample metrics (of %d samples) to MLflow...",
+                     len(all_metrics), len(self._sample_buffer))
 
         if all_metrics:
             client = MlflowClient()
@@ -151,19 +152,26 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
                 _LOGGER.error(f"Failed to log sample metrics batch: {e}")
 
         # Log resource_id → step mapping table as artifact.
-        mapping_data: dict[str, list[Any]] = {
+        mapping_data = {
             "step": [],
             "resource_id": [],
             "slice_index": [],
+            'metadata': {
+                "dataset_name": dataset_name,
+                "dataset_digest": dataset_digest,
+                'model_id': self.mlflow_model_id,
+                'timestamp': timestamp_ms,
+            }
         }
         for step, entry in enumerate(self._sample_buffer):
             mapping_data["step"].append(step)
             mapping_data["resource_id"].append(entry.get("resource_id"))
             mapping_data["slice_index"].append(entry.get("slice_index"))
         try:
-            mlflow.log_table(
-                data=mapping_data,
-                artifact_file="test_sample_mapping.json",
+            mlflow.log_dict(
+                {'test': mapping_data},
+                artifact_file=SAMPLE_MAPPING_FILE,
+                run_id=run_id,
             )
         except Exception as e:
             _LOGGER.warning(f"Failed to log sample mapping table: {e}")
