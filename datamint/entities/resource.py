@@ -283,13 +283,13 @@ class Resource(BaseEntity):
 
     def get_depth(self) -> int:
         if self.is_dicom() or self.is_nifti():
-            return self.metadata['frame_count']
+            return int(self.metadata['frame_count'])
         if self.mimetype.startswith('image/'):
             return 1
         if self.mimetype.startswith('video/'):
             for st in self.metadata['streams']:
                 if st['codec_type'] == 'video':
-                    return st['nb_frames']
+                    return int(st['nb_frames'])
 
         raise ValueError(f"Cannot determine depth for resource with mimetype {self.mimetype}")
 

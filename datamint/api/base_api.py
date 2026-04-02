@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 from collections.abc import Generator, AsyncGenerator
 import httpx
 from dataclasses import dataclass
-from datamint.exceptions import DatamintException, ResourceNotFoundError
+from datamint.exceptions import DatamintException, ItemNotFoundError
 import aiohttp
 import json
 from PIL import Image
@@ -441,7 +441,7 @@ class BaseApi:
                 new_error_msg = error_msg.replace('404 Not Found', '')
                 if ' not found' in new_error_msg.lower() or 'Not Found' in new_error_msg:
                     # Will be caught by the caller and properly initialized:
-                    raise ResourceNotFoundError('unknown', {})
+                    raise ItemNotFoundError('unknown', {})
             raise
         return response_json
 
@@ -473,7 +473,7 @@ class BaseApi:
             if status_code in (400, 404):
                 if ' not found' in error_msg.lower() or 'Not Found' in error_msg:
                     # Will be caught by the caller and properly initialized:
-                    raise ResourceNotFoundError('unknown', {})
+                    raise ItemNotFoundError('unknown', {})
             raise
         return response_json
 
