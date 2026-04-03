@@ -1135,6 +1135,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if project is not None and worklist_id is not None:
             raise ValueError('Only one of project or worklist_id can be provided.')
 
+        if project is not None:
+            proj = self._resources_api.projects_api._get_by_name_or_id(project)
+            if proj is None:
+                raise ItemNotFoundError('project', {'name_or_id': project})
+            worklist_id = proj.worklist_id
+
         scope = 'frame' if frame_index is not None else 'image'
         annotation_dto = CreateAnnotationDto(
             type=geometry.type,
