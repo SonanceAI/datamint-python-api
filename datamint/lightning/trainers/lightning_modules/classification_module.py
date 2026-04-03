@@ -9,10 +9,12 @@ from torch import Tensor, nn
 import inspect
 import warnings
 
+from datamint.mlflow.flavors.task_type import TaskType
 from .base import DatamintLightningModule
 
 
 class ClassificationModule(DatamintLightningModule):
+    task_type = TaskType.IMAGE_CLASSIFICATION
     """Generic image classification module backed by ``timm``.
 
     Args:

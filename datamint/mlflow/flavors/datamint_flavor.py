@@ -5,6 +5,7 @@ import datamint
 import datamint.mlflow.flavors
 from mlflow import pyfunc
 from .model import BaseDatamintModel, DatamintModel, _DatamintModelWrapper
+from .task_type import TaskType
 from collections.abc import Sequence
 from dataclasses import asdict
 from packaging.requirements import Requirement
@@ -104,6 +105,7 @@ def _resolve_requirements(pip_requirements, extra_pip_requirements):
 
 def save_model(datamint_model: BaseDatamintModel,
                path,
+               task_type: TaskType | str | None = None,
                supported_modes: Sequence[str] | None = None,
                data_path=None,
                code_paths=None,
@@ -148,11 +150,14 @@ def save_model(datamint_model: BaseDatamintModel,
         input_example = None
 
     linked_models = datamint_model._get_linked_models_uri() if hasattr(datamint_model, '_get_linked_models_uri') else {}
+    resolved_task_type = task_type or getattr(datamint_model, 'task_type', None)
+    task_type_value = resolved_task_type.value if isinstance(resolved_task_type, TaskType) else resolved_task_type
     flavor_params = {
         "datamint_version": datamint.__version__,
         "supported_modes": supported_modes or datamint_model.get_supported_modes(),
         "model_settings": asdict(datamint_model.settings),
         "linked_models": linked_models,
+        "task_type": task_type_value,
     }
     mlflow_model.add_flavor(FLAVOR_NAME, **flavor_params)
     model_config.update(flavor_params)
@@ -193,6 +198,7 @@ def save_model(datamint_model: BaseDatamintModel,
 
 def log_model(
     datamint_model: BaseDatamintModel,
+    task_type: TaskType | str | None = None,
     supported_modes: Sequence[str] | None = None,
     name: str = "datamint_model",
     data_path=None,
@@ -211,6 +217,7 @@ def log_model(
     return Model.log(
         artifact_path=None,
         datamint_model=datamint_model,
+        task_type=task_type,
         supported_modes=supported_modes,
         name=name,
         flavor=datamint.mlflow.flavors.datamint_flavor,
@@ -246,5 +253,18 @@ def _load_pyfunc(path: str, model_config=None) -> pyfunc.PyFuncModel:
         logger.debug("Unwrapping DatamintModel from wrapper")
         dt_model = dt_model.another_model
         pf_model._model_impl.python_model = dt_model
+
+    # Restore task_type from flavor metadata if not already set on the model
+    if not dt_model.task_type:
+        try:
+            mlflow_model_meta = Model.load(path)
+            flavor_data = mlflow_model_meta.flavors.get(FLAVOR_NAME, {})
+            task_type_str = flavor_data.get('task_type')
+            if task_type_str:
+                dt_model.task_type = TaskType(task_type_str)
+        except ValueError:
+            logger.warning(f"Unknown task_type in flavor metadata: {task_type_str}")
+        except Exception as e:
+            logger.debug(f"Could not restore task_type from flavor metadata: {e}")
 
     return pf_model

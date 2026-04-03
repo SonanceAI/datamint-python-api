@@ -5,7 +5,7 @@ This module provides a flexible framework for wrapping ML models to work with Da
 annotation system. It supports various prediction modes for different data types and use cases.
 """
 
-from typing import Any, TypeAlias
+from typing import Any, ClassVar, TypeAlias
 from abc import ABC
 from dataclasses import dataclass
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
@@ -14,6 +14,7 @@ from datamint.entities.annotations import Annotation
 from datamint.entities.resource import Resource
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
 from datamint.mlflow.flavors.prediction_modes import PredictionMode
+from datamint.mlflow.flavors.task_type import TaskType
 from datamint.mlflow.flavors.prediction_router import PredictionRouter
 import logging
 from functools import cached_property
@@ -63,6 +64,10 @@ class BaseDatamintModel(PythonModel, ABC):
     Subclasses only need to implement :meth:`predict_default` (and optionally
     other ``predict_*`` hooks registered with ``@prediction_mode``).
     """
+
+    task_type: ClassVar[TaskType | None] = None
+    """Semantic task category for this model class. Subclasses should override
+    at the class body level (e.g. ``task_type = TaskType.IMAGE_SEGMENTATION``)."""
 
     def __init__(
         self,
@@ -336,6 +341,10 @@ class _DatamintModelWrapper(BaseDatamintModel):
         super().__init__(settings=another_model.settings)
         self.another_model = another_model
 
+    @property
+    def task_type(self) -> TaskType | None:  # type: ignore[override]
+        return getattr(self.another_model, 'task_type', None)
+
     @cached_property
     def _router(self) -> PredictionRouter:
         """The PredictionRouter instance responsible for dispatching predict calls."""
@@ -353,3 +362,4 @@ class _DatamintModelWrapper(BaseDatamintModel):
     
     def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
         return self.another_model.predict_default(model_input, **kwargs)
+    

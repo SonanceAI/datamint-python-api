@@ -10,10 +10,12 @@ import warnings
 import torch
 from torch import Tensor, nn
 
+from datamint.mlflow.flavors.task_type import TaskType
 from .base import DatamintLightningModule
 
 
 class SegmentationModule(DatamintLightningModule):
+    task_type = TaskType.IMAGE_SEGMENTATION
     """Base segmentation module for semantic segmentation tasks.
 
     Subclasses must implement :meth:`_build_model` to return the model.
