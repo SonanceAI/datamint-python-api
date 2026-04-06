@@ -673,7 +673,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 "NIfTI files are volume segmentations. Use `upload_volume_segmentation` instead."
             )
 
-        model_id = _check_model(ai_model_name)
+        model_id = self._check_model(ai_model_name)
 
         standardized_name = self.standardize_segmentation_names(name)
         _LOGGER.debug(f"Standardized segmentation names: {standardized_name}")
