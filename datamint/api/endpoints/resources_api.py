@@ -514,6 +514,131 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             raise
         return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
 
+    def _validate_upload_params(
+        self,
+        on_error: Literal['raise', 'skip'],
+        files_path: Sequence[str | IO | pydicom.Dataset],
+    ) -> None:
+        if on_error not in ['raise', 'skip']:
+            raise ValueError("on_error must be either 'raise' or 'skip'")
+        if (
+            isinstance(files_path, IO)
+            or isinstance(files_path, pydicom.Dataset)
+            or (isinstance(files_path, str) and not os.path.isdir(files_path))
+        ):
+            raise ValueError(
+                "upload_resources() only accepts multiple resources. For single resource upload, use upload_resource() instead.")
+
+    def _resolve_project(self, publish_to: Project | str | None) -> Project | None:
+        if publish_to is None:
+            return None
+        if isinstance(publish_to, Project):
+            return publish_to
+        proj = self.projects_api.get_by_name(publish_to)
+        if proj is None:
+            try:
+                proj = self.projects_api.get_by_id(publish_to)
+            except Exception:
+                pass
+        if proj is None:
+            raise ItemNotFoundError('Project', {'name_or_id': publish_to})
+        return proj
+
+    def _filter_dicom_reports(
+        self,
+        files_path: Sequence[str | IO],
+        metadata: Sequence[str | dict | None] | None,
+    ) -> tuple[list[str | IO], Sequence[str | dict | None] | None]:
+        old_size = len(files_path)
+        filtered_files = []
+        filtered_metadata = []
+        for i, f in enumerate(files_path):
+            if not is_dicom_report(f):
+                filtered_files.append(f)
+                if metadata is not None:
+                    filtered_metadata.append(metadata[i])
+        if metadata is not None:
+            metadata = filtered_metadata
+        if old_size != len(filtered_files):
+            _LOGGER.info(f"Discarded {old_size - len(filtered_files)} DICOM report files from upload.")
+        return filtered_files, metadata
+
+    def _normalize_metadata(
+        self,
+        metadata: Sequence[str | dict | None] | str | dict | None,
+        files_path: Sequence[str | IO],
+    ) -> Sequence[str | dict | None] | None:
+        if isinstance(metadata, (str, dict)):
+            _LOGGER.debug("Converting metadatas to a list")
+            metadata = [metadata]
+        if metadata is not None and len(metadata) != len(files_path):
+            raise ValueError("The number of metadata files must match the number of resources.")
+        return metadata
+
+    def _normalize_segmentation_files(
+        self,
+        segmentation_files: Sequence[Sequence[str] | dict] | None,
+        files_path: Sequence[str | IO],
+        assembled: bool,
+    ) -> list[dict | None] | None:
+        if segmentation_files is None:
+            return None
+        if assembled:
+            raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
+        if len(segmentation_files) != len(files_path):
+            raise ValueError("The number of segmentation files must match the number of resources.")
+        if isinstance(segmentation_files, list) and isinstance(segmentation_files[0], list):
+            raise ValueError("segmentation_files should not be a list of lists if files_path is not a list.")
+        if isinstance(segmentation_files, dict):
+            segmentation_files = [segmentation_files]
+        segmentation_files_norm: list[dict | None] = [
+            segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
+            for segfiles in segmentation_files
+        ]
+        for segfiles in segmentation_files_norm:
+            if segfiles is None:
+                continue
+            if 'files' not in segfiles:
+                raise ValueError("segmentation_files must contain a 'files' key with a list of file paths.")
+            if 'names' in segfiles:
+                if isinstance(segfiles['names'], (list, tuple)) and len(segfiles['names']) != len(segfiles['files']):
+                    raise ValueError(
+                        "segmentation_files['names'] must have the same length as segmentation_files['files'].")
+        return segmentation_files_norm
+
+    def _run_async_upload(
+        self,
+        files_path: Sequence[str | IO],
+        n_files: int,
+        show_progress_bar: bool,
+        **async_kwargs,
+    ) -> Sequence[str | Exception]:
+        loop = asyncio.get_event_loop()
+        pbar = None
+        try:
+            if show_progress_bar:
+                pbar = tqdm(total=n_files, desc="Uploading resources", unit="file")
+            task = self._upload_resources_async(files_path=files_path, progress_bar=pbar, **async_kwargs)
+            return loop.run_until_complete(task)
+        finally:
+            if pbar:
+                pbar.close()
+
+    def _post_upload_add_to_project(
+        self,
+        resource_ids: Sequence[str | Exception],
+        project: Project | str,
+        on_error: Literal['raise', 'skip'],
+    ) -> None:
+        _USER_LOGGER.info('Adding resources to project')
+        resource_ids_succ = [rid for rid in resource_ids if not isinstance(rid, Exception)]
+        try:
+            self.projects_api.add_resources(resource_ids_succ, project)
+        except Exception as e:
+            _LOGGER.error(f"Error adding resources to project: {e}")
+            if on_error == 'raise':
+                raise e
+
     def upload_resources(self,
                          files_path: Sequence[str | IO | pydicom.Dataset],
                          mimetype: str | None = None,
@@ -572,131 +697,52 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             list[str | Exception]: A list of resource IDs or errors.
         """
 
-        if on_error not in ['raise', 'skip']:
-            raise ValueError("on_error must be either 'raise' or 'skip'")
+        self._validate_upload_params(on_error, files_path)
 
-        # Check if single resource provided and raise error (list of 1 item is allowed)
-        if isinstance(files_path, IO) or isinstance(files_path, pydicom.Dataset) or (isinstance(files_path, str) and not os.path.isdir(files_path)):
-            raise ValueError(
-                "upload_resources() only accepts multiple resources. For single resource upload, use upload_resource() instead.")
-
-        if publish_to:
-            publish = True
-            # Check if project exists
-            if isinstance(publish_to, Project):
-                proj = publish_to
-            else:
-                proj = self.projects_api.get_by_name(publish_to)
-                if proj is None:
-                    try:
-                        proj = self.projects_api.get_by_id(publish_to)
-                    except Exception:
-                        pass
-                if proj is None:
-                    raise ItemNotFoundError('Project', {'name_or_id': publish_to})
+        proj = self._resolve_project(publish_to)
+        publish = publish or (proj is not None)
 
         files_path = ResourcesApi.__process_files_parameter(files_path)
 
-        # Discard DICOM reports
         if discard_dicom_reports:
-            old_size = len(files_path)
-            # Create filtered lists maintaining index correspondence
-            filtered_files = []
-            filtered_metadata = []
+            files_path, metadata = self._filter_dicom_reports(files_path, metadata)
 
-            for i, f in enumerate(files_path):
-                if not is_dicom_report(f):
-                    filtered_files.append(f)
-                    if metadata is not None:
-                        filtered_metadata.append(metadata[i])
+        metadata = self._normalize_metadata(metadata, files_path)
 
-            files_path = filtered_files
-            if metadata is not None:
-                metadata = filtered_metadata
-
-            if old_size is not None and old_size != len(files_path):
-                _LOGGER.info(f"Discarded {old_size - len(files_path)} DICOM report files from upload.")
-
-        if isinstance(metadata, (str, dict)):
-            _LOGGER.debug("Converting metadatas to a list")
-            metadata = [metadata]
-
-        if metadata is not None and len(metadata) != len(files_path):
-            raise ValueError("The number of metadata files must match the number of resources.")
         if assemble_dicoms:
             files_path, assembled, mapping_idx = self._assemble_dicoms(files_path, progress_bar=progress_bar)
-            assemble_dicoms = assembled
         else:
-            mapping_idx = [i for i in range(len(files_path))]
-        n_files = len(files_path)
+            assembled = False
+            mapping_idx = list(range(len(files_path)))
 
+        n_files = len(files_path)
         if n_files <= 1:
-            # Disable progress bar for single file uploads
             progress_bar = False
 
-        if segmentation_files is not None:
-            if assemble_dicoms:
-                raise NotImplementedError("Segmentation files cannot be uploaded when assembling dicoms yet.")
-            if len(segmentation_files) != len(files_path):
-                raise ValueError("The number of segmentation files must match the number of resources.")
-            else:
-                if isinstance(segmentation_files, list) and isinstance(segmentation_files[0], list):
-                    raise ValueError("segmentation_files should not be a list of lists if files_path is not a list.")
-                if isinstance(segmentation_files, dict):
-                    segmentation_files = [segmentation_files]
+        normalized_seg_files = self._normalize_segmentation_files(segmentation_files, files_path, assembled)
 
-            segmentation_files = [segfiles if (isinstance(segfiles, dict) or segfiles is None) else {'files': segfiles}
-                                  for segfiles in segmentation_files]
-
-            for segfiles in segmentation_files:
-                if segfiles is None:
-                    continue
-                if 'files' not in segfiles:
-                    raise ValueError("segmentation_files must contain a 'files' key with a list of file paths.")
-                if 'names' in segfiles:
-                    # same length as files
-                    if isinstance(segfiles['names'], (list, tuple)) and len(segfiles['names']) != len(segfiles['files']):
-                        raise ValueError(
-                            "segmentation_files['names'] must have the same length as segmentation_files['files'].")
-
-        loop = asyncio.get_event_loop()
-        pbar = None
-        try:
-            if progress_bar:
-                pbar = tqdm(total=n_files, desc="Uploading resources", unit="file")
-
-            task = self._upload_resources_async(files_path=files_path,
-                                                mimetype=mimetype,
-                                                anonymize=anonymize,
-                                                anonymize_retain_codes=anonymize_retain_codes,
-                                                on_error=on_error,
-                                                tags=tags,
-                                                mung_filename=mung_filename,
-                                                channel=channel,
-                                                publish=publish,
-                                                segmentation_files=segmentation_files,
-                                                transpose_segmentation=transpose_segmentation,
-                                                modality=modality,
-                                                metadata_files=metadata,
-                                                progress_bar=pbar
-                                                )
-
-            resource_ids = loop.run_until_complete(task)
-        finally:
-            if pbar:
-                pbar.close()
+        resource_ids = self._run_async_upload(
+            files_path=files_path,
+            n_files=n_files,
+            show_progress_bar=progress_bar,
+            mimetype=mimetype,
+            anonymize=anonymize,
+            anonymize_retain_codes=anonymize_retain_codes,
+            on_error=on_error,
+            tags=tags,
+            mung_filename=mung_filename,
+            channel=channel,
+            publish=publish,
+            segmentation_files=normalized_seg_files,
+            transpose_segmentation=transpose_segmentation,
+            modality=modality,
+            metadata_files=metadata,
+        )
 
         _LOGGER.info(f"Resources uploaded: {resource_ids}")
 
-        if publish_to is not None:
-            _USER_LOGGER.info('Adding resources to project')
-            resource_ids_succ = [rid for rid in resource_ids if not isinstance(rid, Exception)]
-            try:
-                self.projects_api.add_resources(resource_ids_succ, publish_to)
-            except Exception as e:
-                _LOGGER.error(f"Error adding resources to project: {e}")
-                if on_error == 'raise':
-                    raise e
+        if proj is not None:
+            self._post_upload_add_to_project(resource_ids, proj, on_error)
 
         if mapping_idx:
             _LOGGER.debug(f"Mapping indices for DICOM files: {mapping_idx}")
