@@ -196,6 +196,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                           model_id: str | None = None,
                                           transpose_segmentation: bool = False,
                                           upload_volume: bool | str = 'auto',
+                                          session: aiohttp.ClientSession | None = None,
                                           ) -> Sequence[str]:
         """
         Upload segmentations asynchronously.
@@ -236,7 +237,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 author_email=author_email,
                 worklist_id=worklist_id,
                 model_id=model_id,
-                transpose_segmentation=transpose_segmentation
+                transpose_segmentation=transpose_segmentation,
+                session=session,
             )
 
         # Handle frame-by-frame upload (existing logic)
@@ -265,7 +267,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 author_email=author_email,
                 discard_empty_segmentations=discard_empty_segmentations,
                 worklist_id=worklist_id,
-                model_id=model_id
+                model_id=model_id,
+                session=session,
             )
             annotids.extend(frame_annotids)
         return annotids
@@ -279,7 +282,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                       author_email: str | None = None,
                                                       discard_empty_segmentations: bool = True,
                                                       worklist_id: str | None = None,
-                                                      model_id: str | None = None
+                                                      model_id: str | None = None,
+                                                      session: aiohttp.ClientSession | None = None,
                                                       ) -> list[str]:
         """
         Upload a single frame segmentation asynchronously.
@@ -346,7 +350,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
                     )
 
-                annotids = await self._create_async(resource_id=resource_id, annotations_dto=annotations)
+                annotids = await self._create_async(resource_id=resource_id, annotations_dto=annotations,
+                                                     session=session)
 
                 # Upload segmentation files
                 if len(annotids) != len(segnames):
@@ -356,7 +361,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 for annotid, segname, fio_seg in zip(annotids, segnames, segs_generator):
                     await self.upload_annotation_file_async(resource_id, annotid, fio_seg,
                                                             content_type='image/png',
-                                                            filename=segname)
+                                                            filename=segname,
+                                                            session=session)
                 return annotids
             finally:
                 fio.close()
@@ -392,7 +398,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                            annotation_id: str,
                                            file: str | IO,
                                            content_type: str | None = None,
-                                           filename: str | None = None
+                                           filename: str | None = None,
+                                           session: aiohttp.ClientSession | None = None,
                                            ):
         """
         Upload a file for an existing annotation asynchronously.
@@ -430,6 +437,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             endpoint = f'{self.endpoint_base}/{resource_id}/annotations/{annotation_id}/file'
             respdata = await self._make_request_async_json('POST',
                                                            endpoint=endpoint,
+                                                           session=session,
                                                            data=form)
             if isinstance(respdata, dict) and 'error' in respdata:
                 raise DatamintException(respdata['error'])
@@ -726,10 +734,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     async def _create_async(self,
                             resource_id: str,
-                            annotations_dto: list[CreateAnnotationDto] | list[dict]) -> list[str]:
+                            annotations_dto: list[CreateAnnotationDto] | list[dict],
+                            session: aiohttp.ClientSession | None = None) -> list[str]:
         annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations_dto]
         respdata = await self._make_request_async_json('POST',
                                                        f'{self.endpoint_base}/{resource_id}/annotations',
+                                                       session=session,
                                                        json=annotations)
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
@@ -801,7 +811,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                 author_email: str | None = None,
                                                 worklist_id: str | None = None,
                                                 model_id: str | None = None,
-                                                transpose_segmentation: bool = False
+                                                transpose_segmentation: bool = False,
+                                                session: aiohttp.ClientSession | None = None,
                                                 ) -> Sequence[str]:
         """
         Upload a volume segmentation as a single file asynchronously.
@@ -831,6 +842,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     "For volume segmentations, `name` must be a dictionary with integer keys only.")
             if 'default' in name:
                 _LOGGER.warning("Ignoring 'default' key in name dictionary for volume segmentation. Not supported yet.")
+        if name is None:
+            name = {}
 
         # Prepare file for upload
         if isinstance(file_path, str):
@@ -845,13 +858,13 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         form.add_field('model_id', model_id)  # Add model_id if provided
                     if worklist_id is not None:
                         form.add_field('annotation_worklist_id', worklist_id)
-                    if name is not None:
-                        form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
+                    form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
                     try:
                         respdata = await self._make_request_async_json(
                             'POST',
                             f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                            session=session,
                             data=form
                         )
                     except ItemNotFoundError as e:
@@ -885,6 +898,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 respdata = await self._make_request_async_json(
                     'POST',
                     f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                    session=session,
                     data=form
                 )
             except ItemNotFoundError as e:
