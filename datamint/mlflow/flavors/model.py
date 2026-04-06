@@ -109,9 +109,8 @@ class BaseDatamintModel(PythonModel, ABC):
         """
         if self._inference_device is not None:
             return self._inference_device
-        env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+        env_device = self._detect_device(None)
         if env_device:
-            logger.info("Inference device not set; using environment variable (%s)", env_device)
             return env_device
         logger.warning("Inference device not set; defaulting to 'cpu'")
         return "cpu"
@@ -143,16 +142,33 @@ class BaseDatamintModel(PythonModel, ABC):
     # MLflow lifecycle
     # ------------------------------------------------------------------
 
+    def _move_to_device(self, device: str) -> None:
+        """Move all torch modules to *device* in-place.
+
+        If ``self`` is itself a :class:`torch.nn.Module`, a single
+        ``self.to(device)`` call relocates all parameters and buffers at once
+        (most efficient path).  Otherwise every :class:`torch.nn.Module`
+        found in ``self.__dict__`` is moved individually.
+        """
+        if isinstance(self, torch.nn.Module):
+            self.to(device)
+            return
+        for attr_value in vars(self).values():
+            if isinstance(attr_value, torch.nn.Module):
+                attr_value.to(device)
+
     def load_context(self, context: PythonModelContext) -> None:
-        """Detect the inference device.
+        """Detect the inference device and move any attached torch modules to it.
 
         Override in subclasses to perform additional loading (e.g. linked
         models) — but always call ``super().load_context(context)`` first
         so that :attr:`inference_device` is set before any model loading.
         """
-        logger.info("Loading model context %s and detecting device...",
-                    f'{context.artifacts=} | {context.model_config=}')
+        if context:
+            logger.info("Loading model context %s and detecting device...",
+                        f'{context.artifacts=} | {context.model_config=}')
         self._detect_device(context)
+        self._move_to_device(self.inference_device)
 
     # ------------------------------------------------------------------
     # Serialization
