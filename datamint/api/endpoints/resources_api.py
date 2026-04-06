@@ -433,6 +433,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                       publish: bool = False,
                                       segmentation_files: Sequence[dict] | None = None,
                                       transpose_segmentation: bool = False,
+                                      ai_model: str | None = None,
                                       metadata_files: Sequence[str | dict | None] | None = None,
                                       progress_bar: tqdm | None = None,
                                       session: aiohttp.ClientSession | None = None,
@@ -500,7 +501,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                             file_path=f,
                             name=name,
                             frame_index=frame_index,
-                            transpose_segmentation=transpose_segmentation
+                            transpose_segmentation=transpose_segmentation,
+                            model_id=ai_model,
                         )
             return rid
 
@@ -652,6 +654,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                          publish_to: Project | str | None = None,
                          segmentation_files: Sequence[Sequence[str] | dict] | None = None,
                          transpose_segmentation: bool = False,
+                         ai_model: str | None = None,
                          modality: str | None = None,
                          assemble_dicoms: bool = True,
                          metadata: Sequence[str | dict | None] | None = None,
@@ -683,6 +686,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     - files: A list of paths to the segmentation files. Example: ['seg1.nii.gz', 'seg2.nii.gz'].
                     - names: Can be a list (same size of `files`) of labels for the segmentation files. Example: ['Brain', 'Lung']. 
             transpose_segmentation (bool): Whether to transpose the segmentation files or not.
+            ai_model (Optional[str]): The name of the AI model to associate with uploaded segmentations.
+                Must match an existing deployed model name on the server.
             modality (Optional[str]): The modality of the resources.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SeriesInstanceUID and InstanceNumber attributes.
             metadata (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
@@ -735,6 +740,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             publish=publish,
             segmentation_files=normalized_seg_files,
             transpose_segmentation=transpose_segmentation,
+            ai_model=ai_model,
             modality=modality,
             metadata_files=metadata,
         )

@@ -568,6 +568,9 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
                         ' If yaml, the file may contain two keys: "segmentation_names" and "class_names".'
                         ' If csv, the file should be in itk-snap label export format, i.e, it should contain the following columns (with no header):'
                         ' index, r, g, b, ..., name')
+    parser.add_argument('--ai-model', type=str, required=False, metavar="MODEL_NAME",
+                        dest='ai_model',
+                        help='Name of a deployed AI model to associate with uploaded segmentations.')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--transpose-segmentation', action='store_true', default=False,
@@ -649,6 +652,8 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
 
         _LOGGER.debug(f'finding segmentations at {args.segmentation_path}')
         if args.segmentation_path is None:
+            if args.ai_model is not None:
+                _USER_LOGGER.warning("AI model specified without segmentation path. Ignoring AI model association.")
             segmentation_files = None
         else:
             segmentation_files = _find_segmentation_files(args.segmentation_path,
@@ -773,6 +778,19 @@ def main():
         sys.exit(1)
 
     try:
+        try:
+            api = Api(check_connection=True)
+        except DatamintException as e:
+            _USER_LOGGER.error(f'❌ Connection failed: {e}')
+            return
+        if args.ai_model:
+            # verify that the model exists
+            model_info = api.models.get_by_name(args.ai_model)
+            if model_info is None:
+                available_models = api.models.get_all()
+                model_names = [model['name'] for model in available_models]
+                _USER_LOGGER.error(f'❌ AI model "{args.ai_model}" not found. Available models: {model_names}')
+                return
         print_input_summary(files_path,
                             args=args,
                             segfiles=segfiles,
@@ -788,11 +806,7 @@ def main():
 
         has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
-        try:
-            api = Api(check_connection=True)
-        except DatamintException as e:
-            _USER_LOGGER.error(f'❌ Connection failed: {e}')
-            return
+
         try:
             results = api.resources.upload_resources(channel=args.channel,
                                                      files_path=files_path,
@@ -805,6 +819,7 @@ def main():
                                                      publish_to=args.project,
                                                      segmentation_files=segfiles,
                                                      transpose_segmentation=args.transpose_segmentation,
+                                                     ai_model=args.ai_model,
                                                      assemble_dicoms=args.assemble_dicoms,
                                                      metadata=metadata_files,
                                                      progress_bar=True
