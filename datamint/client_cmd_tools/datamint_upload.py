@@ -9,7 +9,8 @@ from pathlib import Path
 import sys
 from medimgkit.dicom_utils import is_dicom, detect_dicomdir, parse_dicomdir_files
 import fnmatch
-from typing import Generator, Optional, Any
+from typing import Any
+from collections.abc import Generator
 from collections import defaultdict
 from datamint import __version__ as datamint_version
 from datamint import configs
@@ -225,8 +226,8 @@ def walk_to_depth(path: str | Path,
 
 
 def filter_files(files_path: Iterable[Path],
-                 include_extensions: Optional[list[str]] = None,
-                 exclude_extensions: Optional[list[str]] = None) -> list[Path]:
+                 include_extensions: list[str] | None = None,
+                 exclude_extensions: list[str] | None = None) -> list[Path]:
     def fix_extension(ext: str) -> str:
         if ext == "" or ext[0] == '.':
             return ext
@@ -400,7 +401,7 @@ def _find_segmentation_files(segmentation_root_path: str,
     return segmentation_files
 
 
-def _find_json_metadata(file_path: str | Path) -> Optional[str]:
+def _find_json_metadata(file_path: str | Path) -> str | None:
     """
     Find a JSON file with the same base name as the given file.
 
@@ -408,7 +409,7 @@ def _find_json_metadata(file_path: str | Path) -> Optional[str]:
         file_path (str): Path to the main file (e.g., NIFTI file)
 
     Returns:
-        Optional[str]: Path to the JSON metadata file if found, None otherwise
+        str | None: Path to the JSON metadata file if found, None otherwise
     """
     file_path = Path(file_path)
 
@@ -426,7 +427,7 @@ def _find_json_metadata(file_path: str | Path) -> Optional[str]:
     return None
 
 
-def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tuple[list, list[str]]:
+def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tuple[list[str | None], list[str]]:
     """
     Collect JSON metadata files for the given files and filter them from main files list.
 
@@ -435,7 +436,7 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
         auto_detect_json (bool): Whether to auto-detect JSON metadata files
 
     Returns:
-        tuple[list[Optional[str]], list[str]]: Tuple of (metadata file paths, filtered files_path)
+        tuple[list[str | None], list[str]]: Tuple of (metadata file paths, filtered files_path)
             - metadata file paths: List of metadata file paths (None if no metadata found)
             - filtered files_path: Original files_path with JSON metadata files removed
     """
@@ -475,10 +476,10 @@ def _collect_metadata_files(files_path: list[str], auto_detect_json: bool) -> tu
 
 
 def _get_files_from_path(path: str | Path,
-                         recursive_depth: Optional[int] = None,
-                         exclude_pattern: Optional[str] = None,
-                         include_extensions: Optional[list[str]] = None,
-                         exclude_extensions: Optional[list[str]] = None) -> list[str]:
+                         recursive_depth: int | None = None,
+                         exclude_pattern: str | None = None,
+                         include_extensions: list[str] | None = None,
+                         exclude_extensions: list[str] | None = None) -> list[str]:
     """
     Get files from a path with recursive DICOMDIR detection and parsing.
 
@@ -514,7 +515,7 @@ def _get_files_from_path(path: str | Path,
         raise
 
 
-def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[str]]]:
+def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
     parser = argparse.ArgumentParser(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
 
@@ -553,9 +554,10 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         help='File extensions to be considered for uploading. Default: all file extensions.' +
                         ' Example: --include-extensions dcm jpg png')
     parser.add_argument('--exclude-extensions', type=str, nargs='+',
-                        help='File extensions to be excluded from uploading. ' +
-                        'Default: common non-medical file extensions (.txt, .json, .xml, .docx, etc.) when --include-extensions is not specified.' +
-                        ' Example: --exclude-extensions txt csv'
+                        help='File extensions to be excluded from uploading, in addition to the default exclusions. ' +
+                        'Default exclusions include common non-medical file extensions (.txt, .json, .xml, .docx, etc.). ' +
+                        'Use --no-default-exclusions to disable the defaults. ' +
+                        'Example: --exclude-extensions txt csv'
                         )
     parser.add_argument('--segmentation_path', type=_is_valid_path_argparse, metavar="FILE",
                         required=False,
@@ -576,6 +578,9 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
                         help='Disable automatic detection of JSON metadata files (default behavior)')
     parser.add_argument('--no-assemble-dicoms', dest='assemble_dicoms', action='store_false', default=True,
                         help='Do not assemble DICOM files into series (default: assemble them)')
+    parser.add_argument('--no-default-exclusions', dest='no_default_exclusions', action='store_true', default=False,
+                        help='Disable the default excluded extensions list. ' +
+                        'By default, common non-medical file extensions are excluded unless --include-extensions is used.')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamint_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
     args = parser.parse_args()
@@ -608,9 +613,10 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
     if args.include_extensions is not None and args.exclude_extensions is not None:
         raise ValueError("--include-extensions and --exclude-extensions are mutually exclusive.")
 
-    # Apply default excluded extensions if neither include nor exclude extensions are specified
-    if args.include_extensions is None and args.exclude_extensions is None:
-        args.exclude_extensions = DEFAULT_EXCLUDED_EXTENSIONS
+    # Apply default excluded extensions when --include-extensions is not used and --no-default-exclusions is not set
+    if args.include_extensions is None and not args.no_default_exclusions:
+        user_excludes = args.exclude_extensions or []
+        args.exclude_extensions = list(set(DEFAULT_EXCLUDED_EXTENSIONS) | set(user_excludes))
         _LOGGER.debug(f"Applied default excluded extensions: {args.exclude_extensions}")
 
     try:
@@ -671,9 +677,9 @@ def _parse_args() -> tuple[Any, list[str], Optional[list[dict]], Optional[list[s
 
 def print_input_summary(files_path: list[str],
                         args,
-                        segfiles: Optional[list[dict]],
-                        metadata_files: Optional[list[str]] = None,
-                        include_extensions=None):
+                        segfiles: list[dict] | None,
+                        metadata_files: list[str] | None = None,
+                        include_extensions: list[str] | None = None):
     ### Create a summary of the upload ###
     total_files = len(files_path)
     total_size = sum(os.path.getsize(file) for file in files_path)
