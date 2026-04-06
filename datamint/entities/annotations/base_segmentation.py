@@ -267,6 +267,17 @@ class BaseSegmentationAnnotation(Annotation):
     # fetch_file_data
     # ------------------------------------------------------------------
 
+    def __init__(self, 
+                 segmentation_data: np.ndarray | Image.Image | None = None,
+                 mask: np.ndarray | Image.Image | None = None,
+                 **kwargs
+                 ) -> None:
+        if mask is not None:
+            if segmentation_data is not None:
+                raise ValueError("Cannot specify both 'segmentation_data' and 'mask'")
+            segmentation_data = mask
+        super().__init__(segmentation_data=segmentation_data, **kwargs)
+
     @overload
     def fetch_file_data(
         self,
