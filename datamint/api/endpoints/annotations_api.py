@@ -6,12 +6,12 @@ import logging
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 from datamint.entities.annotations.annotation import Annotation
 from datamint.entities.resource import Resource
-from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, BoxGeometry, CoordinateSystem, Geometry
+from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, CoordinateSystem, Geometry
 import numpy as np
 import os
 import aiohttp
 import json
-from datamint.exceptions import DatamintException, ResourceNotFoundError
+from datamint.exceptions import DatamintException, ItemNotFoundError
 from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
 from medimgkit.format_detection import guess_type
 import nibabel as nib
@@ -360,8 +360,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 return annotids
             finally:
                 fio.close()
-        except ResourceNotFoundError:
-            raise ResourceNotFoundError('resource', {'resource_id': resource_id})
+        except ItemNotFoundError:
+            raise ItemNotFoundError('resource', {'resource_id': resource_id})
 
     def _prepare_upload_file(self,
                              file: str | IO,
@@ -510,6 +510,96 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             return respdata[0]
         return respdata
 
+    def _check_model(self, ai_model_name: str | None) -> str | None:
+        if ai_model_name is not None:
+            modelinfo = self._models_api.get_by_name(ai_model_name)
+            if modelinfo is None:
+                try:
+                    available_models = [model['name'] for model in self._models_api.get_all()]
+                except Exception:
+                    _LOGGER.warning("Could not fetch available AI models from the server.")
+                    raise ItemNotFoundError('ai-model',
+                                            params={'name': ai_model_name})
+                raise ItemNotFoundError('ai-model',
+                                        params={'name': ai_model_name, 'available_models': available_models})
+            return ai_model_name
+        else:
+            return None
+
+    def upload_volume_segmentation(self,
+                                   resource: str | Resource,
+                                   file_path: str | Path | np.ndarray,
+                                   name: dict[int, str] | None = None,
+                                   imported_from: str | None = None,
+                                   author_email: str | None = None,
+                                   worklist_id: str | None = None,
+                                   ai_model_name: str | None = None,
+                                   transpose_segmentation: bool = False,
+                                   ) -> list[str]:
+        """
+        Upload a 3D volume segmentation to a resource.
+
+        Supports NIfTI files (.nii, .nii.gz) and 3D numpy arrays.
+
+        Args:
+            resource: The resource unique ID or Resource instance.
+            file_path: Path to a NIfTI segmentation file (.nii or .nii.gz), or a 3D numpy array
+                of shape (X, Y, Z) with integer label values.
+            name: Mapping of integer label values to segmentation names.
+                Example: {1: 'liver', 2: 'tumor'}
+            imported_from: The imported from value.
+            author_email: The author email.
+            worklist_id: The annotation worklist unique id.
+            ai_model_name: The AI model name.
+            transpose_segmentation: Whether to transpose the segmentation before uploading.
+
+        Returns:
+            List of annotation unique ids created.
+
+        Raises:
+            ItemNotFoundError: If the item does not exist.
+            FileNotFoundError: If the file path does not exist.
+            ValueError: If the file format is unsupported.
+
+        Example:
+            .. code-block:: python
+
+                # From NIfTI file
+                api.annotations.upload_volume_segmentation(
+                    resource_id,
+                    'path/to/segmentation.nii.gz',
+                    {1: 'liver', 2: 'tumor'}
+                )
+
+                # From numpy array
+                vol = np.zeros((256, 256, 64), dtype=np.uint8)
+                api.annotations.upload_volume_segmentation(resource_id, vol, {1: 'liver'})
+        """
+        import nest_asyncio
+
+        if isinstance(file_path, Path):
+            file_path = str(file_path)
+
+        if isinstance(file_path, str) and not os.path.exists(file_path):
+            raise FileNotFoundError(f"File {file_path} not found.")
+
+        model_id = self._check_model(ai_model_name)
+
+        nest_asyncio.apply()
+        loop = asyncio.get_event_loop()
+        resource_id = self._entid(resource)
+        task = self._upload_volume_segmentation_async(
+            resource_id=resource_id,
+            file_path=file_path,
+            name=name,
+            imported_from=imported_from,
+            author_email=author_email,
+            worklist_id=worklist_id,
+            model_id=model_id,
+            transpose_segmentation=transpose_segmentation,
+        )
+        return loop.run_until_complete(task)
+
     def upload_segmentations(self,
                              resource: str | Resource,
                              file_path: str | Path | np.ndarray,
@@ -519,31 +609,30 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              author_email: str | None = None,
                              discard_empty_segmentations: bool = True,
                              worklist_id: str | None = None,
-                             model_id: str | None = None,
                              transpose_segmentation: bool = False,
-                             ai_model_name: str | None = None
+                             ai_model_name: str | None = None,
                              ) -> list[str]:
         """
-        Upload segmentations to a resource.
+        Upload frame-by-frame segmentations to a resource.
+
+        For volume (3D) segmentations, use :py:meth:`upload_volume_segmentation` instead.
 
         Args:
             resource: The resource unique ID or Resource instance.
             file_path: The path to the segmentation file or a numpy array.
-                If a numpy array is provided, it can have the shape:
-                - (height, width, #frames) or (height, width) for grayscale segmentations
+                Supported numpy array shapes:
+                - (height, width) or (height, width, #frames) for grayscale segmentations
                 - (3, height, width, #frames) for RGB segmentations
-                For NIfTI files (.nii/.nii.gz), the entire volume is uploaded as a single segmentation.
             name: The name of the segmentation.
                 Can be:
                 - str: Single name for all segmentations
                 - dict[int, str]: Mapping pixel values to names for grayscale segmentations
                 - dict[tuple[int, int, int], str]: Mapping RGB tuples to names for RGB segmentations
-                Use 'default' as a key for a unnamed classes.
+                Use 'default' as a key for unnamed classes.
                 Example: {(255, 0, 0): 'Red_Region', (0, 255, 0): 'Green_Region'}
             frame_index: The frame index of the segmentation.
                 If a list, it must have the same length as the number of frames in the segmentation.
-                If None, it is assumed that the segmentations are in sequential order starting from 0.
-                This parameter is ignored for NIfTI files as they are treated as volume segmentations.
+                If None, segmentations are assumed to be in sequential order starting from 0.
             imported_from: The imported from value.
             author_email: The author email.
             discard_empty_segmentations: Whether to discard empty segmentations or not.
@@ -556,9 +645,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             List of segmentation unique ids.
 
         Raises:
-            ResourceNotFoundError: If the resource does not exist or the segmentation is invalid.
+            ItemNotFoundError: If the item does not exist or the segmentation is invalid.
             FileNotFoundError: If the file path does not exist.
-            ValueError: If frame_index is provided for NIfTI files or invalid parameters.
+            ValueError: If a NIfTI file is provided (use ``upload_volume_segmentation`` instead).
 
         Example:
             .. code-block:: python
@@ -570,9 +659,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 seg_data = np.random.randint(0, 3, size=(3, 2140, 1760, 1), dtype=np.uint8)
                 rgb_names = {(1, 0, 0): 'Red_Region', (0, 1, 0): 'Green_Region', (0, 0, 1): 'Blue_Region'}
                 api.annotations.upload_segmentations(resource_id, seg_data, rgb_names)
-
-                # Volume segmentation
-                api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.nii.gz', 'VolumeSegmentation')
         """
         import nest_asyncio
 
@@ -582,46 +668,16 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
-        if ai_model_name is not None:
-            model_id = self._models_api.get_by_name(ai_model_name)
-            if model_id is None:
-                try:
-                    available_models = [model['name'] for model in self._models_api.get_all()]
-                except Exception:
-                    _LOGGER.warning("Could not fetch available AI models from the server.")
-                    raise ValueError(f"AI model with name '{ai_model_name}' not found. ")
-                raise ValueError(f"AI model with name '{ai_model_name}' not found. " +
-                                 f"Available models: {available_models}")
-            model_id = model_id['name']
-
-        # Handle NIfTI files specially - upload as single volume
         if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
-            _LOGGER.info("Uploading NIfTI segmentation file: %s", file_path)
-            if frame_index is not None:
-                raise ValueError("Do not provide frame_index for NIfTI segmentations.")
-
-            # Ensure nest_asyncio is applied for Jupyter compatibility
-            nest_asyncio.apply()
-            loop = asyncio.get_event_loop()
-            task = self._upload_segmentations_async(
-                resource=resource,
-                frame_index=None,
-                file_path=file_path,
-                name=name,
-                imported_from=imported_from,
-                author_email=author_email,
-                worklist_id=worklist_id,
-                model_id=model_id,
-                transpose_segmentation=transpose_segmentation,
-                upload_volume=True,
+            raise ValueError(
+                "NIfTI files are volume segmentations. Use `upload_volume_segmentation` instead."
             )
-            return loop.run_until_complete(task)
 
-        # All other file types are converted to multiple PNGs and uploaded frame by frame
+        model_id = self._check_model(ai_model_name)
+
         standardized_name = self.standardize_segmentation_names(name)
         _LOGGER.debug(f"Standardized segmentation names: {standardized_name}")
 
-        # Handle frame_index parameter
         if isinstance(frame_index, list):
             if len(set(frame_index)) != len(frame_index):
                 raise ValueError("frame_index list contains duplicate values.")
@@ -798,10 +854,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             f'{self.endpoint_base}/{resource_id}/segmentations/file',
                             data=form
                         )
-                    except ResourceNotFoundError as e:
-                        e.resource_type = 'resource'
-                        e.params = {'resource_id': resource_id}
-                        raise e
+                    except ItemNotFoundError as e:
+                        e.set_params('resource or model', {'resource_id': resource_id, 'model_id': model_id})
+                        raise
 
                     if 'error' in respdata:
                         raise DatamintException(respdata['error'])
@@ -809,7 +864,36 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             else:
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
         elif isinstance(file_path, np.ndarray):
-            raise NotImplementedError
+            # Convert numpy array to NIfTI in-memory and upload
+            img = nib.Nifti1Image(file_path, affine=np.eye(4))
+            bio = BytesIO()
+            file_map = nib.Nifti1Image.make_file_map({'image': bio, 'header': bio})
+            img.to_file_map(file_map)
+            bio.seek(0)
+
+            filename = 'segmentation.nii'
+            form = aiohttp.FormData()
+            form.add_field('file', bio, filename=filename, content_type=DEFAULT_NIFTI_MIME)
+            if model_id is not None:
+                form.add_field('model_id', model_id)
+            if worklist_id is not None:
+                form.add_field('annotation_worklist_id', worklist_id)
+            if name is not None:
+                form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
+
+            try:
+                respdata = await self._make_request_async_json(
+                    'POST',
+                    f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                    data=form
+                )
+            except ItemNotFoundError as e:
+                e.set_params('resource or model', {'resource_id': resource_id, 'model_id': model_id})
+                raise
+
+            if 'error' in respdata:
+                raise DatamintException(respdata['error'])
+            return respdata
         else:
             raise ValueError(f"Unsupported file_path type for volume upload: {type(file_path)}")
 
@@ -1050,6 +1134,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         if project is not None and worklist_id is not None:
             raise ValueError('Only one of project or worklist_id can be provided.')
+
+        if project is not None:
+            proj = self._resources_api.projects_api._get_by_name_or_id(project)
+            if proj is None:
+                raise ItemNotFoundError('project', {'name_or_id': project})
+            worklist_id = proj.worklist_id
 
         scope = 'frame' if frame_index is not None else 'image'
         annotation_dto = CreateAnnotationDto(

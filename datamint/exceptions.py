@@ -4,33 +4,44 @@ class DatamintException(Exception):
     """
     pass
 
-class ResourceNotFoundError(DatamintException):
+
+class ItemNotFoundError(DatamintException):
     """
-    Exception raised when a resource is not found. 
-    For instance, when trying to get a resource by a non-existing id.
+    Exception raised when an item is not found. 
+    For instance, when trying to get an item by a non-existing id.
     """
 
     def __init__(self,
-                 resource_type: str,
+                 item_type: str,
                  params: dict):
         """ Constructor.
 
         Args:
-            resource_type (str): A resource type.
-            params (dict): Dict of params identifying the sought resource.
+            item_type (str): An item type.
+            params (dict): Dict of params identifying the sought item.
         """
-        super().__init__()
-        self.resource_type = resource_type
+        self.item_type = item_type
         self.params = params
 
+    @property
+    def resource_type(self):
+        return self.item_type
+
+    @resource_type.setter
+    def resource_type(self, value: str):  # Alias for backward compatibility. To be removed in a future major version.
+        self.item_type = value
+
     def set_params(self, resource_type: str, params: dict):
-        self.resource_type = resource_type
+        self.item_type = resource_type
         self.params = params
 
     def __str__(self):
-        return f"Resource '{self.resource_type}' not found for parameters: {self.params}"
+        return f"Item '{self.item_type}' not found for parameters: {self.params}"
 
-# Already existing (e.g, creating a project with a name that already exists)
+
+ResourceNotFoundError = ItemNotFoundError  # Alias for backward compatibility. To be removed in a future major version.
+
+
 class EntityAlreadyExistsError(DatamintException):
     """
     Exception raised when trying to create an entity that already exists.

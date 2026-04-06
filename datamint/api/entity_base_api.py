@@ -3,7 +3,7 @@ from collections.abc import Sequence, AsyncGenerator
 import logging
 import httpx
 from datamint.entities.base_entity import BaseEntity
-from datamint.exceptions import DatamintException, ResourceNotFoundError
+from datamint.exceptions import DatamintException, ItemNotFoundError
 import aiohttp
 import asyncio
 from .base_api import ApiConfig, BaseApi
@@ -74,11 +74,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
             return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+                raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
-        except ResourceNotFoundError as e:
-            e.resource_type = self.endpoint_base
-            e.params = {'id': entity_id}
+        except ItemNotFoundError as e:
+            e.set_params(self.endpoint_base, {'id': entity_id})
             raise
 
     @contextlib.asynccontextmanager
@@ -98,11 +97,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
                 yield resp
         except aiohttp.ClientResponseError as e:
             if e.status == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+                raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
-        except ResourceNotFoundError as e:
-            e.resource_type = self.endpoint_base
-            e.params = {'id': entity_id}
+        except ItemNotFoundError as e:
+            e.set_params(self.endpoint_base, {'id': entity_id})
             raise
 
     async def _make_entity_request_async_json(self,
@@ -128,7 +126,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
             return self._stream_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
-                raise ResourceNotFoundError(self.endpoint_base, {'id': entity_id}) from e
+                raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
     def get_list(self, limit: int | None = None,
@@ -188,7 +186,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
 
         Raises:
             ValueError: If ``entity_id`` is not a valid UUID.
-            ResourceNotFoundError: If the entity is not found.
+            ItemNotFoundError: If the entity is not found.
             httpx.HTTPStatusError: If the request fails for other reasons.
         """
         self._validate_uuid(entity_id)
