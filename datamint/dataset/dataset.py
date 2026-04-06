@@ -1,5 +1,5 @@
 from .base_dataset import DatamintBaseDataset
-from typing import Optional, Callable, Any, Literal, Sequence
+from typing import Optional, Callable, Any, Literal, Sequence, TYPE_CHECKING
 import torch
 from torch import Tensor
 import os
@@ -11,7 +11,11 @@ from datamint.entities.annotations.annotation import Annotation
 from medimgkit.readers import read_array_normalized
 
 _LOGGER = logging.getLogger(__name__)
-
+if not TYPE_CHECKING:
+    _LOGGER.warning(
+        "DatamintDataset is a legacy class and may be removed in future versions. "
+        "Please use `from datamint.dataset import ImageDataset, VolumeDataset` instead."
+    )
 
 class DatamintDataset(DatamintBaseDataset):
     """

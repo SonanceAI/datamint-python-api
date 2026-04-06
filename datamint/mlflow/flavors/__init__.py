@@ -8,10 +8,12 @@ from .datamint_flavor import (
     load_model,
     _load_pyfunc,
 )
+from .task_type import TaskType
 
 __all__ = [
     "save_model",
-    "log_model", 
+    "log_model",
     "load_model",
     "_load_pyfunc",
+    "TaskType",
 ]

@@ -8,12 +8,10 @@ import aiohttp
 import json
 from PIL import Image
 import cv2
-import nibabel as nib
 from io import BytesIO
 import gzip
 import contextlib
 import asyncio
-from medimgkit.format_detection import GZIP_MIME_TYPES, DEFAULT_MIME_TYPE, guess_typez, guess_extension
 from datamint.utils.env import ensure_asyncio_loop
 import os
 
@@ -84,7 +82,6 @@ class BaseApi:
         self._aiohttp_connector: aiohttp.TCPConnector | None = None
         self._aiohttp_session: aiohttp.ClientSession | None = None
         ensure_asyncio_loop()
-        
 
     @staticmethod
     def _create_client(config: ApiConfig) -> httpx.Client:
@@ -435,7 +432,6 @@ class BaseApi:
                 logger.debug("Unable to set message attribute on exception")
                 pass
 
-            logger.error(f"HTTP error {response.status_code} for {url}: {error_msg}")
             status_code = response.status_code
             if status_code in (400, 404):
                 new_error_msg = error_msg.replace('404 Not Found', '')
@@ -687,6 +683,8 @@ class BaseApi:
 
         """
         import pydicom
+        import nibabel as nib
+        from medimgkit.format_detection import GZIP_MIME_TYPES
 
         if mimetype is None:
             mimetype, ext = BaseApi._determine_mimetype(bytes_array)
@@ -722,6 +720,8 @@ class BaseApi:
                 ndata = nib.Nifti1Image.from_stream(f)
                 ndata.get_fdata()  # force loading before IO is closed
                 return ndata
+        elif mimetype == 'application/x-empty':
+            raise ValueError("Empty file content.")
 
         raise ValueError(f"Unsupported mimetype: {mimetype}")
 
@@ -732,21 +732,19 @@ class BaseApi:
 
         Args:
             content: Raw file content bytes
-            declared_mimetype: Optional MIME type declared by the source
+            declared_mimetype: Optional MIME type declared by the source, used as a fallback if content-based detection fails
 
         Returns:
             Tuple of (inferred_mimetype, file_extension)
         """
+        from medimgkit.format_detection import DEFAULT_MIME_TYPE, guess_typez, guess_extension
         # Determine mimetype from file content
         mimetype_list, ext = guess_typez(content, use_magic=True)
         mimetype = mimetype_list[-1]
 
         # get mimetype from resource info if not detected
         if declared_mimetype is not None:
-            if mimetype is None:
-                mimetype = declared_mimetype
-                ext = guess_extension(mimetype)
-            elif mimetype == DEFAULT_MIME_TYPE:
+            if mimetype is None or mimetype == DEFAULT_MIME_TYPE:
                 mimetype = declared_mimetype
                 ext = guess_extension(mimetype)
 

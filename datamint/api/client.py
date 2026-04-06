@@ -181,3 +181,15 @@ class Api:
     def inference(self) -> InferenceApi:
         """Access model inference endpoints."""
         return self._get_endpoint('inference', is_mlflow=True)
+
+    def __getstate__(self) -> dict:
+        return {
+            'server_url': self.config.server_url,
+            'api_key': self.config.api_key,
+            'timeout': self.config.timeout,
+            'max_retries': self.config.max_retries,
+            'verify_ssl': self.config.verify_ssl,
+        }
+
+    def __setstate__(self, state: dict) -> None:
+        self.__init__(check_connection=False, **state)

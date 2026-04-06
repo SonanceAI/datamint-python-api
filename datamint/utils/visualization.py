@@ -7,6 +7,9 @@ import torch
 import colorsys
 from collections.abc import Sequence
 from matplotlib.axes import Axes
+import logging
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
@@ -94,7 +97,7 @@ def draw_masks(
     image: Tensor | np.ndarray,
     masks: Tensor | np.ndarray,
     alpha: float = 0.5,
-    colors: list[str | tuple[int, int, int]] | str | tuple[int, int, int] | None = None,
+    colors: Sequence[str | tuple[int, int, int]] | str | tuple[int, int, int] | None = None,
 ) -> Tensor:
     """
     Draws segmentation masks on given RGB image.
@@ -120,6 +123,10 @@ def draw_masks(
 
     if isinstance(masks, np.ndarray):
         masks = torch.from_numpy(masks)
+
+    if masks.ndim == 4:
+        _LOGGER.warning(f"In draw_masks: Expected masks to have shape (num_masks, H, W) or (H, W), but got {masks.shape}."
+                        " It might produce unexpected results. Please check the shape of the masks.")
 
     if image.ndim == 3 and image.shape[0] == 1:
         # convert to RGB

@@ -75,7 +75,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         model_version: int | None = None,
         model_alias: str | None = None,
         resource_id: str | None = None,
-        resource_ids: list[str] | None = None,
+        # resource_ids: list[str] | None = None,
         file_path: str | None = None,
         file_paths: list[str] | None = None,
         save_results: bool = False,
@@ -106,8 +106,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results=save_results,
             params=params,
         )
-        if resource_ids is not None:
-            payload["resource_ids"] = resource_ids
+        # if resource_ids is not None:
+        #     payload["resource_ids"] = resource_ids
         if file_paths is not None:
             payload["file_paths"] = file_paths
 
@@ -160,8 +160,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         *,
         on_status: Callable[[InferenceJob], None] | None = None,
         poll_interval: float = 2.0,
-        timeout: float | None = None,
-    ) -> InferenceJob:
+        timeout: float | None = 1800,
+    ) -> None:
         """Block until an inference job reaches a terminal state.
 
         First attempts to follow the SSE stream. If the stream is
@@ -169,7 +169,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         ``get_status`` at *poll_interval* seconds.
 
         Args:
-            job: Job ID string or ``InferenceJob`` entity.
+            job: Job ID string or ``InferenceJob`` entity. In-place updates to the provided ``InferenceJob`` are made on every status change.
             on_status: Optional callback invoked with an updated
                 ``InferenceJob`` each time a status update is received.
             poll_interval: Seconds between polls when falling back to
@@ -177,32 +177,38 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             timeout: Maximum seconds to wait. ``None`` means wait
                 indefinitely. Raises ``TimeoutError`` on expiry.
 
-        Returns:
-            The ``InferenceJob`` in its terminal state.
-
         Raises:
             TimeoutError: If *timeout* is set and the job has not
                 finished within that duration.
         """
-        job_id = self._entid(job) if not isinstance(job, str) else job
+        job_id = self._entid(job)
         deadline = (time.monotonic() + timeout) if timeout is not None else None
 
         def _check_timeout() -> None:
             if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"Inference job {job_id} did not finish within {timeout}s"
-                )
+                raise TimeoutError(f"Inference job {job_id} did not finish within {timeout}s")
+
+        def _notify(event: dict) -> None:
+            if on_status is None:
+                return
+            if isinstance(job, InferenceJob):
+                # SSE events are partial updates — apply known fields in-place
+                for key, value in event.items():
+                    try:
+                        setattr(job, key, value)
+                    except Exception:
+                        pass
+                on_status(job)
+            else:
+                on_status(self.get_status(job_id))
 
         # --- Try SSE stream first ---
         try:
             for event in self.stream_status(job_id):
                 _check_timeout()
-                status_str = event.get('status', '')
-                current_job = self._parse_job_response(event)
-                if on_status is not None:
-                    on_status(current_job)
-                if status_str.lower() in _TERMINAL_STATUSES:
-                    return current_job
+                _notify(event)
+                if event.get('status', '').lower() in _TERMINAL_STATUSES:
+                    return
         except Exception as e:
             logger.warning(f"SSE stream ended or failed ({e}); falling back to polling")
 
@@ -213,7 +219,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             if on_status is not None:
                 on_status(current_job)
             if current_job.status.lower() in _TERMINAL_STATUSES:
-                return current_job
+                return
             time.sleep(poll_interval)
 
     def cancel(self, job: str | InferenceJob) -> bool:
@@ -393,3 +399,5 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         response = self._make_request('POST', f'/{self.endpoint_base}/predict-volume', json=payload)
         data = response.json()
         return self.get_status(data['job_id'])
+
+    predict = submit  # Alias for generic prediction endpoint

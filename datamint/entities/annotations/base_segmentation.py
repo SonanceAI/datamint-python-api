@@ -15,7 +15,7 @@ from typing import Annotated, Any, Literal, overload
 
 import numpy as np
 from PIL import Image
-from pydantic import BeforeValidator, PlainSerializer
+from pydantic import BeforeValidator, PlainSerializer, Field
 
 from .annotation import Annotation
 from datamint.types import ImagingData
@@ -145,7 +145,7 @@ def _serialize_segmentation_data(
 
 
 def _deserialize_segmentation_data(
-    value: dict | np.ndarray | Image.Image | Any | None,
+    value: dict | np.ndarray | Image.Image | Any | list | None,
 ) -> np.ndarray | Image.Image | Any | None:
     """Deserialise segmentation data from a JSON-compatible dict or pass-through native types.
 
@@ -158,6 +158,9 @@ def _deserialize_segmentation_data(
     # Already a native type – constructed in code, not from JSON
     if isinstance(value, (np.ndarray, Image.Image, Nifti1Image)):
         return value
+
+    if isinstance(value, list):
+        return np.array(value)
 
     if not isinstance(value, dict):
         raise ValueError(f"Cannot deserialise segmentation_data from {type(value)}")
@@ -258,11 +261,22 @@ class BaseSegmentationAnnotation(Annotation):
       subclasses that need to convert to/from ``bytes``.
     """
 
-    segmentation_data: SegmentationDataType = None
+    segmentation_data: Annotated[SegmentationDataType, Field(alias='mask')] = None
 
     # ------------------------------------------------------------------
     # fetch_file_data
     # ------------------------------------------------------------------
+
+    def __init__(self, 
+                 segmentation_data: np.ndarray | Image.Image | None = None,
+                 mask: np.ndarray | Image.Image | None = None,
+                 **kwargs
+                 ) -> None:
+        if mask is not None:
+            if segmentation_data is not None:
+                raise ValueError("Cannot specify both 'segmentation_data' and 'mask'")
+            segmentation_data = mask
+        super().__init__(segmentation_data=segmentation_data, **kwargs)
 
     @overload
     def fetch_file_data(
@@ -377,3 +391,24 @@ class BaseSegmentationAnnotation(Annotation):
             pass
 
         raise ValueError("Could not decode bytes as NIfTI or PIL Image")
+
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+    @property
+    def mask(self) -> np.ndarray | Image.Image | Any | None:
+        """Alias for :attr:`segmentation_data`."""
+        return self.segmentation_data
+
+    @property
+    def mask_shape(self) -> tuple[int, ...] | None:
+        """
+        Shape of the stored mask.
+        """
+        data = self.segmentation_data
+        if data is None:
+            return None
+        if isinstance(data, Image.Image):
+            return (data.height, data.width)
+        return data.shape

@@ -713,7 +713,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                         mung_filename: Sequence[int] | Literal['all'] | None = None,
                         channel: str | None = None,
                         publish: bool = False,
-                        publish_to: str | None = None,
+                        publish_to: Project | str | None = None,
                         segmentation_files: dict | None = None,
                         transpose_segmentation: bool = False,
                         modality: str | None = None,

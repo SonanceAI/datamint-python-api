@@ -2,12 +2,11 @@
 
 from datetime import datetime
 import logging
-import shutil
 import urllib.parse
 import urllib.request
 import webbrowser
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, ClassVar, Literal, overload
 from collections.abc import Sequence
 
 from pydantic import PrivateAttr
@@ -18,7 +17,7 @@ from datamint.api.base_api import BaseApi
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
-    from .project import Project
+    from medimgkit import ViewPlane
     from .annotations.annotation import Annotation
     from datamint.types import ImagingData
     from datamint.api.dto import AnnotationType
@@ -107,22 +106,21 @@ class Resource(BaseEntity):
     user_info: dict[str, str | None] = MISSING_FIELD
 
     _api: 'ResourcesApi' = PrivateAttr()
+    _shared_cache: ClassVar[CacheManager[bytes] | None] = None
 
     def __new__(cls, *args, **kwargs):
         if cls is Resource and ('local_filepath' in kwargs or 'raw_data' in kwargs):
             return super().__new__(LocalResource)
         return super().__new__(cls)
 
-    def __init__(self, **data):
-        """Initialize the resource entity."""
-        super().__init__(**data)
-
     @property
     def _cache(self) -> CacheManager[bytes]:
-        if not hasattr(self, '__cache'):
-            self.__cache = CacheManager[bytes]('resources')
-        return self.__cache
-    
+        if Resource._shared_cache is None:
+            Resource._shared_cache = CacheManager[bytes]('resources',
+                                                         enable_memory_cache=True,
+                                                         memory_cache_maxsize=2)
+        return Resource._shared_cache
+
     @overload
     def fetch_file_data(
         self,
@@ -183,7 +181,7 @@ class Resource(BaseEntity):
 
         if auto_convert:
             try:
-                mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
+                mimetype, _ = BaseApi._determine_mimetype(img_data, self.mimetype)
                 img_data = BaseApi.convert_format(img_data,
                                                   mimetype=mimetype,
                                                   file_path=save_path)
@@ -279,14 +277,22 @@ class Resource(BaseEntity):
         """
         if self.mimetype == 'application/nifti':
             return True
-        return self.mimetype in 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+        return self.mimetype == 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+
+    def is_video(self) -> bool:
+        """Check if the resource is a video file.
+
+        Returns:
+            True if the resource is a video file, False otherwise
+        """
+        return self.mimetype.startswith('video/') or self.storage == 'VideoResourceHandler'
 
     def get_depth(self) -> int:
         if self.is_dicom() or self.is_nifti():
             return int(self.metadata['frame_count'])
         if self.mimetype.startswith('image/'):
             return 1
-        if self.mimetype.startswith('video/'):
+        if self.is_video():
             for st in self.metadata['streams']:
                 if st['codec_type'] == 'video':
                     return int(st['nb_frames'])
@@ -339,6 +345,32 @@ class Resource(BaseEntity):
             file_path: Path to the local file
         """
         return LocalResource(local_filepath=file_path)
+
+    @property
+    def _slice_cache_manager(self) -> CacheManager:
+        """Cache manager for sliced volumes derived from this resource."""
+        if not hasattr(self, '__slice_cache_manager'):
+            self.__slice_cache_manager = CacheManager(
+                'sliced_volumes',
+                enable_memory_cache=True,
+                memory_cache_maxsize=1,
+            )
+        return self.__slice_cache_manager
+
+    def get_slice(self, axis: 'ViewPlane', index: int):
+        """Get a specific slice of the volume as a SlicedVolumeResource.
+
+        Args:
+            axis: The anatomical plane to slice along (e.g., 'axial', 'coronal', 'sagittal')
+            index: The index of the slice along the specified axis
+        Returns:
+            A numpy array representing the specified slice
+        """
+        from .sliced_resource import SlicedVolumeResource
+        sr = SlicedVolumeResource(self, index,
+                                  slice_axis=axis,
+                                  sliced_vols_cache=self._slice_cache_manager)
+        return sr.fetch_slice_data()
 
 
 class LocalResource(Resource):
@@ -552,8 +584,8 @@ class LocalResource(Resource):
                                                   mimetype=mimetype,
                                                   file_path=local_filepath)
             except Exception as e:
-                logger.error(f"Failed to auto-convert local resource: {e}")
-                logger.error(e, exc_info=True)
+                logger.error(f"Failed to auto-convert local resource {self}: {e}")
+                raise
 
         return img_data
 

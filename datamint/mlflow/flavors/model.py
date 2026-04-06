@@ -5,19 +5,21 @@ This module provides a flexible framework for wrapping ML models to work with Da
 annotation system. It supports various prediction modes for different data types and use cases.
 """
 
-from typing import Any, TypeAlias
-from collections.abc import Callable
-from abc import ABC, abstractmethod
-from enum import Enum
+from typing import Any, ClassVar, TypeAlias
+from abc import ABC
 from dataclasses import dataclass
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
-from mlflow.pyfunc import load_model as pyfunc_load_model
-from mlflow.pytorch import load_model as pytorch_load_model
 from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
 from datamint.entities.annotations import Annotation
 from datamint.entities.resource import Resource
+from datamint.mlflow.flavors.model_loader import LinkedModelLoader
+from datamint.mlflow.flavors.prediction_modes import PredictionMode
+from datamint.mlflow.flavors.task_type import TaskType
+from datamint.mlflow.flavors.prediction_router import PredictionRouter
 import logging
-import os
+from functools import cached_property
+import torch
+from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 
 logger = logging.getLogger(__name__)
 
@@ -40,839 +42,324 @@ class ModelSettings:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'ModelSettings':
         """Create config from dictionary, raising error on unknown keys."""
-        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        valid_fields = set(cls.__dataclass_fields__)
         invalid_fields = set(data.keys()) - valid_fields
         if invalid_fields:
             raise ValueError(f"Invalid fields for ModelSettings: {', '.join(sorted(invalid_fields))}")
         return cls(**data)
 
 
-class PredictionMode(str, Enum):
-    """
-    Enumeration of supported prediction modes.
+class BaseDatamintModel(PythonModel, ABC):
+    """Core prediction gateway that any MLflow :class:`~mlflow.pyfunc.PythonModel` can build on.
 
-    Each mode corresponds to a specific method signature in DatamintModel.
-    """
-    # Standard modes
-    DEFAULT = 'default'                # Default: process entire resource as-is
+    Owns:
 
-    # Simple modes
-    IMAGE = 'image'                    # Process single 2d image resource
+    * :attr:`settings` — hardware / deployment configuration.
+    * Device detection (``_detect_device`` / :attr:`inference_device`).
+    * Prediction dispatch via :class:`~datamint.mlflow.flavors.prediction_router.PredictionRouter`.
+    * Pickle-safe serialization.
 
-    # Video/temporal modes
-    FRAME = 'frame'                    # Extract and process specific frame
-    FRAME_RANGE = 'frame_range'        # Process contiguous frame range
-    ALL_FRAMES = 'all_frames'          # Process all frames independently
-    TEMPORAL_SEQUENCE = 'temporal_sequence'  # Process with temporal context window
+    Use :class:`DatamintModel` when you need to load linked models at serve time.
 
-    # 3D volume modes
-    SLICE = 'slice'                    # Extract and process specific slice
-    SLICE_RANGE = 'slice_range'        # Process contiguous slice range
-    PRIMARY_SLICE = 'primary_slice'    # Process center/primary slice
-    # MULTI_PLANE = 'multi_plane'        # Process multiple anatomical planes
-    VOLUME = 'volume'                  # Process entire 3D volume
-
-    # Spatial modes
-    # ROI = 'roi'                        # Process single region of interest
-    # MULTI_ROI = 'multi_roi'            # Process multiple regions
-    # TILE = 'tile'                      # Split into tiles (whole slide imaging)
-    # PATCH = 'patch'                    # Extract patches around points
-
-    # Advanced modes
-    INTERACTIVE = 'interactive'        # With user prompts (SAM-like)
-    FEW_SHOT = 'few_shot'             # With context examples
-    # MULTI_VIEW = 'multi_view'          # Multiple views of same subject
-
-
-class DatamintModel(ABC, PythonModel):
-    """
-    Abstract adapter class for wrapping models to produce Datamint annotations.
-
-    This class provides a flexible framework for integrating ML models with DataMint.
-    The main `predict()` method routes requests to specific handlers based on the
-    prediction mode, allowing users to implement only the modes they need.
-
-    Quick Start:
-    -----------
-    ```python
-    class MyModel(DatamintModel):
-        def __init__(self):
-            super().__init__(
-                mlflow_models_uri={'model': 'models:/MyModel/latest'},
-                config=ModelSettings(need_gpu=True)
-            )
-
-        def predict_default(self, model_input, **kwargs):
-            # Access the device for your computation
-            device = self.inference_device  # Reads from MLFLOW_DEFAULT_PREDICTION_DEVICE or defaults to 'cpu'
-            model = self.mlflow_models['model'].get_raw_model().to(device)
-            # ... process and return annotations
-            return predictions
-    ```
-
-    Prediction Modes:
-    ----------------
-    Users can request different prediction modes via params['mode']:
-
-    **Default**: Default processing
-    ```python
-    model.predict(resources)  # or params={'mode': 'default'}
-    ```
-
-    **Video Frame**: Extract specific frame
-    ```python
-    model.predict(videos, params={'mode': 'frame', 'frame_index': 42})
-    ```
-
-    **3D Slice**: Extract specific slice
-    ```python
-    model.predict(volumes, params={'mode': 'slice', 'slice_index': 50, 'axis': 'axial'})
-    ```
-
-    **Interactive**: With prompts
-    ```python
-    model.predict(images, params={'mode': 'interactive', 'prompt': {'points': [[x, y]], 'labels': [1]}})
-    ```
-
-    Common Parameters:
-    -----------------
-    - `confidence_threshold` (float): Filter predictions by confidence score
-    - `batch_size` (int): Batch size for processing
-    - `render_annotation` (bool): Return annotated images instead of annotations
-
-    Device Configuration:
-    --------------------
-    The device for computation is automatically configured from the 
-    `MLFLOW_DEFAULT_PREDICTION_DEVICE` environment variable. Access it via `self.inference_device`.
-    Defaults to 'cpu' if not set.
-
-    Implementation Guide:
-    --------------------
-    1. Implement `predict_default()` - this is required and serves as fallback
-    2. Optionally implement specific modes your model supports
-    3. Override `_render_annotations()` if you want to support visualization
-    4. Use `self.mlflow_models` to access loaded MLflow models
-    5. Configure deployment settings via `ModelSettings`
-
-    See individual method docstrings for detailed parameter specifications.
+    Subclasses only need to implement :meth:`predict_default` (and optionally
+    other ``predict_*`` hooks registered with ``@prediction_mode``).
     """
 
-    LINKED_MODELS_DIR = "linked_models"
-    _CACHED_ATTRS = ['_mlflow_models', '_mlflow_torch_models', '_inference_device']
+    task_type: ClassVar[TaskType | None] = None
+    """Semantic task category for this model class. Subclasses should override
+    at the class body level (e.g. ``task_type = TaskType.IMAGE_SEGMENTATION``)."""
 
-    def __init__(self,
-                 settings: ModelSettings | dict[str, Any] | None = None,
-                 mlflow_torch_models_uri: dict[str, str] | None = None,
-                 mlflow_models_uri: dict[str, str] | None = None,
-                 ) -> None:
-        """
-        Initialize the DatamintModel adapter.
+    def __init__(
+        self,
+        settings: ModelSettings | dict[str, Any] | None = None,
+    ) -> None:
+        self.settings = settings
+        self._inference_device: str | None = None
 
-        Args:
-            config: ModelSettings instance or dict with deployment settings.
-                    Example: {'need_gpu': True}
-            mlflow_torch_models_uri: Dictionary mapping model names to PyTorch model URIs.
-                    Example: {'backbone': 'models:/MyClassifier/2'}
-                    These models will be lazy-loaded and accessible via ``self.mlflow_torch_models_uri['backbone']``
-            mlflow_models_uri: Dictionary mapping model names to MLflow URIs.
-                    Example: {'detector': 'models:/MyDetector/1',
-                              'classifier': 'models:/MyClassifier/latest'}
-                    These models will be lazy-loaded and accessible via ``self.mlflow_models['detector']``
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        return PredictionRouter(self, BaseDatamintModel)
 
-        """
-        super().__init__()
-        self.mlflow_models_uri = (mlflow_models_uri or {}).copy()
-        self.mlflow_torch_models_uri = (mlflow_torch_models_uri or {}).copy()
+    @property
+    def settings(self) -> ModelSettings:
+        if not hasattr(self, "_settings"):
+            self._settings = ModelSettings()
+        return self._settings
 
-        # Handle settings - convert dict to ModelSettings if needed
-        if isinstance(settings, dict):
-            self.settings = ModelSettings.from_dict(settings)
-        elif isinstance(settings, ModelSettings):
-            self.settings = settings
+    @settings.setter
+    def settings(self, value: ModelSettings | dict[str, Any] | None) -> None:
+        if isinstance(value, dict):
+            self._settings = ModelSettings.from_dict(value)
+        elif isinstance(value, ModelSettings):
+            self._settings = value
         else:
-            self.settings = ModelSettings()
+            self._settings = ModelSettings()
 
-        self._supported_modes_cache = None
+    # ------------------------------------------------------------------
+    # Device management
+    # ------------------------------------------------------------------
 
-    def load_context(self, context: PythonModelContext):
+    @property
+    def inference_device(self) -> str:
+        """The device that will be used for inference.
+
+        Returns ``_inference_device`` if already set, then falls back to the
+        ``MLFLOW_DEFAULT_PREDICTION_DEVICE`` environment variable, then ``'cpu'``.
         """
-        Called by MLflow when loading the model.
+        if self._inference_device is not None:
+            return self._inference_device
+        env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
+        if env_device:
+            logger.info("Inference device not set; using environment variable (%s)", env_device)
+            return env_device
+        logger.warning("Inference device not set; defaulting to 'cpu'")
+        return "cpu"
 
-        Override this if you need custom loading logic.
+    def _detect_device(self, context: PythonModelContext | None) -> str:
+        """Detect and store the inference device from context / env / hardware.
+
+        Sets :attr:`_inference_device` and returns the detected device string.
+        Priority: ``context.model_config['device']`` > env var > CUDA > CPU.
         """
-        self._inference_device = self._load_inference_device(context=context)
-        self._mlflow_models = self._load_mlflow_models()
-        self._mlflow_torch_models = self._load_mlflow_torch_models()
-        # model_config = context.model_config
-
-    def _get_linked_models_uri(self) -> dict[str, Any]:
-        """Get all linked models (MLflow and PyTorch)"""
-        linked = {}
-        linked.update(self.mlflow_models_uri)
-        linked.update(self.mlflow_torch_models_uri)
-        return linked
-
-    def _clear_linked_models_cache(self):
-        """Clear loaded linked models to free memory"""
-        
-        for attr in self._CACHED_ATTRS:
-            if hasattr(self, attr):
-                delattr(self, attr)
-        
-
-    def __getstate__(self):
-        state = self.__dict__.copy()
-
-        for attr in self._CACHED_ATTRS:
-            if attr in state:
-                del state[attr]
-
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        # avoid possible invalid states after unpickling
-        self._clear_linked_models_cache()
-
-    def _load_inference_device(self, context: PythonModelContext | None = None) -> str:
-        """
-        Load inference device from model config or environment variable.
-        """
-        import torch
-
         device = None
         if context and context.model_config:
             device = context.model_config.get("device", None)
-            logger.info(f"Model config device: {device}")
+            logger.info("Model config device: %s", device)
         if device is None:
             env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
             if env_device:
                 device = env_device
             elif torch.cuda.is_available():
-                device = 'cuda'
+                device = "cuda"
             else:
-                device = 'cpu'
+                device = "cpu"
 
-        logger.info(f"Set inference device: {device}")
+        logger.info("Set inference device: %s", device)
+        self._inference_device = device
         return device
 
-    @property
-    def inference_device(self) -> str:
-        if hasattr(self, '_inference_device') and self._inference_device is not None:
-            return self._inference_device
-        env_device = MLFLOW_DEFAULT_PREDICTION_DEVICE.get()
-        if env_device:
-            logger.info(f"Inference device not set; getting from environment variable ({env_device})")
-            return env_device
-        logger.warning("Inference device not set; defaulting to 'cpu'")
-        return 'cpu'
+    # ------------------------------------------------------------------
+    # MLflow lifecycle
+    # ------------------------------------------------------------------
 
-    def _load_models_generic(self, uris: dict[str, str],
-                             loader_func: Callable,
-                             **loader_kwargs) -> dict[str, Any]:
-        """Generic helper to load models from URIs."""
-        loaded_models = {}
-        for name, uri in uris.items():
-            model_uri = uri
-            if os.path.exists(uri):
-                logger.info(f"Model '{name}' found locally at '{uri}'")
-                model_uri = os.path.abspath(uri)
-            elif uri.startswith("models:/"):
-                local_path = uri.replace("models:/", DatamintModel.LINKED_MODELS_DIR + "/", 1)
-                if os.path.exists(local_path):
-                    logger.info(f"Model '{name}' found locally at '{local_path}'")
-                    model_uri = os.path.abspath(local_path)
+    def load_context(self, context: PythonModelContext) -> None:
+        """Detect the inference device.
 
-            try:
-                loaded_models[name] = loader_func(model_uri, **loader_kwargs)
-                logger.info(f"Loaded model '{name}' from {model_uri}")
-            except Exception as e:
-                logger.error(f"Failed to load model '{name}' from {model_uri}: {e}")
-                raise
-        return loaded_models
-
-    def _load_mlflow_models(self) -> dict[str, PyFuncModel]:
-        """Load all MLflow models specified in mlflow_models_uri."""
-        return self._load_models_generic(
-            self.mlflow_models_uri,
-            pyfunc_load_model,
-            model_config={'device': self.inference_device}
-        )
-
-    def _load_mlflow_torch_models(self) -> dict[str, Any]:
-        """Load all MLflow PyTorch models specified in mlflow_torch_models_uri."""
-        models = self._load_models_generic(
-            self.mlflow_torch_models_uri,
-            pytorch_load_model,
-            device=self.inference_device,
-            map_location=self.inference_device,
-        )
-        for m in models.values():
-            if hasattr(m, 'eval'):
-                m.eval()
-        return models
-
-    def get_mlflow_models(self) -> dict[str, PyFuncModel]:
+        Override in subclasses to perform additional loading (e.g. linked
+        models) — but always call ``super().load_context(context)`` first
+        so that :attr:`inference_device` is set before any model loading.
         """
-        Access loaded MLflow models.
+        logger.info("Loading model context %s and detecting device...",
+                    f'{context.artifacts=} | {context.model_config=}')
+        self._detect_device(context)
 
-        Returns:
-            Dictionary mapping model names to PyFuncModel instances.
-            Use .get_raw_model() to access the underlying model (e.g., torch.nn.Module)
+    # ------------------------------------------------------------------
+    # Serialization
+    # ------------------------------------------------------------------
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state.pop("_router", None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+
+    # ------------------------------------------------------------------
+    # Prediction dispatch
+    # ------------------------------------------------------------------
+    def predict(
+        self,
+        model_input: list[Resource],
+        params: dict[str, Any] | None = None,
+    ) -> PredictionResult:
+        """Main prediction entry point.
+
+        Routes to the appropriate handler based on ``params['mode']``.
+        **Do not override** — implement :meth:`predict_default` (or other
+        ``predict_*`` hooks) instead.
         """
-        if not hasattr(self, '_mlflow_models'):
-            logger.warning("Loading MLflow models on first access")
-            self._mlflow_models = self._load_mlflow_models()
-        return self._mlflow_models
-
-    def get_mlflow_torch_models(self) -> dict[str, Any]:
-        """
-        Access loaded MLflow PyTorch models.
-
-        Returns:
-            Dictionary mapping model names to PyTorch model instances.
-        """
-        if not hasattr(self, '_mlflow_torch_models'):
-            logger.warning("Loading MLflow PyTorch models on first access")
-            self._mlflow_torch_models = self._load_mlflow_torch_models()
-        return self._mlflow_torch_models
-
-    # def _preprocess_input(self,
-    #                       model_input: list[InferenceResource | Resource | dict[str, Any]],
-    #                       params: dict[str, Any]) -> list[Resource]:
-    #     """
-    #     Preprocess input to convert to list of Resource objects.
-
-    #     Args:
-    #         model_input: List of InferenceResource, Resource, or dict
-    #         params: Additional parameters (unused here)
-    #     Returns:
-    #         List of Resource objects
-    #     """
-    #     resources = []
-    #     for item in model_input:
-    #         if isinstance(item, Resource):
-    #             resources.append(item)
-    #         elif isinstance(item, InferenceResource):
-    #             resources.append(item.fabricate_resource())
-    #         elif isinstance(item, dict):
-    #             if 'local_filepath' in item or item.get('id', None) == '':
-    #                 logger.debug(f'Creating LocalResource from dict: {item}')
-    #                 resources.append(LocalResource(local_filepath=item['local_filepath']))
-    #             elif 'upload_channel' in item or 'location' in item or 'storage' in item:
-    #                 resources.append(Resource(**item))
-    #             else:
-    #                 resources.append(InferenceResource(**item).fabricate_resource())
-    #         else:
-    #             raise ValueError(f"Unsupported input type: {type(item)}")
-    #     return resources
-
-    def predict(self,
-                model_input: list[Resource],
-                params: dict[str, Any] | None = None) -> PredictionResult:
-        """
-        Main prediction entry point.
-
-        Routes to appropriate prediction method based on params['mode'].
-        DO NOT override this method - implement specific predict_* methods instead.
-
-        Args:
-            model_input: List of Resource objects to process
-            params: Optional configuration dictionary with keys:
-                   - mode (str): Prediction mode (default: 'default')
-                   - confidence_threshold (float): Filter by confidence
-                   - batch_size (int): Batch size for processing
-                   - render_annotation (bool): Return rendered images
-                   - device (str): Computation device
-                   + mode-specific parameters (see individual method docs)
-
-        Returns:
-            List of annotation lists (one per resource), or rendered outputs
-            if render_annotation=True
-
-        Raises:
-            ValueError: If mode is invalid or required parameters are missing
-            NotImplementedError: If requested mode is not implemented
-        """
-        params = params or {}
-        # model_input = self._preprocess_input(model_input, params)
-
-        # Parse and validate mode
-        mode = self._parse_mode(model_input=model_input, params=params)
-        logger.info(f"Received prediction request with {len(model_input)} resources and params {params} with mode '{mode.value}'")
-
-        # Route to appropriate prediction method
-        try:
-            if not self._is_mode_implemented(mode):
-                if self._is_mode_implemented(PredictionMode.DEFAULT):
-                    logger.info(f"Mode '{mode.value}' not implemented, falling back to default")
-                    mode = PredictionMode.DEFAULT
-                else:
-                    raise NotImplementedError
-            logger.info(f"Routing to '{mode.value}' mode for {len(model_input)} resources")
-            result = self._route_prediction(model_input, mode, params)
-
-            # Apply common post-processing
-            result = self._post_process(result, model_input, params)
-
-            return result
-
-        except NotImplementedError:
-            available = self.get_supported_modes()
-            raise NotImplementedError(
-                f"Prediction mode '{mode.value}' is not supported by this model.\n"
-                f"Supported modes: {', '.join(available)}\n"
-                f"Implement predict_{mode.value}() to add support for this mode."
-            )
-
-    def _parse_mode(self,
-                    params: dict[str, Any],
-                    model_input: list[Resource] | None = None) -> PredictionMode:
-        """Parse and validate prediction mode from params."""
-        mode_str = params.get('mode', PredictionMode.DEFAULT.value)
-        try:
-            is_all_image = all(res.mimetype.startswith('image/') for res in model_input) if model_input else False
-        except Exception:
-            is_all_image = False
-
-        logger.debug(f"Parsing prediction mode: '{mode_str}' | {is_all_image=}")
-
-        if mode_str == PredictionMode.DEFAULT.value and is_all_image:
-            mode_str = PredictionMode.IMAGE.value
-
-        try:
-            return PredictionMode(mode_str)
-        except ValueError:
-            valid_modes = [m.value for m in PredictionMode]
-            raise ValueError(
-                f"Invalid prediction mode: '{mode_str}'\n"
-                f"Valid modes: {', '.join(valid_modes)}"
-            )
-
-    def _route_prediction(self,
-                          model_input: list[Resource],
-                          mode: PredictionMode,
-                          params: dict[str, Any]) -> PredictionResult:
-        """Route to the appropriate prediction method based on mode."""
-
-        # Extract mode-specific parameters and remove from kwargs
-        mode_params, common_params = self._extract_mode_params(mode, params)
-
-        # Dispatch to appropriate method
-        method = self._get_method_for_mode(mode)
-
-        # if method is None or not self._is_mode_implemented(mode, method):
-        #     raise NotImplementedError
-
-        # Call with explicit parameters
-        return method(model_input, **mode_params, **common_params)
-
-    def _extract_mode_params(self, mode: PredictionMode, params: dict[str, Any]) -> tuple[dict, dict]:
-        """
-        Extract mode-specific and common parameters.
-
-        Returns:
-            Tuple of (mode_specific_params, common_params)
-        """
-        # Define mode-specific parameter mappings
-        mode_param_keys = {
-            PredictionMode.FRAME: ['frame_index'],
-            PredictionMode.FRAME_RANGE: ['start_frame', 'end_frame', 'step'],
-            PredictionMode.SLICE: ['slice_index', 'axis'],
-            PredictionMode.SLICE_RANGE: ['start_index', 'end_index', 'axis', 'step'],
-            PredictionMode.PRIMARY_SLICE: ['axis'],
-            PredictionMode.INTERACTIVE: ['prompt'],
-            PredictionMode.FEW_SHOT: ['context_resources', 'k'],
-            PredictionMode.TEMPORAL_SEQUENCE: ['center_frame', 'window_size'],
-            PredictionMode.IMAGE: [],
-        }
-
-        reserved_keys = {'mode', 'confidence_threshold'}
-
-        # Extract parameters
-        mode_specific = {}
-        common = {}
-
-        mode_keys = set(mode_param_keys.get(mode, ()))
-
-        for key, value in params.items():
-            if key in reserved_keys:
-                continue  # Skip mode itself and post-processing-only params
-            if key in mode_keys:
-                mode_specific[key] = value
-            else:
-                common[key] = value
-
-        return mode_specific, common
-
-    def _get_method_for_mode(self, mode: PredictionMode):
-        """Get the method corresponding to the given prediction mode."""
-        method_name = f"predict_{mode.value}"
-        method = getattr(self, method_name, None)
-        return method
+        return self._router.dispatch(model_input, params or {})
 
     def get_supported_modes(self) -> list[str]:
-        """
-        Get list of prediction modes supported by this model.
+        """Return the list of prediction modes supported by this model."""
+        return self._router.supported_modes()
 
-        Returns:
-            List of mode names (strings)
-        """
-        if self._supported_modes_cache is not None:
-            return self._supported_modes_cache
+    def predict_default(
+        self,
+        model_input: list[Resource],
+        **kwargs: Any,
+    ) -> PredictionResult:
+        """Default prediction on entire resources.
 
-        supported = []
-        for mode in PredictionMode:
-            if self._is_mode_implemented(mode):
-                supported.append(mode.value)
-
-        self._supported_modes_cache = supported
-        return supported
-
-    def _is_mode_implemented(self, mode: PredictionMode) -> bool:
-        """Determine whether the given mode has a concrete implementation."""
-        method = self._get_method_for_mode(mode)
-        if method is None:
-            return False
-
-        # Check if method is from DatamintModel base class (not overridden)
-        if hasattr(DatamintModel, method.__name__):
-            self._get_method_for_mode
-            base_method = getattr(DatamintModel, method.__name__)
-            # Method is implemented if it's not the same as base class method
-            return method.__func__ is not base_method
-
-        return True
-
-    def _post_process(self,
-                      predictions: PredictionResult,
-                      resources: list[Resource],
-                      params: dict[str, Any]) -> PredictionResult:
-        """Apply common post-processing based on params."""
-
-        # Apply confidence threshold filtering
-        conf_threshold = params.get('confidence_threshold')
-        if conf_threshold is not None:
-            predictions = [
-                [ann for ann in pred_list
-                 if getattr(ann, 'confiability', 1.0) >= conf_threshold]
-                for pred_list in predictions
-            ]
-            logger.debug(f"Applied confidence threshold: {conf_threshold}")
-
-        return predictions
-
-    def predict_default(self,
-                        model_input: list[Resource],
-                        **kwargs) -> PredictionResult:
-        """
-        **OPTIONAL**: Default prediction on entire resources.
-
-        This is the default mode and serves as fallback for unimplemented modes.
-        Override this method to implement default prediction behavior.
-        If called without being overridden, raises NotImplementedError.
-
-        Args:
-            model_input: Resources to process
-            **kwargs: Additional user-defined parameters
-
-        Returns:
-            List of annotation lists, one per resource
-
-        Example:
-            ```python
-            def predict_default(self, model_input, **kwargs):
-                dataset = MyDataset(model_input)
-                dataloader = DataLoader(dataset)
-                model = self.mlflow_models['model'].get_raw_model()
-
-                predictions = []
-                for batch in dataloader:
-                    outputs = model(batch)
-                    predictions.extend(self._outputs_to_annotations(outputs))
-
-                return predictions
-            ```
+        Override this in your subclass.
         """
         raise NotImplementedError(
-            "predict_default() must be implemented in your DatamintModel subclass. "
-            "This is the default fallback mode for prediction."
+            "predict_default() must be implemented in your DatamintModel subclass."
         )
 
-    # ========================================================================
-    # VIDEO/TEMPORAL MODES
-    # ========================================================================
 
-    def predict_frame(self,
-                      model_input: list[Resource],
-                      frame_index: int,
-                      **kwargs) -> PredictionResult:
-        """
-        Process specific frame from video resources.
+class DatamintModel(BaseDatamintModel):
+    """Abstract adapter for wrapping ML models to produce Datamint annotations.
 
-        Args:
-            model_input: Video resources
-            frame_index: Index of frame to extract and process (0-based)
+    Extends :class:`BaseDatamintModel` with support for loading external
+    ("linked") MLflow models at serve time via :class:`LinkedModelLoader`.
+    Subclasses only need to override ``predict_default`` (and optionally
+    other ``predict_*`` hooks).
 
-        Returns:
-            Annotations for the specified frame (one list per resource)
+    Quick Start::
 
-        Example:
-            ```python
-            # Extract frame 42 from multiple videos
-            predictions = model.predict(
-                videos,
-                params={'mode': 'frame', 'frame_index': 42}
-            )
-            ```
-        """
-        logger.warning(f"predict_frame not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+        class MyModel(DatamintModel):
+            def __init__(self):
+                super().__init__(
+                    mlflow_models_uri={'model': 'models:/MyModel/latest'},
+                    settings=ModelSettings(need_gpu=True),
+                )
 
-    def predict_frame_range(self,
-                            model_input: list[Resource],
-                            start_frame: int,
-                            end_frame: int,
-                            step: int = 1,
-                            **kwargs) -> PredictionResult:
-        """
-        Process range of frames from video resources.
+            def predict_default(self, model_input, **kwargs):
+                device = self.inference_device
+                model = self.get_mlflow_models()['model'].get_raw_model().to(device)
+                return predictions
 
-        Args:
-            model_input: Video resources
-            start_frame: Start frame index (inclusive)
-            end_frame: End frame index (inclusive)
-            step: Step size between frames (default: 1)
+    You can also pass pre-instantiated ``torch.nn.Module`` objects directly::
 
-        Returns:
-            Annotations for frames in range (may be frame-scoped annotations)
+        class MyModel(DatamintModel):
+            def __init__(self):
+                net = MyTorchNet()
+                super().__init__(torch_model=net)
 
-        Example:
-            ```python
-            # Process frames 0-100, every 10th frame
-            predictions = model.predict(
-                videos,
-                params={'mode': 'frame_range', 
-                       'start_frame': 0, 
-                       'end_frame': 100,
-                       'step': 10}
-            )
-            ```
-        """
-        logger.warning(f"predict_frame_range not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+            def predict_default(self, model_input, **kwargs):
+                net = self.get_mlflow_torch_models()['net']
+                return net(preprocess(model_input))
+    """
 
-    def predict_frame_interval(self,
-                               model_input: list[Resource],
-                               interval: int,
-                               start_frame: int = 0,
-                               end_frame: int | None = None,
-                               **kwargs) -> PredictionResult:
-        """
-        Process every nth frame from video resources.
+    # Keep for backward compat with subclass references
+    LINKED_MODELS_DIR = "linked_models"
+    _PYTORCH_ARTIFACT_NAME = "pytorch_model"
 
-        Args:
-            model_input: Video resources
-            interval: Process every nth frame
-            start_frame: Starting frame index
-            end_frame: Ending frame index (None = last frame)
+    def __init__(
+        self,
+        settings: ModelSettings | dict[str, Any] | None = None,
+        mlflow_torch_models_uri: dict[str, str] | None = None,
+        mlflow_models_uri: dict[str, str] | None = None,
+        torch_model: torch.nn.Module | None = None,
+    ) -> None:
+        super().__init__(settings=settings)
+        self._loader = LinkedModelLoader(
+            mlflow_models_uri=mlflow_models_uri,
+            mlflow_torch_models_uri=mlflow_torch_models_uri,
+            torch_model=torch_model,
+        )
 
-        Returns:
-            Annotations for sampled frames
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        r = PredictionRouter(self, BaseDatamintModel)
+        if self._loader._torch_model_instance is not None:
+            r.update_registry(self._loader._torch_model_instance, BaseDatamintModel)
+        return r
 
-        Example:
-            ```python
-            # Process every 30th frame (1 fps for 30fps video)
-            predictions = model.predict(
-                videos,
-                params={'mode': 'frame_interval', 'interval': 30}
-            )
-            ```
-        """
-        logger.warning(f"predict_frame_interval not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    # ------------------------------------------------------------------
+    # Lifecycle — overrides base to also load linked models
+    # ------------------------------------------------------------------
 
-    def predict_all_frames(self,
-                           model_input: list[Resource],
-                           **kwargs) -> PredictionResult:
-        """
-        Process all frames independently.
+    def load_context(self, context: PythonModelContext) -> None:
+        """Detect device and load all linked MLflow models."""
+        super().load_context(context)  # sets inference_device
+        self._loader.load_all(self.inference_device)
 
-        Args:
-            model_input: Video resources
+        if self._PYTORCH_ARTIFACT_NAME in context.artifacts:
+            model_path = context.artifacts[self._PYTORCH_ARTIFACT_NAME]
+            self._loader._torch_model_instance = torch.load(model_path,
+                                                            weights_only=False,
+                                                            map_location=self.inference_device,
+                                                            pickle_module=mlflow_pytorch_pickle_module)
+            self._loader._torch_model_instance.eval()
 
-        Returns:
-            Annotations for all frames (likely frame-scoped)
+    # ------------------------------------------------------------------
+    # Linked-model access
+    # ------------------------------------------------------------------
 
-        Example:
-            ```python
-            # Analyze every frame
-            predictions = model.predict(
-                videos,
-                params={'mode': 'all_frames'}
-            )
-            ```
-        """
-        logger.warning(f"predict_all_frames not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    def get_mlflow_models(self) -> dict[str, PyFuncModel]:
+        """Access loaded MLflow pyfunc models."""
+        return self._loader.mlflow_models
 
-    # ========================================================================
-    # 3D VOLUME MODES
-    # ========================================================================
+    def get_mlflow_torch_models(self) -> dict[str, Any]:
+        """Access loaded MLflow PyTorch models."""
+        return self._loader.torch_models
 
-    def predict_slice(self,
-                      model_input: list[Resource],
-                      slice_index: int,
-                      axis: str = 'axial',
-                      **kwargs) -> PredictionResult:
-        """
-        Process specific slice from 3D volume.
+    def get_pytorch_model(self) -> torch.nn.Module | None:
+        torch_model = self._loader._torch_model_instance
+        if torch_model is not None:
+            return torch_model
+        torch_models = self.get_mlflow_torch_models()
+        if len(torch_models) == 1:
+            return next(iter(torch_models.values()))
+        return torch_models.get("default", None)
 
-        Args:
-            model_input: 3D volume resources (DICOM series, NIfTI, etc.)
-            slice_index: Index of slice to extract
-            axis: Anatomical axis ('axial', 'sagittal', 'coronal')
+    # ------------------------------------------------------------------
+    # Backward-compat aliases
+    # ------------------------------------------------------------------
 
-        Returns:
-            Annotations for the specified slice
+    @property
+    def mlflow_models_uri(self) -> dict[str, str]:
+        return self._loader.mlflow_models_uri
 
-        Example:
-            ```python
-            # Extract and analyze axial slice 50
-            predictions = model.predict(
-                ct_scans,
-                params={'mode': 'slice', 
-                       'slice_index': 50, 
-                       'axis': 'axial'}
-            )
-            ```
-        """
-        logger.warning(f"predict_slice not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    @mlflow_models_uri.setter
+    def mlflow_models_uri(self, value: dict[str, str]) -> None:
+        self._loader.mlflow_models_uri = value
 
-    def predict_slice_range(self,
-                            model_input: list[Resource],
-                            start_index: int,
-                            end_index: int,
-                            axis: str = 'axial',
-                            step: int = 1,
-                            **kwargs) -> PredictionResult:
-        """
-        Process range of slices from 3D volume.
+    @property
+    def mlflow_torch_models_uri(self) -> dict[str, str]:
+        return self._loader.mlflow_torch_models_uri
 
-        Args:
-            model_input: 3D volume resources
-            start_index: Start slice index (inclusive)
-            end_index: End slice index (inclusive)
-            axis: Anatomical axis
-            step: Step size between slices
+    @mlflow_torch_models_uri.setter
+    def mlflow_torch_models_uri(self, value: dict[str, str]) -> None:
+        self._loader.mlflow_torch_models_uri = value
 
-        Returns:
-            Annotations for slices in range
-        """
-        logger.warning(f"predict_slice_range not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    def _get_linked_models_uri(self) -> dict[str, Any]:
+        return self._loader.get_all_uris()
 
-    def predict_volume(self,
-                       model_input: list[Resource],
-                       **kwargs) -> PredictionResult:
-        """
-        Process entire 3D volume.
+    def _clear_linked_models_cache(self) -> None:
+        self._loader.clear_cache()
 
-        For true 3D models (not slice-by-slice).
+    def _clear_ptmodel(self) -> None:
+        self._loader._torch_model_instance = None
 
-        Args:
-            model_input: 3D volume resources
+    # ------------------------------------------------------------------
+    # Serialization — also clears loader cache on restore
+    # ------------------------------------------------------------------
 
-        Returns:
-            3D annotations for entire volume
-        """
-        logger.warning(f"predict_volume not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    def __setstate__(self, state: dict) -> None:
+        super().__setstate__(state)
+        self._loader.clear_cache()
 
-    # ========================================================================
-    # ADVANCED MODES
-    # ========================================================================
 
-    def predict_interactive(self,
-                            model_input: list[Resource],
-                            prompt: dict[str, Any],
-                            **kwargs) -> PredictionResult:
-        """
-        Interactive prediction with user prompts.
+class _DatamintModelWrapper(BaseDatamintModel):
+    def __init__(self, another_model: Any) -> None:
+        super().__init__(settings=another_model.settings)
+        self.another_model = another_model
 
-        For models like Segment Anything (SAM) that accept user guidance.
+    @property
+    def task_type(self) -> TaskType | None:  # type: ignore[override]
+        return getattr(self.another_model, 'task_type', None)
 
-        Args:
-            model_input: Resources to process
-            prompt: Prompt dictionary with keys:
-                   - 'points': list of [x, y] coordinates
-                   - 'labels': list of labels (1=foreground, 0=background)
-                   - 'boxes': list of [x1, y1, x2, y2] bounding boxes
-                   - 'masks': list of binary mask arrays
+    @cached_property
+    def _router(self) -> PredictionRouter:
+        """The PredictionRouter instance responsible for dispatching predict calls."""
+        return PredictionRouter(self.another_model, type(self.another_model))
 
-        Returns:
-            Annotations based on prompts
+    def load_context(self, context: PythonModelContext) -> None:
+        self.another_model.load_context(context)
 
-        Example:
-            ```python
-            # Segment based on positive and negative points
-            predictions = model.predict(
-                images,
-                params={'mode': 'interactive',
-                       'prompt': {
-                           'points': [[100, 150], [200, 250]],
-                           'labels': [1, 0]  # foreground, background
-                       }}
-            )
-            ```
-        """
-        logger.warning(f"predict_interactive not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
 
-    def predict_few_shot(self,
-                         model_input: list[Resource],
-                         context_resources: list[Resource],
-                         k: int = 5,
-                         **kwargs) -> PredictionResult:
-        """
-        Few-shot prediction with context examples.
-
-        For models that can adapt based on a few labeled examples.
-
-        Args:
-            model_input: Resources to annotate
-            context_resources: Resources with existing annotations to use as examples
-            k: Number of examples to use (if more are provided)
-
-        Returns:
-            Annotations informed by context examples
-
-        Example:
-            ```python
-            # Predict using similar annotated examples
-            predictions = model.predict(
-                new_images,
-                params={'mode': 'few_shot',
-                       'context_resources': annotated_examples,
-                       'k': 3}
-            )
-            ```
-        """
-        logger.warning(f"predict_few_shot not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
-
-    def predict_image(self,
-                      model_input: list[Resource],
-                      **kwargs) -> PredictionResult:
-        """
-        Process single 2D image resources.
-
-        Args:
-            model_input: 2D image resources
-
-        Returns:
-            Annotations for each image
-        """
-        logger.warning(f"predict_image not implemented, falling back to predict_default")
-        return self.predict_default(model_input, **kwargs)
+    def predict(self, model_input: list[Resource], params: dict[str, Any] | None = None) -> PredictionResult:
+        return self.another_model.predict(model_input, params)
+    
+    def get_supported_modes(self) -> list[str]:
+        return self.another_model.get_supported_modes()
+    
+    def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
+        return self.another_model.predict_default(model_input, **kwargs)
+    

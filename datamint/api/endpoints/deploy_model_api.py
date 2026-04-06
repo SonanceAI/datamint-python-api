@@ -1,4 +1,6 @@
 import httpx
+
+from datamint.exceptions import ResourceNotFoundError
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.deployjob import DeployJob
 
@@ -16,7 +18,13 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
         data = response.json()
         if 'job_id' in data:
             data['id'] = data.pop('job_id')
-        return self._init_entity_obj(**data)
+        self._validate_uuid(data['id'])
+        try:
+            return self._init_entity_obj(**data)
+        except ResourceNotFoundError as e:
+            e.resource_type = 'DeployJob'
+            e.params = {'id': entity_id}
+            raise
 
     def start(self,
               model_name: str,

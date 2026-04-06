@@ -1,10 +1,14 @@
-from typing import Sequence, Literal, TYPE_CHECKING, overload
+from typing import Literal, TYPE_CHECKING, overload
+from collections.abc import Sequence
+
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
 import httpx
 from datamint.entities.resource import Resource
+from datamint.exceptions import EntityAlreadyExistsError
 if TYPE_CHECKING:
-    from .resources_api import ResourcesApi
+    from . import AnnotationSetsApi, ResourcesApi
+    from datamint.entities.annotations.annotation_spec import AnnotationSpec
 
 
 class ProjectsApi(CRUDEntityApi[Project]):
@@ -20,9 +24,11 @@ class ProjectsApi(CRUDEntityApi[Project]):
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
-        from .resources_api import ResourcesApi
+        from . import AnnotationSetsApi, ResourcesApi
+
         super().__init__(config, Project, 'projects', client)
         self.resources_api = resources_api or ResourcesApi(config, client, projects_api=self)
+        self.annotationsets_api = AnnotationSetsApi(config, client)
 
     def get_project_resources(self, project: Project | str) -> list[Resource]:
         """Get resources associated with a specific project.
@@ -38,7 +44,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
         resources = [self.resources_api._init_entity_obj(**item) for item in resources_data]
         return resources
 
-
     @overload
     def create(self,
                name: str,
@@ -48,7 +53,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: Literal[True] = True
+               return_entity: Literal[True] = True,
+               exists_ok: bool = False
                ) -> Project: ...
 
     @overload
@@ -60,7 +66,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: Literal[False]
+               return_entity: Literal[False],
+               exists_ok: bool = False
                ) -> str: ...
 
     def create(self,
@@ -71,7 +78,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               return_entity: bool = True
+               return_entity: bool = True,
+               exists_ok: bool = False
                ) -> str | Project:
         """Create a new project.
 
@@ -82,10 +90,19 @@ class ProjectsApi(CRUDEntityApi[Project]):
             is_active_learning: Whether the project is an active learning project or not.
             two_up_display: Allow annotators to display multiple resources for annotation.
             return_entity: Whether to return the created Project instance or just its ID.
+            exists_ok: If ``True``, do not raise an error when a project with the same
+                name already exists. Instead, the existing project is returned when
+                possible.
 
         Returns:
             The id of the created project.
         """
+        proj = self.get_by_name(name, include_archived=True)
+        if proj is not None:
+            if exists_ok:
+                return proj if return_entity else proj.id
+            else:
+                raise EntityAlreadyExistsError(entity_type='Project', params={'name': name})
         resources_ids = resources_ids or []
 
         project_data = {'name': name,
@@ -100,7 +117,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                         "require_review": False,
                         'description': description}
 
-        return self._create(project_data, return_entity=return_entity)
+        return self._create(project_data, return_entity=return_entity, exists_ok=exists_ok)  # type: ignore[return-value]
 
     def get_all(self, limit: int | None = None) -> Sequence[Project]:
         """Get all projects.
@@ -236,3 +253,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                   entity_id=proj_id,
                                   add_path=f'resources/{resource_id}/status',
                                   json=jsondata)
+
+    def get_annotations_specs(self, project: str | Project) -> Sequence['AnnotationSpec']:
+        """Get the annotations specs for a given project.
+
+        Args:
+            project: The project id or Project instance.
+
+        Returns:
+            A sequence of AnnotationSpec instances.
+        """
+
+        if isinstance(project, str):
+            project = self.get_by_id(project)
+        return self.annotationsets_api.get_annotations_specs(project)

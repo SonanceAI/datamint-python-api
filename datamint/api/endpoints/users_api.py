@@ -14,7 +14,8 @@ class UsersApi(CreatableEntityApi[User]):
                password: str | None = None,
                firstname: str | None = None,
                lastname: str | None = None,
-               roles: list[str] | None = None
+               roles: list[str] | None = None,
+               exists_ok: bool = False
                ) -> str:
         """Create a new user.
 
@@ -24,6 +25,9 @@ class UsersApi(CreatableEntityApi[User]):
             firstname: The user's first name.
             lastname: The user's last name.
             roles: List of roles to assign to the user.
+            exists_ok: If ``True``, do not raise an error when a user with the same
+                email already exists. Instead, the existing user's id is returned when
+                possible.
 
         Returns:
             The id of the created user.
@@ -35,4 +39,4 @@ class UsersApi(CreatableEntityApi[User]):
             lastname=lastname,
             roles=roles
         )
-        return self._create(data)
+        return self._create(data, exists_ok=exists_ok)
