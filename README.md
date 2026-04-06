@@ -107,6 +107,17 @@ datamint-upload /path/to/dicoms --recursive --channel "training-data" --publish 
 ```
 It anonymizes by default.
 
+**Upload resources with segmentations and associate them with a deployed model:**
+```bash
+datamint-upload /path/to/dicoms \
+   --recursive \
+   --segmentation_path /path/to/segmentations \
+   --segmentation_names /path/to/segmentation_names.yaml \
+   --ai-model "knee-segmentation-v2" \
+   --publish
+```
+Use `--ai-model` when uploaded segmentation files should be linked to an existing deployed model by name. `--segmentation_names` accepts YAML mappings and ITK-SNAP label export CSV/TXT files.
+
 ### Configuration Management
 
 ```bash
