@@ -26,8 +26,8 @@ class TestImports:
         """Test importing dataset-related modules."""
         # Test direct import of Dataset class
         try:
-            from datamint import Dataset
-            assert Dataset is not None
+            from datamint.dataset import ImageDataset
+            assert ImageDataset is not None
             _LOGGER.info("Successfully imported Dataset from datamint")
         except ImportError as e:
             pytest.fail(f"Failed to import Dataset: {e}")
@@ -79,10 +79,10 @@ class TestImports:
             assert hasattr(datamint, attr), f"Missing attribute {attr} in datamint package"
         
         # Test that classes have expected methods
-        from datamint import Dataset
+        from datamint import ImageDataset
         expected_dataset_methods = ['__getitem__', '__len__']
         for method in expected_dataset_methods:
-            assert hasattr(Dataset, method), f"Missing method {method} in Dataset class"
+            assert hasattr(ImageDataset, method), f"Missing method {method} in ImageDataset class"
 
     def test_version_consistency(self) -> None:
         """Test that version information is consistent and accessible."""

@@ -34,7 +34,9 @@ def get_env_var_name(key: str) -> str:
 def read_config() -> dict[str, Any]:
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as configfile:
-            config = yaml.safe_load(configfile)
+            config = yaml.safe_load(configfile) or {}
+        if not isinstance(config, dict):
+            raise ValueError(f"Invalid configuration format in {CONFIG_FILE}. Expected a mapping.")
         config.update({k: v for k, v in DEFAULT_VALUES.items() if k not in config})
         return config
     return DEFAULT_VALUES.copy()
