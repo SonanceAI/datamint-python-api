@@ -2,7 +2,7 @@ from typing import TypeAlias, Literal, IO, overload
 from collections.abc import Sequence
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
-from datamint.entities.resource import Resource
+from datamint.entities import Project, Resource
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import DatamintException, ItemNotFoundError
 from datamint.api.dto import AnnotationType
@@ -98,7 +98,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                  order_field: ResourceFields | None = None,
                  order_ascending: bool | None = None,
                  channel: str | None = None,
-                 project_name: str | list[str] | None = None,
+                 project_name: Project | str | list[str] | None = None,
                  filename: str | None = None,
                  limit: int | None = None
                  ) -> Sequence[Resource]:
@@ -147,6 +147,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if project_name is not None:
             if isinstance(project_name, str):
                 project_name = [project_name]
+            elif isinstance(project_name, Project):
+                project_name = [project_name.name]
             payload["project"] = json.dumps({'items': project_name,
                                              'filterType': 'intersection'})  # union or intersection
 
@@ -522,7 +524,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                          mung_filename: Sequence[int] | Literal['all'] | None = None,
                          channel: str | None = None,
                          publish: bool = False,
-                         publish_to: str | None = None,
+                         publish_to: Project | str | None = None,
                          segmentation_files: Sequence[Sequence[str] | dict] | None = None,
                          transpose_segmentation: bool = False,
                          modality: str | None = None,
@@ -548,7 +550,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 ''all'' keeps all parts.
             channel (Optional[str]): The channel to upload the resources to. An arbitrary name to group the resources.
             publish (bool): Whether to directly publish the resources or not. They will have the 'published' status.
-            publish_to (Optional[str]): The project name or id to publish the resources to.
+            publish_to (Optional[Project | str]): The project to publish the resources to. Can be a Project object, project name, or project ID.
                 They will have the 'published' status and will be added to the project.
                 If this is set, `publish` parameter is ignored.
             segmentation_files (Optional[list[Union[list[str], dict]]]): The segmentation files to upload.
@@ -581,12 +583,15 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if publish_to:
             publish = True
             # Check if project exists
-            proj = self.projects_api.get_by_name(publish_to)
-            if proj is None:
-                try:
-                    proj = self.projects_api.get_by_id(publish_to)
-                except Exception:
-                    pass
+            if isinstance(publish_to, Project):
+                proj = publish_to
+            else:
+                proj = self.projects_api.get_by_name(publish_to)
+                if proj is None:
+                    try:
+                        proj = self.projects_api.get_by_id(publish_to)
+                    except Exception:
+                        pass
                 if proj is None:
                     raise ItemNotFoundError('Project', {'name_or_id': publish_to})
 
