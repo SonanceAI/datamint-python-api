@@ -61,13 +61,17 @@ class ClassificationModule(DatamintLightningModule):
 
     def _compute_unreduced_loss(self, logits: Tensor, labels: Tensor) -> Tensor:
         """Compute per-sample loss without reduction."""
-        if 'reduction' in inspect.signature(self.criterion.forward).parameters:
+        if not hasattr(self, '_criterion_supports_reduction_none'):
+            self._criterion_supports_reduction_none = 'reduction' in inspect.signature(self.criterion.forward).parameters
+            if not self._criterion_supports_reduction_none:
+                warnings.warn(
+                    f"Loss function {self.criterion.__class__.__name__} does not support 'reduction' argument; "
+                    "per-sample logging will be inaccurate.",
+                )
+
+        if self._criterion_supports_reduction_none:
             return self.criterion(logits, labels, reduction='none')
         else:
-            warnings.warn(
-                f"Loss function {self.criterion.__class__.__name__} does not support 'reduction' argument; "
-                "per-sample logging will be inaccurate.",
-            )
             return self.criterion(logits, labels).unsqueeze(0).expand(logits.shape[0])
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:

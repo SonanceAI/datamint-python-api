@@ -195,6 +195,7 @@ class DatamintDataModule(L.LightningDataModule):
             drop_last=self._drop_last_train,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
+            persistent_workers=True,
             collate_fn=self.dataset.get_collate_fn(),
         )
 
@@ -207,6 +208,7 @@ class DatamintDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
+            persistent_workers=True,
             collate_fn=self.dataset.get_collate_fn(),
         )
 
@@ -218,6 +220,7 @@ class DatamintDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
+            persistent_workers=True,
             collate_fn=self.dataset.get_collate_fn(),
         )
 

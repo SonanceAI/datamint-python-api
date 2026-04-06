@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 import lightning as L
 from torch import Tensor
+import torch
 
 from datamint.mlflow.flavors.model import BaseDatamintModel, ModelSettings
 from mlflow.pyfunc.model import PythonModelContext
@@ -35,6 +36,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         BaseDatamintModel.__init__(self, settings=settings)
         self._log_sample_metrics: bool = False
         self._sample_buffer: list[dict[str, Any]] = []
+        self._deferred_sample_batches: list[dict[str, Any]] = []
         self.mlflow_model_id: str | None = None  # Injected by modelcheckpoint at runtime. FIXME: This is a bit hacky
 
     # ------------------------------------------------------------------
@@ -52,29 +54,42 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         loss_unreduced: Tensor,
         stage: str,
     ) -> None:
-        """Collect per-sample metrics into ``_sample_buffer``.
+        """Collect per-sample metrics into a deferred buffer.
 
         Called from ``_common_step`` when ``_log_sample_metrics`` is enabled.
+        Async CPU transfers are initiated but **not** synchronized here;
+        resolution happens in :meth:`_resolve_deferred_batches` with a
+        single sync before the metrics are flushed to MLflow.
         """
         resources = batch.get('resource', [])
         confidences = self._compute_sample_confidence(logits)
         sample_metrics = self._compute_sample_metrics(logits, batch)
 
+        # Transfer all tensors to CPU asynchronously — no sync per batch.
+        loss_cpu = loss_unreduced.detach().to('cpu', non_blocking=True)
+        confidences_cpu = {key: vals.detach().to('cpu', non_blocking=True) for key, vals in confidences.items()}
+        sample_metrics_cpu = {key: vals.detach().to('cpu', non_blocking=True) for key, vals in sample_metrics.items()}
+
+        # Extract resource metadata (CPU-only, no GPU sync needed)
+        resource_meta: list[dict[str, Any]] = []
         for i in range(logits.shape[0]):
-            entry: dict[str, Any] = {}
+            meta: dict[str, Any] = {}
             if i < len(resources):
                 res = resources[i]
                 if hasattr(res, 'parent_resource'):
-                    entry['resource_id'] = res.parent_resource.id
-                    entry['slice_index'] = res.slice_index
+                    meta['resource_id'] = res.parent_resource.id
+                    meta['slice_index'] = res.slice_index
                 else:
-                    entry['resource_id'] = res.id
-            entry['loss'] = loss_unreduced[i].item()
-            for key, vals in confidences.items():
-                entry[key] = vals[i].item()
-            for key, vals in sample_metrics.items():
-                entry[key] = vals[i].item()
-            self._sample_buffer.append(entry)
+                    meta['resource_id'] = res.id
+            resource_meta.append(meta)
+
+        self._deferred_sample_batches.append({
+            'resource_meta': resource_meta,
+            'loss': loss_cpu,
+            'confidences': confidences_cpu,
+            'sample_metrics': sample_metrics_cpu,
+            'batch_size': logits.shape[0],
+        })
 
     def _compute_sample_confidence(self, logits: Tensor) -> dict[str, Tensor]:
         """Return per-sample confidence scores. Subclasses must override."""
@@ -84,8 +99,41 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
         """Return per-sample metric values. Subclasses must override."""
         return {}
 
+    def _resolve_deferred_batches(self) -> None:
+        """Resolve all deferred async-transfer batches into ``_sample_buffer``.
+
+        Issues a single ``torch.cuda.synchronize()`` to ensure all
+        ``non_blocking`` CPU transfers have completed, then indexes into
+        the batch tensors to build per-sample entries.
+        """
+        if not self._deferred_sample_batches:
+            return
+
+        # One sync for all accumulated batches instead of one per batch.
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        for batch_data in self._deferred_sample_batches:
+            resource_meta = batch_data['resource_meta']
+            loss_cpu = batch_data['loss']
+            confidences_cpu = batch_data['confidences']
+            sample_metrics_cpu = batch_data['sample_metrics']
+
+            for i in range(batch_data['batch_size']):
+                entry = dict(resource_meta[i])
+                entry['loss'] = loss_cpu[i]
+                for key, vals in confidences_cpu.items():
+                    entry[key] = vals[i]
+                for key, vals in sample_metrics_cpu.items():
+                    entry[key] = vals[i]
+                self._sample_buffer.append(entry)
+
+        self._deferred_sample_batches.clear()
+
     def _flush_sample_metrics_to_mlflow(self) -> None:
         """Write accumulated sample data to MLflow and clear the buffer."""
+        self._resolve_deferred_batches()
+
         if not self._sample_buffer:
             return
 
@@ -182,6 +230,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
     def on_test_start(self) -> None:
         self.enable_sample_logging(True)
         self._sample_buffer.clear()
+        self._deferred_sample_batches.clear()
 
     def on_test_epoch_end(self) -> None:
         self._flush_sample_metrics_to_mlflow()

@@ -180,14 +180,17 @@ class BaseTrainer(ABC):
             )
 
             # 6. Train
+            _LOGGER.info("Starting training...")
             self._lightning_trainer.fit(self.model, datamodule=self.datamodule)
 
             # 7. Test
+            _LOGGER.info("Starting test...")
             test_results = self._lightning_trainer.test(datamodule=self.datamodule)
 
             # 8. Build deploy adapter (only needed when the model is not already a DatamintModel)
             adapter = None
             if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
+                _LOGGER.debug("Building deploy adapter...")
                 adapter = self._build_deploy_adapter()
 
         return {

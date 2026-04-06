@@ -105,22 +105,22 @@ class SegmentationModule(DatamintLightningModule):
         """
         b = logits.shape[0]
 
-        # Try criterion with reduction='none' — inspect first to avoid a
-        # costly forward pass that raises an exception at runtime.
-        criterion_params = inspect.signature(self.criterion.forward).parameters
-        if 'reduction' in criterion_params:
+        if not hasattr(self, '_criterion_supports_reduction_none'):
+            self._criterion_supports_reduction_none = 'reduction' in inspect.signature(self.criterion.forward).parameters
+            if not self._criterion_supports_reduction_none:
+                warnings.warn(
+                    f"{type(self.criterion).__name__} does not accept reduction='none'; "
+                    "falling back to binary_cross_entropy_with_logits for per-sample loss.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        if self._criterion_supports_reduction_none:
             loss = self.criterion(logits, masks.float(), reduction='none')
             # Flatten spatial dims if needed so result is (B,).
             if loss.dim() > 1:
                 loss = loss.reshape(b, -1).mean(dim=1)
             return loss
-        else:
-            warnings.warn(
-                f"{type(self.criterion).__name__} does not accept reduction='none'; "
-                "falling back to binary_cross_entropy_with_logits for per-sample loss.",
-                UserWarning,
-                stacklevel=2,
-            )
 
         # Fallback: BCE with logits averaged over spatial dims per sample.
         logits_flat = logits.reshape(b, -1)

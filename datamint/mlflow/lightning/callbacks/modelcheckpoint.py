@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from lightning.pytorch.callbacks import ModelCheckpoint
 from pathlib import Path
 from weakref import proxy
@@ -13,9 +14,11 @@ import mlflow.exceptions
 import mlflow.pytorch
 import mlflow.data.dataset
 import mlflow.entities.dataset
+import copy
 import logging
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, Future
 from lightning.pytorch.loggers import MLFlowLogger
 
 if TYPE_CHECKING:
@@ -25,14 +28,17 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-def help_infer_signature(x):
+def _prepare_signature_sample(x: Any) -> Any:
     import torch
+
     if isinstance(x, torch.Tensor):
         return x.detach().cpu().numpy()
-    elif isinstance(x, dict):
-        return {k: help_infer_signature(v) for k, v in x.items()}
-    elif isinstance(x, (list, tuple)):
-        return type(x)(help_infer_signature(v) for v in x)
+    elif isinstance(x, Mapping):
+        return {k: _prepare_signature_sample(v) for k, v in x.items()}
+    elif isinstance(x, list):
+        return [_prepare_signature_sample(v) for v in x]
+    elif isinstance(x, tuple):
+        return tuple(_prepare_signature_sample(v) for v in x)
     return x
 
 
@@ -101,17 +107,58 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         self.extra_pip_requirements = extra_pip_requirements or []
         self._last_registered_state_hash: str | None = None
         self._has_been_trained: bool = False
+        self._signature_forward_wrapped: bool = False
+        self._logging_executor: ThreadPoolExecutor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix='mlflow-log')
+        self._logging_future: Future | None = None
+        self._pending_log_model: nn.Module | None = None
+
+    def _wait_for_pending_logging(self) -> None:
+        """Block until any in-flight background model logging completes."""
+        if self._logging_future is None:
+            return
+        try:
+            self._logging_future.result()
+        except Exception:
+            _LOGGER.exception("Background model logging failed")
+        finally:
+            self._logging_future = None
+        # Inject model_id into the original training model
+        if self._pending_log_model is not None:
+            self._inject_model_id(self._pending_log_model)
+            self._pending_log_model = None
+
+    def _inject_model_id(self, model: 'nn.Module | L.LightningModule | BaseDatamintModel') -> None:
+        """Inject the MLflow model ID into the model, if it supports it."""
+        if self._last_model_id is None:
+            return
+        if hasattr(model, 'set_mlflow_model_id'):
+            model.set_mlflow_model_id(self._last_model_id)
+        elif hasattr(model, 'mlflow_model_id'):
+            setattr(model, 'mlflow_model_id', self._last_model_id)
+
+    def _prepare_loggable_model(self, model: nn.Module) -> nn.Module:
+        """Prepare a model for MLflow logging, potentially creating a CPU copy.
+
+        Called on the main thread before async logging.
+        Override in subclasses that need thread-safe model snapshots.
+        Returns the same model by default (sync logging).
+        """
+        return model
 
     def get_last_model_id(self) -> str | None:
         """Get the MLflow model ID of the last saved model, if available."""
+        self._wait_for_pending_logging()
         return self._last_model_id
 
     def get_last_model_uri(self) -> str | None:
         """Get the MLflow model URI of the last saved model, if available."""
+        self._wait_for_pending_logging()
         return self._last_model_uri
 
     def get_all_saved_models(self):
         """Get a list of all MLflow ModelInfo objects for models logged from this callback."""
+        self._wait_for_pending_logging()
         if self._last_model_uri is None:
             return []
         logger = _get_MLFlowLogger()
@@ -173,6 +220,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         return False
 
     def _save_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
+        self._wait_for_pending_logging()
         trainer.save_checkpoint(filepath, self.save_weights_only)
 
         self._last_global_step_saved = trainer.global_step
@@ -183,7 +231,15 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
             for logger in trainer.loggers:
                 logger.after_save_checkpoint(proxy(self))
                 if isinstance(logger, MLFlowLogger) and not self.log_model_at_end_only:
-                    self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
+                    loggable = self._prepare_loggable_model(trainer.model)
+                    if loggable is not trainer.model:
+                        # Snapshot created; safe to log in background thread
+                        self._pending_log_model = trainer.model
+                        self._logging_future = self._logging_executor.submit(
+                            self.log_model_to_mlflow, loggable, logger.run_id
+                        )
+                    else:
+                        self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
 
     def log_additional_metadata(self, logger: MLFlowLogger | L.Trainer,
                                 additional_metadata: dict) -> None:
@@ -218,6 +274,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         raise NotImplementedError
 
     def _remove_checkpoint(self, trainer: L.Trainer, filepath: str) -> None:
+        self._wait_for_pending_logging()
         super()._remove_checkpoint(trainer, filepath)
         # remove the checkpoint from mlflow
         if trainer.is_global_zero:
@@ -229,6 +286,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
 
     def register_model(self, trainer=None):
         """Register the model in MLFlow Model Registry."""
+        self._wait_for_pending_logging()
         if not self._should_register_model():
             return self.registered_model_info
 
@@ -248,6 +306,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         return self.registered_model_info
 
     def _update_signature(self, trainer):
+        self._wait_for_pending_logging()
         if self._inferred_signature is None:
             _LOGGER.warning("No signature found. Cannot update signature.")
             return
@@ -295,11 +354,8 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
                                model_path=modelinfo.artifact_path,
                                run_id=run_id)
 
-        # inject model_id into the model if it has a set_model_id method (e.g. for logging sample metrics with model context)
-        if hasattr(model, 'set_mlflow_model_id'):
-            model.set_mlflow_model_id(self._last_model_id)
-        elif hasattr(model, 'mlflow_model_id'):
-            setattr(model, 'mlflow_model_id', self._last_model_id)
+        self._inject_model_id(model)
+        _LOGGER.debug("Finalized logged model with ID %s and URI %s", self._last_model_id, self._last_model_uri)
 
     def _wrap_forward(self, pl_module: nn.Module) -> None:
         """Intercept the first forward call to infer the MLflow model signature.
@@ -321,6 +377,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
 
     def on_train_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_train_end(trainer, pl_module)
+        self._wait_for_pending_logging()
 
         if self.log_model_at_end_only and trainer.is_global_zero:
             logger = _get_MLFlowLogger(trainer)
@@ -369,11 +426,13 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
             self.last_saved_model_info = None
 
     def on_test_start(self, trainer, pl_module):
+        self._wait_for_pending_logging()
         self._wrap_forward(pl_module)
         self._restore_model_uri(trainer)
         return super().on_test_start(trainer, pl_module)
 
     def on_predict_start(self, trainer, pl_module):
+        self._wait_for_pending_logging()
         self._wrap_forward(pl_module)
         self._restore_model_uri(trainer)
         return super().on_predict_start(trainer, pl_module)
@@ -480,24 +539,43 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
 
     def _wrap_forward(self, pl_module: nn.Module) -> None:
         """Wrap ``pl_module.forward`` to infer the MLflow signature on the first call."""
+        if self._inferred_signature is not None:
+            return
+        if self._signature_forward_wrapped:
+            return
+
         original_forward = pl_module.forward
+        self._signature_forward_wrapped = True
 
         def wrapped_forward(x, *args, **kwargs):
             self._inferred_signature = mlflow.models.infer_signature(
-                model_input=help_infer_signature(x),
+                model_input=_prepare_signature_sample(x),
                 params=self._infer_forward_defaults(pl_module),
             )
 
             # Restore original forward and call it
             pl_module.forward = original_forward
+            self._signature_forward_wrapped = False
             out = original_forward(x, *args, **kwargs)
 
-            output_sig = mlflow.models.infer_signature(model_output=help_infer_signature(out))
+            output_sig = mlflow.models.infer_signature(model_output=_prepare_signature_sample(out))
             self._inferred_signature.outputs = output_sig.outputs
 
             return out
 
         pl_module.forward = wrapped_forward
+
+    def _prepare_loggable_model(self, model: nn.Module) -> nn.Module:
+        """Create a CPU deep copy for thread-safe background logging.
+
+        The training model remains on its original device, avoiding
+        a costly GPU synchronisation and host-to-device transfer.
+        """
+        import torch
+        with torch.no_grad():
+            cpu_model = copy.deepcopy(model)
+            cpu_model.cpu()
+        return cpu_model
 
     def log_model_to_mlflow(self,
                             model: 'nn.Module | L.LightningModule | BaseDatamintModel',
@@ -514,12 +592,21 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
             _LOGGER.warning("No checkpoint saved yet. Cannot log model to MLFlow.")
             return
 
-        orig_device = next(model.parameters()).device
-        model = model.cpu()
+        import torch
 
-        _LOGGER.debug("Logging model using pytorch flavor with name %s", Path(self._last_checkpoint_saved).stem)
+        # If model is on a GPU, create a CPU copy instead of moving the
+        # training model off-device, avoiding a costly sync + H2D transfer.
+        device = next(model.parameters()).device
+        if device.type != 'cpu':
+            with torch.no_grad():
+                model_to_log = copy.deepcopy(model)
+                model_to_log.cpu()
+        else:
+            model_to_log = model
+
+        _LOGGER.info("Logging model using pytorch flavor with name %s", Path(self._last_checkpoint_saved).stem)
         modelinfo = mlflow.pytorch.log_model(
-            pytorch_model=model,
+            pytorch_model=model_to_log,
             name=Path(self._last_checkpoint_saved).stem,
             signature=self._inferred_signature,
             run_id=run_id,
@@ -527,7 +614,8 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
             code_paths=self.code_paths,
         )
 
-        model.to(device=orig_device)
+        if model_to_log is not model:
+            del model_to_log
         self._finalize_logged_model(modelinfo, run_id, model=model)
 
 
@@ -556,7 +644,7 @@ class MLFlowDatamintModelCheckpoint(_BaseMLFlowModelCheckpoint):
             return
 
         from datamint.mlflow.flavors import datamint_flavor
-        _LOGGER.debug("Logging model using datamint flavor with name %s", Path(self._last_checkpoint_saved).stem)
+        _LOGGER.info("Logging model using datamint flavor with name %s", Path(self._last_checkpoint_saved).stem)
         modelinfo = datamint_flavor.log_model(
             model,
             name=Path(self._last_checkpoint_saved).stem,
