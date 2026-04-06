@@ -94,7 +94,7 @@ if TYPE_CHECKING:
 else:
     if mlflow_utils.is_tracking_uri_set():
         _LOGGER.warning("MLflow tracking URI is already set before patching get_tracking_uri.")
-    setup_mlflow_environment(set_mlflow=False)
+    _SETUP_CALLED_SUCCESSFULLY = setup_mlflow_environment(set_mlflow=False)
     # Replace the original function with our patched version
     mlflow_utils.get_tracking_uri = _patched_get_tracking_uri
     try:
