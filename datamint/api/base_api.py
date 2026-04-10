@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PAGE_LIMIT = 5000
+_ASYNC_REQUEST_LIMIT = 20
 
 
 @dataclass
@@ -77,7 +78,7 @@ class BaseApi:
         self._owns_client = client is None  # Track if we created the client
         self._pid = os.getpid()  # Track PID to detect DataLoader worker forks
         self.client = client or BaseApi._create_client(config)
-        self.semaphore = asyncio.Semaphore(20)
+        self.semaphore = asyncio.Semaphore(_ASYNC_REQUEST_LIMIT)
         self._api_instance: 'Api | None' = None  # Injected by Api class
         self._aiohttp_connector: aiohttp.TCPConnector | None = None
         self._aiohttp_session: aiohttp.ClientSession | None = None
@@ -154,7 +155,7 @@ class BaseApi:
         import ssl
         import certifi
 
-        limit = 20
+        limit = _ASYNC_REQUEST_LIMIT
         ttl_dns_cache = 300
 
         if self.config.verify_ssl is False:
@@ -180,7 +181,7 @@ class BaseApi:
             return self._aiohttp_session
 
         # (Re)create connector and session
-        self._aiohttp_connector = self._create_aiohttp_connector(force_close=False)
+        self._aiohttp_connector = self._create_aiohttp_connector(force_close=True)
         timeout = aiohttp.ClientTimeout(total=self.config.timeout)
         self._aiohttp_session = aiohttp.ClientSession(connector=self._aiohttp_connector, timeout=timeout)
         return self._aiohttp_session
@@ -297,7 +298,6 @@ class BaseApi:
             # Invalidate any inherited aiohttp session as well.
             self._aiohttp_session = None
             self._aiohttp_connector = None
-
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Make HTTP request with error handling and retries.
@@ -546,6 +546,7 @@ class BaseApi:
                     self._raise_ssl_error(e)
                 raise
             finally:
+                # the async context manager will automatically run this after exiting the with-block.
                 if response is not None:
                     response.release()
 

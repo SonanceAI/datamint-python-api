@@ -6,18 +6,19 @@ from datamint.entities import Project, Resource
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import DatamintException, ItemNotFoundError
 from datamint.api.dto import AnnotationType
+from datamint.utils.collection_utils import ChainedSequence
 import httpx
 from datetime import date
 import json
 import logging
 import pydicom
-from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report, GeneratorWithLength
+from pydicom import config as pydicom_config
+from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
 from medimgkit import dicom_utils, standardize_mimetype
 from medimgkit.io_utils import is_io_object, peek
 from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
 from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME, NIFTI_MIMES
 import os
-import itertools
 from tqdm.auto import tqdm
 import asyncio
 import aiohttp
@@ -40,6 +41,7 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 
 
 _LARGE_FILE_THRESHOLD = 300 * 1024 * 1024  # 300 MB
+_UPLOAD_BATCH_SIZE = 20
 
 
 def _infinite_gen(x):
@@ -47,14 +49,18 @@ def _infinite_gen(x):
         yield x
 
 
-async def _tracked_file_gen(file_obj: IO, pbar: tqdm, chunk_size: int = 65536):
-    """Async generator that reads a file in chunks and updates a bytes progress bar."""
-    while True:
-        chunk = file_obj.read(chunk_size)
-        if not chunk:
-            break
-        pbar.update(len(chunk))
-        yield chunk
+class _ProgressFileIO(io.IOBase):
+    """File wrapper that updates a progress bar on read."""
+    def __init__(self, f: IO, pbar: tqdm):
+        self._f = f
+        self._pbar = pbar
+    def read(self, size=-1):
+        chunk = self._f.read(size)
+        if chunk:
+            self._pbar.update(len(chunk))
+        return chunk
+    def __getattr__(self, attr):
+        return getattr(self._f, attr)
 
 
 def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
@@ -234,8 +240,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             _LOGGER.info(f"Assembled {new_len} dicom files out of {orig_len} files.")
             mapping_idx = [None] * len(files_path)
 
-            files_path = GeneratorWithLength(itertools.chain(dicoms_files_path, other_files_path),
-                                             length=new_len + len(other_files_path))
+            files_path = ChainedSequence(dicoms_files_path, other_files_path)
+
             assembled = True
             for orig_idx, value in zip(dicom_original_idxs, dicoms_files_path.inverse_mapping_idx):
                 mapping_idx[orig_idx] = value
@@ -375,7 +381,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             file_key = 'resource'
             form.add_field('source', 'api')
 
-            file_payload = _tracked_file_gen(f, upload_pbar) if upload_pbar is not None else f
+            file_payload = _ProgressFileIO(f, upload_pbar) if upload_pbar is not None else f
             form.add_field(file_key, file_payload, filename=filename, content_type=mimetype)
             form.add_field('source_filepath', source_filepath)  # full path to the file
             if mimetype is not None:
@@ -407,13 +413,14 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                             timeout=timeout)
             if 'error' in resp_data:
                 raise DatamintException(resp_data['error'])
-            _LOGGER.debug(f"Response on uploading {filename}: {resp_data}")
+            _LOGGER.debug("Response on uploading %s: %s", filename, resp_data)
             return resp_data['id']
         except Exception as e:
             if 'filename' in locals():
                 _LOGGER.error(f"Error uploading {filename}: {e}")
             else:
                 _LOGGER.error(f"Error uploading {file_path}: {e}")
+            _LOGGER.debug("Exception details", exc_info=True)
             raise
         finally:
             if upload_pbar is not None:
@@ -444,7 +451,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             session: Optional aiohttp session. If None, uses a shared session managed by
                 this API instance. Callers should NOT close a session they pass in until
                 all async operations complete, as nested calls may reuse it.
-        
+
         Note:
             Session ownership: When session=None (default), a long-lived shared session
             is automatically used and managed. When explicitly passed, the caller retains
@@ -463,8 +470,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         # This prevents connection churn and intermittent SSL shutdown timeouts.
         session = session or self._get_aiohttp_session()
 
-        async def __upload_single_resource(file_path, segfiles: dict[str, list | dict],
+        async def __upload_single_resource(all_files_path, index: int,
+                                           segfiles: dict[str, list | dict],
                                            metadata_file: str | dict | None):
+            # all_files_path may be a costly generator
+            with pydicom_config.disable_value_validation():
+                file_path = all_files_path[index]
             name = file_path.name if is_io_object(file_path) else file_path
             name = os.path.basename(name)
             rid = await self._upload_single_resource_async(
@@ -508,14 +519,21 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             return rid
 
         try:
-            tasks = [__upload_single_resource(f, segfiles, metadata_file)
-                     for f, segfiles, metadata_file in zip(files_path, segmentation_files, metadata_files)]
+            _LOGGER.debug("Preparing upload tasks for resources...")
+            tasks = [__upload_single_resource(files_path, i, segfiles, metadata_file)
+                     for i, segfiles, metadata_file in zip(range(len(files_path)), segmentation_files, metadata_files)]
         except ValueError:
             msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
             _LOGGER.error(msg)
             _USER_LOGGER.error(msg)
             raise
-        return await asyncio.gather(*tasks, return_exceptions=on_error == 'skip')
+        _LOGGER.debug("Starting uploads...")
+        results = []
+        for i in range(0, len(tasks), _UPLOAD_BATCH_SIZE):
+            batch = tasks[i:i + _UPLOAD_BATCH_SIZE]
+            batch_results = await asyncio.gather(*batch, return_exceptions=on_error == 'skip')
+            results.extend(batch_results)
+        return results
 
     def _validate_upload_params(
         self,
@@ -563,7 +581,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if metadata is not None:
             metadata = filtered_metadata
         if old_size != len(filtered_files):
-            _LOGGER.info(f"Discarded {old_size - len(filtered_files)} DICOM report files from upload.")
+            _LOGGER.info("Discarded %d DICOM report files from upload.", old_size - len(filtered_files))
         return filtered_files, metadata
 
     def _normalize_metadata(
@@ -716,6 +734,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         metadata = self._normalize_metadata(metadata, files_path)
 
         if assemble_dicoms:
+            _LOGGER.debug('Assembling DICOM files if necessary...')
             files_path, assembled, mapping_idx = self._assemble_dicoms(files_path, progress_bar=progress_bar)
         else:
             assembled = False
@@ -725,8 +744,10 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if n_files <= 1:
             progress_bar = False
 
+        _LOGGER.debug('Normalizing segmentation_files parameter...')
         normalized_seg_files = self._normalize_segmentation_files(segmentation_files, files_path, assembled)
 
+        _LOGGER.debug('Starting asynchronous upload of resources...')
         resource_ids = self._run_async_upload(
             files_path=files_path,
             n_files=n_files,
@@ -746,13 +767,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             metadata_files=metadata,
         )
 
-        _LOGGER.info(f"Resources uploaded: {resource_ids}")
+        # _LOGGER.info("Resources uploaded: %s", resource_ids)
 
         if proj is not None:
             self._post_upload_add_to_project(resource_ids, proj, on_error)
 
         if mapping_idx:
-            _LOGGER.debug(f"Mapping indices for DICOM files: {mapping_idx}")
             resource_ids = [resource_ids[idx] for idx in mapping_idx]
 
         return resource_ids
@@ -996,6 +1016,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                auto_convert: Literal[True] = True,
                                add_extension: Literal[False] = False
                                ) -> ImagingData: ...
+
     @overload
     def download_resource_file(self,
                                resource: str | Resource,
@@ -1004,6 +1025,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                *,
                                add_extension: Literal[True]
                                ) -> tuple[ImagingData, str]: ...
+
     @overload
     def download_resource_file(self,
                                resource: str | Resource,
@@ -1012,7 +1034,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                auto_convert: Literal[False],
                                add_extension: Literal[False] = False
                                ) -> bytes: ...
-    
+
     @overload
     def download_resource_file(self,
                                resource: str | Resource,
@@ -1129,7 +1151,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             _LOGGER.info("All resources are already cached.")
             return
 
-        _LOGGER.info(f"Caching {len(resources_to_cache)} of {len(resources)} resources...")
+        _LOGGER.info("Caching %d of %d resources...", len(resources_to_cache), len(resources))
 
         if progress_bar:
             pbar = tqdm(total=len(resources_to_cache), desc="Caching resources", unit="file")
@@ -1147,7 +1169,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         finally:
             if pbar:
                 pbar.close()
-        _LOGGER.info(f"Successfully cached {len(resources_to_cache)} resources.")
+        _LOGGER.info("Successfully cached %d resources.", len(resources_to_cache))
 
     def download_resource_frame(self,
                                 resource: str | Resource,
