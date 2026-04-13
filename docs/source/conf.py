@@ -10,7 +10,7 @@ import importlib.metadata
 
 project = 'DatamintAPI'
 
-copyright = '2024, Sonance Team'
+copyright = '2024-2026, Sonance Team'
 author = 'Sonance Team'
 
 # The full version, including alpha/beta/rc tags

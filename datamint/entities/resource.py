@@ -157,6 +157,11 @@ class Resource(BaseEntity):
 
         Returns:
             File data (format depends on auto_convert and file type)
+
+        Example:
+            >>> resource = api.resources.get_list(project_name="My Project")[0]
+            >>> data = resource.fetch_file_data(use_cache=True)
+            >>> resource.fetch_file_data(save_path="local_copy")
         """
         # Version info for cache validation
         version_info = self._generate_version_info()
@@ -236,7 +241,13 @@ class Resource(BaseEntity):
         self,
         annotation_type: 'AnnotationType | str | None' = None
     ) -> Sequence['Annotation']:
-        """Get annotations associated with this resource."""
+        """Get annotations associated with this resource.
+
+        Example:
+            >>> resource = api.resources.get_list(project_name="My Project")[0]
+            >>> annotations = resource.fetch_annotations(annotation_type="segmentation")
+            >>> [annotation.name for annotation in annotations]
+        """
 
         annotations = self._api.get_annotations(self, annotation_type=annotation_type)
         return annotations

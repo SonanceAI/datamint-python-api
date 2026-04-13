@@ -42,3 +42,35 @@ Users API
    :members:
    :undoc-members:
    :show-inheritance:
+
+Annotation Sets API
+-------------------
+
+.. automodule:: datamint.api.endpoints.annotationsets_api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Models API
+----------
+
+.. automodule:: datamint.api.endpoints.models_api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Deploy Model API
+----------------
+
+.. automodule:: datamint.api.endpoints.deploy_model_api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Inference API
+-------------
+
+.. automodule:: datamint.api.endpoints.inference_api
+   :members:
+   :undoc-members:
+   :show-inheritance:

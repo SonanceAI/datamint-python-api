@@ -117,19 +117,23 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Example:
             .. code-block:: python
 
+                resource = api.resources.get_list(project_name='Liver Review')[0]
+
                 # Get all annotations for a single resource
-                annotations = api.annotations.get_list(resource='resource_id')
+                annotations = api.annotations.get_list(resource=resource)
 
                 # Get annotations with filters
-                annotations = api.annotations.get_list(
-                    resource='resource_id',
+                published_segmentations = api.annotations.get_list(
+                    resource=resource,
                     annotation_type='segmentation',
                     status='published'
                 )
 
                 # Get annotations for multiple resources
-                annotations = api.annotations.get_list(
-                    resource=['resource_id_1', 'resource_id_2', 'resource_id_3']
+                resources = api.resources.get_list(project_name='Liver Review')[:3]
+                annotations_by_resource = api.annotations.get_list(
+                    resource=resources,
+                    group_by_resource=True,
                 )
         """
         def group_annotations_by_resource(annotations: Sequence[Annotation],
@@ -415,16 +419,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Raises:
             DatamintException: If the upload fails.
 
-        Example:
-            .. code-block:: python
-
-                await ann_api.upload_annotation_file_async(
-                    resource='your_resource_id',
-                    annotation_id='your_annotation_id',
-                    file='path/to/your/file.png',
-                    content_type='image/png',
-                    filename='custom_name.png'
-                )
         """
         f, filename, close_file, content_type = self._prepare_upload_file(file,
                                                                           filename,
@@ -572,16 +566,18 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Example:
             .. code-block:: python
 
+                resource = api.resources.get_list(filename='volume.nii.gz')[0]
+
                 # From NIfTI file
                 api.annotations.upload_volume_segmentation(
-                    resource_id,
+                    resource,
                     'path/to/segmentation.nii.gz',
                     {1: 'liver', 2: 'tumor'}
                 )
 
                 # From numpy array
                 vol = np.zeros((256, 256, 64), dtype=np.uint8)
-                api.annotations.upload_volume_segmentation(resource_id, vol, {1: 'liver'})
+                api.annotations.upload_volume_segmentation(resource, vol, {1: 'liver'})
         """
         import nest_asyncio
 
@@ -660,13 +656,19 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Example:
             .. code-block:: python
 
+                resource = api.resources.get_list(filename='frame.png')[0]
+
                 # Grayscale segmentation
-                api.annotations.upload_segmentations(resource_id, 'path/to/segmentation.png', 'SegmentationName')
+                api.annotations.upload_segmentations(
+                    resource,
+                    'path/to/segmentation.png',
+                    'SegmentationName'
+                )
 
                 # RGB segmentation with numpy array
                 seg_data = np.random.randint(0, 3, size=(3, 2140, 1760, 1), dtype=np.uint8)
                 rgb_names = {(1, 0, 0): 'Red_Region', (0, 1, 0): 'Green_Region', (0, 0, 1): 'Blue_Region'}
-                api.annotations.upload_segmentations(resource_id, seg_data, rgb_names)
+                api.annotations.upload_segmentations(resource, seg_data, rgb_names)
         """
         import nest_asyncio
 
@@ -1082,12 +1084,15 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Example:
             .. code-block:: python
 
-                res_id = 'aa93813c-cef0-4edd-a45c-85d4a8f1ad0d'
-                api.add_line_annotation([0, 0], (10, 30),
-                                        resource_id=res_id,
-                                        identifier='Line1',
-                                        frame_index=2,
-                                        project='Example Project')
+                resource = api.resources.get_list(project_name='Example Project')[0]
+                api.annotations.add_line_annotation(
+                    [0, 0],
+                    (10, 30),
+                    resource_id=resource.id,
+                    identifier='Line1',
+                    frame_index=2,
+                    project='Example Project',
+                )
         """
 
         if project is not None and worklist_id is not None:

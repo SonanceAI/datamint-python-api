@@ -11,6 +11,7 @@ Overview
 
 Key integration features:
 
+- **ImageDataset / VolumeDataset / VideoDataset**: Modular, PyTorch-compatible datasets for 2D images, 3D volumes, and video sequences
 - **DatamintDataModule**: Lightning-compatible data module
 - **MLFlowModelCheckpoint**: Advanced model checkpointing with MLflow integration
 - **Automatic Experiment Tracking**: Seamless logging and model registration
@@ -26,30 +27,30 @@ Basic PyTorch Usage
 
    import torch
    from torch.utils.data import DataLoader
-   from datamint import Dataset
-   
-   # Load dataset. This is a PyTorch-compatible dataset that can be used directly.
-   dataset = Dataset(
-       project_name="liver-segmentation",
-       return_annotations=True,
-       return_frame_by_frame=True,
-       include_unannotated=False
+   from datamint.dataset import ImageDataset, VolumeDataset
+
+   # 2D images (X-rays, single-frame DICOM, PNG, JPEG, …)
+   dataset = ImageDataset(
+       project="liver-classification",
+       include_unannotated=False,
    )
-   
-   # Create PyTorch DataLoader
+
+   # 3D volumes (NIfTI, DICOM series, …)
+   # dataset = VolumeDataset(project="ct-liver-segmentation")
+
+   # Create a standard PyTorch DataLoader
    dataloader = DataLoader(
        dataset,
        batch_size=16,
        shuffle=True,
        num_workers=4,
-       collate_fn=dataset.get_collate_fn()
    )
-   
-   # Training loop
+
+   # Training loop – each batch is a dict
    for batch in dataloader:
-       images = batch['image']      # Shape: [B, C, H, W]
-       masks = batch['segmentation'] # Shape: [B, H, W]
-       metadata = batch['metainfo']  # List of dicts
+       images = batch['image']           # Shape: [B, C, H, W]
+       segmentations = batch['segmentations']  # Shape varies by mode
+       metadata = batch['metainfo']      # List of dicts
        # (...)
 
 Dataset Transforms
@@ -59,83 +60,65 @@ Apply transforms for data augmentation and preprocessing:
 
 .. code-block:: python
 
-    import datamint
+    import albumentations as A
     import torch
-    from torchvision.transforms import ToTensor
     from torch.utils.data import DataLoader
+    from datamint.dataset import ImageDataset
 
 
-    class XrayFractureDataset(datamint.Dataset):
+    class XrayFractureDataset(ImageDataset):
         def __getitem__(self, idx):
-            image, dicom_metainfo, metainfo = super().__getitem__(idx)
+            item = super().__getitem__(idx)
 
-            # Get all relevant information from the dicom_metainfo object
-            patient_sex = dicom_metainfo.PatientSex
+            # 'image' is a tensor of shape (C, H, W)
+            image = item['image']
 
-            # Get all relevant information from the metainfo object
-            has_fracture = 'fracture' in metainfo['labels']
-            has_fracture = torch.tensor(has_fracture, dtype=torch.int32)
+            # 'metainfo' is a dict with file/DICOM metadata
+            metainfo = item['metainfo']
 
-            return image, patient_sex, has_fracture
+            has_fracture = 'fracture' in item.get('image_labels', [])
+            label = torch.tensor(has_fracture, dtype=torch.int32)
+
+            return image, label
 
 
     # Create an instance of your custom dataset
-    dataset = XrayFractureDataset(root='data',
-                                  dataset_name='YOUR_DATASET_NAME',
-                                  version='latest',
-                                  api_key='my_api_key',
-                                  transform=ToTensor())
+    dataset = XrayFractureDataset(
+        project='YOUR_PROJECT_NAME',
+        api_key='my_api_key',
+        alb_transform=A.Compose([A.Resize(224, 224)]),
+    )
 
     # Create a DataLoader to handle batching and shuffling of the dataset
-    dataloader = DataLoader(dataset,
-                            batch_size=4,
-                            shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
-    for images, patients_sex, labels in dataloader:
-        images = images.to(device)
-        # labels will already be a tensor of shape (batch_size,) containing 0s and 1s
+    for images, labels in dataloader:
+        # images: (batch_size, C, H, W)
+        # labels: (batch_size,)
+        pass  # (...) do something with the batch
 
-        # (...) do something with the batch
-
-Alternative code, if you want to load all the data and metadata:
+Loading all data and metadata:
 
 .. code-block:: python
 
-    import datamint
     import torch
-    from torchvision.transforms import ToTensor
     from torch.utils.data import DataLoader
-
+    from datamint.dataset import ImageDataset
 
     # Set the device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # Create an instance of ImageDataset
+    dataset = ImageDataset(
+        project='my_project_name',
+        api_key='my_api_key',
+    )
 
-    # Create an instance of the datamint.Dataset
-    dataset = datamint.Dataset(root='data',
-                                dataset_name='TestCTdataset',
-                                version='latest',
-                                api_key='my_api_key',
-                                transform=ToTensor()
-                                )
+    # Create a DataLoader
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
-    # This function tells the dataloader how to group the items in a batch
-    def collate_fn(batch):
-        images = [item[0] for item in batch]
-        dicom_metainfo = [item[1] for item in batch]
-        metainfo = [item[2] for item in batch]
-
-        return torch.stack(images), dicom_metainfo, metainfo
-
-
-    # Create a DataLoader to handle batching and shuffling of the dataset
-    dataloader = DataLoader(dataset,
-                            batch_size=4,
-                            collate_fn=collate_fn,
-                            shuffle=True)
-
-    for images, dicom_metainfo, metainfo in dataloader:
-        images = images.to(device)
-        metainfo = metainfo
+    for batch in dataloader:
+        images = batch['image'].to(device)  # (batch_size, C, H, W)
+        metainfo = batch['metainfo']        # list of metadata dicts
 
         # (... do something with the batch)

@@ -162,7 +162,12 @@ class Annotation(AnnotationBase):
 
     @property
     def resource(self) -> 'Resource':
-        """Lazily load and cache the associated Resource entity."""
+        """Lazily load and cache the associated Resource entity.
+
+        Example:
+            >>> annotation = api.annotations.get_list(limit=1)[0]
+            >>> annotation.resource.filename
+        """
         if self._resource is None:
             self._resource = self._api._get_resource(self)
         return self._resource
@@ -200,6 +205,11 @@ class Annotation(AnnotationBase):
 
         Returns:
             File data (format depends on auto_convert and file type)
+
+        Example:
+            >>> annotation = api.annotations.get_list(limit=1)[0]
+            >>> data = annotation.fetch_file_data(use_cache=True)
+            >>> annotation.fetch_file_data(save_path="annotation_file")
         """
         # Version info for cache validation
         version_info = self._generate_version_info()

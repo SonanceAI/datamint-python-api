@@ -73,6 +73,11 @@ class Project(BaseEntity):
 
         Returns:
             List of Resource instances associated with the project.
+
+        Example:
+            >>> project = api.projects.get_by_name("My Project")
+            >>> resources = project.fetch_resources()
+            >>> [resource.filename for resource in resources]
         """
         return self._api.get_project_resources(self.id)
 
@@ -87,11 +92,11 @@ class Project(BaseEntity):
             progress_bar: Whether to show a progress bar. Default is True.
 
         Example:
-            >>> proj = api.projects.get_by_name("My Project")
-            >>> proj.download_resources()  # Cache all resources in parallel
+            >>> project = api.projects.get_by_name("My Project")
+            >>> project.download_resources_datas(progress_bar=False)
             >>> # Now fetch_file_data() will be instantaneous for cached resources
-            >>> for res in proj.fetch_resources():
-            ...     data = res.fetch_file_data(use_cache=True)
+            >>> for resource in project.fetch_resources():
+            ...     data = resource.fetch_file_data(use_cache=True)
         """
         return self.cache_resources(progress_bar=progress_bar)
 
@@ -106,11 +111,11 @@ class Project(BaseEntity):
             progress_bar: Whether to show a progress bar. Default is True.
 
         Example:
-            >>> proj = api.projects.get_by_name("My Project")
-            >>> proj.cache_resources()  # Cache all resources in parallel
+            >>> project = api.projects.get_by_name("My Project")
+            >>> project.cache_resources(progress_bar=False)
             >>> # Now fetch_file_data() will be instantaneous for cached resources
-            >>> for res in proj.fetch_resources():
-            ...     data = res.fetch_file_data(use_cache=True)
+            >>> for resource in project.fetch_resources():
+            ...     data = resource.fetch_file_data(use_cache=True)
         """
         resources = self.fetch_resources()
         self._api.resources_api.cache_resources(resources, progress_bar=progress_bar)
@@ -121,6 +126,11 @@ class Project(BaseEntity):
         Args:
             resource: The resource unique id or a resource object.
             status: The new status to set.
+
+        Example:
+            >>> project = api.projects.get_by_name("My Project")
+            >>> resource = project.fetch_resources()[0]
+            >>> project.set_work_status(resource, "annotated")
         """
 
         return self._api.set_work_status(self, resource, status)
@@ -151,5 +161,10 @@ class Project(BaseEntity):
 
         Returns:
             Sequence of AnnotationSpec instances for the project.
+
+        Example:
+            >>> project = api.projects.get_by_name("My Project")
+            >>> specs = project.get_annotations_specs()
+            >>> [spec.identifier for spec in specs]
         """
         return self._api.get_annotations_specs(self)

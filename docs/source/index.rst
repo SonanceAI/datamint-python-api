@@ -10,6 +10,8 @@ Documentation
 =======================================
 **Version:** |release|
 
+A comprehensive Python SDK for interacting with the Datamint platform, providing seamless integration for medical imaging workflows, dataset management, and machine learning experiments.
+
 From inception to completion, Datamint is your reliable partner.
 It assists from the very first day when you make your data available to your team, right up to the moment you're set to launch your model.
 
@@ -28,6 +30,7 @@ Datamint
    command_line_tools
    client_api
    pytorch_integration
+   tutorials
 
 
 .. toctree::

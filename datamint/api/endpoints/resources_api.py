@@ -832,11 +832,15 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             .. code-block:: python
 
                 # Simple upload
-                resource_id = api.resources.upload_resource('path/to/file.dcm')
+                api.resources.upload_resource('path/to/file.dcm')
+
+                # Continue with the uploaded file through a Resource entity
+                resource = api.resources.get_list(filename='file.dcm')[0]
 
                 # Upload with metadata and segmentation
-                resource_id = api.resources.upload_resource(
+                api.resources.upload_resource(
                     'path/to/file.dcm',
+                    publish_to='Study Review',
                     tags=['tutorial', 'case1'],
                     channel='study_channel',
                     segmentation_files={
@@ -1067,12 +1071,13 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             ItemNotFoundError: If the resource does not exists.
 
         Example:
-            >>> api_handler.download_resource_file('resource_id', auto_convert=False)
-                returns the resource content in bytes.
-            >>> api_handler.download_resource_file('resource_id', auto_convert=True)
-                Assuming this resource is a dicom file, it will return a pydicom.Dataset object. 
-            >>> api_handler.download_resource_file('resource_id', save_path='path/to/dicomfile.dcm')
-                saves the file in the specified path.
+            .. code-block:: python
+
+                resource = api.resources.get_list(filename='file.dcm')[0]
+
+                resource_bytes = api.resources.download_resource_file(resource, auto_convert=False)
+                dicom_obj = api.resources.download_resource_file(resource, auto_convert=True)
+                api.resources.download_resource_file(resource, save_path='path/to/dicomfile.dcm')
         """
         if save_path is None and add_extension:
             raise ValueError("If add_extension is True, save_path must be provided.")
