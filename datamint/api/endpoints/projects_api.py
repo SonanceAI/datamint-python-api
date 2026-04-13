@@ -1,5 +1,6 @@
 from typing import Literal, TYPE_CHECKING, overload
 from collections.abc import Sequence
+from pathlib import Path
 
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
@@ -267,3 +268,263 @@ class ProjectsApi(CRUDEntityApi[Project]):
         if isinstance(project, str):
             project = self.get_by_id(project)
         return self.annotationsets_api.get_annotations_specs(project)
+
+    # ------------------------------------------------------------------
+    # Project members
+    # ------------------------------------------------------------------
+
+    def get_members(self, project: str | Project) -> list[dict]:
+        """List all members of a project with their roles.
+
+        Args:
+            project: The project ID or Project instance.
+
+        Returns:
+            List of member dicts (keys: ``project_id``, ``user_id``, ``roles``,
+            ``expertise_level``, ``status``, ``firstname``, ``lastname``).
+        """
+        response = self._make_entity_request('GET', project, add_path='members')
+        return response.json()
+
+    def set_member(self,
+                   project: str | Project,
+                   user_id: str,
+                   roles: list[str]) -> None:
+        """Set (or update) a user's roles in a project.
+
+        Args:
+            project: The project ID or Project instance.
+            user_id: The user's UUID.
+            roles: List of role strings, e.g. ``['PROJECT_ANNOTATOR']``.
+        """
+        proj_id = self._entid(project)
+        self._make_request('POST', f'/{self.endpoint_base}/{proj_id}/members/{user_id}',
+                           json={'roles': roles})
+
+    def remove_member(self,
+                      project: str | Project,
+                      user_id: str) -> None:
+        """Remove a user from a project.
+
+        Args:
+            project: The project ID or Project instance.
+            user_id: The user's UUID.
+        """
+        proj_id = self._entid(project)
+        self._make_request('DELETE', f'/{self.endpoint_base}/{proj_id}/members/{user_id}')
+
+    # ------------------------------------------------------------------
+    # Worklist
+    # ------------------------------------------------------------------
+
+    def get_worklist(self, project: str | Project) -> dict:
+        """Get the annotation worklist object for a project.
+
+        Args:
+            project: The project ID or Project instance.
+
+        Returns:
+            The worklist data dict.
+        """
+        response = self._make_entity_request('GET', project, add_path='worklist')
+        return response.json()
+
+    # ------------------------------------------------------------------
+    # Annotation statuses
+    # ------------------------------------------------------------------
+
+    def get_annotation_statuses(self,
+                                project: str | Project,
+                                status: str | None = None,
+                                user_id: str | None = None,
+                                resource_id: str | None = None) -> list[dict]:
+        """Get per-resource annotation statuses for a project.
+
+        Args:
+            project: The project ID or Project instance.
+            status: Optional status filter.
+            user_id: Optional user ID filter.
+            resource_id: Optional resource ID filter.
+
+        Returns:
+            List of annotation status dicts.
+        """
+        params = {k: v for k, v in {'status': status, 'user_id': user_id,
+                                     'resource_id': resource_id}.items() if v is not None}
+        response = self._make_entity_request('GET', project, add_path='annotation-statuses',
+                                             params=params or None)
+        return response.json()
+
+    def reset_annotator_status(self,
+                               project: str | Project,
+                               resource: str | Resource,
+                               annotator: str) -> None:
+        """Reset annotation status for a specific annotator on a resource.
+
+        Args:
+            project: The project ID or Project instance.
+            resource: The resource ID or Resource instance.
+            annotator: The annotator's email address.
+        """
+        proj_id = self._entid(project)
+        resource_id = self._entid(resource)
+        self._make_request('DELETE',
+                           f'/{self.endpoint_base}/{proj_id}/resources/{resource_id}'
+                           f'/annotator/{annotator}/status-reset')
+
+    # ------------------------------------------------------------------
+    # Download annotations
+    # ------------------------------------------------------------------
+
+    def download_annotations(self,
+                             project: str | Project,
+                             output_path: str | Path,
+                             format: str = 'csv',
+                             annotators: list[str] | None = None,
+                             annotations: list[str] | None = None,
+                             from_date: str | None = None,
+                             to_date: str | None = None,
+                             progress_bar: bool = True) -> None:
+        """Download annotation data as a CSV or Excel file.
+
+        Args:
+            project: The project ID or Project instance.
+            output_path: Local file path to save the downloaded data.
+            format: Export format, ``'csv'`` (default) or ``'xlsx'``.
+            annotators: Optional list of annotator emails to include.
+            annotations: Optional list of annotation identifiers to include.
+            from_date: Optional start date filter (ISO string).
+            to_date: Optional end date filter (ISO string).
+            progress_bar: Whether to display a progress bar.
+        """
+        from tqdm.auto import tqdm
+
+        proj_id = self._entid(project)
+        params: dict = {'format': format}
+        if from_date is not None:
+            params['from'] = from_date
+        if to_date is not None:
+            params['to'] = to_date
+        if annotators is not None:
+            params['annotators[]'] = annotators
+        if annotations is not None:
+            params['annotations[]'] = annotations
+
+        output_path = Path(output_path)
+        with self._stream_entity_request('GET', proj_id,
+                                         add_path='download-annotations',
+                                         params=params) as response:
+            total_size = int(response.headers.get('content-length', 0)) or None
+            with tqdm(total=total_size, unit='B', unit_scale=True,
+                      disable=not progress_bar) as pbar:
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_bytes(8192):
+                        pbar.update(len(chunk))
+                        f.write(chunk)
+
+    # ------------------------------------------------------------------
+    # Statistics
+    # ------------------------------------------------------------------
+
+    def get_annotators_stats(self,
+                             project: str | Project,
+                             email: str | None = None) -> list[dict]:
+        """Get per-annotator completion statistics for a project.
+
+        Args:
+            project: The project ID or Project instance.
+            email: Optional annotator email to filter results.
+
+        Returns:
+            List of per-annotator stat dicts.
+        """
+        params = {'email': email} if email is not None else None
+        response = self._make_entity_request('GET', project, add_path='annotators-statistic',
+                                             params=params)
+        return response.json()
+
+    def get_annotations_stats(self, project: str | Project) -> dict:
+        """Get aggregate annotation statistics (counts per type) for a project.
+
+        Args:
+            project: The project ID or Project instance.
+
+        Returns:
+            Annotation statistics dict.
+        """
+        response = self._make_entity_request('GET', project, add_path='annotations-statistic')
+        return response.json()
+
+    def get_files_matrix_stats(self, project: str | Project) -> dict:
+        """Get a matrix of resource × annotator completion statistics.
+
+        Args:
+            project: The project ID or Project instance.
+
+        Returns:
+            Files-matrix statistics dict.
+        """
+        response = self._make_entity_request('GET', project, add_path='files-matrix-statistic')
+        return response.json()
+
+    def get_annotator_status(self, project: str | Project, email: str) -> dict:
+        """Get a specific annotator's progress status in a project.
+
+        Args:
+            project: The project ID or Project instance.
+            email: The annotator's email address.
+
+        Returns:
+            Annotator status dict.
+        """
+        proj_id = self._entid(project)
+        response = self._make_request('GET',
+                                      f'/{self.endpoint_base}/{proj_id}/users/{email}/status')
+        return response.json()
+
+    # ------------------------------------------------------------------
+    # Review messages
+    # ------------------------------------------------------------------
+
+    def get_review_messages(self,
+                            project: str | Project,
+                            annotator: str | None = None,
+                            resource_id: str | None = None,
+                            statuses: list[str] | None = None) -> list[dict]:
+        """Get review feedback messages for a project.
+
+        Args:
+            project: The project ID or Project instance.
+            annotator: Optional annotator email filter.
+            resource_id: Optional resource ID filter.
+            statuses: Optional list of status strings to filter by.
+
+        Returns:
+            List of review message dicts.
+        """
+        params: dict = {}
+        if annotator is not None:
+            params['annotator'] = annotator
+        if resource_id is not None:
+            params['resourceId'] = resource_id
+        if statuses is not None:
+            params['statuses'] = statuses
+        response = self._make_entity_request('GET', project, add_path='reviewmessages',
+                                             params=params or None)
+        return response.json()
+
+    # ------------------------------------------------------------------
+    # Project models
+    # ------------------------------------------------------------------
+
+    def get_models(self, project: str | Project) -> list[dict]:
+        """List ML models associated with a project.
+
+        Args:
+            project: The project ID or Project instance.
+
+        Returns:
+            List of model dicts.
+        """
+        response = self._make_entity_request('GET', project, add_path='models')
+        return response.json()

@@ -1333,3 +1333,38 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             self._make_request('DELETE',
                                f'{self.endpoint_base}',
                                params={'resource_ids': ','.join(batch_ids)})
+
+    def bulk_publish(self, resources: Sequence[str | Resource]) -> None:
+        """Publish multiple resources in a single request.
+
+        Args:
+            resources: Sequence of resource IDs or Resource instances to publish.
+        """
+        resource_ids = [self._entid(r) for r in resources]
+        if not resource_ids:
+            return
+        self._make_request('POST', f'{self.endpoint_base}/bulk-publish',
+                           json={'resource_ids': resource_ids})
+
+    def get_not_annotated(self,
+                          limit: int | None = None,
+                          **kwargs) -> list[Resource]:
+        """Get resources that have no annotations.
+
+        Args:
+            limit: Maximum number of resources to return.
+            **kwargs: Additional query parameters forwarded to the endpoint.
+
+        Returns:
+            List of Resource instances with no annotations.
+        """
+        params = {k: v for k, v in kwargs.items() if v is not None}
+        items_gen = self._make_request_with_pagination('GET',
+                                                       f'/{self.endpoint_base}/not-annotated',
+                                                       return_field=self.endpoint_base,
+                                                       limit=limit,
+                                                       params=params or None)
+        all_items = []
+        for _, items in items_gen:
+            all_items.extend(items)
+        return [self._init_entity_obj(**item) for item in all_items]

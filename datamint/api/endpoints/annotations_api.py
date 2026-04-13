@@ -1303,20 +1303,22 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     def patch(self,
               annotation: str | Annotation,
-              identifier: str) -> None:
+              identifier: str | None = None,
+              project_id: str | None = None) -> None:
         """
-        Update the project assignment for an annotation.
+        Partially update an annotation's metadata.
 
         Args:
             annotation: The annotation unique id or Annotation instance.
-            identifier: The new identifier/label for the annotation.
+            identifier: Optional new identifier/label for the annotation.
+            project_id: Optional project ID to associate with the annotation.
 
         Raises:
             DatamintException: If the update fails.
         """
         annotation_id = self._entid(annotation)
 
-        payload = {'identifier': identifier}
+        payload = {'identifier': identifier, 'project_id': project_id}
         # remove None values
         payload = {k: v for k, v in payload.items() if v is not None}
         if len(payload) == 0:
@@ -1330,6 +1332,24 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         respdata = resp.json()
         if isinstance(respdata, dict) and 'error' in respdata:
             raise DatamintException(respdata['error'])
+
+    def approve(self, annotation: str | Annotation) -> None:
+        """Approve an annotation.
+
+        Args:
+            annotation: The annotation unique id or Annotation instance.
+        """
+        annotation_id = self._entid(annotation)
+        self._make_request('PATCH', f'{self.endpoint_base}/{annotation_id}/approve')
+
+    def delete_batch(self, annotation_ids: list[str | Annotation]) -> None:
+        """Delete multiple annotations in a single request.
+
+        Args:
+            annotation_ids: List of annotation unique ids or Annotation instances.
+        """
+        ids = [self._entid(a) for a in annotation_ids]
+        self._make_request('POST', f'{self.endpoint_base}/delete-batch', json={'ids': ids})
 
     def _get_resource(self, ann: Annotation) -> Resource:
         return self._resources_api.get_by_id(ann.resource_id)
