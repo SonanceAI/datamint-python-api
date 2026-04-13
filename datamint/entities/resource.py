@@ -179,6 +179,12 @@ class Resource(BaseEntity):
             use_cache=use_cache,
         )
 
+        # Persist discovery metadata alongside the cache entry (no-op when not cached)
+        self._cache.save_extra_info(self.id, {
+            'upload_channel': self.upload_channel,
+            'tags': self.tags or [],
+        })
+
         if auto_convert:
             try:
                 mimetype, _ = BaseApi._determine_mimetype(img_data, self.mimetype)

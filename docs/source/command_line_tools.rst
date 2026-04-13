@@ -13,7 +13,7 @@ You should see this in the first line:
 
 .. code-block:: bash
 
-    usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i]
+    usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
     (...)
 
 There are two command-line tools available:
@@ -42,6 +42,16 @@ To set the API key without the interactive prompt, use the command-line option `
 .. code-block:: bash
 
     datamint-config --api-key YOUR_API_KEY
+
+The same CLI can also inspect and clean local Datamint data stored under ``~/.datamint``.
+Active local data is grouped by cache namespace such as ``resources`` or ``annotations``
+instead of individual cached resources, so cleanup happens at that higher level:
+
+.. code-block:: bash
+
+    datamint-config --list-local-data
+    datamint-config --clean-local-data resources
+    datamint-config --clean-all-local-data
 
 Uploading DICOMs/resources to Datamint server
 ---------------------------------------------

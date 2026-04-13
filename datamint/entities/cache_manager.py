@@ -10,6 +10,7 @@ import logging
 import pickle
 import gzip
 import numpy as np
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TypeVar, Generic
@@ -53,6 +54,7 @@ class CacheManager(Generic[T]):
         version_hash: str | None = None
         version_info: dict | None = None
         entity_id: str | None = None
+        extra_info: dict | None = None
 
     def __init__(
         self,
@@ -496,3 +498,46 @@ class CacheManager(Generic[T]):
         except Exception as e:
             _LOGGER.warning(f"Error reading cache info for {entity_id}: {e}")
             return {}
+
+    def save_extra_info(self, entity_id: str, extra_info: dict) -> None:
+        """Store arbitrary extra metadata alongside the cache entry for an entity.
+
+        This is a no-op when no cache entry exists yet for the entity.
+
+        Args:
+            entity_id: Unique identifier for the entity
+            extra_info: Arbitrary key-value pairs to store (e.g. upload_channel, tags)
+        """
+        metadata_path = self._get_metadata_path(entity_id)
+        if not metadata_path.exists():
+            return
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = CacheManager.ItemMetadata.model_validate_json(f.read())
+            metadata.extra_info = extra_info
+            with open(metadata_path, 'w') as f:
+                f.write(metadata.model_dump_json(indent=2))
+        except Exception as exc:
+            _LOGGER.warning("Error saving extra_info for %s: %s", entity_id, exc)
+
+    def iter_entities_extra_info(self) -> Iterator[tuple[str, dict]]:
+        """Yield (entity_id, extra_info) for all cached entities that have extra_info.
+
+        Yields:
+            Tuples of (entity_id, extra_info dict) for entities with stored extra_info.
+        """
+        if not self.cache_root.exists():
+            return
+        for entity_dir in sorted(self.cache_root.iterdir()):
+            if not entity_dir.is_dir():
+                continue
+            meta_path = entity_dir / 'metadata.json'
+            if not meta_path.exists():
+                continue
+            try:
+                with open(meta_path, 'r') as f:
+                    metadata = CacheManager.ItemMetadata.model_validate_json(f.read())
+                if metadata.extra_info:
+                    yield entity_dir.name, metadata.extra_info
+            except Exception as exc:
+                _LOGGER.debug("Could not read extra_info for %s: %s", entity_dir.name, exc)
