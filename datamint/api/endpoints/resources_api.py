@@ -100,6 +100,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                  tags: Sequence[str] | None = None,
                  modality: str | None = None,
                  mimetype: str | None = None,
+                 source_filepath: str | Path | None = None,
                  #  return_ids_only: bool = False,
                  order_field: ResourceFields | None = None,
                  order_ascending: bool | None = None,
@@ -117,6 +118,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             tags: The tags to filter the resources.
             modality: The modality of the resources.
             mimetype: The mimetype of the resources.
+            source_filepath: Filter resources by source file path.
             order_field: The field to order the resources. See :data:`~ResourceFields`.
             order_ascending: Whether to order the resources in ascending order.
             project_name: The project name or a list of project names to filter resources by project.
@@ -167,7 +169,24 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             }
             payload['tags'] = json.dumps(tags_filter)
 
-        return super().get_list(limit=limit, params=payload)
+        requested_source_filepath = None
+        if source_filepath is not None:
+            requested_source_filepath = os.path.abspath(os.path.expanduser(str(source_filepath)))
+
+        resources = super().get_list(limit=None if requested_source_filepath is not None else limit,
+                                     params=payload)
+
+        if requested_source_filepath is not None:
+            resources = [
+                resource for resource in resources
+                if resource.source_filepath is not None
+                and os.path.abspath(os.path.expanduser(resource.source_filepath)) == requested_source_filepath
+            ]
+
+        if limit is not None and requested_source_filepath is not None:
+            resources = resources[:limit]
+
+        return resources
 
     def get_annotations(self, resource: str | Resource,
                         annotation_type: AnnotationType | str | None = None) -> Sequence[Annotation]:
