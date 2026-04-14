@@ -29,7 +29,5 @@ Use Cases & End-to-End Examples
 
 These notebooks provide complete, end-to-end workflows located in the `use_cases directory <https://github.com/SonanceAI/datamint-python-api/tree/main/notebooks/use_cases>`_:
 
-* `automated_segmentation_trainer_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/automated_segmentation_trainer_tutorial.ipynb>`_: Build an automated segmentation training pipeline using Datamint.
 * `fracatlas_classification.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/fracatlas_classification.ipynb>`_: End-to-end classification pipeline for the FracAtlas dataset.
 * `segmentation_2d_trainer_BUSI_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/segmentation_2d_trainer_BUSI_tutorial.ipynb>`_: Train a 2D segmentation model on the BUSI dataset.
-* `segmentation_unetpp_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/segmentation_unetpp_tutorial.ipynb>`_: Complete walkthrough of a UNet++ based segmentation pipeline.

@@ -73,9 +73,6 @@ Apply transforms for data augmentation and preprocessing:
             # 'image' is a tensor of shape (C, H, W)
             image = item['image']
 
-            # 'metainfo' is a dict with file/DICOM metadata
-            metainfo = item['metainfo']
-
             has_fracture = 'fracture' in item.get('image_labels', [])
             label = torch.tensor(has_fracture, dtype=torch.int32)
 
@@ -84,8 +81,7 @@ Apply transforms for data augmentation and preprocessing:
 
     # Create an instance of your custom dataset
     dataset = XrayFractureDataset(
-        project='YOUR_PROJECT_NAME',
-        api_key='my_api_key',
+        project='MY_PROJECT_NAME',
         alb_transform=A.Compose([A.Resize(224, 224)]),
     )
 
@@ -93,7 +89,7 @@ Apply transforms for data augmentation and preprocessing:
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
 
     for images, labels in dataloader:
-        # images: (batch_size, C, H, W)
+        # images: (batch_size, C, 224, 224)
         # labels: (batch_size,)
         pass  # (...) do something with the batch
 
@@ -101,24 +97,19 @@ Loading all data and metadata:
 
 .. code-block:: python
 
-    import torch
-    from torch.utils.data import DataLoader
     from datamint.dataset import ImageDataset
-
-    # Set the device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Create an instance of ImageDataset
     dataset = ImageDataset(
-        project='my_project_name',
-        api_key='my_api_key',
+        project='MY_PROJECT_NAME'
     )
-
     # Create a DataLoader
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
+    dataloader = dataset.get_dataloader(batch_size=4, shuffle=False) # Same parameters as PyTorch DataLoader
 
     for batch in dataloader:
-        images = batch['image'].to(device)  # (batch_size, C, H, W)
-        metainfo = batch['metainfo']        # list of metadata dicts
+        images = batch['image']  # shape: (batch_size, C, H, W)
+        segmentations = batch['segmentations']
+        image_labels = batch['image_labels']
+        image_categories = batch['image_categories']
 
         # (... do something with the batch)
