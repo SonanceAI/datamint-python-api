@@ -3,11 +3,12 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
+from typing_extensions import NotRequired
 
 from datamint import configs
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
