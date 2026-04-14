@@ -32,21 +32,18 @@ class ImageDataset(VolumeDataset):
 
         if self.return_segmentations:
             segmentations = result['segmentations']
-            _LOGGER.debug(f"final segmentations type: {type(segmentations)} | shape: {segmentations.shape}")
             # convert segmentations shape to expected format:
             # if semantic and no merge: dict[author -> (num_labels+1, H, W)]
             # if instance and no merge: dict[author -> (num_instances, H, W)]
             # if merged (semantic only): (num_labels+1, H, W)
             if isinstance(segmentations, (Tensor, np.ndarray)):
-                _LOGGER.debug(f"squeezing merged segmentations of shape {segmentations.shape}")
+                _LOGGER.debug("squeezing merged segmentations of shape %s", segmentations.shape)
                 segmentations = segmentations.squeeze(1)
             else:
                 for author in segmentations:
                     segmentations[author] = segmentations[author].squeeze(1)
 
             result['segmentations'] = segmentations
-            _LOGGER.debug(
-                f"final segmentations after squeeze type: {type(segmentations)} | shape: {segmentations.shape}")
 
         return result
 
