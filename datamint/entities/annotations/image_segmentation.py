@@ -11,7 +11,7 @@ import logging
 import numpy as np
 from PIL import Image
 
-from datamint.api.dto import AnnotationType
+from .types import AnnotationType
 from .base_segmentation import BaseSegmentationAnnotation
 
 _LOGGER = logging.getLogger(__name__)

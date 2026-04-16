@@ -5,7 +5,7 @@ annotations in medical imaging volumes.
 """
 
 from .base_segmentation import BaseSegmentationAnnotation
-from datamint.api.dto import AnnotationType
+from .types import AnnotationType
 import numpy as np
 from nibabel.nifti1 import Nifti1Image
 import logging

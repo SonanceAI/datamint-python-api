@@ -18,6 +18,7 @@ from medimgkit.nifti_utils import NIFTI_MIMES, get_nifti_shape
 from datetime import datetime
 from pathlib import Path
 from datamint.entities import Annotation, DatasetInfo
+from datamint.entities.annotations import annotation_from_dict
 import cv2
 from datamint.entities import Resource
 import datamint.configs
@@ -272,7 +273,7 @@ class DatamintBaseDataset:
                         ann['resource_id'] = imginfo['id']
                     if 'id' not in ann:
                         ann['id'] = None
-                imginfo['annotations'] = [Annotation.from_dict(ann) if isinstance(ann, dict) else ann
+                imginfo['annotations'] = [annotation_from_dict(ann) if isinstance(ann, dict) else ann
                                           for ann in imginfo['annotations']]
 
     def _apply_annotation_filters(self) -> None:

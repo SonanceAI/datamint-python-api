@@ -13,10 +13,10 @@ import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
-from datamint.apihandler.dto.annotation_dto import AnnotationType
 from datamint.exceptions import DatamintException
 from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
+from datamint.entities.annotations import AnnotationType
 
 if TYPE_CHECKING:
     from datamint.entities import Resource, Project, Annotation

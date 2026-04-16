@@ -11,16 +11,18 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
-from datamint.api.dto import AnnotationType
 from datamint.types import ImagingData
 
 from ..base_entity import BaseEntity, MISSING_FIELD
 from ..cache_manager import CacheManager
-
+from .types import AnnotationType
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.annotations_api import AnnotationsApi
     from ..resource import Resource
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,9 +32,22 @@ _FIELD_MAPPING = {
     'name': 'identifier',
     'added_by': 'created_by',
     'index': 'frame_index',
+    'value': 'text_value',
 }
 
 _ANNOTATION_CACHE_KEY = "annotation_data"
+
+
+def _normalize_annotation_data(data: dict[str, Any]) -> dict[str, Any]:
+    converted_data: dict[str, Any] = {}
+    for key, value in data.items():
+        mapped_key = _FIELD_MAPPING.get(key, key)
+        converted_data[mapped_key] = value
+
+    if 'scope' not in converted_data:
+        converted_data['scope'] = 'image' if converted_data.get('frame_index') is None else 'frame'
+
+    return converted_data
 
 
 class AnnotationBase(BaseEntity):
@@ -130,6 +145,8 @@ class Annotation(AnnotationBase):
     created_at: str | None = None  # ISO timestamp string
     created_by: str | None = None
     annotation_worklist_id: str | None = None
+    imported_from: str | None = None
+    import_author: str | None = None
     status: str | None = None
     approved_at: str | None = None  # ISO timestamp string
     approved_by: str | None = None
@@ -139,6 +156,8 @@ class Annotation(AnnotationBase):
     deleted_at: str | None = None  # ISO timestamp string
     deleted_by: str | None = None
     created_by_model: str | None = None
+    is_model: bool | None = None
+    model_id: str | None = None
     set_name: str | None = None
     resource_filename: str | None = None
     resource_modality: str | None = None
@@ -250,6 +269,31 @@ class Annotation(AnnotationBase):
         self._resource = None
         logger.debug(f"Invalidated cache for annotation {self.id}")
 
+    def _to_create_dto(self):
+        """Convert this annotation entity into a create DTO."""
+        from datamint.api.dto import CreateAnnotationDto
+        geometry = self.geometry
+        if geometry is not None and not hasattr(geometry, 'to_dict'):
+            raise ValueError(
+                'Geometry annotations must use typed geometry entities. '
+                'Use LineAnnotation or BoxAnnotation instead of a raw geometry dict.'
+            )
+
+        return CreateAnnotationDto(
+            type=self.annotation_type,
+            identifier=self.identifier,
+            scope=self.scope,
+            annotation_worklist_id=self.annotation_worklist_id,
+            value=self.text_value,
+            imported_from=self.imported_from,
+            import_author=self.import_author,
+            frame_index=self.frame_index,
+            is_model=self.is_model,
+            model_id=self.model_id,
+            geometry=geometry,
+            units=self.units,
+        )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Annotation':
         """Create an Annotation instance from a dictionary.
@@ -260,15 +304,7 @@ class Annotation(AnnotationBase):
         Returns:
             Annotation instance
         """
-        # Convert field names and filter valid fields
-        converted_data = {}
-        for key, value in data.items():
-            # Map field names if needed
-            mapped_key = _FIELD_MAPPING.get(key, key)
-            converted_data[mapped_key] = value
-
-        if 'scope' not in converted_data:
-            converted_data['scope'] = 'image' if converted_data.get('frame_index') is None else 'frame'
+        converted_data = _normalize_annotation_data(data)
 
         if converted_data['annotation_type'] in ['segmentation']:
             if converted_data.get('file') is None:

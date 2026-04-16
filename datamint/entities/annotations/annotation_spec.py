@@ -1,8 +1,11 @@
 from pydantic import ConfigDict, BaseModel
-from datamint.api.dto import AnnotationType
+from .types import AnnotationType
 
 
 class AnnotationSpec(BaseModel):
+    """Base class for annotation specifications.
+    Used by the API to define the expected structure of annotations for a given project.
+    """
     model_config = ConfigDict(extra='allow',
                               ser_json_bytes='base64',
                               val_json_bytes='base64')

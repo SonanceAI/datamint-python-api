@@ -5,7 +5,7 @@ from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities import Project, Resource
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import DatamintException, ItemNotFoundError
-from datamint.api.dto import AnnotationType
+from datamint.entities.annotations import AnnotationType
 from datamint.utils.collection_utils import ChainedSequence
 import httpx
 from datetime import date

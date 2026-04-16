@@ -1,56 +1,87 @@
-from typing import Literal, BinaryIO, IO, Any, overload
-from collections.abc import Sequence, Generator
-import httpx
+from typing import Any, BinaryIO, IO, Literal
+from collections.abc import Generator, Sequence
 from datetime import date
-import logging
-from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
-from datamint.entities.annotations.annotation import Annotation
-from datamint.entities.resource import Resource
-from datamint.api.dto import AnnotationType, CreateAnnotationDto, LineGeometry, CoordinateSystem, Geometry
-import numpy as np
-import os
-import aiohttp
-import json
-from datamint.exceptions import DatamintException, ItemNotFoundError
-from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
-from medimgkit.format_detection import guess_type
-import nibabel as nib
-from PIL import Image
 from io import BytesIO
-import pydicom
 from pathlib import Path
-from tqdm.auto import tqdm
 import asyncio
+import json
+import logging
+import os
+
+import aiohttp
+import httpx
+import numpy as np
+import pydicom
+from medimgkit.format_detection import guess_type
+from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
+from nibabel.loadsave import load as nib_load
+from nibabel.nifti1 import Nifti1Image
+from PIL import Image
+from tqdm.auto import tqdm
+
+from datamint.api.dto import CreateAnnotationDto
+from datamint.entities import Resource
+from datamint.entities.annotations import (
+    Annotation,
+    AnnotationType,
+    BoxAnnotation,
+    CoordinateSystem,
+    ImageClassification,
+    LineAnnotation,
+    annotation_from_dict,
+)
+from datamint.exceptions import DatamintException, ItemNotFoundError
+
+from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
+
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
-MAX_NUMBER_DISTINCT_COLORS = 2048  # Maximum number of distinct colors in a segmentation image
+MAX_NUMBER_DISTINCT_COLORS = 2048
 
 
 class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotation]):
-    """API handler for annotation-related endpoints."""
-
-    def __init__(self,
-                 config: ApiConfig,
-                 client: httpx.Client | None = None,
-                 models_api=None,
-                 resources_api=None) -> None:
-        """Initialize the annotations API handler.
-
-        Args:
-            config: API configuration containing base URL, API key, etc.
-            client: Optional HTTP client instance. If None, a new one will be created.
-        """
-        from .resources_api import ResourcesApi
+    def __init__(
+        self,
+        config: ApiConfig,
+        client: httpx.Client | None = None,
+        models_api: Any | None = None,
+        resources_api: Any | None = None,
+    ) -> None:
         from .models_api import ModelsApi
+        from .resources_api import ResourcesApi
 
         super().__init__(config, Annotation, 'annotations', client)
         self._models_api = ModelsApi(config, client=client) if models_api is None else models_api
-        self._resources_api = ResourcesApi(
-            config, client=client, annotations_api=self) if resources_api is None else resources_api
+        self._resources_api = (
+            ResourcesApi(config, client=client, annotations_api=self)
+            if resources_api is None
+            else resources_api
+        )
 
-    @overload
-    def get_list(self,
+    def _init_entity_obj(self, **kwargs) -> Annotation:
+        annotation = annotation_from_dict(kwargs)
+        annotation._api = self
+        return annotation
+
+    def _resolve_annotation_worklist_id(
+        self,
+        project: str | None = None,
+        worklist_id: str | None = None,
+    ) -> str | None:
+        if project is not None and worklist_id is not None:
+            raise ValueError('Only one of project or worklist_id can be provided.')
+
+        if project is None:
+            return worklist_id
+
+        proj = self._resources_api.projects_api._get_by_name_or_id(project)
+        if proj is None:
+            raise ItemNotFoundError('project', {'name_or_id': project})
+        return proj.worklist_id
+
+    def get_list(  # type: ignore[override]
+                 self,
                  resource: str | Resource | Sequence[str | Resource] | None = None,
                  annotation_type: AnnotationType | str | None = None,
                  annotator_email: str | None = None,
@@ -61,37 +92,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  status: Literal['new', 'published'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
-                 group_by_resource: Literal[False] = False
-                 ) -> Sequence[Annotation]: ...
-
-    @overload
-    def get_list(self,
-                 resource: str | Resource | Sequence[str | Resource] | None = None,
-                 annotation_type: AnnotationType | str | None = None,
-                 annotator_email: str | None = None,
-                 date_from: date | None = None,
-                 date_to: date | None = None,
-                 dataset_id: str | None = None,
-                 worklist_id: str | None = None,
-                 status: Literal['new', 'published'] | None = None,
-                 load_ai_segmentations: bool | None = None,
-                 limit: int | None = None,
-                 *,
-                 group_by_resource: Literal[True]
-                 ) -> Sequence[Sequence[Annotation]]: ...
-
-    def get_list(self,
-                 resource: str | Resource | Sequence[str | Resource] | None = None,
-                 annotation_type: AnnotationType | str | None = None,
-                 annotator_email: str | None = None,
-                 date_from: date | None = None,
-                 date_to: date | None = None,
-                 dataset_id: str | None = None,
-                 worklist_id: str | None = None,
-                 status: Literal['new', 'published'] | None = None,
-                 load_ai_segmentations: bool | None = None,
-                 limit: int | None = None,
-                 group_by_resource: bool = False
+                 group_by_resource: bool = False,
+                 **kwargs: Any,
                  ) -> Sequence[Annotation] | Sequence[Sequence[Annotation]]:
         """
         Retrieve a list of annotations with optional filtering.
@@ -176,7 +178,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                        f'{self.endpoint_base}/search',
                                                        return_field=self.endpoint_base,
                                                        limit=limit,
-                                                       json=payload)
+                                                       json=payload,
+                                                       **kwargs)
 
         all_items = []
         for _, items in items_gen:
@@ -316,19 +319,30 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 # convert to list of RGB tuples
                 if unique_vals is None:
                     raise ValueError(f'Number of unique colors exceeds {MAX_NUMBER_DISTINCT_COLORS}.')
-                unique_vals = [color for count, color in unique_vals]
+                rgb_unique_vals = [
+                    (int(color[0]), int(color[1]), int(color[2]))
+                    for _, color in unique_vals
+                    if isinstance(color, tuple) and len(color) >= 3
+                ]
                 # Remove black/transparent pixels
                 black_pixel = (0, 0, 0)
-                unique_vals = [rgb for rgb in unique_vals if rgb != black_pixel]
+                rgb_unique_vals = [rgb for rgb in rgb_unique_vals if rgb != black_pixel]
+
+                rgb_name_map: dict[tuple[int, int, int] | str, str] = {}
+                for key, value in name.items():
+                    if key == 'default':
+                        rgb_name_map['default'] = value
+                    elif isinstance(key, tuple) and len(key) >= 3:
+                        rgb_name_map[(int(key[0]), int(key[1]), int(key[2]))] = value
 
                 if discard_empty_segmentations:
-                    if len(unique_vals) == 0:
+                    if len(rgb_unique_vals) == 0:
                         msg = f"Discarding empty RGB segmentation for frame {frame_index}"
                         _LOGGER.debug(msg)
                         _USER_LOGGER.debug(msg)
                         return []
-                segnames = AnnotationsApi._get_segmentation_names_rgb(unique_vals, names=name)
-                segs_generator = AnnotationsApi._split_rgb_segmentations(img_array, unique_vals)
+                segnames = AnnotationsApi._get_segmentation_names_rgb(rgb_unique_vals, names=rgb_name_map)
+                segs_generator = AnnotationsApi._split_rgb_segmentations(img_array, rgb_unique_vals)
 
                 fio.seek(0)
                 # TODO: Optimize this. It is not necessary to open the image twice.
@@ -354,8 +368,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
                     )
 
-                annotids = await self._create_async(resource_id=resource_id, annotations_dto=annotations,
-                                                     session=session)
+                annotids = await self._create_annotations_async(resource_id=resource_id,
+                                                                annotations_dto=annotations,
+                                                                session=session)
 
                 # Upload segmentation files
                 if len(annotids) != len(segnames):
@@ -478,37 +493,44 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             if close_file:
                 f.close()
 
-    def create(self,
-               resource: str | Resource,
-               annotation_dto: CreateAnnotationDto | Sequence[CreateAnnotationDto]
-               ) -> str | Sequence[str]:
+    def create(
+        self,
+        resource: str | Resource,
+        annotation_dto: CreateAnnotationDto | Annotation | dict[str, Any] | Sequence[CreateAnnotationDto | Annotation | dict[str, Any]],
+    ) -> Any:
         """Create one or more annotations for a resource.
 
-        .. warning::
-            This is an internal method and should not be used directly by users.
-            Please use specific annotation creation methods like 
-            :py:meth:`create_image_classification` or :py:meth:`upload_segmentations` instead.
-
         Args:
-            resource (str | Resource): The resource unique id or Resource instance.
-            annotation_dto (CreateAnnotationDto | Sequence[CreateAnnotationDto]): 
-                A CreateAnnotationDto instance or a list of such instances to be created.
+            resource: The resource unique id or Resource instance.
+            annotation_dto: A create DTO, typed annotation entity, raw payload dictionary,
+                or a sequence of those values.
 
         Returns:
-            str | Sequence[str]: The id of the created annotation if a single annotation 
-            was provided, or a list of ids if multiple annotations were created.
+            The id of the created annotation if a single annotation was provided,
+            or a list of ids if multiple annotations were created.
         """
+        is_single_annotation = isinstance(annotation_dto, (CreateAnnotationDto, Annotation, dict))
+        annotations_input = [annotation_dto] if is_single_annotation else list(annotation_dto)
 
-        annotations = [annotation_dto] if isinstance(annotation_dto, CreateAnnotationDto) else annotation_dto
-        annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations]
+        annotations_payload: list[dict[str, Any]] = []
+        for annotation in annotations_input:
+            if isinstance(annotation, CreateAnnotationDto):
+                annotations_payload.append(annotation.to_dict())
+            elif isinstance(annotation, Annotation):
+                annotations_payload.append(annotation._to_create_dto().to_dict())
+            elif isinstance(annotation, dict):
+                annotations_payload.append(annotation)
+            else:
+                raise TypeError(f'Unsupported annotation input type: {type(annotation)}')
+
         resource_id = self._entid(resource)
         respdata = self._make_request('POST',
                                       f'{self.endpoint_base}/{resource_id}/annotations',
-                                      json=annotations).json()
+                                      json=annotations_payload).json()
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
                 raise DatamintException(r['error'])
-        if isinstance(annotation_dto, CreateAnnotationDto):
+        if is_single_annotation:
             return respdata[0]
         return respdata
 
@@ -602,7 +624,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id,
             transpose_segmentation=transpose_segmentation,
         )
-        return loop.run_until_complete(task)
+        return list(loop.run_until_complete(task))
 
     def upload_segmentations(self,
                              resource: str | Resource,
@@ -710,7 +732,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             transpose_segmentation=transpose_segmentation,
             upload_volume=False
         )
-        return loop.run_until_complete(task)
+        return list(loop.run_until_complete(task))
 
     @staticmethod
     def standardize_segmentation_names(name: str | dict | None
@@ -734,10 +756,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         else:
             raise ValueError("Invalid name format. Must be str, dict[int, str], dict[tuple, str], or None.")
 
-    async def _create_async(self,
-                            resource_id: str,
-                            annotations_dto: list[CreateAnnotationDto] | list[dict],
-                            session: aiohttp.ClientSession | None = None) -> list[str]:
+    async def _create_annotations_async(self,
+                                        resource_id: str,
+                                        annotations_dto: list[CreateAnnotationDto] | list[dict],
+                                        session: aiohttp.ClientSession | None = None) -> list[str]:
         annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations_dto]
         respdata = await self._make_request_async_json('POST',
                                                        f'{self.endpoint_base}/{resource_id}/annotations',
@@ -749,8 +771,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         return respdata
 
     @staticmethod
-    def _get_segmentation_names_rgb(uniq_rgb_vals: list[tuple[int, int, int]],
-                                    names: dict[tuple[int, int, int], str]
+    def _get_segmentation_names_rgb(uniq_rgb_vals: Sequence[tuple[int, int, int]],
+                                    names: dict[tuple[int, int, int] | str, str]
                                     ) -> list[str]:
         """
         Generate segmentation names for RGB combinations.
@@ -780,7 +802,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     @staticmethod
     def _split_rgb_segmentations(img: np.ndarray,
-                                 uniq_rgb_vals: list[tuple[int, int, int]]
+                                 uniq_rgb_vals: Sequence[tuple[int, int, int]]
                                  ) -> Generator[BytesIO, None, None]:
         """
         Split RGB segmentations into individual binary masks.
@@ -880,9 +902,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
         elif isinstance(file_path, np.ndarray):
             # Convert numpy array to NIfTI in-memory and upload
-            img = nib.Nifti1Image(file_path, affine=np.eye(4))
+            img = Nifti1Image(file_path, affine=np.eye(4))
             bio = BytesIO()
-            file_map = nib.Nifti1Image.make_file_map({'image': bio, 'header': bio})
+            file_map = Nifti1Image.make_file_map({'image': bio, 'header': bio})
             img.to_file_map(file_map)
             bio.seek(0)
 
@@ -935,7 +957,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             fios = AnnotationsApi._numpy_to_bytesio_png(normalized_imgs)
 
         elif file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
-            segs_imgs = nib.load(file_path).get_fdata()
+            loaded_image: Any = nib_load(file_path)
+            segs_imgs = loaded_image.get_fdata()
             if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
                 raise ValueError(f"Invalid segmentation shape: {segs_imgs.shape}")
 
@@ -1034,16 +1057,17 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Returns:
             The id of the created annotation.
         """
-        annotation_dto = CreateAnnotationDto(
-            type=AnnotationType.CATEGORY,
-            identifier=identifier,
-            scope='image',
+        annotation = ImageClassification(
+            name=identifier,
             value=value,
             imported_from=imported_from,
-            model_id=model_id
+            model_id=model_id,
         )
 
-        return self.create(resource, annotation_dto)
+        created = self.create(resource, annotation)
+        if not isinstance(created, str):
+            raise TypeError('Expected a single annotation id for image classification creation.')
+        return created
 
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],
@@ -1057,7 +1081,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             worklist_id: str | None = None,
                             imported_from: str | None = None,
                             author_email: str | None = None,
-                            model_id: str | None = None) -> Sequence[str]:
+                            model_id: str | None = None) -> str:
         """
         Add a line annotation to a resource.
 
@@ -1094,86 +1118,57 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     project='Example Project',
                 )
         """
-
-        if project is not None and worklist_id is not None:
-            raise ValueError('Only one of project or worklist_id can be provided.')
-
-        if coords_system == 'pixel':
-            if dicom_metadata is None:
-                point1 = (point1[0], point1[1], frame_index)
-                point2 = (point2[0], point2[1], frame_index)
-                geom = LineGeometry(point1, point2)
-            else:
-                if isinstance(dicom_metadata, str):
-                    dicom_metadata = pydicom.dcmread(dicom_metadata)
-                geom = LineGeometry.from_dicom(dicom_metadata, point1, point2, slice_index=frame_index)
-        elif coords_system == 'patient':
-            geom = LineGeometry(point1, point2)
-        else:
-            raise ValueError(f"Unknown coordinate system: {coords_system}")
-
-        return self._create_geometry_annotation(
-            geometry=geom,
-            resource_id=resource_id,
+        resolved_worklist_id = self._resolve_annotation_worklist_id(project, worklist_id)
+        annotation = LineAnnotation.from_points(
+            point1,
+            point2,
             identifier=identifier,
             frame_index=frame_index,
-            project=project,
-            worklist_id=worklist_id,
-            imported_from=imported_from,
-            author_email=author_email,
-            model_id=model_id
-        )
-
-    def _create_geometry_annotation(self,
-                                    geometry: Geometry,
-                                    resource_id: str,
-                                    identifier: str,
-                                    frame_index: int | None = None,
-                                    project: str | None = None,
-                                    worklist_id: str | None = None,
-                                    imported_from: str | None = None,
-                                    author_email: str | None = None,
-                                    model_id: str | None = None) -> Sequence[str]:
-        """
-        Create an annotation with the given geometry.
-
-        Args:
-            geometry: The geometry object (e.g., LineGeometry, BoxGeometry).
-            resource_id: The resource unique id.
-            identifier: The annotation identifier/label.
-            frame_index: The frame index of the annotation.
-            project: The project unique id or name.
-            worklist_id: The annotation worklist unique id.
-            imported_from: The imported from source value.
-            author_email: The email to consider as the author.
-            model_id: The model unique id.
-
-        Returns:
-            List of created annotation IDs.
-        """
-        if project is not None and worklist_id is not None:
-            raise ValueError('Only one of project or worklist_id can be provided.')
-
-        if project is not None:
-            proj = self._resources_api.projects_api._get_by_name_or_id(project)
-            if proj is None:
-                raise ItemNotFoundError('project', {'name_or_id': project})
-            worklist_id = proj.worklist_id
-
-        scope = 'frame' if frame_index is not None else 'image'
-        annotation_dto = CreateAnnotationDto(
-            type=geometry.type,
-            identifier=identifier,
-            scope=scope,
-            frame_index=frame_index,
-            geometry=geometry,
+            dicom_metadata=dicom_metadata,
+            coords_system=coords_system,
+            annotation_worklist_id=resolved_worklist_id,
             imported_from=imported_from,
             import_author=author_email,
             model_id=model_id,
-            annotation_worklist_id=worklist_id
         )
 
-        return self.create(resource_id, annotation_dto)
+        created = self.create(resource_id, annotation)
+        if not isinstance(created, str):
+            raise TypeError('Expected a single annotation id for line annotation creation.')
+        return created
+
+    def add_box_annotation(self,
+                           point1: tuple[int, int] | tuple[float, float, float],
+                           point2: tuple[int, int] | tuple[float, float, float],
+                           resource_id: str,
+                           identifier: str,
+                           frame_index: int | None = None,
+                           dicom_metadata: pydicom.Dataset | str | Path | None = None,
+                           coords_system: CoordinateSystem = 'pixel',
+                           project: str | None = None,
+                           worklist_id: str | None = None,
+                           imported_from: str | None = None,
+                           author_email: str | None = None,
+                           model_id: str | None = None) -> str:
+        """Add a box annotation to a resource."""
+        resolved_worklist_id = self._resolve_annotation_worklist_id(project, worklist_id)
+        annotation = BoxAnnotation.from_points(
+            point1,
+            point2,
+            identifier=identifier,
+            frame_index=frame_index,
+            dicom_metadata=dicom_metadata,
+            coords_system=coords_system,
+            annotation_worklist_id=resolved_worklist_id,
+            imported_from=imported_from,
+            import_author=author_email,
+            model_id=model_id,
+        )
+
+        created = self.create(resource_id, annotation)
+        if not isinstance(created, str):
+            raise TypeError('Expected a single annotation id for box annotation creation.')
+        return created
 
     def download_file(self,
                       annotation: str | Annotation,
@@ -1302,7 +1297,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     def bulk_download_file(self,
                            annotations: Sequence[str | Annotation],
                            save_paths: Sequence[str | Path] | str
-                           ) -> None:
+                           ) -> list[dict[str, Any]]:
         """Alias for :py:meth:`download_multiple_files`"""
         return self.download_multiple_files(annotations, save_paths)
 
@@ -1357,4 +1352,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         self._make_request('POST', f'{self.endpoint_base}/delete-batch', json={'ids': ids})
 
     def _get_resource(self, ann: Annotation) -> Resource:
+        if ann.resource_id is None:
+            raise ValueError('Annotation does not have an associated resource_id.')
         return self._resources_api.get_by_id(ann.resource_id)

@@ -278,6 +278,12 @@ class BaseSegmentationAnnotation(Annotation):
             segmentation_data = mask
         super().__init__(segmentation_data=segmentation_data, **kwargs)
 
+    def _to_create_dto(self):
+        raise ValueError(
+            'Segmentation annotations require file upload. '
+            'Use upload_segmentations or upload_volume_segmentation instead.'
+        )
+
     @overload
     def fetch_file_data(
         self,

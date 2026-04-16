@@ -2,6 +2,7 @@ import httpx
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.annotations_api import AnnotationsApi
+from datamint.entities.annotations import ImageClassification, LineAnnotation
 
 
 def test_annotations_api_patch_approve_and_delete_batch(
@@ -44,3 +45,143 @@ def test_annotations_api_patch_approve_and_delete_batch(
     assert json_body(requests[2]) == {
         "ids": [api_ids.annotation_id, api_ids.annotation_id_2],
     }
+
+
+def test_annotations_api_create_accepts_annotation_entity(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = decoded_path(request)
+        if request.method == "POST" and path == f"/annotations/{api_ids.resource_id}/annotations":
+            return httpx.Response(200, json=[api_ids.annotation_id])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+        created_id = annotations_api.create(
+            api_ids.resource_id,
+            ImageClassification(
+                name="category",
+                value="benign",
+                imported_from="integration-test",
+                model_id="model-123",
+            ),
+        )
+
+    assert created_id == api_ids.annotation_id
+    assert json_body(requests[0]) == [
+        {
+            "value": "benign",
+            "type": "category",
+            "identifier": "category",
+            "scope": "image",
+            "imported_from": "integration-test",
+            "is_model": True,
+            "model_id": "model-123",
+        }
+    ]
+
+
+def test_annotations_api_get_by_id_returns_typed_geometry_annotation(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+) -> None:
+    payload = {
+        "id": api_ids.annotation_id,
+        "resource_id": api_ids.resource_id,
+        "name": "Line1",
+        "type": "line",
+        "index": 2,
+        "geometry": {"points": [[0, 0, 2], [10, 30, 2]]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = decoded_path(request).rstrip("/")
+        if request.method == "GET" and path == f"/annotations/{api_ids.annotation_id}":
+            return httpx.Response(200, json=payload)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+        annotation = annotations_api.get_by_id(api_ids.annotation_id)
+
+    assert isinstance(annotation, LineAnnotation)
+    assert annotation.frame_index == 2
+    assert annotation.scope == "frame"
+    assert annotation.geometry is not None
+    assert annotation.geometry.point1 == (0, 0, 2)
+    assert annotation.geometry.point2 == (10, 30, 2)
+
+
+def test_annotations_api_geometry_helpers_create_typed_payloads(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = decoded_path(request)
+        if request.method == "POST" and path == f"/annotations/{api_ids.resource_id}/annotations":
+            response_id = api_ids.annotation_id if len(requests) == 1 else api_ids.annotation_id_2
+            return httpx.Response(200, json=[response_id])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+        line_id = annotations_api.add_line_annotation(
+            (0, 0),
+            (10, 30),
+            resource_id=api_ids.resource_id,
+            identifier="Line1",
+            frame_index=2,
+            worklist_id="worklist-1",
+            imported_from="manual",
+            author_email=api_ids.email,
+            model_id="model-123",
+        )
+        box_id = annotations_api.add_box_annotation(
+            (5, 10),
+            (25, 35),
+            resource_id=api_ids.resource_id,
+            identifier="Box1",
+            worklist_id="worklist-2",
+        )
+
+    assert line_id == api_ids.annotation_id
+    assert box_id == api_ids.annotation_id_2
+    assert json_body(requests[0]) == [
+        {
+            "type": "line",
+            "identifier": "Line1",
+            "scope": "frame",
+            "frame_index": 2,
+            "annotation_worklist_id": "worklist-1",
+            "imported_from": "manual",
+            "import_author": api_ids.email,
+            "geometry": {"points": [[0, 0, 2], [10, 30, 2]]},
+            "is_model": True,
+            "model_id": "model-123",
+        }
+    ]
+    assert json_body(requests[1]) == [
+        {
+            "type": "square",
+            "identifier": "Box1",
+            "scope": "image",
+            "annotation_worklist_id": "worklist-2",
+            "geometry": {"points": [[5, 10, None], [25, 35, None]]},
+        }
+    ]
