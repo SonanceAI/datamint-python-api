@@ -1217,7 +1217,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         # If so, download the whole resource file and return the image.
         if not isinstance(resource, Resource):
             resource = self.get_by_id(resource)
-        if resource.mimetype.startswith('image/') or resource.storage == 'ImageResource':
+        if resource.is_image():
             if frame_index != 0:
                 raise DatamintException(f"Resource {resource.id} is not a multi-frame resource, "
                                         f"but frame_index is {frame_index}.")

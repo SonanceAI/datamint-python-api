@@ -1,13 +1,13 @@
 """Resource entity module for DataMint API."""
 
+from collections.abc import Sequence
 from datetime import datetime
 import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 import urllib.parse
 import urllib.request
 import webbrowser
-from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal, overload
-from collections.abc import Sequence
 
 from pydantic import PrivateAttr
 
@@ -19,14 +19,18 @@ if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
     from medimgkit import ViewPlane
     from .annotations.annotation import Annotation
+    from .annotations import AnnotationType
     from datamint.types import ImagingData
-    from datamint.api.dto import AnnotationType
+    import numpy as np
+    from .sliced_resource import SlicedVolumeResource
+    from .sliced_video_resource import SlicedVideoResource
 
 
 logger = logging.getLogger(__name__)
 
 
 _IMAGE_CACHEKEY = "image_data"
+_SPECIALIZED_RESOURCE_TYPES_IMPORTED = False
 
 
 class Resource(BaseEntity):
@@ -71,6 +75,13 @@ class Resource(BaseEntity):
         user_info: Information about the user who created the resource
         projects: List of projects this resource belongs to
     """
+    resource_kind: ClassVar[str] = 'resource'
+    resource_priority: ClassVar[int] = 0
+    storage_aliases: ClassVar[tuple[str, ...]] = ()
+    mimetypes: ClassVar[tuple[str, ...]] = ()
+    mimetype_prefixes: ClassVar[tuple[str, ...]] = ()
+    filename_suffixes: ClassVar[tuple[str, ...]] = ()
+
     id: str
     resource_uri: str
     storage: str
@@ -103,15 +114,130 @@ class Resource(BaseEntity):
     # segmentations: Optional[Any] = None  # TODO: Define proper type when spec available
     # measurements: Optional[Any] = None  # TODO: Define proper type when spec available
     # categories: Optional[Any] = None  # TODO: Define proper type when spec available
-    user_info: dict[str, str | None] = MISSING_FIELD
+    user_info: dict[str, str | None] | str = MISSING_FIELD
 
     _api: 'ResourcesApi' = PrivateAttr()
     _shared_cache: ClassVar[CacheManager[bytes] | None] = None
+    _specialized_subclasses: ClassVar[list[type['Resource']]] = []
+
+    def __init_subclass__(cls, **kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        has_discriminator = any((
+            getattr(cls, 'storage_aliases', ()),
+            getattr(cls, 'mimetypes', ()),
+            getattr(cls, 'mimetype_prefixes', ()),
+            getattr(cls, 'filename_suffixes', ()),
+        ))
+        if not has_discriminator:
+            return
+
+        Resource._specialized_subclasses = [
+            subclass
+            for subclass in Resource._specialized_subclasses
+            if subclass is not cls
+        ]
+        Resource._specialized_subclasses.append(cls)
 
     def __new__(cls, *args, **kwargs):
         if cls is Resource and ('local_filepath' in kwargs or 'raw_data' in kwargs):
-            return super().__new__(LocalResource)
-        return super().__new__(cls)
+            return object.__new__(LocalResource)
+        if cls is Resource:
+            specialized_cls = cls._infer_specialized_resource_class(**kwargs)
+            if specialized_cls is not Resource:
+                return object.__new__(specialized_cls)
+        return object.__new__(cls)
+
+    @staticmethod
+    def _normalize_token(value: str | None) -> str:
+        return value.casefold() if isinstance(value, str) else ''
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _iter_specialized_subclasses(cls) -> list[type['Resource']]:
+        _ensure_specialized_resource_types_loaded()
+        return sorted(
+            cls._specialized_subclasses,
+            key=lambda subclass: subclass.resource_priority,
+            reverse=True,
+        )
+
+    @classmethod
+    def matches_payload(
+        cls,
+        *,
+        storage: str | None = None,
+        mimetype: str | None = None,
+        filename: str | None = None,
+    ) -> bool:
+        storage_norm = cls._normalize_token(storage)
+        mimetype_norm = cls._normalize_token(mimetype)
+        filename_norm = cls._normalize_token(filename)
+
+        if storage_norm and storage_norm in {value.casefold() for value in cls.storage_aliases}:
+            return True
+        if mimetype_norm and mimetype_norm in {value.casefold() for value in cls.mimetypes}:
+            return True
+        if mimetype_norm and any(
+            mimetype_norm.startswith(prefix.casefold())
+            for prefix in cls.mimetype_prefixes
+        ):
+            return True
+        if filename_norm and any(
+            filename_norm.endswith(suffix.casefold())
+            for suffix in cls.filename_suffixes
+        ):
+            return True
+
+        return False
+
+    @classmethod
+    def _infer_specialized_resource_class(cls, **kwargs) -> type['Resource']:
+        storage = kwargs.get('storage')
+        mimetype = kwargs.get('mimetype')
+        filename = kwargs.get('filename')
+
+        for subclass in cls._iter_specialized_subclasses():
+            if subclass.matches_payload(
+                storage=storage,
+                mimetype=mimetype,
+                filename=filename,
+            ):
+                return subclass
+
+        return cls
+
+    def _resolved_resource_class(self) -> type['Resource']:
+        return type(self)._infer_specialized_resource_class(
+            storage=getattr(self, 'storage', None),
+            mimetype=getattr(self, 'mimetype', None),
+            filename=getattr(self, 'filename', None),
+        )
+
+    @property
+    def kind(self) -> str:
+        return self._resolved_resource_class().resource_kind
+
+    def _metadata_dict(self) -> dict[str, Any]:
+        metadata = getattr(self, 'metadata', None)
+        if isinstance(metadata, dict):
+            return metadata
+        return {}
+
+    def _metadata_value(self, *keys: str) -> Any:
+        value: Any = self._metadata_dict()
+        for key in keys:
+            if not isinstance(value, dict):
+                return None
+            value = value.get(key)
+        return value
 
     @property
     def _cache(self) -> CacheManager[bytes]:
@@ -278,13 +404,17 @@ class Resource(BaseEntity):
         """
         return round(self.size / (1024 * 1024), 2)
 
+    def is_image(self) -> bool:
+        """Check if the resource is a single-frame image."""
+        return self.kind == 'image'
+
     def is_dicom(self) -> bool:
         """Check if the resource is a DICOM file.
 
         Returns:
             True if the resource is a DICOM file, False otherwise
         """
-        return self.mimetype == 'application/dicom' or self.storage == 'DicomResource'
+        return self.kind == 'dicom'
 
     def is_nifti(self) -> bool:
         """Check if the resource is a NIfTI file.
@@ -292,9 +422,7 @@ class Resource(BaseEntity):
         Returns:
             True if the resource is a NIfTI file, False otherwise
         """
-        if self.mimetype == 'application/nifti':
-            return True
-        return self.mimetype == 'application/gzip' and self.filename.lower().endswith('.nii.gz')
+        return self.kind == 'nifti'
 
     def is_video(self) -> bool:
         """Check if the resource is a video file.
@@ -302,17 +430,38 @@ class Resource(BaseEntity):
         Returns:
             True if the resource is a video file, False otherwise
         """
-        return self.mimetype.startswith('video/') or self.storage == 'VideoResourceHandler'
+        return self.kind == 'video'
+
+    def is_volume(self) -> bool:
+        """Check if the resource is a volumetric resource."""
+        return self.kind in {'volume', 'dicom', 'nifti'}
+
+    def is_multiframe(self) -> bool:
+        """Check if the resource contains multiple frames or slices."""
+        return self.is_volume() or self.is_video()
 
     def get_depth(self) -> int:
-        if self.is_dicom() or self.is_nifti():
-            return int(self.metadata['frame_count'])
-        if self.mimetype.startswith('image/'):
+        metadata = self._metadata_dict()
+
+        if self.is_image():
             return 1
+
+        if self.is_volume():
+            frame_count = self._coerce_int(metadata.get('frame_count'))
+            if frame_count is not None:
+                return frame_count
+
         if self.is_video():
-            for st in self.metadata['streams']:
-                if st['codec_type'] == 'video':
-                    return int(st['nb_frames'])
+            streams = metadata.get('streams')
+            if isinstance(streams, list):
+                for stream in streams:
+                    if not isinstance(stream, dict):
+                        continue
+                    if stream.get('codec_type') != 'video':
+                        continue
+                    frame_count = self._coerce_int(stream.get('nb_frames'))
+                    if frame_count is not None:
+                        return frame_count
 
         raise ValueError(f"Cannot determine depth for resource with mimetype {self.mimetype}")
 
@@ -330,7 +479,7 @@ class Resource(BaseEntity):
         Returns:
             Human-readable string describing the resource
         """
-        return f"Resource(id='{self.id}', filename='{self.filename}', size={self.size_mb}MB)"
+        return f"{self.__class__.__name__}(id='{self.id}', filename='{self.filename}', size={self.size_mb}MB)"
 
     def __repr__(self) -> str:
         """Detailed string representation of the resource.
@@ -339,7 +488,7 @@ class Resource(BaseEntity):
             Detailed string representation for debugging
         """
         return (
-            f"Resource(id='{self.id}', filename='{self.filename}', "
+            f"{self.__class__.__name__}(id='{self.id}', filename='{self.filename}', "
             f"modality='{self.modality}', status='{self.status}', "
             f"published={self.published})"
         )
@@ -374,7 +523,34 @@ class Resource(BaseEntity):
             )
         return self.__slice_cache_manager
 
-    def get_slice(self, axis: 'ViewPlane', index: int):
+    @property
+    def _frame_cache_manager(self) -> CacheManager:
+        """Cache manager for sliced video frames derived from this resource."""
+        if not hasattr(self, '__frame_cache_manager'):
+            self.__frame_cache_manager = CacheManager(
+                'sliced_video_frames',
+                enable_memory_cache=True,
+                memory_cache_maxsize=2,
+            )
+        return self.__frame_cache_manager
+
+    def get_slice_resource(self, axis: 'ViewPlane', index: int) -> 'SlicedVolumeResource':
+        """Get a proxy object for a specific volume slice."""
+        if not self.is_volume():
+            raise ValueError("Slices are only available for volume resources.")
+        if index < 0:
+            raise IndexError("slice index must be non-negative")
+
+        from .sliced_resource import SlicedVolumeResource
+
+        return SlicedVolumeResource(
+            self,
+            index,
+            slice_axis=axis,
+            sliced_vols_cache=self._slice_cache_manager,
+        )
+
+    def get_slice(self, axis: 'ViewPlane', index: int) -> 'np.ndarray':
         """Get a specific slice of the volume as a SlicedVolumeResource.
 
         Args:
@@ -383,11 +559,42 @@ class Resource(BaseEntity):
         Returns:
             A numpy array representing the specified slice
         """
+        return self.get_slice_resource(axis, index).fetch_slice_data()
+
+    def iter_slices(self, axis: 'ViewPlane') -> list['SlicedVolumeResource']:
+        """Expand a volume into one proxy resource per slice."""
+        if not self.is_volume():
+            raise ValueError("Slices are only available for volume resources.")
+
         from .sliced_resource import SlicedVolumeResource
-        sr = SlicedVolumeResource(self, index,
-                                  slice_axis=axis,
-                                  sliced_vols_cache=self._slice_cache_manager)
-        return sr.fetch_slice_data()
+
+        return SlicedVolumeResource.slice_over(self, axis, self._slice_cache_manager)
+
+    def get_frame_resource(self, index: int) -> 'SlicedVideoResource':
+        """Get a proxy object for a specific video frame."""
+        if not self.is_video():
+            raise ValueError("Frames are only available for video resources.")
+        if index < 0:
+            raise IndexError("frame index must be non-negative")
+        if index >= self.get_depth():
+            raise IndexError(f"frame index {index} is out of bounds for resource depth {self.get_depth()}")
+
+        from .sliced_video_resource import SlicedVideoResource
+
+        return SlicedVideoResource(self, index, self._frame_cache_manager)
+
+    def get_frame(self, index: int) -> 'np.ndarray':
+        """Get a decoded video frame as a normalized array."""
+        return self.get_frame_resource(index).fetch_frame_data()
+
+    def iter_frames(self) -> list['SlicedVideoResource']:
+        """Expand a video into one proxy resource per frame."""
+        if not self.is_video():
+            raise ValueError("Frames are only available for video resources.")
+
+        from .sliced_video_resource import SlicedVideoResource
+
+        return SlicedVideoResource.slice_over(self, self._frame_cache_manager)
 
 
 class LocalResource(Resource):
@@ -397,13 +604,15 @@ class LocalResource(Resource):
     raw_data: bytes | None = None
 
     @property
-    def filepath_cached(self) -> str | None:
+    def filepath_cached(self) -> Path | None:
         """Get the file path of the local resource data.
 
         Returns:
             Path to the local file, or None if only raw data is available.
         """
-        return self.local_filepath
+        if self.local_filepath is None:
+            return None
+        return Path(self.local_filepath)
 
     def __init__(self,
                  local_filepath: str | Path | None = None,
@@ -445,6 +654,7 @@ class LocalResource(Resource):
                 filename = Path(url_path).name if url_path else 'downloaded_file'
 
                 # Determine mimetype
+                assert raw_data is not None
                 mimetype, _ = guess_type(raw_data)
                 if mimetype is None and content_type:
                     mimetype = content_type
@@ -473,11 +683,12 @@ class LocalResource(Resource):
                 new_kwargs = kwargs.copy()
                 for key, value in default_values.items():
                     new_kwargs.setdefault(key, value)
-                super(Resource, self).__init__(
-                    local_filepath=None,
-                    raw_data=raw_data,
-                    **new_kwargs
-                )
+                local_data = {
+                    **new_kwargs,
+                    'local_filepath': None,
+                    'raw_data': raw_data,
+                }
+                super().__init__(**local_data)
                 return
 
         if convert_to_bytes and local_filepath:
@@ -486,6 +697,7 @@ class LocalResource(Resource):
                 local_filepath = None
         if raw_data is not None:
             # import io
+            assert raw_data is not None
             if isinstance(raw_data, str):
                 mimetype, _ = guess_type(raw_data.encode())
             else:
@@ -512,11 +724,12 @@ class LocalResource(Resource):
             new_kwargs = kwargs.copy()
             for key, value in default_values.items():
                 new_kwargs.setdefault(key, value)
-            super().__init__(
-                local_filepath=None,
-                raw_data=raw_data,
-                **new_kwargs
-            )
+            local_data = {
+                **new_kwargs,
+                'local_filepath': None,
+                'raw_data': raw_data,
+            }
+            super().__init__(**local_data)
         elif local_filepath is not None:
             file_path = Path(local_filepath)
             if not file_path.exists():
@@ -528,27 +741,28 @@ class LocalResource(Resource):
             size = file_path.stat().st_size
             created_at = datetime.fromtimestamp(file_path.stat().st_ctime).isoformat()
 
-            super().__init__(
-                id="",
-                resource_uri="",
-                storage="",
-                location=str(file_path),
-                upload_channel="",
-                filename=file_path.name,
-                modality=detect_modality(file_path),
-                mimetype=mimetype,
-                size=size,
-                upload_mechanism="",
-                customer_id="",
-                status="local",
-                created_at=created_at,
-                created_by="",
-                published=False,
-                deleted=False,
-                source_filepath=str(file_path),
-                local_filepath=str(file_path),
-                raw_data=None,
-            )
+            local_data = {
+                'id': "",
+                'resource_uri': "",
+                'storage': "",
+                'location': str(file_path),
+                'upload_channel': "",
+                'filename': file_path.name,
+                'modality': detect_modality(file_path),
+                'mimetype': mimetype,
+                'size': size,
+                'upload_mechanism': "",
+                'customer_id': "",
+                'status': "local",
+                'created_at': created_at,
+                'created_by': "",
+                'published': False,
+                'deleted': False,
+                'source_filepath': str(file_path),
+                'local_filepath': str(file_path),
+                'raw_data': None,
+            }
+            super().__init__(**local_data)
 
     @overload
     def fetch_file_data(
@@ -625,3 +839,13 @@ class LocalResource(Resource):
             f"filename='{self.filename}', modality='{self.modality}', "
             f"size={self.size_mb}MB)"
         )
+
+
+def _ensure_specialized_resource_types_loaded() -> None:
+    global _SPECIALIZED_RESOURCE_TYPES_IMPORTED
+    if _SPECIALIZED_RESOURCE_TYPES_IMPORTED:
+        return
+
+    from . import resources as resource_types
+
+    _SPECIALIZED_RESOURCE_TYPES_IMPORTED = resource_types is not None
