@@ -80,6 +80,8 @@ class AnnotationBase(BaseEntity):
 
     def __init__(self, **data):
         """Initialize the annotation base entity."""
+        if data.get('frame_index') is not None and data.get('scope')=='image':
+            data['frame_index'] = None
         super().__init__(**data)
 
     @property

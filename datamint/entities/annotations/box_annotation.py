@@ -5,6 +5,7 @@ from typing import Any
 
 import pydicom
 from pydantic import field_validator
+from nibabel.nifti1 import Nifti1Image
 
 from .base_geometry import BaseGeometryAnnotation
 from .geometry import BoxGeometry, CoordinateSystem
@@ -33,7 +34,7 @@ class BoxAnnotation(BaseGeometryAnnotation):
         *,
         identifier: str,
         frame_index: int | None = None,
-        dicom_metadata: pydicom.Dataset | str | Path | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
         coords_system: CoordinateSystem = 'pixel',
         **kwargs: Any,
     ) -> 'BoxAnnotation':
@@ -42,6 +43,6 @@ class BoxAnnotation(BaseGeometryAnnotation):
             point2,
             coords_system=coords_system,
             frame_index=frame_index,
-            dicom_metadata=dicom_metadata,
+            metadata=metadata,
         )
         return cls(identifier=identifier, frame_index=frame_index, geometry=geometry, **kwargs)

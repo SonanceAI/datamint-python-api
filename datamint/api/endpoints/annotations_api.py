@@ -1,4 +1,4 @@
-from typing import Any, BinaryIO, IO, Literal
+from typing import Any, BinaryIO, IO, Literal, overload, TYPE_CHECKING
 from collections.abc import Generator, Sequence
 from datetime import date
 from io import BytesIO
@@ -14,6 +14,7 @@ import numpy as np
 import pydicom
 from medimgkit.format_detection import guess_type
 from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
+from medimgkit import ViewPlane
 from nibabel.loadsave import load as nib_load
 from nibabel.nifti1 import Nifti1Image
 from PIL import Image
@@ -31,8 +32,13 @@ from datamint.entities.annotations import (
     annotation_from_dict,
 )
 from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.utils.nifti_utils import metadata_to_nifti_obj
 
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
+
+if TYPE_CHECKING:
+    from .resources_api import ResourcesApi
+    from .models_api import ModelsApi
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,8 +51,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         self,
         config: ApiConfig,
         client: httpx.Client | None = None,
-        models_api: Any | None = None,
-        resources_api: Any | None = None,
+        models_api: 'ModelsApi | None' = None,
+        resources_api: 'ResourcesApi | None' = None,
     ) -> None:
         from .models_api import ModelsApi
         from .resources_api import ResourcesApi
@@ -80,8 +86,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             raise ItemNotFoundError('project', {'name_or_id': project})
         return proj.worklist_id
 
-    def get_list(  # type: ignore[override]
-                 self,
+    @overload
+    def get_list(self,
                  resource: str | Resource | Sequence[str | Resource] | None = None,
                  annotation_type: AnnotationType | str | None = None,
                  annotator_email: str | None = None,
@@ -92,9 +98,40 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  status: Literal['new', 'published'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
-                 group_by_resource: bool = False,
-                 **kwargs: Any,
-                 ) -> Sequence[Annotation] | Sequence[Sequence[Annotation]]:
+                 group_by_resource: Literal[False] = False
+                 ) -> Sequence[Annotation]: ...
+
+    @overload
+    def get_list(self,
+                 resource: str | Resource | Sequence[str | Resource] | None = None,
+                 annotation_type: AnnotationType | str | None = None,
+                 annotator_email: str | None = None,
+                 date_from: date | None = None,
+                 date_to: date | None = None,
+                 dataset_id: str | None = None,
+                 worklist_id: str | None = None,
+                 status: Literal['new', 'published'] | None = None,
+                 load_ai_segmentations: bool | None = None,
+                 limit: int | None = None,
+                 *,
+                 group_by_resource: Literal[True]
+                 ) -> Sequence[Sequence[Annotation]]: ...
+
+    def get_list(  # type: ignore[override]
+        self,
+        resource: str | Resource | Sequence[str | Resource] | None = None,
+        annotation_type: AnnotationType | str | None = None,
+        annotator_email: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        dataset_id: str | None = None,
+        worklist_id: str | None = None,
+        status: Literal['new', 'published'] | None = None,
+        load_ai_segmentations: bool | None = None,
+        limit: int | None = None,
+        group_by_resource: bool = False,
+        **kwargs: Any,
+    ) -> Sequence[Annotation] | Sequence[Sequence[Annotation]]:
         """
         Retrieve a list of annotations with optional filtering.
 
@@ -1072,10 +1109,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],
                             point2: tuple[int, int] | tuple[float, float, float],
-                            resource_id: str,
+                            resource: str | Resource,
                             identifier: str,
                             frame_index: int | None = None,
-                            dicom_metadata: pydicom.Dataset | str | None = None,
+                            slice_plane: ViewPlane | None = None,
+                            metadata: pydicom.Dataset | Nifti1Image | None = None,
+                            dicom_metadata: pydicom.Dataset | None = None,
                             coords_system: CoordinateSystem = 'pixel',
                             project: str | None = None,
                             worklist_id: str | None = None,
@@ -1095,7 +1134,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             resource_id: The resource unique id.
             identifier: The annotation identifier, also as known as the annotation's label.
             frame_index: The frame index of the annotation.
-            dicom_metadata: The DICOM metadata of the image. If provided, the coordinates will be converted to the
+            dicom_metadata: (DEPRECATED) The DICOM metadata of the image. If provided, the coordinates will be converted to the
                 correct coordinates automatically using the DICOM metadata.
             coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'.
                 If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
@@ -1118,13 +1157,37 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     project='Example Project',
                 )
         """
+
+        resource_id = self._entid(resource)
+
+        if dicom_metadata is not None:
+            import warnings
+            warnings.warn("The 'dicom_metadata' parameter is deprecated. "
+                          "Please use 'metadata' parameter instead", DeprecationWarning)
+            metadata = dicom_metadata
+
+        if metadata is None and coords_system != 'patient':
+            # collect it from server
+            if not isinstance(resource, Resource):
+                resource = self._resources_api.get_by_id(resource_id)
+            if resource.is_dicom():
+                metadata = resource.fetch_file_data(use_cache='loadonly',
+                                                    auto_convert=True)
+            elif resource.is_nifti():
+                dict_metadata = resource.metadata
+                metadata = metadata_to_nifti_obj(dict_metadata)
+            else:
+                raise NotImplementedError('pixel to patient coordinate conversion is only supported for DICOM and NIfTI resources.'
+                                          ' Please provide the metadata or send coordinates in patient coordinates.')
+
         resolved_worklist_id = self._resolve_annotation_worklist_id(project, worklist_id)
         annotation = LineAnnotation.from_points(
             point1,
             point2,
             identifier=identifier,
             frame_index=frame_index,
-            dicom_metadata=dicom_metadata,
+            slice_plane=slice_plane,
+            metadata=metadata,
             coords_system=coords_system,
             annotation_worklist_id=resolved_worklist_id,
             imported_from=imported_from,

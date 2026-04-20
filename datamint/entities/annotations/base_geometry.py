@@ -14,7 +14,16 @@ class BaseGeometryAnnotation(Annotation):
     geometry: Geometry | None = None
 
     def __init__(self, geometry: Geometry | dict[str, Any] | None = None, **kwargs: Any) -> None:
-        kwargs.setdefault('scope', 'frame' if kwargs.get('frame_index') is not None else 'image')
+        if 'scope' not in kwargs:
+            inferred_scope = 'image'
+            if isinstance(geometry, dict):
+                coord_system = geometry.get('coordinate_system', 'patient')
+            else:
+                coord_system = getattr(geometry, 'coordinate_system', 'patient')
+            if 'frame_index' in kwargs and coord_system != 'patient':
+                inferred_scope = 'frame'
+            kwargs['scope'] = inferred_scope
+
         super().__init__(geometry=geometry, **kwargs)
 
     @staticmethod

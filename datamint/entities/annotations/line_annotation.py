@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
+from medimgkit import ViewPlane
 from typing import Any
 
+from nibabel.nifti1 import Nifti1Image
 import pydicom
 from pydantic import field_validator
 
@@ -17,7 +18,6 @@ class LineAnnotation(BaseGeometryAnnotation):
 
     def __init__(self, geometry: LineGeometry | dict[str, Any] | None = None, **kwargs: Any) -> None:
         kwargs.setdefault('annotation_type', 'line')
-        kwargs.setdefault('scope', 'frame' if kwargs.get('frame_index') is not None else 'image')
         super().__init__(geometry=geometry, **kwargs)
 
     @field_validator('geometry', mode='before')
@@ -33,7 +33,8 @@ class LineAnnotation(BaseGeometryAnnotation):
         *,
         identifier: str,
         frame_index: int | None = None,
-        dicom_metadata: pydicom.Dataset | str | Path | None = None,
+        slice_plane: ViewPlane | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
         coords_system: CoordinateSystem = 'pixel',
         **kwargs: Any,
     ) -> 'LineAnnotation':
@@ -42,6 +43,7 @@ class LineAnnotation(BaseGeometryAnnotation):
             point2,
             coords_system=coords_system,
             frame_index=frame_index,
-            dicom_metadata=dicom_metadata,
+            slice_plane=slice_plane,
+            metadata=metadata,
         )
         return cls(identifier=identifier, frame_index=frame_index, geometry=geometry, **kwargs)
