@@ -18,7 +18,7 @@ from PIL import Image
 from pydantic import BeforeValidator, PlainSerializer, Field
 
 from .annotation import Annotation
-from datamint.types import ImagingData
+from datamint.types import CacheMode, ImagingData
 from nibabel.nifti1 import Nifti1Image
 
 _LOGGER = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ class BaseSegmentationAnnotation(Annotation):
         self,
         auto_convert: Literal[True] = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> ImagingData: ...
 
     @overload
@@ -297,14 +297,14 @@ class BaseSegmentationAnnotation(Annotation):
         self,
         auto_convert: Literal[False],
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> bytes: ...
 
     def fetch_file_data(
         self,
         auto_convert: bool = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> bytes | ImagingData:
         """Return segmentation file data.
 
@@ -318,8 +318,9 @@ class BaseSegmentationAnnotation(Annotation):
                 when *False* return raw ``bytes`` (NIfTI-encoded for volumes,
                 PNG-encoded for 2-D images).
             save_path: Optional path to persist the data on disk.
-            use_cache: Whether to use disk-cached data when the API would
-                otherwise be called.
+            use_cache: Cache behavior for this call. Use ``False`` to bypass
+                cache entirely, ``True`` to read from and save to cache, or
+                ``"loadonly"`` to read from cache without saving cache misses.
 
         Returns:
             Segmentation data as a native object (when *auto_convert* is

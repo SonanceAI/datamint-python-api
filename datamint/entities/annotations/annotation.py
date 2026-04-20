@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
-from datamint.types import ImagingData
+from datamint.types import CacheMode, ImagingData
 
 from ..base_entity import BaseEntity, MISSING_FIELD
 from ..cache_manager import CacheManager
@@ -196,7 +196,7 @@ class Annotation(AnnotationBase):
         self,
         auto_convert: Literal[True] = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> 'ImagingData': ...
 
     @overload
@@ -204,23 +204,26 @@ class Annotation(AnnotationBase):
         self,
         auto_convert: Literal[False],
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> bytes: ...
 
     def fetch_file_data(
         self,
         auto_convert: bool = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> 'bytes | ImagingData':
         """Get the file data for this annotation.
 
         Args:
-            save_path: Optional path to save the file locally. If use_cache is also True,
-                      the file is saved to save_path and cache metadata points to that location
-                      (no duplication - only one file on disk).
+            save_path: Optional path to save the file locally. If
+                      ``use_cache=True``, the file is saved to save_path and
+                      cache metadata points to that location (no duplication -
+                      only one file on disk).
             auto_convert: If True, automatically converts to appropriate format
-            use_cache: If True, uses cached data when available and valid
+            use_cache: Cache behavior for this call. Use ``False`` to bypass
+                cache entirely, ``True`` to read from and save to cache, or
+                ``"loadonly"`` to read from cache without saving cache misses.
 
         Returns:
             File data (format depends on auto_convert and file type)
@@ -228,6 +231,7 @@ class Annotation(AnnotationBase):
         Example:
             >>> annotation = api.annotations.get_list(limit=1)[0]
             >>> data = annotation.fetch_file_data(use_cache=True)
+            >>> data = annotation.fetch_file_data(use_cache="loadonly")
             >>> annotation.fetch_file_data(save_path="annotation_file")
         """
         # Version info for cache validation

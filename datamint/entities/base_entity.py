@@ -4,6 +4,8 @@ from html import escape
 from typing import Any, TYPE_CHECKING
 from pydantic import ConfigDict, BaseModel, PrivateAttr
 
+from datamint.types import CacheMode
+
 if TYPE_CHECKING:
     from datamint.api.entity_base_api import EntityBaseApi
 
@@ -247,6 +249,18 @@ class BaseEntity(BaseModel):
             state['__pydantic_private__'] = private
         super().__setstate__(state)
 
+    @staticmethod
+    def _resolve_cache_mode(use_cache: CacheMode) -> tuple[bool, bool]:
+        if isinstance(use_cache, str):
+            if use_cache != 'loadonly':
+                raise ValueError("use_cache must be False, True, or 'loadonly'.")
+            return True, False
+
+        if not isinstance(use_cache, bool):
+            raise TypeError("use_cache must be False, True, or 'loadonly'.")
+
+        return use_cache, use_cache
+
     def _fetch_and_cache_file_data(
         self,
         cache_manager: 'Any',  # CacheManager[bytes]
@@ -254,7 +268,7 @@ class BaseEntity(BaseModel):
         version_info: dict[str, Any],
         download_callback: 'Any',  # Callable[[str | None], bytes]
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> bytes:
         """Shared logic for fetching and caching file data.
 
@@ -266,7 +280,9 @@ class BaseEntity(BaseModel):
             version_info: Version information for cache validation
             download_callback: Function to call to download the file, takes save_path as parameter
             save_path: Optional path to save the file locally
-            use_cache: If True, uses cached data when available
+            use_cache: Cache behavior for this call. ``False`` disables cache,
+                ``True`` enables cache reads and writes, and ``"loadonly"`` reads
+                from cache without saving cache misses back.
 
         Returns:
             File data as bytes
@@ -275,17 +291,18 @@ class BaseEntity(BaseModel):
 
         # Try to get from cache
         img_data = None
+        should_load_from_cache, should_save_to_cache = self._resolve_cache_mode(use_cache)
         
-        if use_cache:
+        if should_load_from_cache:
             img_data = cache_manager.get(self.id, data_key, version_info)
             if img_data is not None:
-                _LOGGER.debug(f"Using cached data for {self.__class__.__name__} {self.id}")
+                _LOGGER.debug("Using cached data for %s %s", self.__class__.__name__, self.id)
 
         if img_data is None:
             # Cache miss - fetch from server
-            if use_cache and save_path:
+            if should_save_to_cache and save_path:
                 # Download directly to save_path, register location in cache metadata
-                _LOGGER.debug(f"Downloading to save_path: {save_path}")
+                _LOGGER.debug("Downloading to save_path: %s", save_path)
                 Path(save_path).parent.mkdir(parents=True, exist_ok=True)
                 
                 img_data = download_callback(save_path)
@@ -294,10 +311,10 @@ class BaseEntity(BaseModel):
                 cache_manager.register_file_location(
                     self.id, data_key, save_path, version_info
                 )
-            elif use_cache:
+            elif should_save_to_cache:
                 # No save_path - download to cache directory
                 cache_path = cache_manager.get_expected_path(self.id, data_key)
-                _LOGGER.debug(f"Downloading to cache: {cache_path}")
+                _LOGGER.debug("Downloading to cache: %s", cache_path)
                 
                 img_data = download_callback(str(cache_path))
                 
@@ -305,11 +322,16 @@ class BaseEntity(BaseModel):
                 cache_manager.set(self.id, data_key, img_data, version_info)
             else:
                 # No caching - direct download to save_path (or just return bytes)
-                _LOGGER.debug(f"Fetching data from server for {self.__class__.__name__} {self.id}")
+                if should_load_from_cache and not should_save_to_cache:
+                    _LOGGER.debug(
+                        "Cache miss for %s %s; downloading without updating cache", self.__class__.__name__, self.id
+                    )
+                else:
+                    _LOGGER.debug("Fetching data from server for %s %s", self.__class__.__name__, self.id)
                 img_data = download_callback(save_path)
         elif save_path:
             # Cached data found, but user wants to save to a specific path
-            _LOGGER.debug(f"Saving cached data to specified path: {save_path}")
+            _LOGGER.debug("Saving cached data to specified path: %s", save_path)
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             with open(save_path, 'wb') as f:
                 f.write(img_data)

@@ -1,4 +1,4 @@
-from typing import TypeAlias, TYPE_CHECKING, Union
+from typing import Literal, TypeAlias, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     import pydicom.dataset
@@ -15,3 +15,5 @@ ImagingData: TypeAlias = (
         'nib_FileBasedImage'
     ]
 )
+
+CacheMode: TypeAlias = bool | Literal['loadonly']

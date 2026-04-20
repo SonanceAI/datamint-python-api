@@ -14,6 +14,7 @@ from pydantic import PrivateAttr
 from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
 from datamint.api.base_api import BaseApi
+from datamint.types import CacheMode
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
@@ -97,7 +98,7 @@ class Resource(BaseEntity):
     published: bool
     deleted: bool
     upload_mechanism: str | None = None
-    # metadata: dict = {}
+    metadata: dict[str, Any] = {}
     modality: str | None = None
     source_filepath: str | None = None
     # projects: list[dict[str, Any]] | None = None
@@ -225,14 +226,8 @@ class Resource(BaseEntity):
     def kind(self) -> str:
         return self._resolved_resource_class().resource_kind
 
-    def _metadata_dict(self) -> dict[str, Any]:
-        metadata = getattr(self, 'metadata', None)
-        if isinstance(metadata, dict):
-            return metadata
-        return {}
-
     def _metadata_value(self, *keys: str) -> Any:
-        value: Any = self._metadata_dict()
+        value: Any = self.metadata
         for key in keys:
             if not isinstance(value, dict):
                 return None
@@ -252,7 +247,7 @@ class Resource(BaseEntity):
         self,
         auto_convert: Literal[True] = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> 'ImagingData': ...
 
     @overload
@@ -260,14 +255,14 @@ class Resource(BaseEntity):
         self,
         auto_convert: Literal[False],
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> bytes: ...
 
     def fetch_file_data(
         self,
         auto_convert: bool = True,
         save_path: str | None = None,
-        use_cache: bool = False,
+        use_cache: CacheMode = False,
     ) -> 'bytes | ImagingData':
         """Get the file data for this resource.
 
@@ -275,11 +270,14 @@ class Resource(BaseEntity):
         calls, it checks the server for changes and uses cached data if unchanged.
 
         Args:
-            use_cache: If True, uses cached data when available and valid
+            use_cache: Cache behavior for this call. Use ``False`` to bypass
+                cache entirely, ``True`` to read from and save to cache, or
+                ``"loadonly"`` to read from cache without saving cache misses.
             auto_convert: If True, automatically converts to appropriate format (pydicom.Dataset, PIL Image, etc.)
-            save_path: Optional path to save the file locally. If use_cache is also True,
-                      the file is saved to save_path and cache metadata points to that location
-                      (no duplication - only one file on disk).
+            save_path: Optional path to save the file locally. If
+                      ``use_cache=True``, the file is saved to save_path and
+                      cache metadata points to that location (no duplication -
+                      only one file on disk).
 
         Returns:
             File data (format depends on auto_convert and file type)
@@ -287,6 +285,7 @@ class Resource(BaseEntity):
         Example:
             >>> resource = api.resources.get_list(project_name="My Project")[0]
             >>> data = resource.fetch_file_data(use_cache=True)
+            >>> data = resource.fetch_file_data(use_cache="loadonly")
             >>> resource.fetch_file_data(save_path="local_copy")
         """
         # Version info for cache validation
@@ -441,10 +440,10 @@ class Resource(BaseEntity):
         return self.is_volume() or self.is_video()
 
     def get_depth(self) -> int:
-        metadata = self._metadata_dict()
-
         if self.is_image():
             return 1
+
+        metadata = self.metadata
 
         if self.is_volume():
             frame_count = self._coerce_int(metadata.get('frame_count'))
@@ -770,6 +769,7 @@ class LocalResource(Resource):
         *args,
         auto_convert: Literal[True] = True,
         save_path: str | None = None,
+        use_cache: CacheMode = False,
         **kwargs,
     ) -> 'ImagingData': ...
 
@@ -779,6 +779,7 @@ class LocalResource(Resource):
         *args,
         auto_convert: Literal[False],
         save_path: str | None = None,
+        use_cache: CacheMode = False,
         **kwargs,
     ) -> bytes: ...
 
@@ -786,6 +787,7 @@ class LocalResource(Resource):
         self, *args,
         auto_convert: bool = True,
         save_path: str | None = None,
+        use_cache: CacheMode = False,
         **kwargs,
     ) -> 'bytes | ImagingData':
         """Get the file data for this local resource.
@@ -793,9 +795,12 @@ class LocalResource(Resource):
         Args:
             auto_convert: If True, automatically converts to appropriate format (pydicom.Dataset, PIL Image, etc.)
             save_path: Optional path to save the file locally
+            use_cache: Ignored for local resources; included for API parity.
         Returns:
             File data (format depends on auto_convert and file type)
         """
+        self._resolve_cache_mode(use_cache)
+
         if self.raw_data is not None:
             img_data = self.raw_data
             local_filepath = None
