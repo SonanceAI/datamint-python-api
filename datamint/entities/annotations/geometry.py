@@ -145,7 +145,15 @@ class _TwoPointGeometry(Geometry):
             # assumes 2d data
             return None, None
         if isinstance(metadata, Nifti1Image):
-            raise NotImplementedError('View parameters extraction from NIfTI metadata is not implemented yet.')
+            origin = nifti_utils.pixel_to_world(metadata, pixel_x=0, pixel_y=0, slice_index=0)
+            view_right = nifti_utils.pixel_to_world(metadata, pixel_x=1, pixel_y=0, slice_index=0) - origin
+            viewUp = nifti_utils.pixel_to_world(metadata, pixel_x=0, pixel_y=1, slice_index=0) - origin
+
+            # IMPORTANT: Datamint assumes opposite direction of slices. So multiply by -1.
+            viewPlaneNormal = -np.cross(view_right, viewUp)
+            viewPlaneNormal /= np.linalg.norm(viewPlaneNormal)
+            viewUp /= np.linalg.norm(viewUp)
+            return viewPlaneNormal, viewUp
         elif isinstance(metadata, pydicom.Dataset):
             slice_orient = get_slice_orientation(metadata, 0)
             viewPlaneNormal = slice_orient / np.linalg.norm(slice_orient)
@@ -184,11 +192,17 @@ class _TwoPointGeometry(Geometry):
             patient_point1 = nifti_utils.pixel_to_world(metadata,
                                                         pixel_x=point1[0],
                                                         pixel_y=point1[1],
-                                                        slice_index=frame_index)
+                                                        slice_index=frame_index,
+                                                        plane=slice_plane)
+            # patient_point1.shape: (3,)
             patient_point2 = nifti_utils.pixel_to_world(metadata,
                                                         pixel_x=point2[0],
                                                         pixel_y=point2[1],
-                                                        slice_index=frame_index)
+                                                        slice_index=frame_index,
+                                                        plane=slice_plane)
+            # IMPORTANT: Datamint assumes opposite direction of slices. So multiply by -1.
+            patient_point1[:2] = -patient_point1[:2]
+            patient_point2[:2] = -patient_point2[:2]
         else:
             raise TypeError(f'Unsupported metadata type: {type(metadata)}')
 
