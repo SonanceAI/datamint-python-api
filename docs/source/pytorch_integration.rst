@@ -113,3 +113,33 @@ Loading all data and metadata:
         image_categories = batch['image_categories']
 
         # (... do something with the batch)
+
+Split Reproducibility
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use :py:meth:`~datamint.dataset.base.DatamintBaseDataset.split`
+for using split assignments.
+The resolved split datasets store the effective historical
+snapshot timestamp in ``split_as_of_timestamp``, which you can pass back into
+future training runs to reuse the exact same assignment state.
+
+.. code-block:: python
+
+   from datamint.dataset import ImageDataset
+   from datamint.lightning import DatamintDataModule
+
+   dataset = ImageDataset(project="my-project", include_unannotated=True)
+
+   parts = dataset.split()
+   snapshot = parts["train"].split_as_of_timestamp
+
+   datamodule = DatamintDataModule(
+       dataset,
+       split=True,
+       split_as_of_timestamp=snapshot,
+   )
+
+``DatamintDataModule`` and the built-in trainers propagate the resolved
+``split_source`` and ``split_as_of_timestamp`` values into MLflow lineage, so
+you can trace which project split snapshot was used during training and replay
+it later.

@@ -251,6 +251,73 @@ The :py:class:`~datamint.entities.Project` entity provides shortcuts for common 
     specs = project.get_annotations_specs()
     print([spec.identifier for spec in specs])
 
+Project-scoped dataset splits
+++++++++++++++++++++++++++++++++
+
+The project split endpoints return
+:py:class:`~datamint.entities.ProjectResourceSplit` records, which contain:
+
+.. list-table::
+     :header-rows: 1
+
+     * - Field
+         - Description
+     * - ``split_name``
+         - Logical split name such as ``train``, ``val``, or ``test``.
+     * - ``project_id``
+         - Project that owns the assignment.
+     * - ``resource_id``
+         - Resource assigned within that project.
+     * - ``created_at`` / ``created_by``
+         - Audit metadata for assignment creation.
+     * - ``deleted_at`` / ``deleted_by``
+         - Audit metadata present when an assignment has been deleted.
+
+Use :py:meth:`api.projects.assign_splits() <datamint.api.endpoints.projects_api.ProjectsApi.assign_splits>`
+to write assignments, :py:meth:`api.projects.get_splits() <datamint.api.endpoints.projects_api.ProjectsApi.get_splits>`
+to list them, and :py:meth:`api.projects.get_resource_split() <datamint.api.endpoints.projects_api.ProjectsApi.get_resource_split>`
+to inspect one resource within a project:
+
+.. code-block:: python
+
+    from datamint import Api
+
+    api = Api()
+    project = api.projects.get_by_name("FracAtlas")
+    resources = list(project.fetch_resources())
+
+    train_resources = resources[:100]
+    val_resources = resources[100:120]
+
+    api.projects.assign_splits(project, train_resources, "train")
+    api.projects.assign_splits(project, val_resources, "val")
+
+    assignments = api.projects.get_splits(project)
+    train_assignments = api.projects.get_splits(project, split_name="train")
+    first_resource_assignment = api.projects.get_resource_split(project, resources[0])
+
+For project-backed datasets, :py:meth:`~datamint.dataset.base.DatamintBaseDataset.split`
+now prefers project-scoped assignments automatically when you do not pass
+ratio kwargs:
+
+.. code-block:: python
+
+    from datamint.dataset import ImageDataset
+
+    dataset = ImageDataset(project=project, include_unannotated=True)
+
+    parts = dataset.split()
+    snapshot = parts["train"].split_as_of_timestamp
+
+    # Reuse the exact assignment snapshot later.
+    replayed_parts = dataset.split(as_of_timestamp=snapshot)
+
+Each returned subset records ``split_name``, ``split_source``, and
+``split_as_of_timestamp`` for reproducibility. Local ratio splits remain
+available with calls such as ``dataset.split(train=0.8, val=0.2, seed=42)``.
+Legacy ``split:*`` tag-based splitting is still supported for backwards
+compatibility, but it is deprecated in favor of project-scoped splits.
+
 Working with Channels
 ---------------------
 

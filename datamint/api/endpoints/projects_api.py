@@ -388,21 +388,24 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def assign_splits(
         self,
         project: str | Project,
-        resource_ids: Sequence[str],
+        resources: Sequence[str] | Sequence[Resource],
         split_name: str,
     ) -> None:
         """Assign a split name to multiple project resources.
 
         Args:
             project: The project ID or Project instance.
-            resource_ids: Resource IDs to assign.
+            resources: Resources to assign.
             split_name: Split name to assign, such as ``'train'``.
         """
+
+        resources = [self._entid(res) for res in resources]
+
         self._make_entity_request(
             'POST',
             project,
             'splits',
-            json={'resource_ids': list(resource_ids), 'split_name': split_name},
+            json={'resource_ids': list(resources), 'split_name': split_name},
         )
 
     def get_resource_split(

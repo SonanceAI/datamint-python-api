@@ -9,6 +9,7 @@ Data Management
 * `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_: A comprehensive guide on uploading data to Datamint.
 * `dataset_loading.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/dataset_loading.ipynb>`_: Learn how to load datasets for model training and evaluation.
 * `exploring_data_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/exploring_data_tutorial.ipynb>`_: Learn how to explore and query resources in Datamint.
+* `project_scoped_splits_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/project_scoped_splits_tutorial.ipynb>`_: Assign project-scoped train/val/test splits, inspect split records, and replay historical split snapshots in datasets.
 
 Annotations
 -----------
