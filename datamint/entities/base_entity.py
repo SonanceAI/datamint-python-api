@@ -2,7 +2,8 @@ import logging
 import sys
 from html import escape
 from typing import Any, TYPE_CHECKING
-from pydantic import ConfigDict, BaseModel, PrivateAttr
+
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from datamint.types import CacheMode
 
@@ -83,25 +84,17 @@ def _get_entity_template():
     return _entity_template
 
 
-class BaseEntity(BaseModel):
-    """
-    Base class for all entities in the Datamint system.
+class BaseEntityModel(BaseModel):
+    """Shared lightweight Pydantic base for Datamint entities and DTOs."""
 
-    This class provides common functionality for all entities, such as
-    serialization and deserialization from dictionaries, as well as
-    handling unknown fields gracefully.
+    model_config = ConfigDict(
+        extra='allow',
+        arbitrary_types_allowed=True,
+        ser_json_bytes='base64',
+        val_json_bytes='base64',
+    )
 
-    The API client is automatically injected by the Api class when entities
-    are created through API endpoints.
-    """
-
-    model_config = ConfigDict(extra='allow',
-                              arbitrary_types_allowed=True,  # Allow extra fields and arbitrary types
-                              ser_json_bytes='base64',
-                              val_json_bytes='base64')
-
-    _api: 'EntityBaseApi[Self] | EntityBaseApi' = PrivateAttr()
-
+    id: str
 
     def _get_display_fields(self, max_value_len: int = 120) -> list[tuple[str, str]]:
         """Collect non-empty, non-default fields for display purposes."""
@@ -140,12 +133,9 @@ class BaseEntity(BaseModel):
         )
 
     def __str__(self) -> str:
-        # entity_id = getattr(self, 'id', None)
         fields = self._get_display_fields()
 
         header = self.__class__.__name__
-        # if entity_id is not None:
-        #     header += f" (id={entity_id})"
 
         if not fields:
             return f"{header}\n  (no non-empty fields)"
@@ -155,7 +145,6 @@ class BaseEntity(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        # check attributes for MISSING_FIELD and delete them
         for field_name in self.__pydantic_fields__.keys():
             if hasattr(self, field_name) and type(getattr(self, field_name)) == str and getattr(self, field_name) == MISSING_FIELD:
                 delattr(self, field_name)
@@ -193,6 +182,29 @@ class BaseEntity(BaseModel):
             return True
         return getattr(self, attr_name) == MISSING_FIELD  # deprecated
 
+    def has_missing_attrs(self) -> bool:
+        """Check if the entity has any attributes that are MISSING_FIELD.
+
+        Returns:
+            True if any attribute is MISSING_FIELD, False otherwise
+        """
+        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
+
+
+class BaseEntity(BaseEntityModel):
+    """
+    Base class for all entities in the Datamint system.
+
+    This class provides common functionality for all entities, such as
+    serialization and deserialization from dictionaries, as well as
+    handling unknown fields gracefully.
+
+    The API client is automatically injected by the Api class when entities
+    are created through API endpoints.
+    """
+
+    _api: 'EntityBaseApi[Self] | EntityBaseApi' = PrivateAttr()
+
     def _refresh(self) -> Self:
         """Refresh the entity data from the server.
 
@@ -222,14 +234,6 @@ class BaseEntity(BaseModel):
 
         if self.is_attr_missing(attr_name):
             self._refresh()
-
-    def has_missing_attrs(self) -> bool:
-        """Check if the entity has any attributes that are MISSING_FIELD.
-
-        Returns:
-            True if any attribute is MISSING_FIELD, False otherwise
-        """
-        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
 
     def __getstate__(self) -> dict:
         state = super().__getstate__()

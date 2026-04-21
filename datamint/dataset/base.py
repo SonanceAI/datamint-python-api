@@ -6,6 +6,7 @@ filtering, while delegating data management to DatamintProjectManager.
 """
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 from collections.abc import Sequence, Callable, Iterator
 
@@ -170,6 +171,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self._logged_uint16_conversion = False
         self._is_prepared = False
         self.split_name: str | None = None
+        self.split_source: str | None = None
+        self.split_as_of_timestamp: str | None = None
+
+    @staticmethod
+    def _utc_now_isoformat() -> str:
+        """Return the current UTC timestamp in ISO-8601 format."""
+        return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
     def __getattr__(self, name: str) -> Any:
         # __getattr__ is only invoked when normal attribute lookup fails —
@@ -843,6 +851,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             'exclude_image_label_names': self.exclude_image_label_names,
             'include_frame_label_names': self.include_frame_label_names,
             'exclude_frame_label_names': self.exclude_frame_label_names,
+            'split_source': self.split_source,
+            'split_as_of_timestamp': self.split_as_of_timestamp,
         }
         return DatamintMLflowDataset(
             project_id=project_id,
@@ -906,6 +916,10 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         body = [f"Number of datapoints: {len(self)}"]
         if self.split_name is not None:
             body.append(f"Split: {self.split_name}")
+        if self.split_source is not None:
+            body.append(f"Split source: {self.split_source}")
+        if self.split_as_of_timestamp is not None:
+            body.append(f"Split as of: {self.split_as_of_timestamp}")
 
         # if self.manager.root is not None:
         #    body.append(f"Location: {self.manager.dataset_dir}")
@@ -933,38 +947,46 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         *,
         seed: int | None = None,
         use_server_splits: bool | None = None,
+        use_project_splits: bool | None = None,
+        as_of_timestamp: str | None = None,
         **splits: float,
     ) -> dict[str, 'DatamintBaseDataset']:
         """Split the dataset into multiple named subsets.
 
-        The mode is selected automatically when *use_server_splits* is not
+        The mode is selected automatically when no explicit split mode is
         given:
 
         - If ratio kwargs are provided (e.g. ``train=0.7``), local splitting
-          is used (equivalent to ``use_server_splits=False``).
-        - If no ratio kwargs are provided, server-side ``split:*`` tags on
-          resources are used (equivalent to ``use_server_splits=True``).
+          is used.
+        - If no ratio kwargs are provided and the dataset was loaded from a
+          project, project-scoped split assignments are used.
+        - Otherwise, server-side ``split:*`` tags on resources are used.
 
         Examples::
 
-            # Local split — ratios infer use_server_splits=False
+            # Local split
             parts = dataset.split(train=0.7, val=0.15, test=0.15, seed=42)
             train_ds = parts['train']
 
-            # Server-side split — no ratios, infers use_server_splits=True
+            # Project-scoped split — inferred for project-backed datasets
             parts = dataset.split()
 
             # Explicit override
-            parts = dataset.split(use_server_splits=True)
+            parts = dataset.split(use_project_splits=True)
 
         Args:
             seed: Random seed for reproducible local splitting.
-            use_server_splits: If ``True``, read ``split:*`` tags from each
-                resource instead of performing a random split. If ``None``
-                (default), inferred from whether ratio kwargs are provided.
+            use_project_splits: If ``True``, read split assignments from the
+                project splits API. If ``None`` (default), project-backed
+                datasets prefer this mode when no ratios are provided.
+            as_of_timestamp: Historical timestamp to resolve project-scoped
+                splits against. When omitted for project-scoped splits, the
+                current UTC timestamp is captured and stored on the resolved
+                split datasets for later reuse.
+            use_server_splits: (DEPRECATED in favor of ``use_project_splits``)
             **splits: Named split ratios (e.g. ``train=0.7, test=0.3``).
                 Must sum to 1.0 (±0.01 tolerance). Must be empty when
-                *use_server_splits* is ``True``.
+                *use_server_splits* or *use_project_splits* is ``True``.
 
         Returns:
             Dictionary mapping split names to new dataset instances.
@@ -972,13 +994,73 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Raises:
             ValueError: If ratios are invalid or arguments conflict.
         """
+        if use_project_splits is None and use_server_splits is None and not splits:
+            use_project_splits = getattr(self, 'project', None) is not None or as_of_timestamp is not None
+
+        if use_project_splits:
+            return self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp)
+
+        if as_of_timestamp is not None:
+            raise ValueError(
+                'as_of_timestamp is only supported with project-scoped splits. '
+                'Set use_project_splits=True or use a project-backed dataset with no ratio kwargs.'
+            )
+
         if use_server_splits is None:
             use_server_splits = not splits  # True when no ratios given
 
         if use_server_splits:
+            import warnings
+            warnings.warn("use_server_splits and splitting by resource tags are deprecated in favor of use_project_splits. "
+                          "Please migrate to project-scoped splits for better reproducibility and management.", DeprecationWarning)
             return self._split_by_server_tags(splits)
 
         return self._split_locally(splits, seed)
+
+    def _split_by_project_api(
+        self,
+        splits: dict[str, float],
+        as_of_timestamp: str | None = None,
+    ) -> dict[str, 'DatamintBaseDataset']:
+        """Group resources by project-scoped split assignments from the API."""
+        if splits:
+            raise ValueError(
+                'Ratio kwargs must not be provided with use_project_splits=True.'
+            )
+
+        project = getattr(self, 'project', None)
+        if project is None:
+            raise ValueError(
+                'Dataset must be loaded from a project to use use_project_splits=True.'
+            )
+
+        resolved_as_of_timestamp = as_of_timestamp or self._utc_now_isoformat()
+        assignments = self._api.projects.get_splits(
+            project,
+            as_of_timestamp=resolved_as_of_timestamp,
+        )
+        resource_split_map = {assignment.resource_id: assignment.split_name for assignment in assignments}
+
+        from collections import defaultdict
+        split_indices: dict[str, list[int]] = defaultdict(list)
+
+        for idx, resource in enumerate(self.resources):
+            split_name = resource_split_map.get(resource.id)
+            if split_name is not None:
+                split_indices[split_name].append(idx)
+
+        if not split_indices:
+            raise ValueError(
+                'No split assignments found for this project. '
+                'Call api.projects.assign_splits() first.'
+            )
+
+        result = {name: self.subset(indices) for name, indices in split_indices.items()}
+        for name, ds in result.items():
+            ds.split_name = name
+            ds.split_source = 'project_api'
+            ds.split_as_of_timestamp = resolved_as_of_timestamp
+        return result
 
     def _split_by_server_tags(
         self,
@@ -1010,6 +1092,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         result = {name: self.subset(indices) for name, indices in split_indices.items()}
         for name, ds in result.items():
             ds.split_name = name
+            ds.split_source = 'server_tags'
+            ds.split_as_of_timestamp = None
         return result
 
     def _split_locally(
@@ -1050,6 +1134,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 end = start + round(ratio * n)
             result[name] = self.subset(indices[start:end])
             result[name].split_name = name
+            result[name].split_source = 'local'
+            result[name].split_as_of_timestamp = None
             start = end
 
         return result

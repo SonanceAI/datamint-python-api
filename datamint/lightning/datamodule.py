@@ -55,6 +55,9 @@ class DatamintDataModule(L.LightningDataModule):
             (e.g. ``{'train': 0.7, 'val': 0.15, 'test': 0.15}``).
             When *None* the full dataset is used for every stage.
         split_seed: Random seed for reproducible local splits.
+        split_as_of_timestamp: Historical timestamp forwarded to
+            :meth:`DatamintBaseDataset.split` when reusing project-scoped
+            split assignments.
         use_server_splits: If *True*, use server-side ``split:*`` tags
             instead of local random splitting.
         train_transform: Albumentations transform applied **only** to the
@@ -100,6 +103,7 @@ class DatamintDataModule(L.LightningDataModule):
         drop_last_train: bool = False,
         split: dict[str, float] | bool | None = True,
         split_seed: int | None = None,
+        split_as_of_timestamp: str | None = None,
         use_server_splits: bool | None = None,
         train_transform: Callable | None = None,
         eval_transform: Callable | None = None,
@@ -127,6 +131,7 @@ class DatamintDataModule(L.LightningDataModule):
             self._split = split is not None
             self._split_cfg = split
         self._split_seed = split_seed
+        self._split_as_of_timestamp = split_as_of_timestamp
         self._use_server_splits = use_server_splits
         self._train_transform = train_transform
         self._eval_transform = eval_transform
@@ -150,15 +155,17 @@ class DatamintDataModule(L.LightningDataModule):
         if self._splits_resolved:
             return
 
-        if self._split or self._split_cfg is not None or self._use_server_splits:
+        if self._split or self._split_cfg is not None or self._use_server_splits or self._split_as_of_timestamp is not None:
             parts = self.dataset.split(
                 seed=self._split_seed,
                 use_server_splits=self._use_server_splits,
+                as_of_timestamp=self._split_as_of_timestamp,
                 **(self._split_cfg or {}),
             )
             self._train_dataset = parts.get("train")
             self._val_dataset = parts.get("val")
             self._test_dataset = parts.get("test")
+            self._update_resolved_split_hparams()
 
             if stage == "fit" and self._train_dataset is None:
                 raise ValueError(
@@ -180,6 +187,17 @@ class DatamintDataModule(L.LightningDataModule):
                     ds.set_transform(self._eval_transform)
 
         self._splits_resolved = True
+
+    def _update_resolved_split_hparams(self) -> None:
+        """Persist resolved split metadata for training lineage and reuse."""
+        for dataset in (self._train_dataset, self._val_dataset, self._test_dataset):
+            if dataset is None:
+                continue
+            if getattr(dataset, 'split_source', None) is not None:
+                self.hparams['split_source'] = dataset.split_source
+            if getattr(dataset, 'split_as_of_timestamp', None) is not None:
+                self.hparams['split_as_of_timestamp'] = dataset.split_as_of_timestamp
+                break
 
     # ------------------------------------------------------------------
     # DataLoaders

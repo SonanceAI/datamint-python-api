@@ -4,9 +4,10 @@ from pathlib import Path
 
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
+from datamint.entities.project_resource_split import ProjectResourceSplit
 import httpx
 from datamint.entities.resource import Resource
-from datamint.exceptions import EntityAlreadyExistsError
+from datamint.exceptions import EntityAlreadyExistsError, ItemNotFoundError
 if TYPE_CHECKING:
     from . import AnnotationSetsApi, ResourcesApi
     from datamint.entities.annotations.annotation_spec import AnnotationSpec
@@ -354,6 +355,83 @@ class ProjectsApi(CRUDEntityApi[Project]):
         response = self._make_entity_request('GET', project, add_path='annotation-statuses',
                                              params=params or None)
         return response.json()
+
+    # ------------------------------------------------------------------
+    # Project splits
+    # ------------------------------------------------------------------
+
+    def get_splits(
+        self,
+        project: str | Project,
+        split_name: str | None = None,
+        as_of_timestamp: str | None = None,
+    ) -> list[ProjectResourceSplit]:
+        """List resource split assignments for a project.
+
+        Args:
+            project: The project ID or Project instance.
+            split_name: Optional split name filter.
+            as_of_timestamp: Optional historical timestamp filter.
+
+        Returns:
+            List of project split assignments.
+        """
+        params: dict[str, str] = {}
+        if split_name is not None:
+            params['split_name'] = split_name
+        if as_of_timestamp is not None:
+            params['as_of_timestamp'] = as_of_timestamp
+
+        response = self._make_entity_request('GET', project, 'splits', params=params or None)
+        return [ProjectResourceSplit(**item) for item in response.json()]
+
+    def assign_splits(
+        self,
+        project: str | Project,
+        resource_ids: Sequence[str],
+        split_name: str,
+    ) -> None:
+        """Assign a split name to multiple project resources.
+
+        Args:
+            project: The project ID or Project instance.
+            resource_ids: Resource IDs to assign.
+            split_name: Split name to assign, such as ``'train'``.
+        """
+        self._make_entity_request(
+            'POST',
+            project,
+            'splits',
+            json={'resource_ids': list(resource_ids), 'split_name': split_name},
+        )
+
+    def get_resource_split(
+        self,
+        project: str | Project,
+        resource: Resource | str,
+    ) -> ProjectResourceSplit | None:
+        """Get the split assignment for a single resource within a project.
+
+        Returns ``None`` when the resource does not currently have a split
+        assignment.
+        """
+        project_id = self._entid(project)
+        resource_id = self._entid(resource)
+
+        try:
+            response = self._make_request(
+                'GET',
+                f'/projects/{project_id}/resources/{resource_id}/split',
+            )
+        except ItemNotFoundError:
+            return None
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise
+
+        data = response.json()
+        return ProjectResourceSplit(**data) if data else None
 
     def reset_annotator_status(self,
                                project: str | Project,

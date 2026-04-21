@@ -55,6 +55,10 @@ class BaseTrainer(ABC):
         image_size: Target image size ``(H, W)`` or a single int for
             square images.  Forwarded to default transforms.  When
             ``None`` a sensible default is chosen.
+        split_as_of_timestamp: Historical timestamp used to resolve
+            project-scoped dataset splits during training. When omitted,
+            the resolved project split datasets capture the current UTC
+            timestamp and training lineage logs it via MLflow.
         max_epochs: Maximum number of training epochs.
         early_stopping_patience: Epochs without improvement before
             stopping.  Set to ``None`` to disable early stopping.
@@ -81,6 +85,7 @@ class BaseTrainer(ABC):
         train_transform: 'BaseCompose | None' = None,
         eval_transform: 'BaseCompose | None' = None,
         image_size: int | tuple[int, int] | None = None,
+        split_as_of_timestamp: str | None = None,
         max_epochs: int = 50,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
@@ -101,6 +106,7 @@ class BaseTrainer(ABC):
         self.num_workers = num_workers
         self._user_train_transform = train_transform
         self._user_eval_transform = eval_transform
+        self.split_as_of_timestamp = split_as_of_timestamp
         if image_size is None:
             self.image_size: tuple[int, int] = (256, 256)
         elif isinstance(image_size, int):
@@ -281,6 +287,7 @@ class BaseTrainer(ABC):
             dataset,
             batch_size=self.batch_size,
             num_workers=self.num_workers,
+            split_as_of_timestamp=self.split_as_of_timestamp,
             train_transform=train_transform,
             eval_transform=eval_transform,
         )
