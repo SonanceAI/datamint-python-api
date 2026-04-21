@@ -1,4 +1,4 @@
-from datamint.exceptions import DatamintException
+from datamint.exceptions import DatamintException, ItemNotFoundError
 import argparse
 # from datamint.apihandler.api_handler import APIHandler
 from datamint import Api
@@ -806,7 +806,6 @@ def main():
 
         has_a_dicom_file = any(is_dicom(f) for f in files_path)
 
-
         try:
             results = api.resources.upload_resources(channel=args.channel,
                                                      files_path=files_path,
@@ -827,6 +826,16 @@ def main():
         except pydicom.errors.InvalidDicomError as e:
             _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')
             return
+        except ItemNotFoundError as e:
+            if e.item_type == 'Project' and isinstance(e.params, dict) and 'name_or_id' in e.params:
+                available_projects = api.projects.get_all()
+                project_names = [proj.name for proj in available_projects]
+                _USER_LOGGER.error(
+                    f'❌ Project "{e.params["name_or_id"]}" not found. Available projects: {project_names}')
+            else:
+                _USER_LOGGER.error(f'❌ {e}')
+            return
+
         _USER_LOGGER.info('Upload finished!')
         _LOGGER.debug(f"Number of results: {len(results)}")
 
