@@ -105,6 +105,8 @@ class BaseEntityModel(BaseModel):
         for name, field_info in json_schema.get('properties', {}).items():
             if name == 'id':
                 continue
+            if name.endswith('_id'):
+                continue
             value = getattr(self, name, None)
             if value is None or value == '':
                 continue

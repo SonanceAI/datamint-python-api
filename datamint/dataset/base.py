@@ -215,6 +215,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         else:
             self.project, self.resources = self._initialize_from_project(self._init_project)  # type: ignore
 
+        if len(self.resources) == 0:
+            _LOGGER.warning("Initialized dataset with no resources.")
         # Fetch annotations
         self.resource_annotations = list(self._api.annotations.get_list(
             resource=self.resources,
@@ -393,8 +395,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self._apply_annotation_filters()
 
         # Filter unannotated if needed
+        orig_num_resources = len(self.resources)
+
         if not self.include_unannotated:
             self._filter_unannotated()
+        
+        if len(self.resources) == 0 and orig_num_resources > 0:
+            _LOGGER.warning("All resources have been filtered out.")
 
     def _setup_labels(self) -> None:
         """Setup label sets and mappings."""
@@ -1037,10 +1044,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         resolved_as_of_timestamp = as_of_timestamp or self._utc_now_isoformat()
         assignments = self._api.projects.get_splits(
             project,
-            as_of_timestamp=resolved_as_of_timestamp,
+            as_of_timestamp=as_of_timestamp,
         )
         resource_split_map = {assignment.resource_id: assignment.split_name for assignment in assignments}
-
         from collections import defaultdict
         split_indices: dict[str, list[int]] = defaultdict(list)
 
