@@ -18,4 +18,9 @@ class User(BaseEntity):
     customer_id: str
     created_at: str
 
+    @property
+    def id(self) -> str:
+        """Return the user's unique identifier, which is the email."""
+        return self.email
+
     # Potential improvement: convert created_at to datetime for easier comparisons.

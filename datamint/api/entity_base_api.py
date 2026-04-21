@@ -55,6 +55,16 @@ class EntityBaseApi(BaseApi, Generic[T]):
     def _entid(entity: BaseEntity | str) -> str:
         return entity if isinstance(entity, str) else entity.id
 
+    def _validate_entity_id(self, entity_id: str) -> None:
+        self._validate_uuid(entity_id)
+
+    def _build_entity_path(self, entity_id: str, add_path: str = '') -> str:
+        normalized_add_path = '/'.join(add_path.strip().strip('/').split('/'))
+        entity_path = f'/{self.endpoint_base}/{entity_id}'
+        if not normalized_add_path:
+            return entity_path
+        return f'{entity_path}/{normalized_add_path}'
+
     def _make_entity_request(self,
                              method: str,
                              entity_id: str | BaseEntity,
@@ -67,11 +77,8 @@ class EntityBaseApi(BaseApi, Generic[T]):
         """
         try:
             entity_id = self._entid(entity_id)
-            if not _UUID_PATTERN.match(entity_id):
-                raise ValueError(f"Invalid entity ID format: {entity_id!r}. Expected a UUID "
-                                 f"(e.g. '1b9f74fe-278e-48a9-82f4-5c3a6fcf2c50').")
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return self._make_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
+            self._validate_entity_id(entity_id)
+            return self._make_request(method, self._build_entity_path(entity_id, add_path), **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
@@ -89,9 +96,9 @@ class EntityBaseApi(BaseApi, Generic[T]):
                                          **kwargs) -> AsyncGenerator[aiohttp.ClientResponse, None]:
         try:
             entity_id = self._entid(entity_id)
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
+            self._validate_entity_id(entity_id)
             async with self._make_request_async(method,
-                                                f'/{self.endpoint_base}/{entity_id}/{add_path}',
+                                                self._build_entity_path(entity_id, add_path),
                                                 session=session,
                                                 **kwargs) as resp:
                 yield resp
@@ -122,8 +129,8 @@ class EntityBaseApi(BaseApi, Generic[T]):
                                add_path: str = '',
                                **kwargs):
         try:
-            add_path = '/'.join(add_path.strip().strip('/').split('/'))
-            return self._stream_request(method, f'/{self.endpoint_base}/{entity_id}/{add_path}', **kwargs)
+            self._validate_entity_id(entity_id)
+            return self._stream_request(method, self._build_entity_path(entity_id, add_path), **kwargs)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
@@ -189,7 +196,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
             ItemNotFoundError: If the entity is not found.
             httpx.HTTPStatusError: If the request fails for other reasons.
         """
-        self._validate_uuid(entity_id)
+        self._validate_entity_id(entity_id)
         response = self._make_entity_request('GET', entity_id)
         return self._init_entity_obj(**response.json())
 

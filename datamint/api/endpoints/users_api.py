@@ -1,3 +1,5 @@
+from typing import Literal, cast, overload
+
 from ..entity_base_api import CreatableEntityApi, ApiConfig
 from datamint.entities import User
 import httpx
@@ -9,14 +11,44 @@ class UsersApi(CreatableEntityApi[User]):
                  client: httpx.Client | None = None) -> None:
         super().__init__(config, User, 'users', client)
 
+    def _validate_entity_id(self, entity_id: str) -> None:
+        if not entity_id:
+            raise ValueError('User email cannot be empty.')
+
+    @overload
     def create(self,
                email: str,
                password: str | None = None,
                firstname: str | None = None,
                lastname: str | None = None,
                roles: list[str] | None = None,
+               *,
+               return_entity: Literal[True] = True,
                exists_ok: bool = False
-               ) -> str:
+               ) -> User: ...
+
+    @overload
+    def create(self,
+               email: str,
+               password: str | None = None,
+               firstname: str | None = None,
+               lastname: str | None = None,
+               roles: list[str] | None = None,
+               *,
+               return_entity: Literal[False],
+               exists_ok: bool = False
+               ) -> str: ...
+
+    def create(self,
+               email: str,
+               password: str | None = None,
+               firstname: str | None = None,
+               lastname: str | None = None,
+               roles: list[str] | None = None,
+               *,
+               return_entity: bool = True,
+               exists_ok: bool = False
+               ) -> str | User | None:
         """Create a new user.
 
         Args:
@@ -25,12 +57,15 @@ class UsersApi(CreatableEntityApi[User]):
             firstname: The user's first name.
             lastname: The user's last name.
             roles: List of roles to assign to the user.
+            return_entity: Whether to return the created user entity or just its
+                identifier. Defaults to ``True``.
             exists_ok: If ``True``, do not raise an error when a user with the same
                 email already exists. Instead, the existing user's id is returned when
                 possible.
 
         Returns:
-            The id of the created user.
+            The created user entity or identifier, depending on
+            ``return_entity``. The identifier is the user's email address.
         """
         data = dict(
             email=email,
@@ -39,7 +74,18 @@ class UsersApi(CreatableEntityApi[User]):
             lastname=lastname,
             roles=roles
         )
-        return self._create(data, exists_ok=exists_ok)
+        return cast(str | User | None, self._create(data, return_entity=return_entity, exists_ok=exists_ok))
+
+    def get_by_id(self, entity_id: str) -> User:
+        """Get a user by email address.
+
+        Args:
+            entity_id: The user's email address.
+
+        Returns:
+            The User instance.
+        """
+        return super().get_by_id(entity_id)
 
     def invite(self,
                email: str,
@@ -89,8 +135,7 @@ class UsersApi(CreatableEntityApi[User]):
         Returns:
             The User instance.
         """
-        response = self._make_request('GET', f'/{self.endpoint_base}/{email}')
-        return self._init_entity_obj(**response.json())
+        return self.get_by_id(email)
 
     def update_user(self, email: str, **kwargs) -> None:
         """Partially update a user's profile.
@@ -101,7 +146,7 @@ class UsersApi(CreatableEntityApi[User]):
                 ``roles``).
         """
         payload = {k: v for k, v in kwargs.items() if v is not None}
-        self._make_request('PATCH', f'/{self.endpoint_base}/{email}', json=payload)
+        self._make_entity_request('PATCH', email, json=payload)
 
     def delete_user(self, email: str) -> None:
         """Delete a user by email address.
@@ -109,7 +154,7 @@ class UsersApi(CreatableEntityApi[User]):
         Args:
             email: The user's email address.
         """
-        self._make_request('DELETE', f'/{self.endpoint_base}/{email}')
+        self._make_entity_request('DELETE', email)
 
     def get_invitations(self, project_id: str | None = None) -> list[dict]:
         """List pending user invitations.
