@@ -6,7 +6,7 @@ enabling training of 2D models on volumetric medical imaging data.
 """
 from __future__ import annotations
 import hashlib
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 from typing_extensions import override
 from collections.abc import Sequence
 import numpy as np
@@ -17,11 +17,15 @@ import albumentations
 from .base import DatamintBaseDataset
 from .annotation_processor import AnnotationProcessor
 
+import logging
+
 from datamint.entities.cache_manager import CacheManager
 if TYPE_CHECKING:
     from datamint.entities import Annotation, Resource
     from datamint.entities.sliced_resource import SlicedVolumeResource
     from medimgkit import ViewPlane
+
+_LOGGER = logging.getLogger(__name__)
 
 # Cache key for sliced segmentation numpy arrays
 _SEG_SLICE_CACHEKEY = "seg_slice_array"
@@ -63,19 +67,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         slice_axis: ViewPlane | int = 'axial',
         **kwargs,
     ):
-        # --- Resolve axis ---
-        if isinstance(slice_axis, str):
-            valid_slice_axis = ['axial', 'coronal', 'sagittal']
-            if slice_axis not in valid_slice_axis:
-                raise ValueError(
-                    f"Unknown axis '{slice_axis}'. "
-                    f"Must be one of {valid_slice_axis} or an int 0-2."
-                )
-            self._slice_axis = slice_axis
-        else:
-            if not (0 <= slice_axis <= 2):
-                raise ValueError(f"axis must be 0, 1, or 2, got {slice_axis}")
-            self._slice_axis_int = slice_axis
+        self._slice_axis = cast('ViewPlane', self._validate_slice_axis(slice_axis))
 
         super().__init__(
             *args,
@@ -125,23 +117,13 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         Returns:
             A new :class:`SlicedVolumeDataset` instance.
         """
+        parent_dataset._prepare()
         instance: SlicedVolumeDataset = cls.__new__(cls)
 
-        # --- Resolve axis ---
-        if isinstance(slice_axis, str):
-            valid_slice_axis = ['axial', 'coronal', 'sagittal']
-            if slice_axis not in valid_slice_axis:
-                raise ValueError(
-                    f"Unknown axis '{slice_axis}'. "
-                    f"Must be one of {valid_slice_axis} or an int 0-2."
-                )
-            instance._slice_axis = slice_axis
-        else:
-            if not (0 <= slice_axis <= 2):
-                raise ValueError(f"axis must be 0, 1, or 2, got {slice_axis}")
-            instance._slice_axis_int = slice_axis
+        instance._slice_axis = cast('ViewPlane', cls._validate_slice_axis(slice_axis))
 
         instance.project = parent_dataset.project
+        instance._api = parent_dataset._api
 
         # Copy configuration from parent
         instance.return_metainfo = parent_dataset.return_metainfo
@@ -149,6 +131,12 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         instance.return_as_semantic_segmentation = parent_dataset.return_as_semantic_segmentation
         instance.semantic_seg_merge_strategy = parent_dataset.semantic_seg_merge_strategy
         instance.include_unannotated = parent_dataset.include_unannotated
+        instance.allow_external_annotations = parent_dataset.allow_external_annotations
+        instance.image_labels_merge_strategy = parent_dataset.image_labels_merge_strategy
+        instance.image_categories_merge_strategy = parent_dataset.image_categories_merge_strategy
+        instance.split_name = parent_dataset.split_name
+        instance.split_source = parent_dataset.split_source
+        instance.split_as_of_timestamp = parent_dataset.split_as_of_timestamp
 
         # Transforms
         instance.alb_transform = parent_dataset.alb_transform
@@ -174,6 +162,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
         # Internal state
         instance._logged_uint16_conversion = False
+        instance._is_prepared = True
 
         # --- Segmentation slice cache ---
         instance._seg_slice_cache = CacheManager(
@@ -198,6 +187,23 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
         return instance
 
+    @staticmethod
+    def _validate_slice_axis(slice_axis: 'ViewPlane | int') -> 'ViewPlane':
+        if isinstance(slice_axis, str):
+            valid_slice_axis = ['axial', 'coronal', 'sagittal']
+            if slice_axis not in valid_slice_axis:
+                raise ValueError(
+                    f"Unknown axis '{slice_axis}'. "
+                    f"Must be one of {valid_slice_axis} or an int 0-2."
+                )
+            return slice_axis
+
+        if not (0 <= slice_axis <= 2):
+            raise ValueError(f"axis must be 0, 1, or 2, got {slice_axis}")
+
+        axis_names: dict[int, ViewPlane] = {0: 'axial', 1: 'coronal', 2: 'sagittal'}
+        return axis_names[slice_axis]
+
     def _expand_resources(
         self,
         resources: Sequence['Resource'],
@@ -219,7 +225,17 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         sliced_resources: list[SlicedVolumeResource] = []
         sliced_annotations: list[Sequence['Annotation']] = []
 
-        for i, r in enumerate(resources):
+        requires_download = any(not r.is_cached() for r in resources)
+        iterator = enumerate(resources)
+        if requires_download:
+            from tqdm.auto import tqdm
+            _LOGGER.warning(
+                "Some resources are not cached locally and will be downloaded during slicing. "
+                "This may take time and bandwidth, especially for large volumes. "
+                "Consider pre-caching resources if this is an issue.")
+            iterator = tqdm(iterator, total=len(resources), desc=f"Expanding to '{self._slice_axis}' slices")
+
+        for i, r in iterator:
             anns = resource_annotations[i]
             per_slice = SlicedVolumeResource.slice_over(r, self._slice_axis, volume_cache)
             sliced_resources.extend(per_slice)

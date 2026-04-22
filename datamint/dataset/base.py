@@ -232,6 +232,23 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         del self._server_url, self._api_key, self._auto_update
         del self._init_project, self._init_resources
 
+    def prefetch(self) -> None:
+        """Download and cache all resource files eagerly.
+
+        Ensures that all resource file bytes are present in the local cache
+        before training begins, so that ``__getitem__`` calls during training
+        are served from disk rather than triggering on-demand network requests.
+
+        Calls ``_prepare()`` implicitly if the dataset has not been initialised yet.
+        """
+        _LOGGER.info(f"Prefetching {len(self.resources)} resource(s)...")
+        for resource in self.resources:
+            try:
+                resource.fetch_file_data(auto_convert=False, use_cache=True)
+            except Exception as e:
+                _LOGGER.warning(f"Failed to prefetch resource '{resource.id}': {e}")
+        _LOGGER.info("Prefetch complete.")
+
     # def __getstate__(self) -> object:
     #     # print the size in MB
     #     print(f'>>>{len(str(self.__dict__))/1024/1024:.2f} MB')

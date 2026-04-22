@@ -150,6 +150,7 @@ class DatamintDataModule(L.LightningDataModule):
 
     def prepare_data(self) -> None:
         self.dataset._prepare()
+        self.dataset.prefetch()
 
     def setup(self, stage: str | None = None) -> None:
         if self._splits_resolved:
@@ -213,7 +214,7 @@ class DatamintDataModule(L.LightningDataModule):
             drop_last=self._drop_last_train,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            persistent_workers=True,
+            persistent_workers=self._num_workers > 0,
             collate_fn=self.dataset.get_collate_fn(),
         )
 
@@ -226,7 +227,7 @@ class DatamintDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            persistent_workers=True,
+            persistent_workers=self._num_workers > 0,
             collate_fn=self.dataset.get_collate_fn(),
         )
 
@@ -238,7 +239,7 @@ class DatamintDataModule(L.LightningDataModule):
             shuffle=False,
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
-            persistent_workers=True,
+            persistent_workers=self._num_workers > 0,
             collate_fn=self.dataset.get_collate_fn(),
         )
 
