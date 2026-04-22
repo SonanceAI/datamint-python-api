@@ -40,13 +40,12 @@ class ClassificationModule(DatamintLightningModule):
         image_size: tuple[int, int],
         lr: float = 1e-4,
         pretrained: bool = True,
-        transform: A.BasicTransform | A.BaseCompose| None = None,
+        transform: A.BasicTransform | A.BaseCompose | None = None,
     ) -> None:
         super().__init__(transform=transform)
         self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories'])
         self.class_names = class_names
         self.image_size = image_size
-        self.transform: A.BasicTransform | A.BaseCompose | None = None
 
         import timm
 

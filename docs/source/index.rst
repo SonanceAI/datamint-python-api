@@ -30,6 +30,7 @@ Datamint
    command_line_tools
    client_api
    pytorch_integration
+   trainer_api
    tutorials
 
 

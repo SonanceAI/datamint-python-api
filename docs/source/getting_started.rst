@@ -32,3 +32,4 @@ Now that you have the basics set up, explore these advanced topics:
 - Master the command-line interface: :ref:`command_line_tools`
 - Check out our Python API documentation: :ref:`client_python_api`
 - Our Pytorch, Lightning and MLflow integration: :ref:`pytorch_integration`
+- Use the built-in Trainer API and custom model integration patterns: :ref:`trainer_api`
