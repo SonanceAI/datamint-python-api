@@ -6,6 +6,9 @@ from typing import Any, TYPE_CHECKING
 from datamint.dataset import ImageDataset
 
 from .segmentation_trainer import SegmentationTrainer
+import lightning as L
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
@@ -32,13 +35,20 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
     def __init__(
         self,
         *,
+        image_size: int | tuple[int, int] | None = None,
+        model: L.LightningModule | type[L.LightningModule] | None = None,
         in_channels: int = 3,
+        trainer_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(model=model,
+                         trainer_kwargs=trainer_kwargs,
+                         **kwargs)
         self.in_channels = in_channels
-
-    # ── Template hooks ──────────────────────────────────────────
+        if isinstance(image_size, int):
+            self.image_size = (image_size, image_size)
+        else:
+            self.image_size = image_size
 
     def _build_dataset(self, project: 'str | Project') -> ImageDataset:
         # TODO: automatically check if project is composed of 3D volumes or 2D images and choose SlicedVolumeDataset vs ImageDataset accordingly.
@@ -50,13 +60,15 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
             include_unannotated=False,
         )
 
-    def _train_transform(self) -> 'BaseCompose':
-        import albumentations as A
-        from albumentations.pytorch import ToTensorV2
+    def _build_resize_transform(self):
+        if self.image_size is None:
+            return A.NoOp()
+        else:
+            return A.Resize(*self.image_size)
 
-        h, w = self.image_size
+    def _train_transform(self) -> 'BaseCompose':
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.5),
@@ -65,12 +77,8 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         ])
 
     def _eval_transform(self) -> 'BaseCompose':
-        import albumentations as A
-        from albumentations.pytorch import ToTensorV2
-
-        h, w = self.image_size
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.Normalize(),
             ToTensorV2(),
         ])

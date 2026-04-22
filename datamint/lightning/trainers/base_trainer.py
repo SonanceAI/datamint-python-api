@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
 from functools import cached_property
+from collections.abc import Callable, Mapping
+from typing import Any, TYPE_CHECKING, cast
 
 import lightning as L
 from torch import nn
@@ -19,6 +19,7 @@ from datamint.dataset.base import DatamintBaseDataset
 from datamint.lightning.datamodule import DatamintDataModule
 from datamint.mlflow import set_project
 from datamint.mlflow.flavors.model import BaseDatamintModel
+from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
@@ -78,20 +79,20 @@ class BaseTrainer(ABC):
         dataset: DatamintBaseDataset | None = None,
         project: 'str | Project | None' = None,
         *,
-        model: L.LightningModule | None = None,
+        model: L.LightningModule | type[L.LightningModule] | None = None,
         loss_fn: nn.Module | None = None,
         batch_size: int = 16,
         num_workers: int = 4,
         train_transform: 'BaseCompose | None' = None,
         eval_transform: 'BaseCompose | None' = None,
-        image_size: int | tuple[int, int] | None = None,
         split_as_of_timestamp: str | None = None,
-        max_epochs: int = 50,
+        max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
         register_model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
+        **kwargs: Any,
     ) -> None:
         if dataset is None and project is None:
             raise ValueError("Either 'dataset' or 'project' must be provided.")
@@ -107,18 +108,13 @@ class BaseTrainer(ABC):
         self._user_train_transform = train_transform
         self._user_eval_transform = eval_transform
         self.split_as_of_timestamp = split_as_of_timestamp
-        if image_size is None:
-            self.image_size: tuple[int, int] = (256, 256)
-        elif isinstance(image_size, int):
-            self.image_size = (image_size, image_size)
-        else:
-            self.image_size = image_size
         self.max_epochs = max_epochs
         self.early_stopping_patience = early_stopping_patience
         self.mlflow_experiment_name = mlflow_experiment_name
         self.register_model_name = register_model_name
         self.auto_deploy_adapter = auto_deploy_adapter
         self.trainer_kwargs = trainer_kwargs or {}
+        self.trainer_kwargs.update(kwargs)
 
         # Populated during fit()
         self._lightning_trainer: L.Trainer | None = None
@@ -145,6 +141,46 @@ class BaseTrainer(ABC):
     def _with_project(self):
         set_project(self._project_name)
 
+    def _reset_cached_pipeline_state(self) -> None:
+        """Clear cached dataset, datamodule, and model state before rebuilding the pipeline."""
+        for attr in ('dataset', 'datamodule', 'model'):
+            vars(self).pop(attr, None)
+
+    def _prepare_pipeline(self) -> None:
+        """Resolve the dataset, datamodule, and model used by the Lightning trainer."""
+        _ = self.dataset
+        _ = self.datamodule
+        _ = self.model
+
+    def _create_lightning_trainer(
+        self,
+        run_id: str | None = None,
+        override_params: dict[str, Any] | None = None,
+        *,
+        register_model: bool = True,
+    ) -> L.Trainer:
+        """Build the configured Lightning trainer instance for this wrapper."""
+        callbacks = self._build_default_callbacks(register_model=register_model) + list(self._build_callbacks())
+        logger = self._build_logger(run_id=run_id)
+
+        trainer_params: dict[str, Any] = dict(
+            max_epochs=self.max_epochs,
+            logger=logger,
+            callbacks=callbacks,
+            accelerator='auto',
+        )
+        trainer_params.update(self.trainer_kwargs)
+        if override_params is not None:
+            trainer_params.update(override_params)
+
+        return L.Trainer(**trainer_params)
+
+    def _start_mlflow_run(self):
+        """Start an MLflow run for this trainer workflow."""
+        self._with_project()
+        exp = mlflow.set_experiment(self.experiment_name)
+        return mlflow.start_run(experiment_id=exp.experiment_id)
+
     # ── Public API ──────────────────────────────────────────────
     def fit(self) -> dict[str, Any]:
         """Run the full training pipeline.
@@ -154,36 +190,11 @@ class BaseTrainer(ABC):
             ``'test_results'``, and ``'adapter'`` (when
             *auto_deploy_adapter* is enabled).
         """
-        # clear cached properties in case of multiple calls to fit()
-        for attr in ('dataset', 'model'):
-            if attr in self.__dict__:
-                del self.__dict__[attr]
+        self._reset_cached_pipeline_state()
 
-        self._with_project()  # ensure MLflow project context is set for the entire training pipeline
-        exp = mlflow.set_experiment(self.experiment_name)  # ensure experiment is set for MLflowLogger and callbacks
-
-        with mlflow.start_run(experiment_id=exp.experiment_id) as run:
-            # 1. Resolve dataset (triggers @cached_property)
-            _ = self.dataset
-
-            # 2 . Build datamodule (triggers @cached_property)
-            _ = self.datamodule
-
-            # 3. Build model
-            _ = self.model  # triggers @cached_property to build the model
-
-            # 4. Build callbacks & logger
-            callbacks = self._build_default_callbacks() + list(self._build_callbacks())
-            logger = self._build_logger(run_id=run.info.run_id)
-
-            # 5. Build Lightning Trainer
-            self._lightning_trainer = L.Trainer(
-                max_epochs=self.max_epochs,
-                logger=logger,
-                callbacks=callbacks,
-                accelerator='auto',
-                **self.trainer_kwargs,
-            )
+        with self._start_mlflow_run() as run:
+            self._prepare_pipeline()
+            self._lightning_trainer = self._create_lightning_trainer(run_id=run.info.run_id)
 
             # 6. Train
             _LOGGER.info("Starting training...")
@@ -206,6 +217,28 @@ class BaseTrainer(ABC):
             'adapter': adapter,
         }
 
+    def test(self, register_model: bool = True) -> list[Mapping[str, float]]:
+        """Run evaluation on the test split in a fresh run.
+
+        Args:
+            register_model: When ``True``, run a zero-epoch fit first so the
+                checkpoint callback saves the current model to MLflow and registers it
+                after test metrics are logged.
+        """
+        with self._start_mlflow_run() as run:
+            self._prepare_pipeline()
+            self._lightning_trainer = self._create_lightning_trainer(
+                run_id=run.info.run_id,
+                override_params={'max_epochs': 0} if register_model else None,
+                register_model=register_model,
+            )
+            if register_model:
+                self._lightning_trainer.fit(self.model, datamodule=self.datamodule)
+
+            _LOGGER.info("Starting test...")
+
+            return self._lightning_trainer.test(self.model, datamodule=self.datamodule)
+
     # ── Template hooks (subclasses override these) ──────────────
 
     @abstractmethod
@@ -216,20 +249,34 @@ class BaseTrainer(ABC):
     @cached_property
     def model(self) -> L.LightningModule:
         if self._user_model is not None:
-            return self._user_model
+            if isinstance(self._user_model, L.LightningModule):
+                model = self._user_model
+            elif isinstance(self._user_model, type):
+                loss = self._loss_fn or self._loss()
+                metrics = self._metrics()
+                model = self._user_model(loss_fn=loss, metrics_factories=metrics)
+            else:
+                raise ValueError("Invalid type for 'model'. Expected LightningModule instance or class.")
         else:
             loss = self._loss_fn or self._loss()
             metrics = self._metrics()
-            return self._build_model(loss, metrics)
+            model = self._build_model(loss, metrics)
 
-    @abstractmethod
+        try:
+            eval_tf = self._user_eval_transform or self._eval_transform()
+            model.transform = eval_tf
+        except NotImplementedError:
+            pass
+
+        return model
+
     def _build_model(
         self,
         loss_fn: nn.Module,
         metrics: dict[str, Callable],
-    ) -> L.LightningModule:
+    ) -> DatamintLightningModule:
         """Build the default LightningModule for this task."""
-        ...
+        raise NotImplementedError("Subclasses must implement _build_model() when no user model is provided.")
 
     @abstractmethod
     def _train_transform(self) -> 'BaseCompose':
@@ -290,14 +337,15 @@ class BaseTrainer(ABC):
             split_as_of_timestamp=self.split_as_of_timestamp,
             train_transform=train_transform,
             eval_transform=eval_transform,
+            pin_memory=False,
         )
 
-    def _build_default_callbacks(self) -> list:
+    def _build_default_callbacks(self, *, register_model: bool = True) -> list:
         from datamint.mlflow.lightning.callbacks import MLFlowPyTorchModelCheckpoint, MLFlowDatamintModelCheckpoint
         from mlflow.pyfunc.model import PythonModel
 
         metric_name, mode = self._monitor_metric()
-        model_name = self.register_model_name or self._project_name
+        model_name = (self.register_model_name or self._project_name) if register_model else None
 
         if isinstance(self.model, PythonModel):
             checkpoint_cls = MLFlowDatamintModelCheckpoint

@@ -9,9 +9,12 @@ import warnings
 
 import torch
 from torch import Tensor, nn
+from torchmetrics import MetricCollection
 
 from datamint.mlflow.flavors.task_type import TaskType
 from .base import DatamintLightningModule
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 
 class SegmentationModule(DatamintLightningModule):
@@ -34,42 +37,28 @@ class SegmentationModule(DatamintLightningModule):
 
     def __init__(
         self,
-        in_channels: int,
-        num_classes: int,
-        loss_fn: nn.Module,
-        metrics_factories: dict[str, Callable[[], Any]],
-        class_names: list[str],
-        image_size: tuple[int, int],
+        loss_fn: nn.Module | None = None,
+        metrics_factories: dict[str, Callable[[], Any]] = {},
+        class_names: list[str] | None = None,
+        # image_size: tuple[int, int],
+        transform: A.BasicTransform | A.BaseCompose | None = None,
         lr: float = 1e-4,
     ) -> None:
-        super().__init__()
-        self.in_channels = in_channels
-        self.num_classes = num_classes
-        if num_classes <= 0:
-            raise ValueError("num_classes must be > 0")
-        if class_names and (len(class_names) != num_classes):
-            raise ValueError("Length of class_names must match num_classes")
-        self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories'])
+        super().__init__(transform=transform)
+        self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories', 'transform'])
         self.class_names = class_names
-        self.image_size = image_size
 
-        self.model = self._build_model()
         self.criterion = loss_fn
 
         # Create per-stage metrics
-        self._metric_names = list(metrics_factories.keys())
-        for stage in ('train', 'val', 'test'):
-            for name, factory in metrics_factories.items():
-                self.add_module(f'{stage}_{name}', factory())
+        _metrics = MetricCollection({name: factory() for name, factory in metrics_factories.items()})
+        self.train_metrics = _metrics.clone(prefix='train/')
+        self.val_metrics = _metrics.clone(prefix='val/')
+        self.test_metrics = _metrics.clone(prefix='test/')
 
     @abstractmethod
-    def _build_model(self) -> nn.Module:
-        """Instantiate and return the model. Subclasses may access
-        ``self.in_channels`` and ``self.num_classes``."""
+    def forward(self, x: Tensor) -> Tensor:
         ...
-
-    def forward(self, x: Tensor) -> Tensor:  # type: ignore[override]
-        return self.model(x)
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:
         images = batch['image']
@@ -77,23 +66,26 @@ class SegmentationModule(DatamintLightningModule):
 
         logits = self(images)
 
-        if self._log_sample_metrics:
-            loss_unreduced = self._compute_unreduced_loss(logits, masks)
-            loss = loss_unreduced.mean()
-            self._accumulate_sample_data(batch, logits, loss_unreduced, stage)
+        if self.criterion:
+            if self._log_sample_metrics:
+                loss_unreduced = self._compute_unreduced_loss(logits, masks)
+                loss = loss_unreduced.mean()
+                self._accumulate_sample_data(batch, logits, loss_unreduced, stage)
+            else:
+                loss = self.criterion(logits, masks)
         else:
-            loss = self.criterion(logits, masks)
+            loss = None
 
         preds = (logits > 0).long()
 
-        for name in self._metric_names:
-            getattr(self, f'{stage}_{name}').update(preds, masks.long())
+        getattr(self, f'{stage}_metrics').update(preds, masks.long())
 
-        self.log(
-            f'{stage}/loss', loss,
-            on_step=(stage == 'train'), on_epoch=True,
-            prog_bar=True, batch_size=len(images),
-        )
+        if loss is not None:
+            self.log(
+                f'{stage}/loss', loss,
+                on_step=(stage == 'train'), on_epoch=True,
+                prog_bar=True, batch_size=len(images),
+            )
         return loss
 
     def _compute_unreduced_loss(self, logits: Tensor, masks: Tensor) -> Tensor:
@@ -135,7 +127,11 @@ class SegmentationModule(DatamintLightningModule):
         result: dict[str, Tensor] = {
             'confidence': probs.mean(dim=[1, 2, 3]),  # (B,)
         }
-        for i, name in enumerate(self.class_names):
+        if self.class_names is None:
+            class_names = [f'class_{i}' for i in range(probs.shape[1])]
+        else:
+            class_names = self.class_names
+        for i, name in enumerate(class_names):
             result[f'confidence/{name}'] = probs[:, i].mean(dim=[1, 2])
         return result
 
@@ -153,10 +149,9 @@ class SegmentationModule(DatamintLightningModule):
         return {'iou': iou, 'dice': dice}
 
     def _on_epoch_end(self, stage: str) -> None:
-        for i, name in enumerate(self._metric_names):
-            metric = getattr(self, f'{stage}_{name}')
-            self.log(f'{stage}/{name}', metric.compute(), prog_bar=(i == 0))
-            metric.reset()
+        metric_col = getattr(self, f'{stage}_metrics')
+        self.log_dict(metric_col.compute(), prog_bar=True)
+        metric_col.reset()
 
     def training_step(self, batch: dict, batch_idx: int) -> Tensor:
         return self._common_step(batch, 'train')
@@ -192,15 +187,9 @@ class SegmentationModule(DatamintLightningModule):
         """Run segmentation inference, returning :class:`~datamint.entities.annotations.ImageSegmentation` per resource."""
         import cv2
         import numpy as np
-        import albumentations as A
-        from albumentations.pytorch import ToTensorV2
         from datamint.entities.annotations import ImageSegmentation
 
-        transform = A.Compose([
-            A.Resize(*self.image_size),
-            A.Normalize(),
-            ToTensorV2(),
-        ])
+
         device = self.inference_device
         self.eval()
         all_preds: list[list] = []
@@ -208,14 +197,21 @@ class SegmentationModule(DatamintLightningModule):
             for res in model_input:
                 image = np.array(res.fetch_file_data(auto_convert=True, use_cache=True))
                 oh, ow = image.shape[:2]
-                tensor = transform(image=image)['image'].to(device)
+                if self.transform:
+                    tensor = self.transform(image=image)['image'].to(device)
+                else:
+                    tensor = ToTensorV2()(image=image)['image'].to(device)
                 logits = self(tensor.unsqueeze(0))
                 # Per-sample confidence
                 probs = torch.sigmoid(logits)
-                sample_confidence = float(probs.mean())
+                # sample_confidence = float(probs.mean())
                 pred = (logits[0] > 0).cpu().numpy().astype(np.uint8)
                 anns: list = []
-                for i, name in enumerate(self.class_names):
+                if self.class_names is None:
+                    class_names = [f'class_{i}' for i in range(pred.shape[0])]
+                else:
+                    class_names = self.class_names
+                for i, name in enumerate(class_names):
                     class_conf = float(probs[0, i].mean())
                     mask = cv2.resize(
                         pred[i], (ow, oh),

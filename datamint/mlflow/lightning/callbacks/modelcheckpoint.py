@@ -4,6 +4,7 @@ from pathlib import Path
 from weakref import proxy
 from mlflow.store.artifact.artifact_repository_registry import get_artifact_repository
 from typing import Literal, Any, TYPE_CHECKING
+from typing_extensions import override
 import inspect
 from torch import nn
 import lightning.pytorch as L
@@ -112,6 +113,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
             max_workers=1, thread_name_prefix='mlflow-log')
         self._logging_future: Future | None = None
         self._pending_log_model: nn.Module | None = None
+        self._saved_zero_epoch_checkpoint: bool = False
 
     def _wait_for_pending_logging(self) -> None:
         """Block until any in-flight background model logging completes."""
@@ -241,6 +243,22 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
                     else:
                         self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
 
+    def _save_zero_epoch_checkpoint(self, trainer: L.Trainer) -> None:
+        """Save the initial model state when fit exits before any training step."""
+        if trainer.max_epochs != 0:
+            return
+        if trainer.global_step != 0:
+            return
+        if self.save_top_k == 0:
+            return
+        if self._last_checkpoint_saved:
+            return
+
+        monitor_candidates = self._monitor_candidates(trainer)
+        self._save_none_monitor_checkpoint(trainer, monitor_candidates)
+        self._saved_zero_epoch_checkpoint = True
+        _LOGGER.info("Saved the initial model as the best checkpoint because max_epochs=0.")
+
     def log_additional_metadata(self, logger: MLFlowLogger | L.Trainer,
                                 additional_metadata: dict) -> None:
         """Log additional metadata as a JSON file to the model artifact.
@@ -364,6 +382,27 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         """
         pass
 
+    def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        super().on_fit_start(trainer, pl_module)
+        self._save_zero_epoch_checkpoint(trainer)
+
+    def on_fit_end(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
+        super().on_fit_end(trainer, pl_module)
+
+        if not self._saved_zero_epoch_checkpoint:
+            return
+
+        self._wait_for_pending_logging()
+
+        if self.log_model_at_end_only and trainer.is_global_zero:
+            logger = _get_MLFlowLogger(trainer)
+            self.log_model_to_mlflow(trainer.model, run_id=logger.run_id)
+
+        self._update_signature(trainer)
+
+        if self.register_model_on == 'train' and self.register_model_name:
+            self.register_model(trainer)
+
     def on_train_start(self, trainer, pl_module):
         self._has_been_trained = True
         self._wrap_forward(pl_module)
@@ -391,14 +430,14 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
     def _restore_model_uri(self, trainer: L.Trainer) -> None:
         """Restore the last model URI from the trainer's checkpoint path.
         """
+        if trainer.ckpt_path is None:
+            return
         logger = _get_MLFlowLogger(trainer)
         self._last_model_uri = None
         self._last_model_id = None
         self.last_saved_model_info = None
         if logger is None:
             _LOGGER.warning("No MLFlowLogger found. Cannot restore model URI.")
-            return
-        if trainer.ckpt_path is None:
             return
         if logger.run_id is None:
             _LOGGER.warning("MLFlowLogger has no run_id. Cannot restore model URI.")
@@ -537,6 +576,7 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
             _LOGGER.warning(f"Failed to infer forward method parameters: {e}")
             return None
 
+    @override
     def _wrap_forward(self, pl_module: nn.Module) -> None:
         """Wrap ``pl_module.forward`` to infer the MLflow signature on the first call."""
         if self._inferred_signature is not None:
@@ -565,6 +605,7 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
 
         pl_module.forward = wrapped_forward
 
+    @override
     def _prepare_loggable_model(self, model: nn.Module) -> nn.Module:
         """Create a CPU deep copy for thread-safe background logging.
 
@@ -577,6 +618,7 @@ class MLFlowPyTorchModelCheckpoint(_BaseMLFlowModelCheckpoint):
             cpu_model.cpu()
         return cpu_model
 
+    @override
     def log_model_to_mlflow(self,
                             model: 'nn.Module | L.LightningModule | BaseDatamintModel',
                             run_id: str | MLFlowLogger):
@@ -628,6 +670,7 @@ class MLFlowDatamintModelCheckpoint(_BaseMLFlowModelCheckpoint):
     so no forward-wrapping is performed.
     """
 
+    @override
     def log_model_to_mlflow(self,
                             model: 'nn.Module | L.LightningModule | BaseDatamintModel',
                             run_id: str | MLFlowLogger) -> None:

@@ -30,9 +30,12 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
         self,
         *,
         encoder_name: str = 'resnet34',
+        trainer_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        super().__init__(
+            trainer_kwargs=trainer_kwargs,
+            **kwargs)
         self.encoder_name = encoder_name
 
     def _train_transform(self) -> 'BaseCompose':

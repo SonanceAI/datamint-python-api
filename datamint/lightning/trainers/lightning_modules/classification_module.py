@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
-
-import torch
-from torch import Tensor, nn
 import inspect
+from typing import Any
 import warnings
 
+import albumentations as A
+import torch
+from torch import Tensor, nn
+from torchmetrics import MetricCollection
+import numpy as np
+from albumentations.pytorch import ToTensorV2
+from datamint.entities.annotations import ImageClassification
 from datamint.mlflow.flavors.task_type import TaskType
 from .base import DatamintLightningModule
 
@@ -36,11 +40,13 @@ class ClassificationModule(DatamintLightningModule):
         image_size: tuple[int, int],
         lr: float = 1e-4,
         pretrained: bool = True,
+        transform: A.BasicTransform | A.BaseCompose| None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(transform=transform)
         self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories'])
         self.class_names = class_names
         self.image_size = image_size
+        self.transform: A.BasicTransform | A.BaseCompose | None = None
 
         import timm
 
@@ -51,10 +57,10 @@ class ClassificationModule(DatamintLightningModule):
         )
         self.criterion = loss_fn
 
-        self._metric_names = list(metrics_factories.keys())
-        for stage in ('train', 'val', 'test'):
-            for name, factory in metrics_factories.items():
-                self.add_module(f'{stage}_{name}', factory())
+        _metrics = MetricCollection({name: factory() for name, factory in metrics_factories.items()})
+        self.train_metrics = _metrics.clone(prefix='train/')
+        self.val_metrics = _metrics.clone(prefix='val/')
+        self.test_metrics = _metrics.clone(prefix='test/')
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
@@ -87,8 +93,7 @@ class ClassificationModule(DatamintLightningModule):
             loss = self.criterion(logits, labels)
 
         preds = logits.argmax(dim=1)
-        for name in self._metric_names:
-            getattr(self, f'{stage}_{name}').update(preds, labels)
+        getattr(self, f'{stage}_metrics').update(preds, labels)
 
         self.log(
             f'{stage}/loss', loss,
@@ -114,10 +119,9 @@ class ClassificationModule(DatamintLightningModule):
         return {'accuracy': correct}
 
     def _on_epoch_end(self, stage: str) -> None:
-        for i, name in enumerate(self._metric_names):
-            metric = getattr(self, f'{stage}_{name}')
-            self.log(f'{stage}/{name}', metric.compute(), prog_bar=(i == 0))
-            metric.reset()
+        metric_col = getattr(self, f'{stage}_metrics')
+        self.log_dict(metric_col.compute(), prog_bar=True)
+        metric_col.reset()
 
     def training_step(self, batch: dict, batch_idx: int) -> Tensor:
         return self._common_step(batch, 'train')
@@ -151,16 +155,14 @@ class ClassificationModule(DatamintLightningModule):
         **kwargs: Any,
     ):
         """Run classification inference, returning :class:`~datamint.entities.annotations.ImageClassification` per resource."""
-        import numpy as np
-        import albumentations as A
-        from albumentations.pytorch import ToTensorV2
-        from datamint.entities.annotations import ImageClassification
 
-        transform = A.Compose([
-            A.Resize(*self.image_size),
-            A.Normalize(),
-            ToTensorV2(),
-        ])
+        transform = self.transform
+        if transform is None:
+            transform = A.Compose([
+                A.Resize(*self.image_size),
+                A.Normalize(),
+                ToTensorV2(),
+            ])
         device = self.inference_device
         self.eval()
         all_preds: list[list] = []

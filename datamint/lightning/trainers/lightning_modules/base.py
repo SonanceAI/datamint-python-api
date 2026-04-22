@@ -13,6 +13,7 @@ from mlflow.pyfunc.model import PythonModelContext
 import time
 from mlflow.entities import Metric
 from mlflow.tracking import MlflowClient
+import albumentations as A
 
 if TYPE_CHECKING:
     from datamint.mlflow.data import DatamintMLflowDataset
@@ -31,13 +32,15 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
     separate adapter step is required.
     """
 
-    def __init__(self, settings: ModelSettings | None = None) -> None:
+    def __init__(self, settings: ModelSettings | None = None,
+                 transform: A.BasicTransform | A.BaseCompose | None = None) -> None:
         L.LightningModule.__init__(self)
         BaseDatamintModel.__init__(self, settings=settings)
         self._log_sample_metrics: bool = False
         self._sample_buffer: list[dict[str, Any]] = []
         self._deferred_sample_batches: list[dict[str, Any]] = []
         self.mlflow_model_id: str | None = None  # Injected by modelcheckpoint at runtime. FIXME: This is a bit hacky
+        self.transform = transform
 
     # ------------------------------------------------------------------
     # Per-sample metrics logging
@@ -110,7 +113,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             return
 
         # One sync for all accumulated batches instead of one per batch.
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and self.device.type == 'cuda':
             torch.cuda.synchronize()
 
         for batch_data in self._deferred_sample_batches:
