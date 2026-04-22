@@ -18,7 +18,7 @@ A comprehensive Python SDK for interacting with the Datamint platform, providing
 
 - **Dataset Management**: Download, upload, and manage medical imaging datasets
 - **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements)
-- **Experiment Tracking**: Integrated MLflow support for experiment management
+- **Experiment Tracking**: Support for experiment management
 - **PyTorch Lightning Integration**: Streamlined ML workflows with Lightning DataModules, built-in trainers, and MLflow-aware checkpoints
 - **DICOM Support**: Native handling of DICOM files with anonymization capabilities
 - **Multi-format Support**: PNG, JPEG, NIfTI, and other medical imaging formats
