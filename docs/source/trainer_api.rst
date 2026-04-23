@@ -13,19 +13,26 @@ small number of task-focused entry points. A trainer can:
 - train and test the model, and
 - optionally register the resulting model in MLflow.
 
+
 Available Trainers
 ------------------
 
-- ``UNetPPTrainer``: the fastest way to train a 2-D semantic segmentation model with a
-    sensible UNet++ configuration. For pure 3-D volume projects, it automatically slices
-    the volumes into 2-D samples before training.
-- ``SemanticSegmentation2DTrainer``: a more explicit 2-D segmentation trainer when you
-    want to control the model, transforms, or loss. It auto-detects whether the project
-    contains 2-D images or 3-D volumes and accepts ``slice_axis=`` to override the inferred
-    plane for volume projects.
-- ``SemanticSegmentation3DTrainer``: slice-based semantic segmentation for projects of
-  3-D volumes.
-- ``ImageClassificationTrainer``: image classification using a ``timm`` backbone.
+``UNetPPTrainer``
+   The fastest way to train a 2-D semantic segmentation model with a sensible UNet++
+   configuration. For pure 3-D volume projects, it automatically slices the volumes into
+   2-D samples before training.
+
+``SemanticSegmentation2DTrainer``
+   A more explicit 2-D segmentation trainer when you want to control the model,
+   transforms, or loss. It auto-detects whether the project contains 2-D images or 3-D
+   volumes and accepts ``slice_axis=`` to override the inferred plane for volume projects.
+
+``SemanticSegmentation3DTrainer``
+   Slice-based semantic segmentation for projects of 3-D volumes.
+
+``ImageClassificationTrainer``
+   Image classification using a ``timm`` backbone.
+
 
 Quick Start
 -----------
@@ -48,6 +55,7 @@ Quick Start
 The built-in trainer configures the dataset, datamodule, model, MLflow logger,
 checkpointing, and evaluation loop for you. After ``fit()``, the resolved objects are also
 available as ``trainer.dataset``, ``trainer.datamodule``, and ``trainer.model``.
+
 
 Inputs, Splits, and Outputs
 ---------------------------
@@ -76,8 +84,11 @@ historical split snapshot timestamp through ``split_as_of_timestamp``.
 
 ``fit()`` returns a dictionary with these keys:
 
-- ``model``: the trained model instance,
-- ``test_results``: the metrics returned by Lightning ``test()``, and
+``model``
+   The trained model instance.
+
+``test_results``
+   The metrics returned by Lightning ``test()``.
 
 If you only want evaluation, use ``test()`` instead:
 
@@ -85,7 +96,8 @@ If you only want evaluation, use ``test()`` instead:
 
    test_metrics = trainer.test(register_model=False)
 
-With ``register_model=True``, the trainer performs log and register the current model.
+With ``register_model=True``, the trainer logs and registers the current model.
+
 
 Passing Lightning Trainer Options
 ---------------------------------
@@ -98,12 +110,13 @@ Any extra keyword arguments that are not consumed by Datamint are forwarded to
    trainer = UNetPPTrainer(
        project="BUSI_Segmentation",
        max_epochs=12,
-       accelerator="gpu
+       accelerator="gpu",
        devices=1,
        precision="16-mixed",
        log_every_n_steps=10,
        trainer_kwargs={"enable_progress_bar": True},
    )
+
 
 Using an External Model Inside a Datamint Trainer
 -------------------------------------------------
@@ -216,21 +229,22 @@ deployment behaviour is not added automatically. If you want the trained artifac
 like a Datamint model, prefer the ``SegmentationModule`` / ``ClassificationModule`` route,
 or wrap the final model in a ``DatamintModel`` afterwards.
 
-Important Class-vs-Instance Rule
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
 
-``model=MyModule`` and ``model=MyModule()`` are different:
+   **Class vs. Instance**
 
-- pass the class when you want the trainer to inject ``loss_fn`` and
-  ``metrics_factories``;
-- pass an instance when the module is already fully configured and owns its entire
-  training logic.
+   ``model=MyModule`` and ``model=MyModule()`` are different:
 
-Common Pitfalls
----------------
+   - Pass the **class** when you want the trainer to inject ``loss_fn`` and
+     ``metrics_factories``.
+   - Pass an **instance** when the module is already fully configured and owns its entire
+     training logic.
 
-- Segmentation batches expose masks in ``batch["segmentations"]`` and include the
-  background channel at index 0.
+.. caution::
+
+   Segmentation batches expose masks in ``batch["segmentations"]`` and include the
+   background channel at index 0.
+
 
 Related Examples
 ----------------
