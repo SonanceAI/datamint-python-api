@@ -232,21 +232,81 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         del self._server_url, self._api_key, self._auto_update
         del self._init_project, self._init_resources
 
-    def prefetch(self) -> None:
-        """Download and cache all resource files eagerly.
 
-        Ensures that all resource file bytes are present in the local cache
-        before training begins, so that ``__getitem__`` calls during training
-        are served from disk rather than triggering on-demand network requests.
+    def prefetch(self, *, include_annotations: bool = False) -> None:
+        """Download and cache dataset files eagerly.
+
+        Ensures that resource file bytes are present in the local cache before
+        training begins, so ``__getitem__`` calls are served from disk rather
+        than triggering on-demand network requests. When ``include_annotations``
+        is enabled, segmentation annotation payloads are cached too so
+        DataLoader workers do not need to fetch them from the API.
 
         Calls ``_prepare()`` implicitly if the dataset has not been initialised yet.
+
+        Args:
+            include_annotations: Whether to also prefetch segmentation
+                annotation payloads.
         """
         _LOGGER.info(f"Prefetching {len(self.resources)} resource(s)...")
-        for resource in self.resources:
+        requires_download = any(not r.is_cached() for r in self.resources)
+        iterator = iter(self.resources)
+        if requires_download:
+            from tqdm.auto import tqdm
+            _LOGGER.warning(
+                "Some resources are not cached locally and will be downloaded during slicing. "
+                "This may take time and bandwidth, especially for large volumes. "
+                "Consider pre-caching resources if this is an issue.")
+            iterator = tqdm(iterator, total=len(self.resources),
+                             desc="Prefetching resources", unit="resource")
+        for resource in iterator:
             try:
                 resource.fetch_file_data(auto_convert=False, use_cache=True)
             except Exception as e:
                 _LOGGER.warning(f"Failed to prefetch resource '{resource.id}': {e}")
+
+        if include_annotations:
+            segmentation_annotations = []
+            seen_annotation_keys: set[str] = set()
+
+            iterator = iter(self.resource_annotations)
+            requires_download = any(not ann.is_cached() for anns in self.resource_annotations for ann in anns if ann.is_segmentation())
+            if requires_download:
+                from tqdm.auto import tqdm
+                _LOGGER.warning(
+                    "Some segmentation annotations are not cached locally and will be downloaded. "
+                    "This may take time and bandwidth, especially for large volumes. "
+                    "Consider pre-caching annotations if this is an issue.")
+                iterator = tqdm(iterator, total=len(self.resource_annotations),
+                                 desc="Prefetching annotations", unit="resource")
+            for annotations in iterator:
+                for annotation in annotations:
+                    annotation_id = getattr(annotation, 'id', None)
+                    annotation_key = annotation_id or f'object:{id(annotation)}'
+                    if annotation_key in seen_annotation_keys:
+                        continue
+
+                    is_segmentation = getattr(annotation, 'annotation_type', None) == 'segmentation'
+                    if not is_segmentation:
+                        is_segmentation_method = getattr(annotation, 'is_segmentation', None)
+                        if callable(is_segmentation_method):
+                            try:
+                                is_segmentation = bool(is_segmentation_method())
+                            except Exception:
+                                is_segmentation = False
+
+                    if not is_segmentation:
+                        continue
+
+                    seen_annotation_keys.add(annotation_key)
+                    segmentation_annotations.append(annotation)
+
+            for annotation in segmentation_annotations:
+                try:
+                    annotation.fetch_file_data(auto_convert=False, use_cache=True)
+                except Exception as e:
+                    _LOGGER.warning(f"Failed to prefetch annotation '{getattr(annotation, 'id', None)}': {e}")
+
         _LOGGER.info("Prefetch complete.")
 
     # def __getstate__(self) -> object:

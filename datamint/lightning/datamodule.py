@@ -150,7 +150,7 @@ class DatamintDataModule(L.LightningDataModule):
 
     def prepare_data(self) -> None:
         self.dataset._prepare()
-        self.dataset.prefetch()
+        self.dataset.prefetch(include_annotations=self.dataset.return_segmentations)
 
     def setup(self, stage: str | None = None) -> None:
         if self._splits_resolved:

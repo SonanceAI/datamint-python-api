@@ -366,3 +366,13 @@ class Annotation(AnnotationBase):
             except ValueError:
                 logger.warning(f"Could not parse created_at datetime: {self.created_at}")
         return None
+
+    def is_cached(self) -> bool:
+        """Check if the resource's file data is already cached locally and valid.
+
+        Returns:
+            True if valid cached data exists, False otherwise.
+        """
+        version_info = self._generate_version_info()
+        cached_data = self._cache.get(self.id, _ANNOTATION_CACHE_KEY, version_info)
+        return cached_data is not None

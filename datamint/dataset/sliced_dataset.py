@@ -63,16 +63,25 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
     def __init__(
         self,
-        *args,
+        *,
         slice_axis: ViewPlane | int = 'axial',
+        parent_dataset: DatamintBaseDataset | None = None,
         **kwargs,
     ):
-        self._slice_axis = cast('ViewPlane', self._validate_slice_axis(slice_axis))
+        self._slice_axis: ViewPlane = self._validate_slice_axis(slice_axis)
+        self.parent_dataset = parent_dataset
+
+        if parent_dataset is not None:
+            if kwargs.get('resources') is not None:
+                raise ValueError("Cannot specify both parent_dataset and resources.")
+            if kwargs.get('project') is not None:
+                raise ValueError("Cannot specify both parent_dataset and project.")
+            kwargs['resources'] = []
 
         super().__init__(
-            *args,
             **kwargs,
         )
+
 
         # --- Segmentation slice cache ---
         self._seg_slice_cache = CacheManager(
@@ -81,18 +90,50 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             memory_cache_maxsize=8,
         )
 
-        # --- Build sliced resources ---
+    def _prepare(self) -> None:
+        if self._is_prepared:
+            return
+        if self.parent_dataset:
+            self.parent_dataset._prepare()
+            raw_resources = self.parent_dataset.resources
+            raw_annotations = self.parent_dataset.resource_annotations
+            self.project = self.parent_dataset.project
+
+            _attributes_to_copy = [
+                'return_metainfo', 'return_segmentations',
+                'return_as_semantic_segmentation', 'semantic_seg_merge_strategy',
+                'include_unannotated', 'allow_external_annotations',
+                'image_labels_merge_strategy', 'image_categories_merge_strategy',
+                'split_name', 'split_source',
+                'split_as_of_timestamp', 'alb_transform',
+                'include_annotators', 'exclude_annotators',
+                'include_segmentation_names', 'exclude_segmentation_names',
+                'include_image_label_names', 'exclude_image_label_names',
+                'include_frame_label_names', 'exclude_frame_label_names',
+                'frame_lsets', 'frame_lcodes',
+                'image_lsets', 'image_lcodes',
+                'seglabel_list', 'seglabel2code',
+                'annotation_processor', '_api'
+            ]
+            # Copy configuration from parent
+            for attr in _attributes_to_copy:
+                setattr(self, attr, getattr(self.parent_dataset, attr))
+
+            self._is_prepared = True
+        else:
+            super()._prepare()
+            raw_resources = self.resources
+            raw_annotations = self.resource_annotations
+
         volume_cache = CacheManager(
             'sliced_volumes',
             enable_memory_cache=True,
             memory_cache_maxsize=2,
         )
         expanded_resources, expanded_annotations = self._expand_resources(
-            self.resources,
-            self.resource_annotations,
-            volume_cache,
+            raw_resources, raw_annotations, volume_cache
         )
-        self.resources = expanded_resources  # type: ignore[assignment]
+        self.resources = expanded_resources
         self.resource_annotations = expanded_annotations
 
     @classmethod
@@ -117,75 +158,11 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         Returns:
             A new :class:`SlicedVolumeDataset` instance.
         """
-        parent_dataset._prepare()
-        instance: SlicedVolumeDataset = cls.__new__(cls)
 
-        instance._slice_axis = cast('ViewPlane', cls._validate_slice_axis(slice_axis))
-
-        instance.project = parent_dataset.project
-        instance._api = parent_dataset._api
-
-        # Copy configuration from parent
-        instance.return_metainfo = parent_dataset.return_metainfo
-        instance.return_segmentations = parent_dataset.return_segmentations
-        instance.return_as_semantic_segmentation = parent_dataset.return_as_semantic_segmentation
-        instance.semantic_seg_merge_strategy = parent_dataset.semantic_seg_merge_strategy
-        instance.include_unannotated = parent_dataset.include_unannotated
-        instance.allow_external_annotations = parent_dataset.allow_external_annotations
-        instance.image_labels_merge_strategy = parent_dataset.image_labels_merge_strategy
-        instance.image_categories_merge_strategy = parent_dataset.image_categories_merge_strategy
-        instance.split_name = parent_dataset.split_name
-        instance.split_source = parent_dataset.split_source
-        instance.split_as_of_timestamp = parent_dataset.split_as_of_timestamp
-
-        # Transforms
-        instance.alb_transform = parent_dataset.alb_transform
-
-        # Filtering (already applied on parent's annotations)
-        instance.include_annotators = parent_dataset.include_annotators
-        instance.exclude_annotators = parent_dataset.exclude_annotators
-        instance.include_segmentation_names = parent_dataset.include_segmentation_names
-        instance.exclude_segmentation_names = parent_dataset.exclude_segmentation_names
-        instance.include_image_label_names = parent_dataset.include_image_label_names
-        instance.exclude_image_label_names = parent_dataset.exclude_image_label_names
-        instance.include_frame_label_names = parent_dataset.include_frame_label_names
-        instance.exclude_frame_label_names = parent_dataset.exclude_frame_label_names
-
-        # Copy label sets and processor from parent
-        instance.annotation_processor = parent_dataset.annotation_processor
-        instance.frame_lsets = parent_dataset.frame_lsets
-        instance.frame_lcodes = parent_dataset.frame_lcodes
-        instance.image_lsets = parent_dataset.image_lsets
-        instance.image_lcodes = parent_dataset.image_lcodes
-        instance.seglabel_list = parent_dataset.seglabel_list
-        instance.seglabel2code = parent_dataset.seglabel2code
-
-        # Internal state
-        instance._logged_uint16_conversion = False
-        instance._is_prepared = True
-
-        # --- Segmentation slice cache ---
-        instance._seg_slice_cache = CacheManager(
-            'sliced_segmentations',
-            enable_memory_cache=True,
-            memory_cache_maxsize=8,
+        return cls(
+            parent_dataset=parent_dataset,
+            slice_axis=slice_axis,
         )
-
-        # --- Build sliced resources ---
-        volume_cache = CacheManager(
-            'sliced_volumes',
-            enable_memory_cache=True,
-            memory_cache_maxsize=2,
-        )
-        expanded_resources, expanded_annotations = instance._expand_resources(
-            parent_dataset.resources,
-            parent_dataset.resource_annotations,
-            volume_cache,
-        )
-        instance.resources = expanded_resources  # type: ignore[assignment]
-        instance.resource_annotations = expanded_annotations
-
-        return instance
 
     @staticmethod
     def _validate_slice_axis(slice_axis: 'ViewPlane | int') -> 'ViewPlane':

@@ -195,3 +195,6 @@ class SlicedVolumeResource:
         except AttributeError:
             parent = super().__getattribute__('_parent')
             return getattr(parent, name)
+
+    def is_cached(self) -> bool:
+        return self._parent.is_cached()
