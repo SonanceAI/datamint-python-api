@@ -88,12 +88,10 @@ class ImageDataset(VolumeDataset):
             aug_img = np.transpose(aug_img, (2, 0, 1))
         elif isinstance(aug_img, torch.Tensor):
             # shape is (C, H, W), assuming albumentation transformation changed it
-            _LOGGER.debug(f"augmented image tensor shape before permute: {aug_img.shape}")
             if aug_img.shape[0] == img.shape[-1]:  # if C is in dim 0
                 aug_img = aug_img.permute(0, 1, 2)
             else:
                 aug_img = aug_img.permute(2, 0, 1)
-            _LOGGER.debug(f"augmented image tensor shape after permute: {aug_img.shape}")
         # back to (C, 1, H, W)
         aug_img = aug_img[:, np.newaxis, :, :]
 

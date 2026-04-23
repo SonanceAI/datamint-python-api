@@ -143,6 +143,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self._auto_update = auto_update
         self._init_project = project
         self._init_resources = resources
+        self.__api = None
 
         # Store configuration
         self.return_metainfo = return_metainfo
@@ -189,6 +190,17 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self._prepare()
         return object.__getattribute__(self, name)
 
+    @property
+    def _api(self):
+        from datamint import Api
+        if self.__api is None:
+            self.__api = Api(
+                server_url=self._server_url,
+                api_key=self._api_key,
+                check_connection=self._auto_update,
+            )
+        return self.__api
+
     def _prepare(self) -> None:
         """Fetch data from the API and set up the dataset.
 
@@ -199,14 +211,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if self._is_prepared:
             return
 
-        from datamint import Api
-
-        # Initialize API
-        self._api = Api(
-            server_url=self._server_url,
-            api_key=self._api_key,
-            check_connection=self._auto_update,
-        )
+        _ = self._api
 
         # Initialize from project or resources
         if self._init_resources is not None:
@@ -229,9 +234,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self._is_prepared = True
 
         # Clean up temporary attributes used only for deferred initialisation
-        del self._server_url, self._api_key, self._auto_update
+        # del self._server_url, self._api_key, self._auto_update
         del self._init_project, self._init_resources
-
 
     def prefetch(self, *, include_annotations: bool = False) -> None:
         """Download and cache dataset files eagerly.
@@ -258,7 +262,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 "This may take time and bandwidth, especially for large volumes. "
                 "Consider pre-caching resources if this is an issue.")
             iterator = tqdm(iterator, total=len(self.resources),
-                             desc="Prefetching resources", unit="resource")
+                            desc="Prefetching resources", unit="resource")
         for resource in iterator:
             try:
                 resource.fetch_file_data(auto_convert=False, use_cache=True)
@@ -270,7 +274,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             seen_annotation_keys: set[str] = set()
 
             iterator = iter(self.resource_annotations)
-            requires_download = any(not ann.is_cached() for anns in self.resource_annotations for ann in anns if ann.is_segmentation())
+            requires_download = any(not ann.is_cached()
+                                    for anns in self.resource_annotations for ann in anns if ann.is_segmentation())
             if requires_download:
                 from tqdm.auto import tqdm
                 _LOGGER.warning(
@@ -278,7 +283,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                     "This may take time and bandwidth, especially for large volumes. "
                     "Consider pre-caching annotations if this is an issue.")
                 iterator = tqdm(iterator, total=len(self.resource_annotations),
-                                 desc="Prefetching annotations", unit="resource")
+                                desc="Prefetching annotations", unit="resource")
             for annotations in iterator:
                 for annotation in annotations:
                     annotation_id = getattr(annotation, 'id', None)
@@ -309,11 +314,12 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         _LOGGER.info("Prefetch complete.")
 
-    # def __getstate__(self) -> object:
-    #     # print the size in MB
-    #     print(f'>>>{len(str(self.__dict__))/1024/1024:.2f} MB')
-
-    #     return super().__getstate__()
+    def __getstate__(self) -> dict:
+        state = super().__getstate__()
+        # Strip _api (contains unpicklable connections)
+        if '_api' in state:
+            del state['_api']
+        return state
 
     def __setstate__(self, state: dict) -> None:
         vars(self).update(state)
@@ -327,11 +333,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         ``Api.__setstate__``); we only need to wire its per-resource/annotation
         sub-APIs back into the individual entity objects.
         """
+        from datamint.entities import Resource
         resources_api = self._api.resources
         annotations_api = self._api.annotations
         projects_api = self._api.projects
         for res in self.resources:
-            res._api = resources_api
+            if isinstance(res, Resource) or (hasattr(res, '_api') and res._api is not None):
+                res._api = resources_api
         if self.project is not None:
             self.project._api = projects_api
         for ann_list in self.resource_annotations:
@@ -476,7 +484,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         if not self.include_unannotated:
             self._filter_unannotated()
-        
+
         if len(self.resources) == 0 and orig_num_resources > 0:
             _LOGGER.warning("All resources have been filtered out.")
 
@@ -815,15 +823,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                     num_labels=len(self.segmentation_labels_set)
                 )
             segmentations = sem_segs
-            _LOGGER.debug(
-                f'Converted to semantic segmentation. Shapes: {[segmentations[a].shape for a in segmentations]}')
             if self.semantic_seg_merge_strategy:
                 if len(segmentations) > 0:
                     segmentations = self.annotation_processor.apply_merge_strategy(
                         segmentations,
                         strategy=self.semantic_seg_merge_strategy
                     )
-                    _LOGGER.debug(f"Merged segmentation shape: {segmentations.shape}")
+                    _LOGGER.debug("Merged segmentation shape: %s", segmentations.shape)
                 else:
                     if output_shape is None:
                         raise ValueError("output_shape must be provided when no segmentations are present"
@@ -833,7 +839,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                                                 dtype=torch.get_default_dtype())
                     segmentations[0] = 1  # background
                     _LOGGER.debug("No segmentations found. "
-                                  f"Created empty semantic segmentation with shape: {segmentations.shape}")
+                                  "Created empty semantic segmentation with shape: %s",
+                                  segmentations.shape)
 
                 # In semantic format, we don't need `seg_labels`, as the label info is at the new dimension (axis=0) of the semantic segmentation array.
                 seg_labels = None

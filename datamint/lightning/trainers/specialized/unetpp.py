@@ -45,6 +45,7 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
         h, w = self.image_size
         return A.Compose([
             A.Resize(h, w),
+            A.ToRGB(),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.ElasticTransform(alpha=50, sigma=5, p=0.3),

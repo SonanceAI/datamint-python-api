@@ -215,10 +215,10 @@ class CacheManager(Generic[T]):
             with open(metadata_path, 'r') as f:
                 jsondata = f.read()
             cached_metadata = CacheManager.ItemMetadata.model_validate_json(jsondata)
-            
+
             # Use the data_path from metadata (supports external file locations)
             data_path = Path(cached_metadata.data_path)
-            
+
             # Check if the actual data file exists
             if not data_path.exists():
                 _LOGGER.debug(f"Cache miss for {entity_id}/{data_key} - data file not found at {data_path}")
@@ -257,18 +257,16 @@ class CacheManager(Generic[T]):
         """
         mem_data = self.get_memory(entity_id, data_key, version_info)
         if mem_data is not None:
-            _LOGGER.debug(f"Memory cache hit for {entity_id}/{data_key}")
             return mem_data
 
         cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
-        
+
         if cached_metadata is None:
             return None
 
         try:
             data = self._load_data(cached_metadata)
             self.set_memory(entity_id, data_key, data, version_info)
-            _LOGGER.debug(f"Cache hit for {entity_id}/{data_key}")
             return data
         except Exception as e:
             _LOGGER.warning(f"Error reading cache for {entity_id}/{data_key}: {e}")
@@ -420,7 +418,6 @@ class CacheManager(Generic[T]):
             with open(path, 'rb') as f:
                 return pickle.load(f)
 
-
     def _save_data(self, path: Path, data: T) -> str:
         """
         Save data and returns the mimetype
@@ -511,14 +508,25 @@ class CacheManager(Generic[T]):
         metadata_path = self._get_metadata_path(entity_id)
         if not metadata_path.exists():
             return
+        raise NotImplementedError
         try:
-            with open(metadata_path, 'r') as f:
-                metadata = CacheManager.ItemMetadata.model_validate_json(f.read())
+            try:
+                with open(metadata_path, 'r') as f:
+                    filedata = f.read()
+                    metadata = CacheManager.ItemMetadata.model_validate_json(filedata)
+            except Exception as exc:
+                _LOGGER.warning("Error reading metadata for %s (%s) to save extra_info: %s",
+                                entity_id, metadata_path, exc)
+                _LOGGER.debug("File content was: %s", filedata)
+                raise
             metadata.extra_info = extra_info
             with open(metadata_path, 'w') as f:
-                f.write(metadata.model_dump_json(indent=2))
+                d = metadata.model_dump_json(indent=2)
+                _LOGGER.debug("Saving extra_info for %s: %s", entity_id, d)
+                f.write(d)
         except Exception as exc:
             _LOGGER.warning("Error saving extra_info for %s: %s", entity_id, exc)
+            raise
 
     def iter_entities_extra_info(self) -> Iterator[tuple[str, dict]]:
         """Yield (entity_id, extra_info) for all cached entities that have extra_info.
@@ -541,3 +549,20 @@ class CacheManager(Generic[T]):
                     yield entity_dir.name, metadata.extra_info
             except Exception as exc:
                 _LOGGER.debug("Could not read extra_info for %s: %s", entity_dir.name, exc)
+
+    def __getstate__(self) -> dict:
+        state = {
+            'entity_type': self.entity_type,
+            'cache_root': str(self.cache_root),
+            'enable_memory_cache': self._memory_cache is not None,
+            'memory_cache_maxsize': self._memory_cache.maxsize if self._memory_cache else 1
+        }
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        self.__init__(
+            entity_type=state['entity_type'],
+            cache_root=state['cache_root'],
+            enable_memory_cache=state['enable_memory_cache'],
+            memory_cache_maxsize=state['memory_cache_maxsize']
+        )

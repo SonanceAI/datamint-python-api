@@ -321,7 +321,7 @@ class BaseApi:
                                                         "url": url,
                                                         "headers": self.client.headers,
                                                         **kwargs}, fail_silently=True)
-            logger.debug(f'Equivalent curl command: "{curl_command}"')
+            logger.debug('Equivalent curl command: "%s"', curl_command)
         response = self.client.request(method, url, **kwargs)
         self._check_errors_response_httpx(response, url=url)
         return response

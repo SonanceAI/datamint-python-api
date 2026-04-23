@@ -301,8 +301,6 @@ class BaseEntity(BaseEntityModel):
         
         if should_load_from_cache:
             img_data = cache_manager.get(self.id, data_key, version_info)
-            if img_data is not None:
-                _LOGGER.debug("Using cached data for %s %s", self.__class__.__name__, self.id)
 
         if img_data is None:
             # Cache miss - fetch from server

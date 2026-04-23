@@ -352,8 +352,8 @@ class BaseTrainer(ABC):
         else:
             checkpoint_cls = MLFlowPyTorchModelCheckpoint
 
-        _LOGGER.debug(
-            f"Using {checkpoint_cls.__name__} for model checkpointing with monitor='{metric_name}' mode='{mode}'")
+        _LOGGER.debug("Using %s for model checkpointing with monitor='%s' mode='%s'",
+                      checkpoint_cls.__name__, metric_name, mode)
 
         callbacks: list = [
             checkpoint_cls(
@@ -421,8 +421,8 @@ class _LogDatasetSplitsCallback(L.Callback):
         if mlflow_dataset is None:
             return
         try:
-            _LOGGER.info(f"Logging dataset split '{split}' to MLflow for model context...")
+            _LOGGER.info("Logging dataset split '%s' to MLflow for model context...", split)
             mlflow.log_input(mlflow_dataset, context=split)
-            _LOGGER.debug(f"Successfully logged dataset split '{split}' to MLflow.")
+            _LOGGER.debug("Successfully logged dataset split '%s' to MLflow.", split)
         except Exception as e:
             _LOGGER.warning(f"Failed to log dataset input: {e}")

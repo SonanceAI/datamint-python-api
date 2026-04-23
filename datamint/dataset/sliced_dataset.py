@@ -82,7 +82,6 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             **kwargs,
         )
 
-
         # --- Segmentation slice cache ---
         self._seg_slice_cache = CacheManager(
             'sliced_segmentations',
@@ -93,6 +92,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
     def _prepare(self) -> None:
         if self._is_prepared:
             return
+        _LOGGER.debug("Preparing SlicedVolumeDataset with slice_axis=%s", self._slice_axis)
         if self.parent_dataset:
             self.parent_dataset._prepare()
             raw_resources = self.parent_dataset.resources
@@ -113,12 +113,14 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 'frame_lsets', 'frame_lcodes',
                 'image_lsets', 'image_lcodes',
                 'seglabel_list', 'seglabel2code',
-                'annotation_processor', '_api'
+                'annotation_processor',
+                '_server_url', '_api_key', '_auto_update'
             ]
             # Copy configuration from parent
             for attr in _attributes_to_copy:
                 setattr(self, attr, getattr(self.parent_dataset, attr))
 
+            del self.parent_dataset  # free memory
             self._is_prepared = True
         else:
             super()._prepare()
@@ -567,8 +569,8 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         if isinstance(aug_img, np.ndarray):
             aug_img = np.transpose(aug_img, (2, 0, 1))
         elif isinstance(aug_img, torch.Tensor):
-            if aug_img.shape[0] == img.shape[-1]:
-                pass  # already (C, H, W)
+            if aug_img.shape[0] <= 4 or aug_img.shape[0] == img.shape[-1]:  # likely (C, H, W) already
+                pass
             else:
                 aug_img = aug_img.permute(2, 0, 1)
 

@@ -1,5 +1,6 @@
 from .base_entity import BaseEntity
 
+
 class User(BaseEntity):
     """User entity model.
 
@@ -18,9 +19,9 @@ class User(BaseEntity):
     customer_id: str
     created_at: str
 
-    @property
-    def id(self) -> str:
-        """Return the user's unique identifier, which is the email."""
-        return self.email
+    def __init__(self, **data):
+        data.setdefault('id', data.get('email'))
+        super().__init__(**data)
+
 
     # Potential improvement: convert created_at to datetime for easier comparisons.

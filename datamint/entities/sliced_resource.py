@@ -16,6 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 # Cache key for parsed slice numpy arrays
 _SLICE_ARRAY_CACHEKEY = "slice_array"
 
+
 class SlicedVolumeResource:
     """Proxy that presents a single 2D slice of a 3D volume Resource.
 
@@ -77,6 +78,13 @@ class SlicedVolumeResource:
 
     def __getattr__(self, name: str) -> Any:
         """Delegate all unresolved attributes to the parent Resource."""
+        if name == '_api':
+            return None
+        if name == '_parent':
+            return super().__getattribute__('_parent')
+        _properties = {'slice_axis_idx', 'slice_axis_idx_std', 'data_metainfo'}
+        if name in _properties:
+            return super().__getattribute__(name)
         return getattr(self._parent, name)
 
     def get_depth(self) -> int:
@@ -115,9 +123,11 @@ class SlicedVolumeResource:
         vol, self.data_metainfo = read_array_normalized(raw, return_metainfo=True)
         # vol.shape is (D,C,H,W)
 
-        _LOGGER.debug(
-            f"Slicing {self._parent.filename} along axis {self.slice_axis=} ({self.slice_axis_idx_std=}) at index {self.slice_index=} with shape {vol.shape=}")
+        _LOGGER.debug("Slicing %s along axis %s (%s) at index %s with shape %s",
+                      self._parent.filename, self.slice_axis, self.slice_axis_idx_std, self.slice_index, vol.shape
+                      )
         sliced = np.take(vol, self.slice_index, axis=self.slice_axis_idx_std)
+        _LOGGER.debug('Sliced shape before channel axis adjustment: %s', sliced.shape)
         # vol is (D, C, H, W); after np.take the sliced axis is removed.
         # C was at index 1. If we sliced axis 0 (D), C shifts to index 0 — already correct.
         # If we sliced axis 2 (H) or 3 (W), C stays at index 1 → move it to 0.
@@ -126,6 +136,8 @@ class SlicedVolumeResource:
             sliced = np.moveaxis(sliced, channel_axis_in_result, 0)
         # sliced is now (C, DIM1, DIM2)
         sliced = np.ascontiguousarray(sliced)
+
+        _LOGGER.debug('Sliced shape before caching: %s', sliced.shape)
 
         gz_path = self._volume_cache.get_expected_path(cache_entity_id, _SLICE_ARRAY_CACHEKEY)
         gz_path = gz_path.with_suffix('.npy.gz')
@@ -189,12 +201,16 @@ class SlicedVolumeResource:
             f"axis='{axis_name}', slice={self.slice_index})"
         )
 
-    def __getattribute__(self, name: str) -> Any:
-        try:
-            return super().__getattribute__(name)
-        except AttributeError:
-            parent = super().__getattribute__('_parent')
-            return getattr(parent, name)
-
     def is_cached(self) -> bool:
         return self._parent.is_cached()
+
+    def __getstate__(self):
+        state = super().__getstate__()
+        if '_api' in state:
+            _LOGGER.info("Removing _api from SlicedVolumeResource state for pickling."
+                         " It shouldn't be there.")
+            del state['_api']
+        if 'data_metainfo' in state:
+            _ = self.slice_axis_idx # ensure other cached properties are computed before deleting data_metainfo
+            del state['data_metainfo']
+        return state

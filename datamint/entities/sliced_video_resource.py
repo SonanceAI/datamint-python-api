@@ -145,9 +145,11 @@ class SlicedVideoResource:
             f"frame={self.frame_index})"
         )
 
-    def __getattribute__(self, name: str) -> Any:
-        try:
+    def __getattr__(self, name: str) -> Any:
+        if name == '_api':
+            return None
+        if name == '_parent':
+            return super().__getattribute__('_parent')
+        if name == 'data_metainfo':
             return super().__getattribute__(name)
-        except AttributeError:
-            parent = super().__getattribute__('_parent')
-            return getattr(parent, name)
+        return getattr(self._parent, name)

@@ -269,6 +269,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
     def _train_transform(self) -> 'BaseCompose':
         return A.Compose([
             self._build_resize_transform(),
+            A.ToRGB(),
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.5),
@@ -279,6 +280,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
     def _eval_transform(self) -> 'BaseCompose':
         return A.Compose([
             self._build_resize_transform(),
+            A.ToRGB(),
             A.Normalize(),
             ToTensorV2(),
         ])

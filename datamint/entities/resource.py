@@ -309,11 +309,12 @@ class Resource(BaseEntity):
             use_cache=use_cache,
         )
 
-        # Persist discovery metadata alongside the cache entry (no-op when not cached)
-        self._cache.save_extra_info(self.id, {
-            'upload_channel': self.upload_channel,
-            'tags': self.tags or [],
-        })
+        # # Persist discovery metadata alongside the cache entry (no-op when not cached)
+        # if use_cache:
+        #     self._cache.save_extra_info(self.id, {
+        #         'upload_channel': self.upload_channel,
+        #         'tags': self.tags or [],
+        #     })
 
         if auto_convert:
             try:

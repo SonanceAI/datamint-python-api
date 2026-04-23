@@ -61,8 +61,9 @@ class SegmentationModule(DatamintLightningModule):
         ...
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:
-        images = batch['image']
+        images = batch['image'] # shape (B, C, H, W)
         masks = batch['segmentations'][:, 1:]  # exclude background channel
+        # masks.shape is (B, C, H, W) where C is num_classes (excluding background)
 
         logits = self(images)
 
