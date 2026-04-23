@@ -242,8 +242,7 @@ or wrap the final model in a ``DatamintModel`` afterwards.
 
 .. caution::
 
-   Segmentation batches expose masks in ``batch["segmentations"]`` and include the
-   background channel at index 0.
+   Segmentation batches expose masks in ``batch["segmentations"]`` and include the background channel at index 0.
 
 
 Related Examples
