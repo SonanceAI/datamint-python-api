@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.15.2"
+version = "2.15.3"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -95,3 +95,11 @@ mlflow-artifacts = "datamint.mlflow.artifact.datamint_artifacts_repo:DatamintArt
 
 [tool.poetry.plugins."mlflow.default_experiment_provider"]
 datamint = "datamint.mlflow.tracking.default_experiment:DatamintExperimentProvider"
+
+# ==========================================
+# Tool configurations
+# ==========================================
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

@@ -63,6 +63,9 @@ class PredictionRouter:
     """
 
     _RESERVED_PARAMS = frozenset({"mode", "confidence_threshold"})
+    _DELEGATED_MODE_MAP = {
+        PredictionMode.IMAGE: PredictionMode.SLICE,
+    }
 
     def __init__(self, model_instance: Any,
                  base_class: type | None = None) -> None:
@@ -101,6 +104,18 @@ class PredictionRouter:
                 if base_method is not None and getattr(method, "__func__", None) is base_method:
                     continue
             registry[mode] = (method, ModeSpec(mode=mode))
+
+        # Step 3: add delegated modes based on _DELEGATED_MODE_MAP
+        for target_mode, source_mode in PredictionRouter._DELEGATED_MODE_MAP.items():
+            if target_mode in registry and source_mode not in registry:
+                method_name = f"predict_{source_mode.value}"
+                method = getattr(model, method_name, None)
+                if method is not None:
+                    _LOGGER.info(
+                        "Registering handler for '%s' mode via delegation to '%s' handler",
+                        source_mode.value, target_mode.value
+                    )
+                    registry[source_mode] = (method, ModeSpec(mode=source_mode))
 
         return registry
 

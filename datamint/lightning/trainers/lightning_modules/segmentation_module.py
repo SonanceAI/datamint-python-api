@@ -13,6 +13,7 @@ from torchmetrics import MetricCollection
 
 from datamint.mlflow.flavors.task_type import TaskType
 from .base import DatamintLightningModule
+from datamint.mlflow.flavors.prediction_router import prediction_mode
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
@@ -61,7 +62,7 @@ class SegmentationModule(DatamintLightningModule):
         ...
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:
-        images = batch['image'] # shape (B, C, H, W)
+        images = batch['image']  # shape (B, C, H, W)
         masks = batch['segmentations'][:, 1:]  # exclude background channel
         # masks.shape is (B, C, H, W) where C is num_classes (excluding background)
 
@@ -99,7 +100,8 @@ class SegmentationModule(DatamintLightningModule):
         b = logits.shape[0]
 
         if not hasattr(self, '_criterion_supports_reduction_none'):
-            self._criterion_supports_reduction_none = 'reduction' in inspect.signature(self.criterion.forward).parameters
+            self._criterion_supports_reduction_none = 'reduction' in inspect.signature(
+                self.criterion.forward).parameters
             if not self._criterion_supports_reduction_none:
                 warnings.warn(
                     f"{type(self.criterion).__name__} does not accept reduction='none'; "
@@ -180,16 +182,11 @@ class SegmentationModule(DatamintLightningModule):
             weight_decay=1e-4,
         )
 
-    def predict_default(
-        self,
-        model_input,
-        **kwargs: Any,
-    ):
+    def predict_image(self, model_input, **kwargs: Any):
         """Run segmentation inference, returning :class:`~datamint.entities.annotations.ImageSegmentation` per resource."""
         import cv2
         import numpy as np
         from datamint.entities.annotations import ImageSegmentation
-
 
         device = self.inference_device
         self.eval()

@@ -7,11 +7,16 @@ annotation system. It supports various prediction modes for different data types
 
 from typing import Any, ClassVar, TypeAlias
 from abc import ABC
+from collections.abc import Sequence
 from dataclasses import dataclass
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
-from mlflow.pyfunc import PyFuncModel, PythonModel, PythonModelContext
-from datamint.entities.annotations import Annotation
+from mlflow.pyfunc import PyFuncModel
+from mlflow.pyfunc.model import PythonModel, PythonModelContext
+from datamint.entities.annotations import Annotation, ImageSegmentation,  ImageClassification
+from datamint.entities.cache_manager import CacheManager
 from datamint.entities.resource import Resource
+from datamint.entities.sliced_resource import SlicedVolumeResource
+from datamint.entities.resources.volume_resource import VolumeResource
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
 from datamint.mlflow.flavors.prediction_modes import PredictionMode
 from datamint.mlflow.flavors.task_type import TaskType
@@ -20,11 +25,13 @@ import logging
 from functools import cached_property
 import torch
 from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
+from medimgkit import ViewPlane
 
 logger = logging.getLogger(__name__)
 
 # Type aliases
 PredictionResult: TypeAlias = list[list[Annotation]]
+PredictionImageResult: TypeAlias = Sequence[Sequence[ImageSegmentation | ImageClassification]]
 
 
 @dataclass
@@ -344,6 +351,38 @@ class DatamintModel(BaseDatamintModel):
         self._loader._torch_model_instance = None
 
     # ------------------------------------------------------------------
+    # Prediction dispatch overrides
+    # ------------------------------------------------------------------
+
+    def predict_image(self, model_input: list[Resource], **kwargs: Any) -> PredictionImageResult:
+        raise NotImplementedError
+
+    def predict_slice(self, model_input: list[Resource],
+                      slice_index: int,
+                      axis: ViewPlane,
+                      **kwargs: Any) -> PredictionImageResult:
+        # if predict_image is implemented, route slice predictions to predict_image by default
+        if "image" in self.get_supported_modes():
+            # transform volume resources into 2D image resources for predict_image
+            image_inputs = []
+            # volume_cache = CacheManager(
+            #     'sliced_volumes',
+            #     enable_memory_cache=True,
+            #     memory_cache_maxsize=2,
+            # )
+            for r in model_input:
+                if isinstance(r, VolumeResource):
+                    image_inputs.append(SlicedVolumeResource(r,
+                                                             slice_index=slice_index,
+                                                             slice_axis=axis)
+                                        )
+                else:
+                    raise ValueError(f"Unsupported resource type for slice prediction: {type(r)}")
+
+            return self.predict_image(image_inputs, **kwargs)
+        raise NotImplementedError("predict_slice is not implemented")
+
+    # ------------------------------------------------------------------
     # Serialization — also clears loader cache on restore
     # ------------------------------------------------------------------
 
@@ -369,13 +408,11 @@ class _DatamintModelWrapper(BaseDatamintModel):
     def load_context(self, context: PythonModelContext) -> None:
         self.another_model.load_context(context)
 
-
     def predict(self, model_input: list[Resource], params: dict[str, Any] | None = None) -> PredictionResult:
         return self.another_model.predict(model_input, params)
-    
+
     def get_supported_modes(self) -> list[str]:
         return self.another_model.get_supported_modes()
-    
+
     def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
         return self.another_model.predict_default(model_input, **kwargs)
-    

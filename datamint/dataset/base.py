@@ -581,6 +581,10 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         """
         pass
 
+    def get_resource(self, index: int) -> 'Resource':
+        """Get the Resource object for a given index."""
+        return self.resources[index]
+
     def _filter_unannotated(self) -> None:
         """Filter out indices without annotations."""
         filtered_resources = []
