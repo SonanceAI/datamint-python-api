@@ -108,7 +108,10 @@ class BaseEntityModel(BaseModel):
             if name.endswith('_id'):
                 continue
             value = getattr(self, name, None)
-            if value is None or value == '':
+            try:
+                if value is None or value == '':
+                    continue
+            except ValueError:
                 continue
             if name not in required_fields:
                 default_value = field_info.get('default')

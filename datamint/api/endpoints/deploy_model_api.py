@@ -1,8 +1,19 @@
+"""API handler for model deployment endpoints."""
+from typing import Any, Literal
+from collections.abc import Callable, Generator
+import json
+import logging
+import time
+
 import httpx
 
 from datamint.exceptions import ResourceNotFoundError
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.deployjob import DeployJob
+
+logger = logging.getLogger(__name__)
+
+_TERMINAL_STATUSES = frozenset({'completed', 'failed', 'cancelled', 'error'})
 
 class DeployModelApi(EntityBaseApi[DeployJob]):
     """API handler for model deployment endpoints."""
@@ -25,6 +36,93 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
             e.resource_type = 'DeployJob'
             e.params = {'id': entity_id}
             raise
+
+    def stream_status(self, job_id: str) -> Generator[dict[str, Any], None, None]:
+        """Stream status updates for a deployment job via Server-Sent Events.
+
+        Yields dictionaries parsed from SSE ``data:`` lines until the
+        stream is closed by the server.
+
+        Args:
+            job_id: The job identifier.
+
+        Yields:
+            Parsed JSON dictionaries for each SSE event.
+        """
+        with self._stream_request('GET', f'/{self.endpoint_base}/status/{job_id}/stream') as resp:
+            for line in resp.iter_lines():
+                if line.startswith('data:'):
+                    payload = line[len('data:'):].strip()
+                    if payload:
+                        yield json.loads(payload)
+
+    def wait(
+        self,
+        job: str | DeployJob,
+        *,
+        on_status: Callable[[DeployJob], None] | None = None,
+        poll_interval: float = 2.0,
+        timeout: float | None = 1800,
+    ) -> None:
+        """Block until a deployment job reaches a terminal state.
+
+        First attempts to follow the SSE stream. If the stream is
+        unavailable or drops early the method falls back to polling
+        ``get_by_id`` at *poll_interval* seconds.
+
+        Args:
+            job: Job ID string or ``DeployJob`` entity. In-place updates to the provided ``DeployJob`` are made on every status change.
+            on_status: Optional callback invoked with an updated
+                ``DeployJob`` each time a status update is received.
+            poll_interval: Seconds between polls when falling back to
+                polling mode. Default ``2.0``.
+            timeout: Maximum seconds to wait. ``None`` means wait
+                indefinitely. Raises ``TimeoutError`` on expiry.
+
+        Raises:
+            TimeoutError: If *timeout* is set and the job has not
+                finished within that duration.
+        """
+        job_id = self._entid(job)
+        deadline = (time.monotonic() + timeout) if timeout is not None else None
+
+        def _check_timeout() -> None:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(f"Deployment job {job_id} did not finish within {timeout}s")
+
+        def _notify(event: dict) -> None:
+            if on_status is None:
+                return
+            if isinstance(job, DeployJob):
+                # SSE events are partial updates — apply known fields in-place
+                for key, value in event.items():
+                    try:
+                        setattr(job, key, value)
+                    except Exception:
+                        pass
+                on_status(job)
+            else:
+                on_status(self.get_by_id(job_id))
+
+        # --- Try SSE stream first ---
+        try:
+            for event in self.stream_status(job_id):
+                _check_timeout()
+                _notify(event)
+                if event.get('status', '').lower() in _TERMINAL_STATUSES:
+                    return
+        except Exception as e:
+            logger.warning(f"SSE stream ended or failed ({e}); falling back to polling")
+
+        # --- Polling fallback ---
+        while True:
+            _check_timeout()
+            current_job = self.get_by_id(job_id)
+            if on_status is not None:
+                on_status(current_job)
+            if current_job.status.lower() in _TERMINAL_STATUSES:
+                return
+            time.sleep(poll_interval)
 
     def start(self,
               model_name: str,
