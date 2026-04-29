@@ -26,6 +26,7 @@ from functools import cached_property
 import torch
 from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 from medimgkit import ViewPlane
+from typing_extensions import override
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +223,19 @@ class BaseDatamintModel(PythonModel, ABC):
             "predict_default() must be implemented in your DatamintModel subclass."
         )
 
+    # ------------------------------------------------------------------
+    # Prediction dispatch overrides
+    # ------------------------------------------------------------------
+
+    def predict_image(self, model_input: list[Resource], **kwargs: Any) -> PredictionImageResult:
+        raise NotImplementedError
+
+    def predict_slice(self, model_input: list[Resource],
+                      slice_index: int,
+                      axis: ViewPlane,
+                      **kwargs: Any) -> PredictionImageResult:
+        raise NotImplementedError("predict_slice is not implemented")
+
 
 class DatamintModel(BaseDatamintModel):
     """Abstract adapter for wrapping ML models to produce Datamint annotations.
@@ -354,9 +368,7 @@ class DatamintModel(BaseDatamintModel):
     # Prediction dispatch overrides
     # ------------------------------------------------------------------
 
-    def predict_image(self, model_input: list[Resource], **kwargs: Any) -> PredictionImageResult:
-        raise NotImplementedError
-
+    @override
     def predict_slice(self, model_input: list[Resource],
                       slice_index: int,
                       axis: ViewPlane,
