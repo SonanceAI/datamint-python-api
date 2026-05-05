@@ -183,13 +183,21 @@ def save_model(datamint_model: BaseDatamintModel,
 
     pt_model = datamint_model.get_pytorch_model() if hasattr(datamint_model, 'get_pytorch_model') else None
     if pt_model is not None:
+        if hasattr(datamint_model, '_clear_linked_models_cache'):
+            datamint_model._clear_linked_models_cache()
         datamint_model._clear_ptmodel()
         with tempfile.NamedTemporaryFile() as tmp_file:
             logger.debug(f"Saving PyTorch model to temporary file {tmp_file.name}")
             torch.save(pt_model, tmp_file.name, pickle_module=mlflow_pytorch_pickle_module)
-            pyfunc_kwargs['artifacts'] = {**(artifacts or {}), DatamintModel._PYTORCH_ARTIFACT_NAME: tmp_file.name}
+            pyfunc_kwargs['artifacts'] = {
+                **(artifacts or {}),
+                DatamintModel._PYTORCH_ARTIFACT_NAME: tmp_file.name,
+            }
 
-            logger.debug(f'Saving PyFunc model with PyTorch artifact for model {datamint_model.__class__.__name__}...')
+            logger.debug(
+                "Saving PyFunc model with PyTorch artifact for model %s...",
+                datamint_model.__class__.__name__,
+            )
             return mlflow.pyfunc.save_model(**pyfunc_kwargs)
 
     logger.debug(f'Saving PyFunc model for model {datamint_model.__class__.__name__}...')

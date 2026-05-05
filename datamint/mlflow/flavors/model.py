@@ -1,32 +1,25 @@
-"""
-DataMint Model Adapter Module
-
-This module provides a flexible framework for wrapping ML models to work with DataMint's
-annotation system. It supports various prediction modes for different data types and use cases.
-"""
-
-from typing import Any, ClassVar, TypeAlias
 from abc import ABC
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cached_property
+import logging
+from typing import Any, ClassVar, TypeAlias, cast
+
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc.model import PythonModel, PythonModelContext
-from datamint.entities.annotations import Annotation, ImageSegmentation,  ImageClassification
-from datamint.entities.cache_manager import CacheManager
-from datamint.entities.resource import Resource
-from datamint.entities.sliced_resource import SlicedVolumeResource
-from datamint.entities.resources.volume_resource import VolumeResource
-from datamint.mlflow.flavors.model_loader import LinkedModelLoader
-from datamint.mlflow.flavors.prediction_modes import PredictionMode
-from datamint.mlflow.flavors.task_type import TaskType
-from datamint.mlflow.flavors.prediction_router import PredictionRouter
-import logging
-from functools import cached_property
-import torch
-from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 from medimgkit import ViewPlane
+import torch
 from typing_extensions import override
+
+from datamint.entities.annotations import Annotation, ImageSegmentation, ImageClassification
+from datamint.entities.resource import Resource
+from datamint.entities.resources.volume_resource import VolumeResource
+from datamint.entities.sliced_resource import SlicedVolumeResource
+from datamint.mlflow.flavors.model_loader import LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR
+from datamint.mlflow.flavors.model_loader import LinkedModelLoader
+from datamint.mlflow.flavors.prediction_router import PredictionRouter
+from datamint.mlflow.flavors.task_type import TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +41,7 @@ class ModelSettings:
     """Whether GPU is required for inference"""
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> 'ModelSettings':
+    def from_dict(cls, data: dict[str, Any]) -> "ModelSettings":
         """Create config from dictionary, raising error on unknown keys."""
         valid_fields = set(cls.__dataclass_fields__)
         invalid_fields = set(data.keys()) - valid_fields
@@ -84,10 +77,16 @@ class BaseDatamintModel(PythonModel, ABC):
         self.settings = settings
         self._inference_device: str | None = None
 
+    def _create_router(self) -> PredictionRouter:
+        return PredictionRouter(self, BaseDatamintModel)
+
     @cached_property
     def _router(self) -> PredictionRouter:
         """The PredictionRouter instance responsible for dispatching predict calls."""
-        return PredictionRouter(self, BaseDatamintModel)
+        return self._create_router()
+
+    def _invalidate_router(self) -> None:
+        vars(self).pop("_router", None)
 
     @property
     def settings(self) -> ModelSettings:
@@ -101,8 +100,12 @@ class BaseDatamintModel(PythonModel, ABC):
             self._settings = ModelSettings.from_dict(value)
         elif isinstance(value, ModelSettings):
             self._settings = value
-        else:
+        elif value is None:
             self._settings = ModelSettings()
+        else:
+            raise TypeError(
+                "settings must be a ModelSettings instance, a dict[str, Any], or None."
+            )
 
     # ------------------------------------------------------------------
     # Device management
@@ -117,11 +120,7 @@ class BaseDatamintModel(PythonModel, ABC):
         """
         if self._inference_device is not None:
             return self._inference_device
-        env_device = self._detect_device(None)
-        if env_device:
-            return env_device
-        logger.warning("Inference device not set; defaulting to 'cpu'")
-        return "cpu"
+        return self._detect_device(None)
 
     def _detect_device(self, context: PythonModelContext | None) -> str:
         """Detect and store the inference device from context / env / hardware.
@@ -172,7 +171,7 @@ class BaseDatamintModel(PythonModel, ABC):
         models) — but always call ``super().load_context(context)`` first
         so that :attr:`inference_device` is set before any model loading.
         """
-        if context:
+        if context is not None:
             logger.info("Loading model context %s and detecting device...",
                         f'{context.artifacts=} | {context.model_config=}')
         self._detect_device(context)
@@ -182,18 +181,18 @@ class BaseDatamintModel(PythonModel, ABC):
     # Serialization
     # ------------------------------------------------------------------
 
-    def __getstate__(self) -> dict:
-        state = self.__dict__.copy()
+    def __getstate__(self) -> dict[str, Any]:
+        state = vars(self).copy()
         state.pop("_router", None)
         return state
 
-    def __setstate__(self, state: dict) -> None:
-        self.__dict__.update(state)
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        vars(self).update(state)
 
     # ------------------------------------------------------------------
     # Prediction dispatch
     # ------------------------------------------------------------------
-    def predict(
+    def predict(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
         model_input: list[Resource],
         params: dict[str, Any] | None = None,
@@ -228,13 +227,19 @@ class BaseDatamintModel(PythonModel, ABC):
     # ------------------------------------------------------------------
 
     def predict_image(self, model_input: list[Resource], **kwargs: Any) -> PredictionImageResult:
-        raise NotImplementedError
+        raise NotImplementedError("predict_image is not implemented")
 
-    def predict_slice(self, model_input: list[Resource],
-                      slice_index: int,
-                      axis: ViewPlane,
-                      **kwargs: Any) -> PredictionImageResult:
+    def predict_slice(
+        self,
+        model_input: list[Resource],
+        slice_index: int,
+        axis: ViewPlane,
+        **kwargs: Any,
+    ) -> PredictionImageResult:
         raise NotImplementedError("predict_slice is not implemented")
+
+    def predict_volume(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
+        raise NotImplementedError("predict_volume is not implemented")
 
 
 class DatamintModel(BaseDatamintModel):
@@ -271,8 +276,7 @@ class DatamintModel(BaseDatamintModel):
                 return net(preprocess(model_input))
     """
 
-    # Keep for backward compat with subclass references
-    LINKED_MODELS_DIR = "linked_models"
+    LINKED_MODELS_DIR: ClassVar[str] = DEFAULT_LINKED_MODELS_DIR
     _PYTORCH_ARTIFACT_NAME = "pytorch_model"
 
     def __init__(
@@ -289,30 +293,28 @@ class DatamintModel(BaseDatamintModel):
             torch_model=torch_model,
         )
 
-    @cached_property
-    def _router(self) -> PredictionRouter:
-        """The PredictionRouter instance responsible for dispatching predict calls."""
-        r = PredictionRouter(self, BaseDatamintModel)
-        if self._loader._torch_model_instance is not None:
-            r.update_registry(self._loader._torch_model_instance, BaseDatamintModel)
-        return r
+    @override
+    def _create_router(self) -> PredictionRouter:
+        router = super()._create_router()
+        torch_model = self._loader.torch_model_instance
+        if torch_model is not None:
+            router.update_registry(torch_model, BaseDatamintModel)
+        return router
 
     # ------------------------------------------------------------------
     # Lifecycle — overrides base to also load linked models
     # ------------------------------------------------------------------
 
+    @override
     def load_context(self, context: PythonModelContext) -> None:
         """Detect device and load all linked MLflow models."""
         super().load_context(context)  # sets inference_device
         self._loader.load_all(self.inference_device)
 
-        if self._PYTORCH_ARTIFACT_NAME in context.artifacts:
+        if context.artifacts and self._PYTORCH_ARTIFACT_NAME in context.artifacts:
             model_path = context.artifacts[self._PYTORCH_ARTIFACT_NAME]
-            self._loader._torch_model_instance = torch.load(model_path,
-                                                            weights_only=False,
-                                                            map_location=self.inference_device,
-                                                            pickle_module=mlflow_pytorch_pickle_module)
-            self._loader._torch_model_instance.eval()
+            self._loader.load_torch_artifact(model_path, self.inference_device)
+        self._invalidate_router()
 
     # ------------------------------------------------------------------
     # Linked-model access
@@ -327,7 +329,7 @@ class DatamintModel(BaseDatamintModel):
         return self._loader.torch_models
 
     def get_pytorch_model(self) -> torch.nn.Module | None:
-        torch_model = self._loader._torch_model_instance
+        torch_model = self._loader.torch_model_instance
         if torch_model is not None:
             return torch_model
         torch_models = self.get_mlflow_torch_models()
@@ -345,7 +347,7 @@ class DatamintModel(BaseDatamintModel):
 
     @mlflow_models_uri.setter
     def mlflow_models_uri(self, value: dict[str, str]) -> None:
-        self._loader.mlflow_models_uri = value
+        self._loader.set_mlflow_models_uri(value)
 
     @property
     def mlflow_torch_models_uri(self) -> dict[str, str]:
@@ -353,26 +355,33 @@ class DatamintModel(BaseDatamintModel):
 
     @mlflow_torch_models_uri.setter
     def mlflow_torch_models_uri(self, value: dict[str, str]) -> None:
-        self._loader.mlflow_torch_models_uri = value
+        self._loader.set_mlflow_torch_models_uri(value)
 
-    def _get_linked_models_uri(self) -> dict[str, Any]:
+    def _get_linked_models_uri(self) -> dict[str, str]:
         return self._loader.get_all_uris()
 
     def _clear_linked_models_cache(self) -> None:
         self._loader.clear_cache()
 
+    def _set_ptmodel(self, value: torch.nn.Module | None) -> None:
+        self._loader.set_torch_model_instance(value)
+        self._invalidate_router()
+
     def _clear_ptmodel(self) -> None:
-        self._loader._torch_model_instance = None
+        self._set_ptmodel(None)
 
     # ------------------------------------------------------------------
     # Prediction dispatch overrides
     # ------------------------------------------------------------------
 
     @override
-    def predict_slice(self, model_input: list[Resource],
-                      slice_index: int,
-                      axis: ViewPlane,
-                      **kwargs: Any) -> PredictionImageResult:
+    def predict_slice(
+        self,
+        model_input: list[Resource],
+        slice_index: int,
+        axis: ViewPlane,
+        **kwargs: Any,
+    ) -> PredictionImageResult:
         # if predict_image is implemented, route slice predictions to predict_image by default
         if "image" in self.get_supported_modes():
             # transform volume resources into 2D image resources for predict_image
@@ -398,7 +407,8 @@ class DatamintModel(BaseDatamintModel):
     # Serialization — also clears loader cache on restore
     # ------------------------------------------------------------------
 
-    def __setstate__(self, state: dict) -> None:
+    @override
+    def __setstate__(self, state: dict[str, Any]) -> None:
         super().__setstate__(state)
         self._loader.clear_cache()
 
@@ -412,19 +422,22 @@ class _DatamintModelWrapper(BaseDatamintModel):
     def task_type(self) -> TaskType | None:  # type: ignore[override]
         return getattr(self.another_model, 'task_type', None)
 
-    @cached_property
-    def _router(self) -> PredictionRouter:
-        """The PredictionRouter instance responsible for dispatching predict calls."""
+    @override
+    def _create_router(self) -> PredictionRouter:
         return PredictionRouter(self.another_model, type(self.another_model))
 
+    @override
     def load_context(self, context: PythonModelContext) -> None:
         self.another_model.load_context(context)
 
+    @override
     def predict(self, model_input: list[Resource], params: dict[str, Any] | None = None) -> PredictionResult:
         return self.another_model.predict(model_input, params)
 
+    @override
     def get_supported_modes(self) -> list[str]:
         return self.another_model.get_supported_modes()
 
+    @override
     def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
         return self.another_model.predict_default(model_input, **kwargs)

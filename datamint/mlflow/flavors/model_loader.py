@@ -1,24 +1,21 @@
-"""
-Extracted model lifecycle management for DatamintModel.
-
-Owns URI resolution, lazy model loading, cache lifecycle,
-and serialization — all previously interleaved in the monolithic DatamintModel.
-"""
+"""Helpers for linked MLflow model lifecycle management."""
 
 import logging
 import os
 from collections.abc import Callable
 from typing import Any
 
+import torch
 from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc import load_model as pyfunc_load_model
 from mlflow.pytorch import load_model as pytorch_load_model
-import torch
+from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 
 _LOGGER = logging.getLogger(__name__)
 
 LINKED_MODELS_DIR = "linked_models"
 _CACHED_ATTRS = frozenset({"_mlflow_models", "_mlflow_torch_models", "_device"})
+_LOADED_MODEL_CACHE_ATTRS = frozenset({"_mlflow_models", "_mlflow_torch_models"})
 
 
 class LinkedModelLoader:
@@ -44,8 +41,29 @@ class LinkedModelLoader:
         self._device = device
         self._mlflow_models = self._load_pyfunc_models(device)
         self._mlflow_torch_models = self._load_torch_models(device)
-        if self._torch_model_instance and hasattr(self._torch_model_instance, "eval"):
-            self._torch_model_instance.eval()
+        self._prepare_local_torch_model(device)
+
+    def _prepare_local_torch_model(self, device: str) -> None:
+        torch_model = self._torch_model_instance
+        if torch_model is None:
+            return
+        torch_model.to(device)
+        torch_model.eval()
+
+    def load_torch_artifact(self, model_path: str, device: str) -> torch.nn.Module:
+        loaded_model = torch.load(
+            model_path,
+            weights_only=False,
+            map_location=device,
+            pickle_module=mlflow_pytorch_pickle_module,
+        )
+        if not isinstance(loaded_model, torch.nn.Module):
+            raise TypeError(
+                f"Expected a torch.nn.Module in '{model_path}', got {type(loaded_model)!r}."
+            )
+        self.set_torch_model_instance(loaded_model)
+        self._prepare_local_torch_model(device)
+        return loaded_model
 
     def _resolve_uri(self, uri: str) -> str:
         if os.path.exists(uri):
@@ -101,16 +119,36 @@ class LinkedModelLoader:
             _LOGGER.warning("Loading MLflow PyTorch models on first access")
             self._mlflow_torch_models = self._load_torch_models(getattr(self, "_device", "cpu"))
         ret = self._mlflow_torch_models.copy()
-        if self._torch_model_instance:
+        if self._torch_model_instance is not None:
             ret["default"] = self._torch_model_instance
         return ret
+
+    @property
+    def torch_model_instance(self) -> torch.nn.Module | None:
+        return self._torch_model_instance
+
+    def set_torch_model_instance(self, value: torch.nn.Module | None) -> None:
+        self._torch_model_instance = value
 
     # --- Linked model URIs ------------------------------------------------
 
     def get_all_uris(self) -> dict[str, str]:
         return {**self.mlflow_models_uri, **self.mlflow_torch_models_uri}
 
+    def set_mlflow_models_uri(self, value: dict[str, str] | None) -> None:
+        self.mlflow_models_uri = (value or {}).copy()
+        self.clear_loaded_models_cache()
+
+    def set_mlflow_torch_models_uri(self, value: dict[str, str] | None) -> None:
+        self.mlflow_torch_models_uri = (value or {}).copy()
+        self.clear_loaded_models_cache()
+
     # --- Serialization ----------------------------------------------------
+
+    def clear_loaded_models_cache(self) -> None:
+        for attr in _LOADED_MODEL_CACHE_ATTRS:
+            if hasattr(self, attr):
+                delattr(self, attr)
 
     def clear_cache(self) -> None:
         for attr in _CACHED_ATTRS:
@@ -124,4 +162,4 @@ class LinkedModelLoader:
         return state
 
     def __setstate__(self, state: dict) -> None:
-        self.__dict__.update(state)
+        vars(self).update(state)

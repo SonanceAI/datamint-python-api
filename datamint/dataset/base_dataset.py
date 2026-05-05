@@ -13,7 +13,7 @@ import torch
 from torch import Tensor
 from datamint.exceptions import DatamintException
 from medimgkit.readers import read_array_normalized
-from medimgkit.format_detection import guess_extension, guess_typez
+from medimgkit.format_detection import guess_typez
 from medimgkit.nifti_utils import NIFTI_MIMES, get_nifti_shape
 from datetime import datetime
 from pathlib import Path
