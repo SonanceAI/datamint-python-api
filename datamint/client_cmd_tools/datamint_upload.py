@@ -1,6 +1,5 @@
 from datamint.exceptions import DatamintException, ItemNotFoundError
 import argparse
-# from datamint.apihandler.api_handler import APIHandler
 from datamint import Api
 import os
 from humanize import naturalsize
