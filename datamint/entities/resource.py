@@ -1,10 +1,12 @@
 """Resource entity module for DataMint API."""
 
 from collections.abc import Sequence
+from abc import ABC, abstractmethod
 from datetime import datetime
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
+from typing_extensions import override
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -34,10 +36,150 @@ _IMAGE_CACHEKEY = "image_data"
 _SPECIALIZED_RESOURCE_TYPES_IMPORTED = False
 
 
-class Resource(BaseEntity):
+class BaseResource(BaseEntity, ABC):
+    """Base class for resource entities, providing common properties and methods.
+
+    Attributes:
+        id: Unique identifier for the resource
+        resource_uri: URI path to access the resource file
+        storage: Storage type (e.g., 'DicomResource')
+        location: Storage location path
+        upload_channel: Channel used for upload (e.g., 'tmp')
+        filename: Original filename of the resource
+        modality: Medical imaging modality
+        mimetype: MIME type of the file
+        size: File size in bytes
+        customer_id: Customer/organization identifier
+        status: Current status of the resource
+        created_at: ISO timestamp when resource was created
+        created_by: Email of the user who created the resource
+        published: Whether the resource is published
+        deleted: Whether the resource is deleted
+        modality: Medical imaging modality (e.g., 'CT', 'MR', 'US'), if applicable
+    """
+    id: str
+    resource_uri: str
+    storage: str
+    location: str
+    upload_channel: str
+    filename: str
+    mimetype: str
+    size: int
+    customer_id: str
+    status: str
+    created_at: str
+    created_by: str
+    published: bool
+    deleted: bool
+    modality: str | None = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls is BaseResource:
+            return object.__new__(Resource)
+        return super().__new__(cls)
+
+    @overload
+    def fetch_file_data(
+        self,
+        auto_convert: Literal[True] = True,
+        save_path: str | None = None,
+        use_cache: CacheMode = False,
+    ) -> 'ImagingData': ...
+
+    @overload
+    def fetch_file_data(
+        self,
+        auto_convert: Literal[False],
+        save_path: str | None = None,
+        use_cache: CacheMode = False,
+    ) -> bytes: ...
+
+    @abstractmethod
+    def fetch_file_data(
+        self,
+        auto_convert: bool = True,
+        save_path: str | None = None,
+        use_cache: CacheMode = False,
+    ) -> 'bytes | ImagingData':
+        """Abstract method to fetch the file data for this resource.
+
+        Args:
+            auto_convert: If True, automatically converts to appropriate format (pydicom.Dataset, PIL Image, etc.)
+            save_path: Optional path to save the file locally
+            use_cache: Cache behavior for this call. Use ``False`` to bypass
+                cache entirely, ``True`` to read from and save to cache, or
+                ``"loadonly"`` to read from cache without saving cache misses.
+        Returns:
+            File data (format depends on auto_convert and file type)
+        """
+        pass
+
+    @property
+    def size_mb(self) -> float:
+        """Get file size in megabytes.
+
+        Returns:
+            File size in MB rounded to 1 decimal place
+        """
+        return round(self.size / (1024 * 1024), 1)
+
+    @property
+    def size_gb(self) -> float:
+        """Get file size in gigabytes.
+
+        Returns:
+            File size in GB rounded to 1 decimal place
+        """
+        return round(self.size / (1024 * 1024 * 1024), 1)
+
+    def is_image(self) -> bool:
+        """Check if the resource is a single-frame image."""
+        if not self.mimetype:
+            return False
+        return self.mimetype.startswith('image/') and not self.mimetype == 'image/nifti'
+
+    def is_dicom(self) -> bool:
+        """Check if the resource is a DICOM file.
+
+        Returns:
+            True if the resource is a DICOM file, False otherwise
+        """
+        return self.mimetype == 'application/dicom'
+
+    def is_nifti(self) -> bool:
+        """Check if the resource is a NIfTI file.
+
+        Returns:
+            True if the resource is a NIfTI file, False otherwise
+        """
+        return self.mimetype in ('application/nifti', 'image/nifti')
+
+    def is_video(self) -> bool:
+        """Check if the resource is a video file.
+
+        Returns:
+            True if the resource is a video file, False otherwise
+        """
+        if not self.mimetype:
+            return False
+        return self.mimetype.startswith('video/')
+
+    def is_volume(self) -> bool:
+        """Check if the resource is a volumetric resource."""
+        return self.is_dicom() or self.is_nifti()
+
+    def is_multiframe(self) -> bool:
+        """Check if the resource contains multiple frames or slices."""
+        return self.is_volume() or self.is_video()
+
+    def __str__(self) -> str:
+        return f"{self.__class__.__name__}(id='{self.id}', filename='{self.filename}', size={self.size_mb}MB)"
+
+
+class Resource(BaseResource):
     """Represents a DataMint resource with all its properties and metadata.
 
-    This class models a resource entity from the DataMint API, containing
+    This class models a resource entity from the Dataint API, containing
     information about uploaded files, their metadata, and associated projects.
 
     Attributes:
@@ -83,23 +225,8 @@ class Resource(BaseEntity):
     mimetype_prefixes: ClassVar[tuple[str, ...]] = ()
     filename_suffixes: ClassVar[tuple[str, ...]] = ()
 
-    id: str
-    resource_uri: str
-    storage: str
-    location: str
-    upload_channel: str
-    filename: str
-    mimetype: str
-    size: int
-    customer_id: str
-    status: str
-    created_at: str
-    created_by: str
-    published: bool
-    deleted: bool
     upload_mechanism: str | None = None
     metadata: dict[str, Any] = {}
-    modality: str | None = None
     source_filepath: str | None = None
     # projects: list[dict[str, Any]] | None = None
     published_on: str | None = None
@@ -115,7 +242,7 @@ class Resource(BaseEntity):
     # segmentations: Optional[Any] = None  # TODO: Define proper type when spec available
     # measurements: Optional[Any] = None  # TODO: Define proper type when spec available
     # categories: Optional[Any] = None  # TODO: Define proper type when spec available
-    user_info: dict[str, str | None] | str = MISSING_FIELD
+    user_info: dict[str, str] | str = MISSING_FIELD
 
     _api: 'ResourcesApi' = PrivateAttr()
     _shared_cache: ClassVar[CacheManager[bytes] | None] = None
@@ -258,6 +385,7 @@ class Resource(BaseEntity):
         use_cache: CacheMode = False,
     ) -> bytes: ...
 
+    @override
     def fetch_file_data(
         self,
         auto_convert: bool = True,
@@ -395,15 +523,6 @@ class Resource(BaseEntity):
         self._cache.invalidate(self.id)
         logger.debug(f"Invalidated all cache for resource {self.id}")
 
-    @property
-    def size_mb(self) -> float:
-        """Get file size in megabytes.
-
-        Returns:
-            File size in MB rounded to 2 decimal places
-        """
-        return round(self.size / (1024 * 1024), 2)
-
     def is_image(self) -> bool:
         """Check if the resource is a single-frame image."""
         return self.kind == 'image'
@@ -472,14 +591,6 @@ class Resource(BaseEntity):
     #         List of project names
     #     """
     #     return [proj['name'] for proj in self.projects] if self.projects != MISSING_FIELD else []
-
-    def __str__(self) -> str:
-        """String representation of the resource.
-
-        Returns:
-            Human-readable string describing the resource
-        """
-        return f"{self.__class__.__name__}(id='{self.id}', filename='{self.filename}', size={self.size_mb}MB)"
 
     def __repr__(self) -> str:
         """Detailed string representation of the resource.
@@ -597,7 +708,7 @@ class Resource(BaseEntity):
         return SlicedVideoResource.slice_over(self, self._frame_cache_manager)
 
 
-class LocalResource(Resource):
+class LocalResource(BaseResource):
     """Represents a local resource that hasn't been uploaded to DataMint API yet."""
 
     local_filepath: str | None = None
@@ -671,14 +782,12 @@ class LocalResource(Resource):
                     'modality': None,
                     'mimetype': mimetype,
                     'size': len(raw_data),
-                    'upload_mechanism': '',
                     'customer_id': '',
                     'status': 'local',
                     'created_at': datetime.now().isoformat(),
                     'created_by': '',
                     'published': False,
                     'deleted': False,
-                    'source_filepath': local_filepath_str,
                 }
                 new_kwargs = kwargs.copy()
                 for key, value in default_values.items():
@@ -696,7 +805,6 @@ class LocalResource(Resource):
                 raw_data = f.read()
                 local_filepath = None
         if raw_data is not None:
-            # import io
             assert raw_data is not None
             if isinstance(raw_data, str):
                 mimetype, _ = guess_type(raw_data.encode())
@@ -712,7 +820,6 @@ class LocalResource(Resource):
                 'modality': None,
                 'mimetype': mimetype if mimetype else DEFAULT_MIME_TYPE,
                 'size': len(raw_data),
-                'upload_mechanism': '',
                 'customer_id': '',
                 'status': 'local',
                 'created_at': datetime.now().isoformat(),
@@ -751,14 +858,12 @@ class LocalResource(Resource):
                 'modality': detect_modality(file_path),
                 'mimetype': mimetype,
                 'size': size,
-                'upload_mechanism': "",
                 'customer_id': "",
                 'status': "local",
                 'created_at': created_at,
                 'created_by': "",
                 'published': False,
                 'deleted': False,
-                'source_filepath': str(file_path),
                 'local_filepath': str(file_path),
                 'raw_data': None,
             }
@@ -784,6 +889,7 @@ class LocalResource(Resource):
         **kwargs,
     ) -> bytes: ...
 
+    @override
     def fetch_file_data(
         self, *args,
         auto_convert: bool = True,

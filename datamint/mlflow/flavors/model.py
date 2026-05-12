@@ -13,7 +13,7 @@ import torch
 from typing_extensions import override
 
 from datamint.entities.annotations import Annotation, ImageSegmentation, ImageClassification
-from datamint.entities.resource import Resource
+from datamint.entities.resource import BaseResource
 from datamint.entities.resources.volume_resource import VolumeResource
 from datamint.entities.sliced_resource import SlicedVolumeResource
 from datamint.mlflow.flavors.model_loader import LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR
@@ -194,7 +194,7 @@ class BaseDatamintModel(PythonModel, ABC):
     # ------------------------------------------------------------------
     def predict(  # pyright: ignore[reportIncompatibleMethodOverride]
         self,
-        model_input: list[Resource],
+        model_input: list[BaseResource],
         params: dict[str, Any] | None = None,
     ) -> PredictionResult:
         """Main prediction entry point.
@@ -211,7 +211,7 @@ class BaseDatamintModel(PythonModel, ABC):
 
     def predict_default(
         self,
-        model_input: list[Resource],
+        model_input: list[BaseResource],
         **kwargs: Any,
     ) -> PredictionResult:
         """Default prediction on entire resources.
@@ -226,19 +226,19 @@ class BaseDatamintModel(PythonModel, ABC):
     # Prediction dispatch overrides
     # ------------------------------------------------------------------
 
-    def predict_image(self, model_input: list[Resource], **kwargs: Any) -> PredictionImageResult:
+    def predict_image(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionImageResult:
         raise NotImplementedError("predict_image is not implemented")
 
     def predict_slice(
         self,
-        model_input: list[Resource],
+        model_input: list[BaseResource],
         slice_index: int,
         axis: ViewPlane,
         **kwargs: Any,
     ) -> PredictionImageResult:
         raise NotImplementedError("predict_slice is not implemented")
 
-    def predict_volume(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
+    def predict_volume(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionResult:
         raise NotImplementedError("predict_volume is not implemented")
 
 
@@ -377,7 +377,7 @@ class DatamintModel(BaseDatamintModel):
     @override
     def predict_slice(
         self,
-        model_input: list[Resource],
+        model_input: list[BaseResource],
         slice_index: int,
         axis: ViewPlane,
         **kwargs: Any,
@@ -431,7 +431,7 @@ class _DatamintModelWrapper(BaseDatamintModel):
         self.another_model.load_context(context)
 
     @override
-    def predict(self, model_input: list[Resource], params: dict[str, Any] | None = None) -> PredictionResult:
+    def predict(self, model_input: list[BaseResource], params: dict[str, Any] | None = None) -> PredictionResult:
         return self.another_model.predict(model_input, params)
 
     @override
@@ -439,5 +439,5 @@ class _DatamintModelWrapper(BaseDatamintModel):
         return self.another_model.get_supported_modes()
 
     @override
-    def predict_default(self, model_input: list[Resource], **kwargs: Any) -> PredictionResult:
+    def predict_default(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionResult:
         return self.another_model.predict_default(model_input, **kwargs)
