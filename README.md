@@ -68,7 +68,7 @@ To use the Datamint API, you need to setup your API key (ask your administrator 
 
 ### Method 1: Command-line tool (recommended)
 
-Run ``datamint-config`` in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html#configuring-the-datamint-settings) for more details.
+Run ``datamint-config`` (or ``python -m datamint config`` if that doesn't work) in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html#configuring-the-datamint-settings) for more details.
 
 ### Method 2: Environment variable
 

@@ -9,6 +9,13 @@ To see if the Datamint command-line tools were installed correctly, run:
 
     datamint-config --help
 
+.. note::
+   If the ``datamint-config`` command does not work, try:
+
+   .. code-block:: bash
+
+       python -m datamint config
+
 You should see this in the first line:
 
 .. code-block:: bash
@@ -19,7 +26,7 @@ You should see this in the first line:
 There are two command-line tools available:
 
 - ``datamint-config``: To configure the Datamint API key and URL.
-- ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
+- ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server. 
 
 .. _configuring_datamint_settings:
 
@@ -63,6 +70,13 @@ To upload DICOM files to the Datamint server, use the
 .. code-block:: bash
 
     datamint-upload /path/to/dicom_files/
+
+.. note::
+   If the ``datamint-upload`` command does not work, try:
+
+   .. code-block:: bash
+
+       python -m datamint upload
 
 By default, the DICOM files are anonymized before uploading. If you want to
 retain the personal identifiable information (PII) in the DICOM files, use the
