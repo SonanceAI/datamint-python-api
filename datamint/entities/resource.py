@@ -41,42 +41,43 @@ class BaseResource(BaseEntity, ABC):
 
     Attributes:
         id: Unique identifier for the resource
-        resource_uri: URI path to access the resource file
         storage: Storage type (e.g., 'DicomResource')
         location: Storage location path
-        upload_channel: Channel used for upload (e.g., 'tmp')
         filename: Original filename of the resource
         modality: Medical imaging modality
         mimetype: MIME type of the file
         size: File size in bytes
-        customer_id: Customer/organization identifier
         status: Current status of the resource
         created_at: ISO timestamp when resource was created
         created_by: Email of the user who created the resource
-        published: Whether the resource is published
-        deleted: Whether the resource is deleted
         modality: Medical imaging modality (e.g., 'CT', 'MR', 'US'), if applicable
     """
     id: str
-    resource_uri: str
     storage: str
     location: str
-    upload_channel: str
     filename: str
     mimetype: str
     size: int
-    customer_id: str
     status: str
     created_at: str
     created_by: str
-    published: bool
-    deleted: bool
     modality: str | None = None
 
     def __new__(cls, *args, **kwargs):
+        # In MLFlow, the model validation instantiates the class directly, so we need to route to LocalResource if local data is provided
+        if cls is LocalResource or ('local_filepath' in kwargs or 'raw_data' in kwargs):
+            return object.__new__(LocalResource)
         if cls is BaseResource:
             return object.__new__(Resource)
         return super().__new__(cls)
+
+    @classmethod
+    def model_validate(cls, obj: Any, *args, **kwargs) -> 'BaseResource':
+        # In MLFlow, the model validation instantiates the class directly, so we need to route to LocalResource if local data is provided
+        # __new__ logic also solves the problem, but let's keep both to be extra safe since MLFlow's behavior is a bit unpredictable and has changed across versions
+        if cls is BaseResource and isinstance(obj, dict) and ('local_filepath' in obj or 'raw_data' in obj):
+            return LocalResource.model_validate(obj, *args, **kwargs)
+        return super().model_validate(obj, *args, **kwargs)
 
     @overload
     def fetch_file_data(
@@ -225,6 +226,11 @@ class Resource(BaseResource):
     mimetype_prefixes: ClassVar[tuple[str, ...]] = ()
     filename_suffixes: ClassVar[tuple[str, ...]] = ()
 
+    resource_uri: str
+    upload_channel: str
+    customer_id: str
+    published: bool
+    deleted: bool
     upload_mechanism: str | None = None
     metadata: dict[str, Any] = {}
     source_filepath: str | None = None
@@ -267,6 +273,7 @@ class Resource(BaseResource):
         Resource._specialized_subclasses.append(cls)
 
     def __new__(cls, *args, **kwargs):
+        # In MLFlow, the model validation instantiates the class directly, so we need to route to LocalResource if local data is provided
         if cls is Resource and ('local_filepath' in kwargs or 'raw_data' in kwargs):
             return object.__new__(LocalResource)
         if cls is Resource:
@@ -774,20 +781,15 @@ class LocalResource(BaseResource):
 
                 default_values = {
                     'id': '',
-                    'resource_uri': '',
                     'storage': '',
                     'location': local_filepath_str,
-                    'upload_channel': '',
                     'filename': filename,
                     'modality': None,
                     'mimetype': mimetype,
                     'size': len(raw_data),
-                    'customer_id': '',
                     'status': 'local',
                     'created_at': datetime.now().isoformat(),
                     'created_by': '',
-                    'published': False,
-                    'deleted': False,
                 }
                 new_kwargs = kwargs.copy()
                 for key, value in default_values.items():
@@ -812,20 +814,15 @@ class LocalResource(BaseResource):
                 mimetype, _ = guess_type(raw_data)
             default_values = {
                 'id': '',
-                'resource_uri': '',
                 'storage': '',
                 'location': '',
-                'upload_channel': '',
                 'filename': 'raw_data',
                 'modality': None,
                 'mimetype': mimetype if mimetype else DEFAULT_MIME_TYPE,
                 'size': len(raw_data),
-                'customer_id': '',
                 'status': 'local',
                 'created_at': datetime.now().isoformat(),
                 'created_by': '',
-                'published': False,
-                'deleted': False,
                 'source_filepath': None,
             }
             new_kwargs = kwargs.copy()
@@ -850,20 +847,15 @@ class LocalResource(BaseResource):
 
             local_data = {
                 'id': "",
-                'resource_uri': "",
                 'storage': "",
                 'location': str(file_path),
-                'upload_channel': "",
                 'filename': file_path.name,
                 'modality': detect_modality(file_path),
                 'mimetype': mimetype,
                 'size': size,
-                'customer_id': "",
                 'status': "local",
                 'created_at': created_at,
                 'created_by': "",
-                'published': False,
-                'deleted': False,
                 'local_filepath': str(file_path),
                 'raw_data': None,
             }
