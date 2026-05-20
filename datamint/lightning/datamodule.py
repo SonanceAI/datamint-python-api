@@ -152,32 +152,37 @@ class DatamintDataModule(L.LightningDataModule):
         self.dataset._prepare()
         self.dataset.prefetch(include_annotations=self.dataset.return_segmentations)
 
+    def _resolve_dataset_splits(self) -> dict[str, DatamintBaseDataset | None]:
+        """Fetch dataset splits from the dataset according to the split config.
+
+        This is called by setup() if splitting is required.  The resolved splits
+        are cached in instance attributes for use by the dataloader methods.
+        """
+        if not self._split and self._split_cfg is None and self._split_as_of_timestamp is None:
+            # No splitting requested; use full dataset for every stage.
+            return {"train": self.dataset, "val": None, "test": self.dataset}
+
+        parts = self.dataset.split(
+            seed=self._split_seed,
+            use_server_splits=self._use_server_splits,
+            as_of_timestamp=self._split_as_of_timestamp,
+            **(self._split_cfg or {}),
+        )
+        return parts
+
     def setup(self, stage: str | None = None) -> None:
         if self._splits_resolved:
             return
 
-        if self._split or self._split_cfg is not None or self._use_server_splits or self._split_as_of_timestamp is not None:
-            parts = self.dataset.split(
-                seed=self._split_seed,
-                use_server_splits=self._use_server_splits,
-                as_of_timestamp=self._split_as_of_timestamp,
-                **(self._split_cfg or {}),
-            )
-            self._train_dataset = parts.get("train")
-            self._val_dataset = parts.get("val")
-            self._test_dataset = parts.get("test")
-            self._update_resolved_split_hparams()
+        parts = self._resolve_dataset_splits()
+        self._train_dataset = parts.get("train")
+        self._val_dataset = parts.get("val")
+        self._test_dataset = parts.get("test")
 
-            if stage == "fit" and self._train_dataset is None:
-                raise ValueError(
-                    "No 'train' split found. Make sure the split config "
-                    "contains a 'train' key."
-                )
-        else:
-            # No split config: use the full dataset for every stage.
-            self._train_dataset = self.dataset
-            self._val_dataset = None
-            self._test_dataset = self.dataset
+        if stage == "fit" and self._train_dataset is None:
+            raise ValueError(
+                "No 'train' split found. Make sure the split config contains a 'train' key."
+            )
 
         # Apply stage-specific transforms after splits are resolved.
         if self._train_transform is not None and self._train_dataset is not None:
@@ -218,9 +223,9 @@ class DatamintDataModule(L.LightningDataModule):
             collate_fn=self.dataset.get_collate_fn(),
         )
 
-    def val_dataloader(self) -> DataLoader | None:
+    def val_dataloader(self):
         if self._val_dataset is None:
-            return None
+            return []
         return DataLoader(
             self._val_dataset,
             batch_size=self._val_batch_size,
@@ -232,7 +237,13 @@ class DatamintDataModule(L.LightningDataModule):
         )
 
     def test_dataloader(self) -> DataLoader:
-        ds = self._test_dataset if self._test_dataset is not None else self.dataset
+        from copy import copy
+        if self._test_dataset is None:
+            ds = copy(self.dataset)
+            ds.set_transform(self._eval_transform)
+        else:
+            ds = self._test_dataset
+
         return DataLoader(
             ds,
             batch_size=self._test_batch_size,
@@ -267,6 +278,25 @@ class DatamintDataModule(L.LightningDataModule):
     def get_mlflow_dataset(self):
         """Return an MLflow dataset for the full dataset (without split context)."""
         return self.dataset.build_mlflow_dataset()
+
+    @property
+    def has_val_split(self) -> bool:
+        """Return ``True`` if a validation split is expected to be available.
+
+        After :meth:`setup` has run, reflects the actual resolved state.
+        Before that, infers from the split configuration.
+        """
+        if self._splits_resolved:
+            return self._val_dataset is not None
+        # Before setup(): infer from split configuration
+        if not self._split and self._split_cfg is None and self._split_as_of_timestamp is None:
+            return False
+        if self._split_cfg is not None:
+            return 'val' in self._split_cfg
+
+        parts = self._resolve_dataset_splits()
+        val = parts.get("val")
+        return val is not None and len(val) > 0
 
     def get_dataset_split(self, split: str) -> 'DatamintBaseDataset | None':
         """Return the Datamint dataset for the given split. Falls back to the full dataset when the requested split is not available."""

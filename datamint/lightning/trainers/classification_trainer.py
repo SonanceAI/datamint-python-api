@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from albumentations import BaseCompose
     from datamint.entities import Project
 
+
 class ClassificationTrainer(BaseTrainer):
     """Abstract trainer for classification tasks.
 
@@ -51,6 +52,9 @@ class ImageClassificationTrainer(ClassificationTrainer):
     Args:
         model_name: ``timm`` model name.  Defaults to ``'resnet34'``.
         pretrained: Use pretrained weights.  Defaults to ``True``.
+        image_size: Optional target image size ``(H, W)`` or a single int
+            for square images. When omitted, the trainer keeps the original
+            image size instead of forcing a resize.
 
     Example::
 
@@ -63,20 +67,29 @@ class ImageClassificationTrainer(ClassificationTrainer):
         *,
         model_name: str = 'resnet34',
         pretrained: bool = True,
+        image_size: int | tuple[int, int] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.model_name = model_name
         self.pretrained = pretrained
+        if isinstance(image_size, int):
+            self.image_size = (image_size, image_size)
+        else:
+            self.image_size = image_size
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_dataset(self, project: 'str | Project') -> ImageDataset:
-        return ImageDataset(
-            project=project,
+    def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset:
+        default_params = dict(
             return_segmentations=False,
             include_unannotated=False,
             image_categories_merge_strategy='mode',
+        )
+        dataset_params = {**default_params, **kwargs}
+        return ImageDataset(
+            project=project,
+            **dataset_params
         )
 
     def _build_model(
@@ -94,13 +107,19 @@ class ImageClassificationTrainer(ClassificationTrainer):
             pretrained=self.pretrained,
         )
 
+    def _build_resize_transform(self):
+        import albumentations as A
+
+        if self.image_size is None:
+            return A.NoOp()
+        return A.Resize(*self.image_size)
+
     def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
-        h, w = self.image_size
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.3),
             A.Normalize(),
@@ -111,9 +130,8 @@ class ImageClassificationTrainer(ClassificationTrainer):
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
-        h, w = self.image_size
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.Normalize(),
             ToTensorV2(),
         ])

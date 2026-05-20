@@ -268,7 +268,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 mapping_idx[orig_idx] = new_len + i
         else:
             assembled = False
-            mapping_idx = [i for i in range(len(files_path))]
+            mapping_idx = list(range(len(files_path)))
 
         return files_path, assembled, mapping_idx
 

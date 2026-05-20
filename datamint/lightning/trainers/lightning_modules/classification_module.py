@@ -28,6 +28,8 @@ class ClassificationModule(DatamintLightningModule):
         metrics_factories: ``{name: callable}`` – see :class:`SegmentationModule`.
         lr: Learning rate for AdamW.
         pretrained: Use pretrained weights.
+        image_size: Optional inference resize target ``(H, W)``. When omitted,
+            predictions keep the original image size.
     """
 
     def __init__(
@@ -37,7 +39,7 @@ class ClassificationModule(DatamintLightningModule):
         loss_fn: nn.Module,
         metrics_factories: dict[str, Callable[[], Any]],
         class_names: list[str],
-        image_size: tuple[int, int],
+        image_size: tuple[int, int] | None,
         lr: float = 1e-4,
         pretrained: bool = True,
         transform: A.BasicTransform | A.BaseCompose | None = None,
@@ -157,11 +159,14 @@ class ClassificationModule(DatamintLightningModule):
 
         transform = self.transform
         if transform is None:
-            transform = A.Compose([
-                A.Resize(*self.image_size),
+            transforms: list[A.BasicTransform] = []
+            if self.image_size is not None:
+                transforms.append(A.Resize(*self.image_size))
+            transforms.extend([
                 A.Normalize(),
                 ToTensorV2(),
             ])
+            transform = A.Compose(transforms)
         device = self.inference_device
         self.eval()
         all_preds: list[list] = []

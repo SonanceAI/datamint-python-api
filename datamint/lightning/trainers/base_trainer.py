@@ -53,9 +53,6 @@ class BaseTrainer(ABC):
             ``None`` the trainer uses :meth:`_train_transform`.
         eval_transform: Albumentations transform for val/test.  When
             ``None`` the trainer uses :meth:`_eval_transform`.
-        image_size: Target image size ``(H, W)`` or a single int for
-            square images.  Forwarded to default transforms.  When
-            ``None`` a sensible default is chosen.
         split_as_of_timestamp: Historical timestamp used to resolve
             project-scoped dataset splits during training. When omitted,
             the resolved project split datasets capture the current UTC
@@ -79,6 +76,7 @@ class BaseTrainer(ABC):
         dataset: DatamintBaseDataset | None = None,
         project: 'str | Project | None' = None,
         *,
+        dataset_kwargs: dict[str, Any] | None = None,
         model: L.LightningModule | type[L.LightningModule] | None = None,
         loss_fn: nn.Module | None = None,
         batch_size: int = 16,
@@ -101,6 +99,7 @@ class BaseTrainer(ABC):
 
         self._user_dataset = dataset
         self._user_project = project
+        self._dataset_kwargs = dataset_kwargs or {}
         self._user_model = model
         self._loss_fn = loss_fn
         self.batch_size = batch_size
@@ -242,7 +241,11 @@ class BaseTrainer(ABC):
     # ── Template hooks (subclasses override these) ──────────────
 
     @abstractmethod
-    def _build_dataset(self, project: 'str | Project') -> DatamintBaseDataset:
+    def _build_dataset(
+        self,
+        project: 'str | Project',
+        **kwargs: Any
+    ) -> DatamintBaseDataset:
         """Build the appropriate dataset for this task."""
         ...
 
@@ -264,7 +267,7 @@ class BaseTrainer(ABC):
 
         try:
             eval_tf = self._user_eval_transform or self._eval_transform()
-            model.transform = eval_tf
+            setattr(model, 'transform', eval_tf)
         except NotImplementedError:
             pass
 
@@ -312,8 +315,8 @@ class BaseTrainer(ABC):
     def _resolve_dataset(self) -> DatamintBaseDataset:
         if self._user_dataset is not None:
             return self._user_dataset
-        assert self._user_project is not None  # guaranteed by __init__ validation
-        return self._build_dataset(self._user_project)
+        assert self._user_project is not None  # guaranteed by __int__ validation
+        return self._build_dataset(self._user_project, **self._dataset_kwargs)
 
     @cached_property
     def datamodule(self) -> DatamintDataModule:
@@ -344,7 +347,12 @@ class BaseTrainer(ABC):
         from datamint.mlflow.lightning.callbacks import MLFlowPyTorchModelCheckpoint, MLFlowDatamintModelCheckpoint
         from mlflow.pyfunc.model import PythonModel
 
-        metric_name, mode = self._monitor_metric()
+        has_val = self.datamodule.has_val_split
+        if has_val:
+            metric_name, mode = self._monitor_metric()
+        else:
+            _LOGGER.debug("No validation split available; checkpointing will not monitor a val metric.")
+            metric_name, mode = None, 'min'
         model_name = (self.register_model_name or self._project_name) if register_model else None
 
         if isinstance(self.model, PythonModel):
@@ -372,6 +380,10 @@ class BaseTrainer(ABC):
     def _build_callbacks(self) -> list:
         from lightning.pytorch.callbacks import EarlyStopping
 
+        if not self.datamodule.has_val_split:
+            _LOGGER.debug("No validation split available; skipping EarlyStopping.")
+            return []
+
         metric_name, mode = self._monitor_metric()
 
         callbacks = []
@@ -394,7 +406,7 @@ class BaseTrainer(ABC):
         dataset = self.datamodule.get_mlflow_dataset_split('test')
         if dataset is None:
             dataset = self.datamodule.get_mlflow_dataset()
-        mlflow_logger._mlflow_dataset = dataset
+        setattr(mlflow_logger, '_mlflow_dataset', dataset)
         return mlflow_logger
 
 

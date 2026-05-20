@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TYPE_CHECKING, cast
+from typing_extensions import override
 
 import lightning as L
 import albumentations as A
@@ -43,6 +44,9 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         slice_axis: Slice axis override for 3-D volume projects. When omitted,
             the trainer tries to infer the most sensible anatomical plane and
             falls back to ``'axial'``.
+        image_size: Target image size ``(H, W)`` or a single int for
+            square images.  Forwarded to default transforms.  When
+            ``None`` a sensible default is chosen.
         in_channels: Number of input image channels.  Defaults to ``3``.
         All remaining keyword arguments are forwarded to
         :class:`~datamint.lightning.trainers.base_trainer.BaseTrainer`.
@@ -73,13 +77,17 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         else:
             self.image_size = image_size
 
-    def _build_dataset(self, project: 'str | Project') -> ImageDataset | SlicedVolumeDataset:
-        dataset = ImageDataset(
-            project=project,
+    def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset | SlicedVolumeDataset:
+        default_params = dict(
             return_as_semantic_segmentation=True,
             semantic_seg_merge_strategy='union',
             allow_external_annotations=True,
             include_unannotated=False,
+        )
+        dataset_params = {**default_params, **kwargs}
+        dataset = ImageDataset(
+            project=project,
+            **dataset_params,
         )
         dataset._prepare()
 
@@ -266,6 +274,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         else:
             return A.Resize(*self.image_size)
 
+    @override
     def _train_transform(self) -> 'BaseCompose':
         return A.Compose([
             self._build_resize_transform(),
@@ -277,6 +286,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
             ToTensorV2(),
         ])
 
+    @override
     def _eval_transform(self) -> 'BaseCompose':
         return A.Compose([
             self._build_resize_transform(),

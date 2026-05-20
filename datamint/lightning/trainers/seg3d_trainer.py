@@ -8,7 +8,6 @@ from torch import nn
 
 from datamint.dataset import VolumeDataset
 
-from .lightning_modules import SegmentationModule
 from .segmentation_trainer import SegmentationTrainer
 
 if TYPE_CHECKING:
@@ -27,6 +26,9 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
             ``'coronal'``, or an integer axis index.
         encoder_name: SMP encoder backbone.
         in_channels: Number of input channels.
+        image_size: Optional target image size ``(H, W)`` or a single int
+            for square images. When omitted, training keeps the original
+            slice size.
 
     Example::
 
@@ -43,48 +45,49 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
         slice_axis: str | int = 'axial',
         encoder_name: str = 'resnet34',
         in_channels: int = 3,
+        image_size: int | tuple[int, int] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.slice_axis = slice_axis
         self.encoder_name = encoder_name
         self.in_channels = in_channels
+        if isinstance(image_size, int):
+            self.image_size = (image_size, image_size)
+        else:
+            self.image_size = image_size
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_dataset(self, project: 'str | Project'):
-        vol_ds = VolumeDataset(
-            project=project,
+    def _build_dataset(self, project: 'str | Project', **kwargs: Any):
+        default_params = dict(
             return_as_semantic_segmentation=True,
             semantic_seg_merge_strategy='union',
             allow_external_annotations=True,
             include_unannotated=False,
         )
+        dataset_params = {**default_params, **kwargs}
+
+        vol_ds = VolumeDataset(
+            project=project,
+            **dataset_params
+        )
         return vol_ds.slice(axis=self.slice_axis)
 
-    def _build_model(
-        self,
-        loss_fn: nn.Module,
-        metrics: dict[str, Any],
-    ) -> L.LightningModule:
-        return SegmentationModule(
-            arch='UnetPlusPlus',
-            encoder_name=self.encoder_name,
-            in_channels=self.in_channels,
-            num_classes=len(self.dataset.seglabel_list),
-            loss_fn=loss_fn,
-            metrics_factories=metrics,
-            class_names=list(self.dataset.seglabel_list),
-            image_size=self.image_size,
-        )
+
+    def _build_resize_transform(self):
+        import albumentations as A
+
+        if self.image_size is None:
+            return A.NoOp()
+        return A.Resize(*self.image_size)
 
     def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
-        h, w = self.image_size
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.3),
             A.Normalize(), # Imagenet stats is the default
@@ -95,9 +98,8 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
-        h, w = self.image_size
         return A.Compose([
-            A.Resize(h, w),
+            self._build_resize_transform(),
             A.Normalize(),
             ToTensorV2(),
         ])
