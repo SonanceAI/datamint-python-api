@@ -1,7 +1,7 @@
 """
 SlicedVideoResource - Proxy for a single frame of a video Resource.
 
-Analogous to :class:`SlicedVolumeResource` but simplified for temporal
+Analogous to :class:`~datamint.entities.sliced_resource.SlicedVolumeResource` but simplified for temporal
 data — videos always slice along the frame (temporal) axis.
 """
 from __future__ import annotations
@@ -26,14 +26,14 @@ _FRAME_ARRAY_CACHEKEY = "frame_array"
 class SlicedVideoResource:
     """Proxy that presents a single frame of a video Resource.
 
-    Wraps a :class:`Resource` and represents a specific frame by index.
+    Wraps a :class:`~datamint.entities.resource.Resource` and represents a specific frame by index.
     Uses gzip-compressed ``.npy.gz`` files on disk for caching, with an
-    in-memory LRU cache managed by :class:`CacheManager`.
+    in-memory LRU cache managed by :class:`~datamint.entities.cache_manager.CacheManager`.
 
     Args:
         parent: The original video Resource.
         frame_index: The index of the frame in the video.
-        frame_cache: Shared :class:`CacheManager` for disk-based frame caching.
+        frame_cache: Shared :class:`~datamint.entities.cache_manager.CacheManager` for disk-based frame caching.
     """
 
     _CACHE_MANAGER_NAMESPACE = "sliced_video_frames"

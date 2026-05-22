@@ -250,3 +250,6 @@ Related Examples
 
 - `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/segmentation_2d_trainer_BUSI_tutorial.ipynb>`_
 - `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/external_model_deployment_tutorial.ipynb>`_
+
+For a side-by-side comparison of raw PyTorch / Lightning code versus Datamint,
+see :doc:`datamint_vs_raw_pytorch <datamint_vs_raw_pytorch>`.

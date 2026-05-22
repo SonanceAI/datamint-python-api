@@ -81,27 +81,27 @@ Resource Entities
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: datamint.entities.dicom_resource
+.. automodule:: datamint.entities.resources.dicom_resource
    :members: DICOMResource
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: datamint.entities.image_resource
+.. automodule:: datamint.entities.resources.image_resource
    :members: ImageResource
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: datamint.entities.nifti_resource
+.. automodule:: datamint.entities.resources.nifti_resource
    :members: NiftiResource
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: datamint.entities.video_resource
+.. automodule:: datamint.entities.resources.video_resource
    :members: VideoResource
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: datamint.entities.volume_resource
+.. automodule:: datamint.entities.resources.volume_resource
    :members: VolumeResource
    :undoc-members:
    :show-inheritance:
@@ -179,3 +179,4 @@ entity classes. See :doc:`datamint.entities.annotations` for detailed documentat
    :members:
    :undoc-members:
    :show-inheritance:
+   :no-index:

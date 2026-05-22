@@ -19,7 +19,7 @@ def annotation_from_dict(data: dict) -> Annotation:
 
     ``segmentation_data`` dicts are automatically deserialised by the
     Pydantic ``BeforeValidator`` defined on
-    :class:`~.base_segmentation.BaseSegmentationAnnotation`.
+    :class:`~datamint.entities.annotations.base_segmentation.BaseSegmentationAnnotation`.
     ``class_map`` string keys (produced by JSON serialisation) are
     coerced to ``int`` by Pydantic's lax validation.
 

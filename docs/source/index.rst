@@ -31,12 +31,14 @@ Datamint
    pytorch_integration
    trainer_api
    tutorials
+   datamint_vs_raw_pytorch
 
 .. toctree::
    :maxdepth: 1
    :caption: Python Modules Reference
 
    datamint.apihandler
+   datamint.api.base_classes
    datamint.dataset
    datamint.entities
    datamint.lightning_api
@@ -102,38 +104,58 @@ The Datamint Python API is organized into several key modules:
 Key Concepts
 ------------
 
-.. grid:: 3
-   :gutter: 3
+The SDK is built around a few core concepts that make data ingestion, annotation, training, and deployment work together smoothly.
+
+.. grid:: 1 2 3 3
+   :gutter: 2
 
    .. grid-item-card:: Resources
-      :link: :py:class:`~datamint.entities.resource.Resource`
+      :link: datamint.entities.resource.Resource
+      :link-type: any
 
-      Uploaded medical images, videos, and other data files. Resources can be organized into **channels** and **projects**, tagged, and annotated.
+      **Manage source data.**
+
+      Upload medical images, videos, and other files. Organize resources into **channels** and **projects**, then tag and annotate them.
 
    .. grid-item-card:: Annotations
-      :link: :py:class:`~datamint.entities.annotations.annotation.Annotation`
+      :link: datamint.entities.annotations.annotation.Annotation
+      :link-type: any
 
-      Segmentations, bounding boxes, classifications, and geometry attached to resources. Supports 2D image and 3D volume segmentations.
+      **Capture labels and geometry.**
+
+      Add segmentations, bounding boxes, classifications, and other geometry to resources, with support for both 2D images and 3D volumes.
 
    .. grid-item-card:: Projects
-      :link: :py:class:`~datamint.entities.project.Project`
+      :link: datamint.entities.project.Project
+      :link-type: any
 
-      Collections of resources used for annotation workflows and ML training. Projects support **split assignments** (train/val/test) for reproducible experiments.
+      **Group data for workflows.**
+
+      Collect resources for annotation and ML training. Projects support **split assignments** (train/val/test) to keep experiments reproducible.
 
    .. grid-item-card:: Datasets
-      :link: :py:class:`~datamint.dataset.base.DatamintBaseDataset`
+      :link: datamint.dataset.base.DatamintBaseDataset
+      :link-type: any
 
-      PyTorch-compatible dataset classes that load data from Datamint projects. Automatically handle DICOM, NIfTI, image, and video formats.
+      **Train with PyTorch-ready data.**
+
+      Use dataset classes that load data from Datamint projects and automatically handle DICOM, NIfTI, image, and video formats.
 
    .. grid-item-card:: Trainers
-      :link: :py:class:`~datamint.lightning.trainers.BaseTrainer`
+      :link: datamint.lightning.trainers.BaseTrainer
+      :link-type: any
 
-      High-level trainers that automate dataset creation, model configuration, MLflow logging, and checkpointing for common tasks.
+      **Accelerate common training loops.**
+
+      Rely on high-level trainers to streamline dataset setup, model configuration, MLflow logging, and checkpointing.
 
    .. grid-item-card:: Models
-      :link: :py:class:`~datamint.mlflow.flavors.model.DatamintModel`
+      :link: datamint.mlflow.flavors.model.DatamintModel
+      :link-type: any
 
-      Registered ML models that can be deployed on the Datamint platform for inference. Supports segmentation, classification, and custom models.
+      **Package models for deployment.**
+
+      Register ML models for inference on the Datamint platform, including segmentation, classification, and other custom use cases.
 
 Common Workflows
 ----------------
@@ -212,15 +234,11 @@ Deploying a Model
    api = Api()
 
    # Deploy a registered model
-   deploy_job = api.deploy.deploy(
-       model_name="liver-segmentation",
-       version="1.0.0",
+   deploy_job = api.deploy.start(
+       model_name="liver-segmentation-model",
+       model_alias="latest",
    )
    print(deploy_job.status)
-
-   # Run inference
-   resource = api.resources.get_list(filename="patient001.dcm")[0]
-   job = api.inference.run(model_name="liver-segmentation", resource=resource)
 
 Community & Support
 -------------------

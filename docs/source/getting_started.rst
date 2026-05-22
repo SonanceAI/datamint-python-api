@@ -43,7 +43,7 @@ Troubleshooting
 ---------------
 
 .. dropdown:: ImportError: No module named 'datamint'
-    :icon: wrench
+    :icon: tools
 
     Make sure you activated your virtual environment before running your script:
 
@@ -59,38 +59,13 @@ Troubleshooting
         pip install --user -U datamint
 
 .. dropdown:: API authentication errors
-    :icon: wrench
+    :icon: tools
 
     Verify your API key is set correctly:
 
     .. code-block:: bash
 
-        datamint-config --show-api-key
-
-    Or check the environment variable:
-
-    .. code-block:: bash
-
-        echo $DATAMINT_API_KEY
-
-.. dropdown:: DICOM upload fails with pydicom errors
-    :icon: wrench
-
-    Make sure you have the latest ``pydicom`` and ``medimgkit`` packages:
-
-    .. code-block:: bash
-
-        pip install -U pydicom medimgkit
-
-.. dropdown:: MLflow configuration issues
-    :icon: wrench
-
-    The MLflow module auto-configures itself on first import. If you encounter issues:
-
-    .. code-block:: python
-
-        from datamint.mlflow import ensure_mlflow_configured
-        ensure_mlflow_configured()
+        datamint-config
 
 Next Steps
 ----------

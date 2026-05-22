@@ -47,6 +47,7 @@ nitpick_ignore = {
     ("py:class", "np.ndarray"),
     ("py:class", "numpy.ndarray"),
     ("py:class", "torch.nn.Module"),
+    ("py:class", "torch.nn.modules.module.Module"),
     ("py:class", "torch.Tensor"),
     ("py:class", "torch.utils.data.DataLoader"),
     ("py:class", "torch.utils.data.dataloader.DataLoader"),
@@ -111,6 +112,15 @@ nitpick_ignore = {
     ("py:class", "datamint.mlflow.lightning.callbacks.modelcheckpoint.MLflowModelCheckpoint"),
     ("py:class", "datamint.entities.annotations.annotation.AnnotationBase"),
     ("py:class", "datamint.entities.resource.BaseResource"),
+    # TypeVar / generic references
+    ("py:class", "datamint.entities.cache_manager.T"),
+    # Internal classes not exposed in public API
+    ("py:class", "datamint.entities.sliced_resource.SlicedVolumeResource"),
+    ("py:class", "datamint.entities.annotations.annotation_spec.AnnotationSpec"),
+    ("py:class", "datamint.entities.annotations.base_geometry.BaseGeometryAnnotation"),
+    ("py:class", "datamint.entities.annotations.base_segmentation.BaseSegmentationAnnotation"),
+    ("py:class", "datamint.lightning.datamodule.DatamintDataModule"),
+    ("py:class", "datamint.lightning.trainers.lightning_modules.SegmentationModule"),
 }
 
 # -- General configuration ---------------------------------------------------
@@ -125,10 +135,10 @@ extensions = [
     'sphinx_substitution_extensions',
     'sphinx.ext.autodoc',
     'sphinx_autodoc_typehints',
+    'sphinxcontrib.mermaid',
 ]
 
 rst_prolog = """
-.. |DatamintDatasetClass| replace:: :py:class:`~datamint.dataset.dataset.DatamintDataset`
 .. |ApiClass| replace:: :py:class:`~datamint.api.client.Api`
 """
 

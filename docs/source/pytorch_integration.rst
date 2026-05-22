@@ -168,4 +168,7 @@ The trainer layer is also the recommended way to integrate an external model
 architecture while still reusing Datamint's dataset handling and MLflow
 workflow.
 
+For a side-by-side comparison of raw PyTorch / Lightning code versus Datamint,
+see :doc:`datamint_vs_raw_pytorch <datamint_vs_raw_pytorch>`.
+
 See :ref:`trainer_api` for more details.

@@ -31,9 +31,8 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
     the trained module can be logged once with ``datamint_flavor`` — no
     separate adapter step is required.
 
-    .. inheritance::
-        :class:`lightning.pytorch.core.module.LightningModule`
-        :class:`~datamint.mlflow.flavors.model.BaseDatamintModel`
+    Inherits from both :class:`~lightning.pytorch.core.module.LightningModule`
+    and :class:`~datamint.mlflow.flavors.model.BaseDatamintModel`.
     """
 
     def __init__(self, settings: ModelSettings | None = None,

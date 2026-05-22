@@ -1,6 +1,7 @@
 sphinx>=5.0.0
 sphinx_rtd_theme
 sphinx-design
+sphinxcontrib-mermaid
 setuptools>=57.0.0
 myst-parser
 sphinx-substitution-extensions

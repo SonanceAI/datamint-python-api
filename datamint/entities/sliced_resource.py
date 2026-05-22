@@ -20,12 +20,12 @@ _SLICE_ARRAY_CACHEKEY = "slice_array"
 class SlicedVolumeResource:
     """Proxy that presents a single 2D slice of a 3D volume Resource.
 
-    This class wraps a :class:`Resource` and represents a specific 2D slice
+    This class wraps a :class:`~datamint.entities.resource.Resource` and represents a specific 2D slice
     along a given axis. It uses gzip-compressed ``.npy.gz`` files on disk
     for efficient storage, with an in-memory LRU cache managed by
-    :class:`CacheManager`.
+    :class:`~datamint.entities.cache_manager.CacheManager`.
 
-    The CacheManager memory cache is disabled by default globally, but the
+    The :class:`~datamint.entities.cache_manager.CacheManager` memory cache is disabled by default globally, but the
     sliced-volume cache manager enables it by default.
 
     This shared cache avoids repeated gzip decompression for already-cached
@@ -35,7 +35,7 @@ class SlicedVolumeResource:
         parent: The original 3D volume Resource.
         slice_index: The index of the slice along the given axis.
         slice_axis: The spatial axis to slice along ('axial', 'coronal', 'sagittal').
-        sliced_vols_cache: Shared :class:`CacheManager` for disk-based volume caching.
+        sliced_vols_cache: Shared :class:`~datamint.entities.cache_manager.CacheManager` for disk-based volume caching.
     """
 
     _CACHE_MANAGER_NAMESPACE = "sliced_volumes"

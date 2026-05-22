@@ -34,9 +34,9 @@ The |ApiClass| class provides access to different endpoint handlers:
 +----------------------------+---------------------------------------------------------------+
 
 Most day-to-day workflows can stay object-based. Endpoint handlers return
-entity objects such as :py:class:`~datamint.entities.Resource`,
-:py:class:`~datamint.entities.Project`, and
-:py:class:`~datamint.entities.Annotation`, and those entities expose
+entity objects such as :py:class:`~datamint.entities.resource.Resource`,
+:py:class:`~datamint.entities.project.Project`, and
+:py:class:`~datamint.entities.annotations.annotation.Annotation`, and those entities expose
 convenience methods for you to use.
 
 Working with Resources
@@ -395,96 +395,23 @@ Organize resources with channels
 
 See also the tutorial notebooks: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
 
-Working with Annotation Sets
-----------------------------
-
-Annotation sets define the annotation specifications for a project:
-
-.. code-block:: python
-
-    # Get annotation specs for a project
-    project = api.projects.get_by_name("Liver Review")
-    specs = project.get_annotations_specs()
-
-    for spec in specs:
-        print(spec.identifier, spec.annotation_type)
-
-    # Create a new annotation set
-    annotation_set = api.annotationsets.create(
-        name="Liver Annotations",
-        project=project,
-        specs=[
-            {"identifier": "liver", "annotation_type": "segmentation"},
-            {"identifier": "tumor", "annotation_type": "segmentation"},
-        ],
-    )
-
-    # List annotation sets for a project
-    annotation_sets = api.annotationsets.get_list(project=project)
-
-Working with Models & Deployment
----------------------------------
-
-Register and manage models via ``api.models``:
-
-.. code-block:: python
-
-    # List all registered models
-    models = api.models.get_list()
-
-    # Get a specific model
-    model = api.models.get_by_name("my-model")
-
-    # Get model versions
-    versions = api.models.get_versions("my-model")
-
-    # Delete a model
-    api.models.delete("my-model")
-
 Deploy a registered model
 +++++++++++++++++++++++++
 
-Use ``api.deploy.deploy()`` to deploy a model:
+Use ``api.deploy.start()`` to deploy a model:
 
 .. code-block:: python
 
     # Deploy a registered model
-    deploy_job = api.deploy.deploy(
+    deploy_job = api.deploy.start(
         model_name="my-model",
-        version="1.0",
+        model_alias="latest",
     )
     print(deploy_job.status)
 
     # Wait for deployment to complete
-    deploy_job.wait_for_completion(timeout=3600)
+    deploy_job = deploy_job.wait()
     print("Deployment complete:", deploy_job.status)
-
-Running inference
-+++++++++++++++++
-
-Use ``api.inference`` to trigger inference jobs against deployed models:
-
-.. code-block:: python
-
-    resource = api.resources.get_list(project_name="Liver Review")[0]
-
-    # Run inference on a single resource
-    job = api.inference.run(
-        model_name="my-model",
-        resource=resource,
-    )
-    print(job.status)
-
-    # Wait for results
-    result = job.wait_for_completion(timeout=3600)
-    print(result.segmentations)
-
-    # Run batch inference
-    resources = api.resources.get_list(project_name="Liver Review")
-    batch_job = api.inference.run_batch(
-        model_name="my-model",
-        resources=resources,
-    )
 
 Working with Users
 ------------------
@@ -494,13 +421,10 @@ User management operations:
 .. code-block:: python
 
     # List all users
-    users = api.users.get_list()
+    users = api.users.get_all()
 
     # Get user by email
     user = api.users.get_by_email("user@example.com")
 
     # Get current user info
     current_user = api.users.get_current_user()
-
-    # List user's projects
-    user_projects = api.users.get_projects(user)

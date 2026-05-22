@@ -5,9 +5,6 @@ Datamint API package alias.
 import importlib.metadata
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    # Legacy
-    from .dataset.dataset import DatamintDataset as Dataset
-    
     from .api.client import Api
     # New modular datasets
     from .dataset.image_dataset import ImageDataset
@@ -20,9 +17,6 @@ else:
         __name__,
         submodules=['dataset', "dataset.dataset"],
         submod_attrs={
-            # Legacy exports
-            "dataset.dataset": ["DatamintDataset"],
-            "dataset": ['Dataset'],
             "api.client": ["Api"],
             # New modular dataset classes
             "dataset.image_dataset": ["ImageDataset"],
