@@ -8,6 +8,23 @@ classes for different medical imaging modalities. Import them directly:
 
    from datamint.dataset import ImageDataset, VolumeDataset, VideoDataset
 
+Dataset Classes Overview
+------------------------
+
++------------------------+------------------------------------------+-------------------------------+
+| Class                  | Use Case                                 | Input Formats                 |
++========================+==========================================+===============================+
+| ``ImageDataset``       | 2D images (X-rays, pathology, PNG, JPEG) | Single-frame DICOM, PNG, JPEG |
++------------------------+------------------------------------------+-------------------------------+
+| ``VolumeDataset``      | 3D volumes (CT, MRI, NIfTI)             | NIfTI, DICOM series           |
++------------------------+------------------------------------------+-------------------------------+
+| ``VideoDataset``       | Temporal sequences (videos)             | MP4, AVI, multi-frame DICOM   |
++------------------------+------------------------------------------+-------------------------------+
+| ``SlicedVolumeDataset``| 3D volumes sliced to 2D for training    | NIfTI, DICOM series           |
++------------------------+------------------------------------------+-------------------------------+
+| ``SlicedVideoDataset`` | Video frames sliced for training        | MP4, AVI                      |
++------------------------+------------------------------------------+-------------------------------+
+
 Split Modes
 -----------
 
@@ -56,41 +73,74 @@ Base Classes
 ------------
 
 .. automodule:: datamint.dataset.base
-   :members:
+   :members: DatamintBaseDataset, DatamintDatasetException
+   :undoc-members:
    :show-inheritance:
 
 .. automodule:: datamint.dataset.multiframe_dataset
-   :members:
+   :members: MultiFrameDataset
+   :undoc-members:
    :show-inheritance:
 
 Specialised Datasets
 --------------------
 
+ImageDataset
+++++++++++++
+
 .. automodule:: datamint.dataset.image_dataset
    :members:
+   :undoc-members:
    :show-inheritance:
+
+VolumeDataset
++++++++++++++
 
 .. automodule:: datamint.dataset.volume_dataset
    :members:
+   :undoc-members:
    :show-inheritance:
+
+VideoDataset
+++++++++++++
 
 .. automodule:: datamint.dataset.video_dataset
    :members:
+   :undoc-members:
    :show-inheritance:
 
 Sliced Datasets
 ---------------
 
+SlicedVolumeDataset
++++++++++++++++++++
+
 .. automodule:: datamint.dataset.sliced_dataset
    :members:
+   :undoc-members:
    :show-inheritance:
+
+SlicedVideoDataset
+++++++++++++++++++
 
 .. automodule:: datamint.dataset.sliced_video_dataset
    :members:
+   :undoc-members:
    :show-inheritance:
 
+Annotation Processing
+---------------------
+
+.. automodule:: datamint.dataset.annotation
+   :members:
+   :undoc-members:
+
+.. automodule:: datamint.dataset.annotation_processor
+   :members:
+   :undoc-members:
+
 Legacy Classes (Deprecated)
-----------------------------
+---------------------------
 
 .. deprecated::
    The classes below are kept for backwards compatibility and may be removed in a
@@ -98,9 +148,10 @@ Legacy Classes (Deprecated)
    :class:`~datamint.dataset.volume_dataset.VolumeDataset` instead.
 
 .. automodule:: datamint.dataset.dataset
-   :members:
+   :members: DatamintDataset
+   :undoc-members:
    :show-inheritance:
 
 .. automodule:: datamint.dataset.base_dataset
    :members:
-
+   :undoc-members:

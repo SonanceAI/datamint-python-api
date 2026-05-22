@@ -255,8 +255,9 @@ class BaseSegmentationAnnotation(Annotation):
     * A Pydantic-native ``segmentation_data`` field with automatic
       serialisation/deserialisation for ``np.ndarray``, ``PIL.Image.Image``
       and ``nibabel.nifti1.Nifti1Image``.
-    * An overridden :meth:`fetch_file_data` that short-circuits the network
-      call when ``segmentation_data`` is already populated in memory.
+    * An overridden :meth:`~datamint.entities.annotations.annotation.Annotation.fetch_file_data`
+      that short-circuits the network call when ``segmentation_data`` is already
+      populated in memory.
     * Static helpers :meth:`_to_raw_bytes` and :meth:`_from_raw_bytes` for
       subclasses that need to convert to/from ``bytes``.
     """

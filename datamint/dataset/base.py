@@ -810,13 +810,15 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                                segmentations: dict,
                                seg_labels: dict,
                                output_shape: tuple | None = None) -> tuple[Tensor | np.ndarray | dict, dict | None]:
-        """
-        Process segmentations by optionally converting to semantic format and applying merge strategy.
+        """Process segmentations by optionally converting to semantic format and applying merge strategy.
 
         Args:
-            segmentations: Dict of annotator_id -> segmentation array (num_instances, depth, H, W).
-            seg_labels: Dict of annotator_id -> list of label names corresponding to each instance in the segmentation array.
-            output_shape: Fallback output shape to use when outputting as semantic segmentation and no segmentations are present to infer from. Should NOT have the number of classes dimension. Example: (depth, H, W)
+            segmentations: Dict of annotator_id → segmentation array (num_instances, depth, H, W).
+            seg_labels: Dict of annotator_id → list of label names corresponding to each instance.
+            output_shape: Fallback output shape for semantic segmentation with no segmentations.
+
+        Returns:
+            Tuple of (processed segmentations, seg_labels or ``None``).
         """
         # segmentations['author'] shape: (#instances, depth, H, W)
         if self.return_as_semantic_segmentation:
@@ -925,8 +927,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
     def build_mlflow_dataset(self) -> 'DatamintMLflowDataset':
         """Create a :class:`~datamint.mlflow.data.DatamintMLflowDataset` for this dataset.
 
-        Args:
-            split: The split name (e.g. ``'train'``, ``'val'``, ``'test'``).
+        Returns:
+            An MLflow dataset wrapper for the current dataset.
         """
         from datamint.mlflow.data import DatamintMLflowDataset
 
@@ -1258,7 +1260,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Args:
             tags: Keep resources whose tags contain **any** of the given values.
             filename_pattern: Keep resources whose filename matches this
-                pattern (interpreted as :func:`fnmatch.fnmatch` glob).
+                pattern (interpreted as a glob pattern, using :func:`fnmatch` internally).
             has_annotations: If ``True``, keep only resources with at least one
                 annotation.  If ``False``, keep only those **without**
                 annotations.

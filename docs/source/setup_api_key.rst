@@ -1,9 +1,11 @@
-.. _setup_api_key:
+Setup API Key
+~~~~~~~~~~~~~
 
-Setup API key
-=============
-To use the Datamint API, you need to set up your API key.
-If you have the necessary permissions, you can obtain one from the UI:
+Obtaining an API key
+--------------------
+
+Before using the Datamint API, you need to configure your API key.
+If you have the necessary permissions, you can obtain one from the `Datamint platform <https://app.datamint.io/>`_:
 
 1. In the left sidebar, select **Teams**.
 2. Click **Edit** on your user profile.
@@ -24,40 +26,28 @@ If you have the necessary permissions, you can obtain one from the UI:
 
    If you don't have the necessary permissions, ask your administrator.
 
-|
+Configuring your API key
+------------------------
 
-Once you have your API key, use one of the following methods to configure it:
+Once you have your API key, choose one of the following options:
 
-Method 1: Command-line tool (recommended)
--------------------------------------------
-Run ``datamint-config`` in the terminal and follow the instructions. See :doc:`command_line_tools` for more details.
+**Option 1: Using the CLI tool (recommended)**
 
-Method 2: Environment variable
-------------------------------
-Specify the API key as an environment variable.
+.. code-block:: bash
 
-.. tab-set::
+    datamint-config --api-key YOUR_API_KEY
 
-    .. tab-item:: Bash
+**Option 2: Setting an environment variable**
 
-        .. code-block:: bash
+.. code-block:: bash
 
-            export DATAMINT_API_KEY="my_api_key"
-            # run your commands (e.g., `datamint-upload`, `python script.py`)
+    export DATAMINT_API_KEY="your_api_key"
 
-    .. tab-item:: Python
-
-        .. code-block:: python
-
-            import os
-            os.environ["DATAMINT_API_KEY"] = "my_api_key"
-
-Method 3: Api constructor
--------------------------
-Specify API key in the |ApiClass| constructor:
+**Option 3: Programmatically in Python**
 
 .. code-block:: python
 
     from datamint import Api
 
-    api = Api(api_key='my_api_key')
+    api = Api(api_key="your_api_key")
+

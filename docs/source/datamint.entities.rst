@@ -2,13 +2,13 @@ Entities
 ========
 
 The ``datamint.entities`` module provides the core data structures that represent
-various objects within the DataMint ecosystem. These entities are built using `Pydantic <https://pydantic-docs.helpmanual.io/>`_ models, ensuring robust data validation,
-type safety, and seamless serialization/deserialization when interacting with the DataMint API.
+various objects within the Datamint ecosystem. These entities are built using `Pydantic <https://pydantic-docs.helpmanual.io/>`_ models, ensuring robust data validation,
+type safety, and seamless serialization/deserialization when interacting with the Datamint API.
 
 In most user code, prefer working with entity instances instead of passing raw IDs
-between endpoint calls. :py:class:`~datamint.entities.Project`,
-:py:class:`~datamint.entities.Resource`, and
-:py:class:`~datamint.entities.Annotation` can usually be passed directly back into
+between endpoint calls. :py:class:`~datamint.entities.project.Project`,
+:py:class:`~datamint.entities.resource.Resource`, and
+:py:class:`~datamint.entities.annotations.annotation.Annotation` can usually be passed directly back into
 API methods, and they expose convenience helpers for common workflows.
 
 Entity-first Workflows
@@ -46,7 +46,7 @@ Resource objects
    print(resource.filename, len(annotations))
 
 Annotation objects
-+++++++++++++++++
+++++++++++++++++++
 
 .. code-block:: python
 
@@ -57,10 +57,125 @@ Annotation objects
 
    print(annotation.name, source_resource.filename)
 
-Reference
----------
+Entity Reference
+----------------
 
-.. automodule:: datamint.entities
+Base Classes
+++++++++++++
+
+.. automodule:: datamint.entities.base_entity
+   :members: BaseEntity, BaseEntityModel
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.cache_manager
+   :members: CacheManager
+   :undoc-members:
+   :show-inheritance:
+
+Resource Entities
++++++++++++++++++
+
+.. automodule:: datamint.entities.resource
+   :members: Resource, LocalResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.dicom_resource
+   :members: DICOMResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.image_resource
+   :members: ImageResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.nifti_resource
+   :members: NiftiResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.video_resource
+   :members: VideoResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.volume_resource
+   :members: VolumeResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.sliced_resource
+   :members: SlicedResource
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.sliced_video_resource
+   :members: SlicedVideoResource
+   :undoc-members:
+   :show-inheritance:
+
+Project Entity
+++++++++++++++
+
+.. automodule:: datamint.entities.project
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Channel Entity
+++++++++++++++
+
+.. automodule:: datamint.entities.channel
+   :members: Channel, ChannelResourceData
+   :undoc-members:
+   :show-inheritance:
+
+User Entity
++++++++++++
+
+.. automodule:: datamint.entities.user
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Dataset Info Entity
++++++++++++++++++++
+
+.. automodule:: datamint.entities.datasetinfo
+   :members: DatasetInfo
+   :undoc-members:
+   :show-inheritance:
+
+Split Entity
+++++++++++++
+
+.. automodule:: datamint.entities.project_resource_split
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Job Entities
+++++++++++++
+
+.. automodule:: datamint.entities.deployjob
+   :members: DeployJob
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: datamint.entities.inferencejob
+   :members: InferenceJob
+   :undoc-members:
+   :show-inheritance:
+
+Annotations Subpackage
+----------------------
+
+The ``datamint.entities.annotations`` subpackage contains all annotation-related
+entity classes. See :doc:`datamint.entities.annotations` for detailed documentation.
+
+.. automodule:: datamint.entities.annotations
    :members:
    :undoc-members:
    :show-inheritance:

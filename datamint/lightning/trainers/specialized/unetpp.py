@@ -143,10 +143,18 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
         loss_fn: nn.Module,
         metrics: dict[str, Callable],
     ) -> 'DatamintLightningModule':
+        num_classes = len(self.dataset.seglabel_list)
+        if num_classes == 0:
+            raise ValueError(
+                "No segmentation labels found in the dataset. "
+                "UNetPP requires at least one segmentation label to train. "
+                "Make sure your project has annotated resources with segmentation labels, "
+                "or check that 'include_unannotated' is not masking all annotated data."
+            )
         return UNetPPModule(
             encoder_name=self.encoder_name,
             in_channels=self.in_channels,
-            num_classes=len(self.dataset.seglabel_list),
+            num_classes=num_classes,
             loss_fn=loss_fn,
             metrics_factories=metrics,
             class_names=list(self.dataset.seglabel_list),

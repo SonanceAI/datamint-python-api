@@ -21,14 +21,11 @@ You should see this in the first line:
 .. code-block:: bash
 
     usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
-    (...)
 
 There are two command-line tools available:
 
 - ``datamint-config``: To configure the Datamint API key and URL.
-- ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server. 
-
-.. _configuring_datamint_settings:
+- ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
 
 Configuring the Datamint settings
 ---------------------------------
@@ -36,7 +33,7 @@ Configuring the Datamint settings
 The ``datamint-config`` command-line tool is useful for configuring the Datamint API key and URL,
 consequently avoiding the need to manually pass them as arguments or environment variables to the other commands later.
 
-To manage Datamint configurations, just run 
+To manage Datamint configurations, just run
 
 .. code-block:: bash
 
@@ -50,15 +47,19 @@ To set the API key without the interactive prompt, use the command-line option `
 
     datamint-config --api-key YOUR_API_KEY
 
+Local data management
++++++++++++++++++++++
+
 The same CLI can also inspect and clean local Datamint data stored under ``~/.datamint``.
 Active local data is grouped by cache namespace such as ``resources`` or ``annotations``
 instead of individual cached resources, so cleanup happens at that higher level:
 
 .. code-block:: bash
 
-    datamint-config --list-local-data
-    datamint-config --clean-local-data resources
-    datamint-config --clean-all-local-data
+    datamint-config --list-local-data            # List all local data namespaces
+    datamint-config --clean-local-data resources  # Clean resource cache
+    datamint-config --clean-local-data annotations # Clean annotation cache
+    datamint-config --clean-all-local-data       # Clean all local data
 
 Uploading DICOMs/resources to Datamint server
 ---------------------------------------------
@@ -118,7 +119,6 @@ You can bypass the inbox/review and directly publish your resources with the ``-
 
     datamint-upload /path/to/resource_file --publish
 
-
 Example using include and exclude extensions options:
 +++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -135,7 +135,7 @@ To upload all files except the .txt and .csv files, run:
     datamint-upload /root_dir --exclude-extensions txt csv
 
 Uploading segmentations along with the resources
-++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++++++++++++++++
 
 To upload segmentations along with the resources, you can use
 
@@ -168,11 +168,11 @@ and ``class_names`` maps pixel values to class names.
 You can provide the segmentation names file with the ``--segmentation_names`` flag:
 
 .. code-block:: bash
-    
+
     datamint-upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
 
 Associating uploaded segmentations with a deployed model
-+++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 If the uploaded segmentations were produced by a deployed Datamint model, use
 ``--ai-model`` to associate the created annotations with that model:
@@ -185,9 +185,10 @@ The value passed to ``--ai-model`` must match the name of an existing deployed
 model on the server. This option only affects uploaded segmentations; resource
 uploads without ``--segmentation_path`` are unchanged.
 
-**JSON Metadata Support for NIfTI files:**
+JSON metadata support for NIfTI files
++++++++++++++++++++++++++++++++++++++
 
-When uploading NIfTI files (.nii or .nii.gz), the tool automatically detects and includes JSON metadata files with the same base name. 
+When uploading NIfTI files (.nii or .nii.gz), the tool automatically detects and includes JSON metadata files with the same base name.
 For example, if you have ``image.nii.gz``, it will automatically include ``image.json`` if it exists.
 
 .. code-block:: bash
@@ -200,14 +201,17 @@ This feature can be disabled with ``--no-auto-detect-json`` flag:
 
     datamint-upload /path/to/nifti_files/ -r --no-auto-detect-json
 
+Checking uploaded segmentations
++++++++++++++++++++++++++++++++
+
 To check if the segmentations were uploaded correctly, you can see some information after running your command line:
 
 .. code-block:: console
 
     (...)
-    Number of images with an associated segmentation: 4 (100%)                                                                                                                                                                                                      
-    Number of segmentations with associated name: 4 (100%)   
-    Do you want to proceed with the upload? (y/n): 
+    Number of images with an associated segmentation: 4 (100%)
+    Number of segmentations with associated name: 4 (100%)
+    Do you want to proceed with the upload? (y/n):
 
 All available options
 +++++++++++++++++++++

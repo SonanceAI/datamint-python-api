@@ -14,15 +14,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class VolumeSegmentation(BaseSegmentationAnnotation):
-    """
-    Volume-level segmentation annotation entity.
+    """Volume-level segmentation annotation entity.
 
-    Represents a 3D segmentation mask for medical imaging volumes.
-    Supports both semantic segmentation (class per voxel) and instance 
+    Represents a 3-D segmentation mask for medical imaging volumes.
+    Supports both semantic segmentation (class per voxel) and instance
     segmentation (unique ID per object).
 
-    This class provides factory methods to create annotations from numpy 
-    arrays or NIfTI images, which can then be uploaded via AnnotationsApi.
+    This class provides factory methods to create annotations from numpy
+    arrays or NIfTI images, which can then be uploaded via :class:`~datamint.api.endpoints.annotations_api.AnnotationsApi`.
 
     Example:
         >>> # From semantic segmentation

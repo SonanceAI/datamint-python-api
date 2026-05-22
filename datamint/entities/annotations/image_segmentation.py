@@ -18,19 +18,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ImageSegmentation(BaseSegmentationAnnotation):
-    """
-    Image-level (2D) binary segmentation annotation entity.
+    """Image-level (2-D) binary segmentation annotation entity.
 
     Represents a binary segmentation mask (foreground / background) for a
     single image.  The stored mask always contains only ``0`` and ``1``
     values; any non-zero input pixel is normalised to ``1``.
 
-    :attr:`segmentation_data` stores the mask as a ``np.ndarray`` with
-    ``dtype=uint8`` and is automatically serialised/deserialised when the
-    annotation is persisted or loaded.
-
-    The annotation name (the class label) is stored in the inherited
-    ``identifier`` field and accessible via the :attr:`name` property.
+    :param segmentation_data: The mask as a ``np.ndarray`` (``dtype=uint8``),
+        ``PIL.Image.Image``, or ``nibabel.nifti1.Nifti1Image``.  Automatically
+        serialised/deserialised on persist/load.
+    :param name: The annotation class label (stored in the inherited
+        ``identifier`` field).
 
     Example:
         >>> mask = np.zeros((256, 256), dtype=np.uint8)

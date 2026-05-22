@@ -11,15 +11,27 @@ First, import the |ApiClass| class and create an instance:
 
 The |ApiClass| class provides access to different endpoint handlers:
 
-- ``api.resources`` - For uploading, downloading, and managing resources
-- ``api.annotations`` - For creating and managing annotations/segmentations
-- ``api.projects`` - For creating and managing projects
-- ``api.channels`` - For organizing resources into channels
-- ``api.users`` - For user management operations
-- ``api.models`` - For managing registered models
-- ``api.annotationsets`` - For working with annotation set configurations
-- ``api.deploy`` - For deploying models to the Datamint platform
-- ``api.inference`` - For running and managing inference jobs
++----------------------------+---------------------------------------------------------------+
+| Handler                    | Purpose                                                       |
++----------------------------+---------------------------------------------------------------+
+| ``api.resources``          | Uploading, downloading, and managing resources                |
++----------------------------+---------------------------------------------------------------+
+| ``api.annotations``        | Creating and managing annotations/segmentations               |
++----------------------------+---------------------------------------------------------------+
+| ``api.projects``           | Creating and managing projects                                |
++----------------------------+---------------------------------------------------------------+
+| ``api.channels``           | Organizing resources into channels                            |
++----------------------------+---------------------------------------------------------------+
+| ``api.users``              | User management operations                                    |
++----------------------------+---------------------------------------------------------------+
+| ``api.models``             | Managing registered models                                    |
++----------------------------+---------------------------------------------------------------+
+| ``api.annotationsets``     | Working with annotation set configurations                    |
++----------------------------+---------------------------------------------------------------+
+| ``api.deploy``             | Deploying models to the Datamint platform                     |
++----------------------------+---------------------------------------------------------------+
+| ``api.inference``          | Running and managing inference jobs                           |
++----------------------------+---------------------------------------------------------------+
 
 Most day-to-day workflows can stay object-based. Endpoint handlers return
 entity objects such as :py:class:`~datamint.entities.Resource`,
@@ -31,7 +43,7 @@ Working with Resources
 ----------------------
 
 Upload resource files
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++
 
 Use :py:meth:`api.resources.upload_resource() <datamint.api.endpoints.resources_api.ResourcesApi.upload_resource>` to upload any resource type, such as DICOMs, videos, and image files:
 
@@ -47,7 +59,7 @@ Use :py:meth:`api.resources.upload_resource() <datamint.api.endpoints.resources_
     ])
 
 List and filter resources
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++
 
 You can see the list of all uploaded resources by calling :py:meth:`api.resources.get_list() <datamint.api.endpoints.resources_api.ResourcesApi.get_list>`:
 
@@ -62,7 +74,7 @@ You can see the list of all uploaded resources by calling :py:meth:`api.resource
         print(resource.filename, resource.status)
 
 Upload with options
-++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
++++++++++++++++++++
 
 You can customize the upload with various parameters:
 
@@ -89,7 +101,7 @@ You can customize the upload with various parameters:
     )
 
 Download resources
-------------------
+++++++++++++++++++
 
 To download a resource, use :py:meth:`api.resources.download_resource_file() <datamint.api.endpoints.resources_api.ResourcesApi.download_resource_file>`:
 
@@ -102,7 +114,7 @@ To download a resource, use :py:meth:`api.resources.download_resource_file() <da
     # Download as bytes through the entity helper
     bytes_obj = resource.fetch_file_data(auto_convert=False)
 
-    # Auto-convert to the appropriate object (for example pydicom.Dataset)
+    # Auto-convert to the appropriate object (e.g., pydicom.Dataset)
     dicom_obj = resource.fetch_file_data(auto_convert=True)
 
     # Save directly to file
@@ -111,7 +123,7 @@ To download a resource, use :py:meth:`api.resources.download_resource_file() <da
 With ``auto_convert=True``, the function uses the resource mimetype to automatically convert to the appropriate object type (``pydicom.Dataset`` for DICOM, etc.).
 
 Publishing resources
----------------------
+++++++++++++++++++++
 
 To publish a resource, use :py:meth:`api.resources.publish_resources() <datamint.api.endpoints.resources_api.ResourcesApi.publish_resources>`:
 
@@ -130,13 +142,26 @@ To publish a resource, use :py:meth:`api.resources.publish_resources() <datamint
 If you want the resource to land directly in a project, prefer
 ``upload_resource(..., publish_to=project)`` during upload.
 
+Deleting resources
+++++++++++++++++++
+
+To delete a resource:
+
+.. code-block:: python
+
+    resource = api.resources.get_list(filename="temp_file.dcm")[0]
+    api.resources.delete(resource)
+
+    # Delete multiple resources
+    api.resources.delete_resources(resources_to_delete)
+
 Working with Annotations
 ------------------------
 
 Inspect annotations from a resource
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++++++++
 
-Every :py:class:`~datamint.entities.Resource` can fetch its own annotations:
+Every :py:class:`~datamint.entities.resource.Resource` can fetch its own annotations:
 
 .. code-block:: python
 
@@ -147,7 +172,7 @@ Every :py:class:`~datamint.entities.Resource` can fetch its own annotations:
         print(annotation.name, annotation.annotation_type)
 
 Upload segmentations
-++++++++++++++++++++++++++++++++
+++++++++++++++++++++
 
 To upload a segmentation, use :py:meth:`api.annotations.upload_segmentations() <datamint.api.endpoints.annotations_api.AnnotationsApi.upload_segmentations>`:
 
@@ -163,7 +188,7 @@ To upload a segmentation, use :py:meth:`api.annotations.upload_segmentations() <
     )
 
 Multi-class segmentations
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++
 
 If your segmentation has multiple classes, you can pass a dictionary mapping pixel values to class names:
 
@@ -182,7 +207,7 @@ If your segmentation has multiple classes, you can pass a dictionary mapping pix
     )
 
 Volume segmentations
-++++++++++++++++++++++++++++++++
+++++++++++++++++++++
 
 Use :py:meth:`api.annotations.upload_volume_segmentation() <datamint.api.endpoints.annotations_api.AnnotationsApi.upload_volume_segmentation>` for NIfTI masks and other 3D segmentations:
 
@@ -196,8 +221,37 @@ Use :py:meth:`api.annotations.upload_volume_segmentation() <datamint.api.endpoin
         {1: "liver", 2: "tumor"},
     )
 
+Upload geometry annotations (bounding boxes, lines)
+++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    from datamint.entities.annotations import BoxAnnotation, LineAnnotation, CoordinateSystem
+
+    # Upload a bounding box
+    api.annotations.upload_segmentations(
+        resource,
+        "path/to/box.json",
+        name="tumor_box",
+        annotation_type="box",
+        coordinate_system=CoordinateSystem.PIXEL,
+    )
+
+Upload classification annotations
++++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    # Upload image classification labels
+    api.annotations.upload_segmentations(
+        resource,
+        labels=["normal", "pathology"],
+        name="diagnosis",
+        annotation_type="category",
+    )
+
 Inspect annotation entities
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++
 
 Annotation entities can fetch their own files and lazily resolve the source resource:
 
@@ -215,7 +269,7 @@ Working with Projects
 ---------------------
 
 Create and manage projects
-++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++
 
 .. code-block:: python
 
@@ -234,9 +288,9 @@ Create and manage projects
         print(resource.filename)
 
 Project helper methods
-++++++++++++++++++++++++++++++++
+++++++++++++++++++++++
 
-The :py:class:`~datamint.entities.Project` entity provides shortcuts for common project workflows:
+The :py:class:`~datamint.entities.project.Project` entity provides shortcuts for common project workflows:
 
 .. code-block:: python
 
@@ -252,26 +306,26 @@ The :py:class:`~datamint.entities.Project` entity provides shortcuts for common 
     print([spec.identifier for spec in specs])
 
 Project-scoped dataset splits
-++++++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++
 
 The project split endpoints return
-:py:class:`~datamint.entities.ProjectResourceSplit` records, which contain:
+:py:class:`~datamint.entities.project_resource_split.ProjectResourceSplit` records, which contain:
 
 .. list-table::
-     :header-rows: 1
+    :header-rows: 1
 
-     * - Field
-         - Description
-     * - ``split_name``
-         - Logical split name such as ``train``, ``val``, or ``test``.
-     * - ``project_id``
-         - Project that owns the assignment.
-     * - ``resource_id``
-         - Resource assigned within that project.
-     * - ``created_at`` / ``created_by``
-         - Audit metadata for assignment creation.
-     * - ``deleted_at`` / ``deleted_by``
-         - Audit metadata present when an assignment has been deleted.
+    * - Field
+      - Description
+    * - ``split_name``
+      - Logical split name such as ``train``, ``val``, or ``test``.
+    * - ``project_id``
+      - Project that owns the assignment.
+    * - ``resource_id``
+      - Resource assigned within that project.
+    * - ``created_at`` / ``created_by``
+      - Audit metadata present when an assignment has been created.
+    * - ``deleted_at`` / ``deleted_by``
+      - Audit metadata present when an assignment has been deleted.
 
 Use :py:meth:`api.projects.assign_splits() <datamint.api.endpoints.projects_api.ProjectsApi.assign_splits>`
 to write assignments, :py:meth:`api.projects.get_splits() <datamint.api.endpoints.projects_api.ProjectsApi.get_splits>`
@@ -332,21 +386,78 @@ Organize resources with channels
     # Create a new channel
     api.channels.create(name="CT Scans", description="CT scan images")
 
+    # List channels with resources
+    for channel in channels:
+        print(channel.name, channel.resource_count)
+
+    # Delete a channel
+    api.channels.delete(channel)
+
 See also the tutorial notebooks: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
+
+Working with Annotation Sets
+----------------------------
+
+Annotation sets define the annotation specifications for a project:
+
+.. code-block:: python
+
+    # Get annotation specs for a project
+    project = api.projects.get_by_name("Liver Review")
+    specs = project.get_annotations_specs()
+
+    for spec in specs:
+        print(spec.identifier, spec.annotation_type)
+
+    # Create a new annotation set
+    annotation_set = api.annotationsets.create(
+        name="Liver Annotations",
+        project=project,
+        specs=[
+            {"identifier": "liver", "annotation_type": "segmentation"},
+            {"identifier": "tumor", "annotation_type": "segmentation"},
+        ],
+    )
+
+    # List annotation sets for a project
+    annotation_sets = api.annotationsets.get_list(project=project)
 
 Working with Models & Deployment
 ---------------------------------
 
-Register and deploy models via ``api.models`` and ``api.deploy``:
+Register and manage models via ``api.models``:
 
 .. code-block:: python
 
     # List all registered models
     models = api.models.get_list()
 
+    # Get a specific model
+    model = api.models.get_by_name("my-model")
+
+    # Get model versions
+    versions = api.models.get_versions("my-model")
+
+    # Delete a model
+    api.models.delete("my-model")
+
+Deploy a registered model
++++++++++++++++++++++++++
+
+Use ``api.deploy.deploy()`` to deploy a model:
+
+.. code-block:: python
+
     # Deploy a registered model
-    deploy_job = api.deploy.deploy(model_name="my-model", version="1.0")
+    deploy_job = api.deploy.deploy(
+        model_name="my-model",
+        version="1.0",
+    )
     print(deploy_job.status)
+
+    # Wait for deployment to complete
+    deploy_job.wait_for_completion(timeout=3600)
+    print("Deployment complete:", deploy_job.status)
 
 Running inference
 +++++++++++++++++
@@ -356,9 +467,40 @@ Use ``api.inference`` to trigger inference jobs against deployed models:
 .. code-block:: python
 
     resource = api.resources.get_list(project_name="Liver Review")[0]
-    job = api.inference.run(model_name="my-model", resource=resource)
+
+    # Run inference on a single resource
+    job = api.inference.run(
+        model_name="my-model",
+        resource=resource,
+    )
     print(job.status)
 
-See the tutorial notebooks: `deploy_model_demo.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/deploy_model_demo.ipynb>`_
-and `external_model_deployment_tutorial.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/external_model_deployment_tutorial.ipynb>`_
+    # Wait for results
+    result = job.wait_for_completion(timeout=3600)
+    print(result.segmentations)
 
+    # Run batch inference
+    resources = api.resources.get_list(project_name="Liver Review")
+    batch_job = api.inference.run_batch(
+        model_name="my-model",
+        resources=resources,
+    )
+
+Working with Users
+------------------
+
+User management operations:
+
+.. code-block:: python
+
+    # List all users
+    users = api.users.get_list()
+
+    # Get user by email
+    user = api.users.get_by_email("user@example.com")
+
+    # Get current user info
+    current_user = api.users.get_current_user()
+
+    # List user's projects
+    user_projects = api.users.get_projects(user)

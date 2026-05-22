@@ -16,12 +16,12 @@ A comprehensive Python SDK for interacting with the Datamint platform, providing
 
 ## 🚀 Features
 
-- **Dataset Management**: Download, upload, and manage medical imaging datasets
-- **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements)
-- **Experiment Tracking**: Support for experiment management
-- **PyTorch Lightning Integration**: Streamlined ML workflows with Lightning DataModules, built-in trainers, and MLflow-aware checkpoints
-- **DICOM Support**: Native handling of DICOM files with anonymization capabilities
-- **Multi-format Support**: PNG, JPEG, NIfTI, and other medical imaging formats
+- **Dataset Management**: Download, upload, and manage medical imaging datasets using intuitive object-based APIs or CLI tools
+- **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements) with ease
+- **Experiment Tracking**: Seamless support for experiment management via MLflow integration
+- **PyTorch Lightning Integration**: Streamlined machine learning workflows featuring specialized `LightningDataModules`, built-in trainers (`SegmentationTrainer`), and automated MLflow checkpoint logging
+- **DICOM Support**: Native handling of DICOM files, including powerful anonymization capabilities during upload to protect patient privacy
+- **Multi-format Support**: Robust support for a wide range of medical imaging formats: PNG, JPEG, NIfTI (NIfTI/NRRD), DICOMs and more
 
 See the full documentation at https://sonanceai.github.io/datamint-python-api/
 

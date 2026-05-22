@@ -37,7 +37,7 @@ class DatamintDataModule(L.LightningDataModule):
     :class:`~datamint.dataset.base.DatamintBaseDataset`.
 
     The dataset must already be fully constructed (project loaded, filters
-    applied).  Splitting is delegated to :meth:`DatamintBaseDataset.split`.
+    applied).  Splitting is delegated to :meth:`~datamint.dataset.base.DatamintBaseDataset.split`.
     Stage-specific transforms are applied to each split after splitting.
 
     Args:

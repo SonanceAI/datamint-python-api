@@ -37,9 +37,9 @@ class BaseTrainer(ABC):
     ``project`` (or ``dataset``) and optionally override a few settings.
 
     Args:
-        dataset: A pre-built :class:`DatamintBaseDataset`.  Mutually
+        dataset: A pre-built :class:`~datamint.dataset.base.DatamintBaseDataset`.  Mutually
             exclusive with *project*.
-        project: Project name or :class:`Project` object used to
+        project: Project name or :class:`~datamint.entities.project.Project` object used to
             auto-build a dataset when *dataset* is ``None``.
         model: A user-provided :class:`~lightning.LightningModule`.
             When ``None`` the trainer builds a default one via
@@ -177,7 +177,22 @@ class BaseTrainer(ABC):
     def _start_mlflow_run(self):
         """Start an MLflow run for this trainer workflow."""
         self._with_project()
-        exp = mlflow.set_experiment(self.experiment_name)
+        try:
+            exp = mlflow.set_experiment(self.experiment_name)
+        except mlflow.exceptions.MlflowException as e:
+            # Check error code first (robust), then fall back to message text (compatibility).
+            error_code = getattr(e, "error_code", None)
+            is_resource_already_exists = (
+                error_code == "RESOURCE_ALREADY_EXISTS"
+                or error_code == "RESOURCE_DOES_NOT_EXIST"  # some MLflow versions use this for experiment conflicts
+                or "already exists" in str(e).lower()
+            )
+            if is_resource_already_exists:
+                raise ValueError(
+                    f"MLflow experiment '{self.experiment_name}' already exists and is scoped to a different project. "
+                    "Choose a unique experiment name via the `mlflow_experiment_name` parameter."
+                ) from e
+            raise
         return mlflow.start_run(experiment_id=exp.experiment_id)
 
     # ── Public API ──────────────────────────────────────────────
