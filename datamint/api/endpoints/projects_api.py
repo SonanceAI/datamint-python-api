@@ -9,8 +9,8 @@ import httpx
 from datamint.entities.resource import Resource
 from datamint.exceptions import EntityAlreadyExistsError, ItemNotFoundError
 if TYPE_CHECKING:
-    from . import AnnotationSetsApi, ResourcesApi
-    from datamint.entities.annotations.annotation_spec import AnnotationSpec
+    from . import AnnotationWorklistApi, ResourcesApi
+    from datamint.entities.annotation_worklist import AnnotationWorklist
 
 
 class ProjectsApi(CRUDEntityApi[Project]):
@@ -19,18 +19,19 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None,
-                 resources_api: 'ResourcesApi | None' = None) -> None:
+                 resources_api: 'ResourcesApi | None' = None,
+                 annotationworklist_api: 'AnnotationWorklistApi | None' = None) -> None:
         """Initialize the projects API handler.
 
         Args:
             config: API configuration containing base URL, API key, etc.
             client: Optional HTTP client instance. If None, a new one will be created.
         """
-        from . import AnnotationSetsApi, ResourcesApi
+        from . import AnnotationWorklistApi, ResourcesApi
 
         super().__init__(config, Project, 'projects', client)
-        self.resources_api = resources_api or ResourcesApi(config, client, projects_api=self)
-        self.annotationsets_api = AnnotationSetsApi(config, client)
+        self.resources_api = resources_api or ResourcesApi(config, client=client, projects_api=self)
+        self.annotationworklist_api = annotationworklist_api or AnnotationWorklistApi(config, client=client)
 
     def get_project_resources(self, project: Project | str) -> list[Resource]:
         """Get resources associated with a specific project.
@@ -110,7 +111,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         project_data = {'name': name,
                         'is_active_learning': is_active_learning,
                         'resource_ids': resources_ids,
-                        "segmentationData": { "segmentationValueType": segmentation_spec, "definitions": [] },
+                        "segmentationData": {"segmentationValueType": segmentation_spec, "definitions": []},
                         'annotation_set': {
                             "resource_ids": resources_ids,
                             "annotations": [],
@@ -119,7 +120,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                         "require_review": False,
                         'description': description}
 
-        return self._create(project_data, return_entity=return_entity, exists_ok=exists_ok)  # type: ignore[return-value]
+        # type: ignore[return-value]
+        return self._create(project_data, return_entity=return_entity, exists_ok=exists_ok)
 
     def get_all(self, limit: int | None = None) -> Sequence[Project]:
         """Get all projects.
@@ -256,20 +258,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                   add_path=f'resources/{resource_id}/status',
                                   json=jsondata)
 
-    def get_annotations_specs(self, project: str | Project) -> Sequence['AnnotationSpec']:
-        """Get the annotations specs for a given project.
-
-        Args:
-            project: The project id or Project instance.
-
-        Returns:
-            A sequence of AnnotationSpec instances.
-        """
-
-        if isinstance(project, str):
-            project = self.get_by_id(project)
-        return self.annotationsets_api.get_annotations_specs(project)
-
     # ------------------------------------------------------------------
     # Project members
     # ------------------------------------------------------------------
@@ -351,7 +339,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
             List of annotation status dicts.
         """
         params = {k: v for k, v in {'status': status, 'user_id': user_id,
-                                     'resource_id': resource_id}.items() if v is not None}
+                                    'resource_id': resource_id}.items() if v is not None}
         response = self._make_entity_request('GET', project, add_path='annotation-statuses',
                                              params=params or None)
         return response.json()
@@ -609,3 +597,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """
         response = self._make_entity_request('GET', project, add_path='models')
         return response.json()
+
+    def get_worklists(self, project: str | Project) -> Sequence['AnnotationWorklist']:
+        return self.annotationworklist_api.get_by_project(project)

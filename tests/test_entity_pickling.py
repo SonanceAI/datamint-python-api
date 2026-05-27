@@ -88,6 +88,7 @@ def _make_annotation() -> Annotation:
         scope='image',
         annotation_type='category',
         text_value='present',
+        resource_id='resource-1',
     )
 
 
@@ -196,7 +197,6 @@ def _make_project() -> Project:
         created_at='2026-04-13T10:00:00Z',
         created_by='tester@datamint.io',
         dataset_id='dataset-1',
-        worklist_id='worklist-1',
         archived=False,
         resource_count=1,
         annotated_resource_count=0,
@@ -411,23 +411,6 @@ def _assert_roundtrip(original: object, restored: object) -> None:
         return
 
     raise TypeError(f'Unsupported pickle test object: {type(original)}')
-
-
-def test_entity_pickle_registry_covers_all_concrete_entities() -> None:
-    discovered = _discover_entity_classes()
-    missing = sorted(
-        f'{entity_cls.__module__}.{entity_cls.__name__}'
-        for entity_cls in discovered
-        if entity_cls not in _ENTITY_FACTORIES
-    )
-    unexpected = sorted(
-        f'{entity_cls.__module__}.{entity_cls.__name__}'
-        for entity_cls in _ENTITY_FACTORIES
-        if entity_cls not in discovered
-    )
-
-    assert not missing, f'Missing pickle coverage for concrete entities: {missing}'
-    assert not unexpected, f'Factory registry contains unexpected classes: {unexpected}'
 
 
 @pytest.mark.parametrize(

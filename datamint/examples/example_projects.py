@@ -43,8 +43,7 @@ class ProjectMR:
         resp.raise_for_status()
         img = Image.open(io.BytesIO(resp.content)).convert('L')
         api.annotations.upload_segmentations(res, np.array(img),
-                                             name='object1', frame_index=1,
-                                             worklist_id=proj.worklist_id)
+                                             name='object1', frame_index=1)
         api.projects.set_work_status(resource=res,
                                      project=proj,
                                      status='closed')

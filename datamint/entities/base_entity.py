@@ -221,10 +221,18 @@ class BaseEntity(BaseEntityModel):
         """
         updated_ent = self._api.get_by_id(self._api._entid(self))
 
-        # Update all fields from the fresh data
-        for field_name, field_value in updated_ent.model_dump().items():
-            if field_value != MISSING_FIELD:
-                setattr(self, field_name, field_value)
+        # Update declared fields directly from the model instance so that
+        # nested Pydantic models are preserved as model instances rather than
+        # being converted to plain dicts (as model_dump() would do).
+        for field_name in updated_ent.__pydantic_fields__:
+            if hasattr(updated_ent, field_name):
+                setattr(self, field_name, getattr(updated_ent, field_name))
+
+        # Also propagate any extra (unknown) fields
+        if updated_ent.__pydantic_extra__:
+            for field_name, field_value in updated_ent.__pydantic_extra__.items():
+                if field_value != MISSING_FIELD:
+                    setattr(self, field_name, field_value)
 
         return self
 

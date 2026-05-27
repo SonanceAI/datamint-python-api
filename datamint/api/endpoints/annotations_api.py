@@ -70,22 +70,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         annotation._api = self
         return annotation
 
-    def _resolve_annotation_worklist_id(
-        self,
-        project: str | None = None,
-        worklist_id: str | None = None,
-    ) -> str | None:
-        if project is not None and worklist_id is not None:
-            raise ValueError('Only one of project or worklist_id can be provided.')
-
-        if project is None:
-            return worklist_id
-
-        proj = self._resources_api.projects_api._get_by_name_or_id(project)
-        if proj is None:
-            raise ItemNotFoundError('project', {'name_or_id': project})
-        return proj.worklist_id
-
     @overload
     def get_list(self,
                  resource: str | Resource | Sequence[str | Resource] | None = None,
@@ -178,7 +162,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         def group_annotations_by_resource(annotations: Sequence[Annotation],
                                           resource_ids: Sequence[str]
                                           ) -> Sequence[Sequence[Annotation]]:
-            resource_annotations_map = {rid: [] for rid in resource_ids}
+            resource_annotations_map : dict[str, list[Annotation]] = {rid: [] for rid in resource_ids}
             for ann in annotations:
                 resource_annotations_map[ann.resource_id].append(ann)
             return [resource_annotations_map[rid] for rid in resource_ids]
@@ -1116,7 +1100,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             metadata: pydicom.Dataset | Nifti1Image | None = None,
                             dicom_metadata: pydicom.Dataset | None = None,
                             coords_system: CoordinateSystem = 'pixel',
-                            project: str | None = None,
                             worklist_id: str | None = None,
                             imported_from: str | None = None,
                             author_email: str | None = None,
@@ -1180,7 +1163,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 raise NotImplementedError('pixel to patient coordinate conversion is only supported for DICOM and NIfTI resources.'
                                           ' Please provide the metadata or send coordinates in patient coordinates.')
 
-        resolved_worklist_id = self._resolve_annotation_worklist_id(project, worklist_id)
         annotation = LineAnnotation.from_points(
             point1,
             point2,
@@ -1189,7 +1171,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             slice_plane=slice_plane,
             metadata=metadata,
             coords_system=coords_system,
-            annotation_worklist_id=resolved_worklist_id,
+            annotation_worklist_id=worklist_id,
             imported_from=imported_from,
             import_author=author_email,
             model_id=model_id,
@@ -1214,7 +1196,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                            author_email: str | None = None,
                            model_id: str | None = None) -> str:
         """Add a box annotation to a resource."""
-        resolved_worklist_id = self._resolve_annotation_worklist_id(project, worklist_id)
         annotation = BoxAnnotation.from_points(
             point1,
             point2,
@@ -1222,7 +1203,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             frame_index=frame_index,
             dicom_metadata=dicom_metadata,
             coords_system=coords_system,
-            annotation_worklist_id=resolved_worklist_id,
+            annotation_worklist_id=worklist_id,
             imported_from=imported_from,
             import_author=author_email,
             model_id=model_id,

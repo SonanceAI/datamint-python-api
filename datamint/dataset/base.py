@@ -7,13 +7,14 @@ filtering, while delegating data management to DatamintProjectManager.
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Literal, cast
 from collections.abc import Sequence, Callable, Iterator
 
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
+from datamint.entities.annotation_worklist import AnnotationWorklist
 from datamint.exceptions import DatamintException
 from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
@@ -98,6 +99,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         allow_external_annotations: bool = False,
         image_labels_merge_strategy: MergeStrategy | None = None,
         image_categories_merge_strategy: MergeStrategy | None = None,
+        worklists: Sequence[AnnotationWorklist] | Literal['all'] | None = 'all',
     ):
         # Validate merge strategy values
         _valid_strategies = ('union', 'intersection', 'mode', None)
@@ -151,6 +153,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.semantic_seg_merge_strategy: MergeStrategy | None = semantic_seg_merge_strategy
         self.include_unannotated = include_unannotated
+        self.worklists = worklists
 
         # Transforms
         self.set_transform(alb_transform)
@@ -488,12 +491,122 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if len(self.resources) == 0 and orig_num_resources > 0:
             _LOGGER.warning("All resources have been filtered out.")
 
+    @staticmethod
+    def _annotation_spec_key(annotation_spec: AnnotationSpec) -> tuple[str, str]:
+        return annotation_spec.scope, annotation_spec.identifier
+
+    @staticmethod
+    def _annotation_spec_payload(annotation_spec: AnnotationSpec) -> dict[str, Any]:
+        payload = annotation_spec.asdict()
+        if isinstance(annotation_spec, CategoryAnnotationSpec):
+            payload['values'] = sorted(annotation_spec.values)
+        return payload
+
+    def _raise_ambiguous_worklist_schema(self, summary: str, details: Sequence[str]) -> None:
+        for detail in details:
+            _LOGGER.error(f"{summary}: {detail}")
+        raise DatamintDatasetException(
+            f"{summary}. Set worklists=None to infer labels from data."
+        )
+
+    def _get_worklists_for_schema(self) -> list[AnnotationWorklist]:
+        if self.worklists == 'all':
+            project = self.project
+            if project is None:
+                return []
+            return list(self._api.annotationsets.get_by_project(project))
+        return list(cast(Sequence[AnnotationWorklist], self.worklists or ()))
+
+    def _merge_worklist_annotation_specs(
+        self,
+        worklists: Sequence[AnnotationWorklist],
+    ) -> list[AnnotationSpec]:
+        merged_specs: dict[tuple[str, str], AnnotationSpec] = {}
+        spec_sources: dict[tuple[str, str], AnnotationWorklist] = {}
+        ambiguous_specs: list[str] = []
+
+        for worklist in worklists:
+            worklist._ensure_attr('annotations')
+            for annotation_spec in worklist.annotations:
+                key = self._annotation_spec_key(annotation_spec)
+                existing_spec = merged_specs.get(key)
+                if existing_spec is None:
+                    merged_specs[key] = annotation_spec
+                    spec_sources[key] = worklist
+                    continue
+
+                if existing_spec != annotation_spec:
+                    existing_worklist = spec_sources[key]
+                    ambiguous_specs.append(
+                        f"scope={key[0]!r}, identifier={key[1]!r}: "
+                        f"{existing_worklist.name} ({existing_worklist.id}) "
+                        f"{self._annotation_spec_payload(existing_spec)} != "
+                        f"{worklist.name} ({worklist.id}) "
+                        f"{self._annotation_spec_payload(annotation_spec)}"
+                    )
+
+        if ambiguous_specs:
+            self._raise_ambiguous_worklist_schema(
+                "Ambiguous annotation specs found across worklists",
+                ambiguous_specs,
+            )
+
+        return list(merged_specs.values())
+
+    def _merge_worklist_segmentation_groups(
+        self,
+        worklists: Sequence[AnnotationWorklist],
+    ) -> dict[str, dict[str, Any]]:
+        merged_groups: dict[str, dict[str, Any]] = {}
+        group_sources: dict[str, AnnotationWorklist] = {}
+        index_sources: dict[int, tuple[str, AnnotationWorklist]] = {}
+        ambiguous_groups: list[str] = []
+
+        for worklist in worklists:
+            response = self._api.annotationsets.get_segmentation_group(worklist.id)
+            groups = response.get('groups', {}) if response is not None else {}
+            for group_name, definition in groups.items():
+                normalized_definition = dict(definition)
+                existing_definition = merged_groups.get(group_name)
+
+                if existing_definition is None:
+                    group_index = normalized_definition.get('index')
+                    if isinstance(group_index, int):
+                        existing_index_entry = index_sources.get(group_index)
+                        if existing_index_entry is not None and existing_index_entry[0] != group_name:
+                            ambiguous_groups.append(
+                                f"index={group_index}: {existing_index_entry[0]!r} "
+                                f"from {existing_index_entry[1].name} ({existing_index_entry[1].id}) "
+                                f"conflicts with {group_name!r} from {worklist.name} ({worklist.id})"
+                            )
+                            continue
+                        index_sources[group_index] = (group_name, worklist)
+
+                    merged_groups[group_name] = normalized_definition
+                    group_sources[group_name] = worklist
+                    continue
+
+                if existing_definition != normalized_definition:
+                    existing_worklist = group_sources[group_name]
+                    ambiguous_groups.append(
+                        f"group={group_name!r}: {existing_worklist.name} ({existing_worklist.id}) "
+                        f"{existing_definition} != {worklist.name} ({worklist.id}) {normalized_definition}"
+                    )
+
+        if ambiguous_groups:
+            self._raise_ambiguous_worklist_schema(
+                "Ambiguous segmentation definitions found across worklists",
+                ambiguous_groups,
+            )
+
+        return merged_groups
+
     def _setup_labels(self) -> None:
         """Setup label sets and mappings."""
 
-        if self.project is not None:
-            worklist_schema = self._api.annotationsets._get_by_id(self.project.worklist_id)
-            annotations_specs: Sequence['AnnotationSpec'] = worklist_schema['annotations']
+        if self.project is not None and self.worklists is not None:
+            worklists = self._get_worklists_for_schema()
+            annotations_specs = self._merge_worklist_annotation_specs(worklists)
             frame_annotations_specs = [annspec for annspec in annotations_specs
                                        if annspec.scope == 'frame']
             image_annotations_specs = [annspec for annspec in annotations_specs
@@ -503,13 +616,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
             # Segmentation labels
             self.seglabel_list, self.seglabel2code = self._process_segmentation_group(
-                worklist_schema['segmentation_group']
+                self._merge_worklist_segmentation_groups(worklists)
             )
 
             if self.allow_external_annotations:
                 self._augment_labels_from_annotations()
         else:
-            _LOGGER.info("No project provided; inferring labels from annotations.")
+            _LOGGER.info("No project or worklists provided; inferring labels from annotations.")
             self.frame_lsets, self.frame_lcodes = self._infer_labels_set(framed=True)
             self.image_lsets, self.image_lcodes = self._infer_labels_set(framed=False)
             self.seglabel_list, self.seglabel2code = self._infer_segmentation_group()

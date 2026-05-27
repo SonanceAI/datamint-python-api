@@ -304,7 +304,7 @@ class BaseApi:
 
         Args:
             method: HTTP method (GET, POST, PUT, DELETE)
-            endpoint: API endpoint path
+            endpoint: API endpoint path (example: '/projects')
             **kwargs: Additional arguments for the request
 
         Returns:

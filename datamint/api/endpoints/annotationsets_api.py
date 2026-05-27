@@ -1,15 +1,22 @@
-from datamint.api.base_api import BaseApi
-from typing import TYPE_CHECKING, Any
-from datamint.entities import AnnotationSpec
-from collections.abc import Sequence
+from ..entity_base_api import CreatableEntityApi, UpdatableEntityApi
+from typing import TYPE_CHECKING, Any, Literal, overload
+from datamint.entities.annotation_worklist import AnnotationWorklist
+from typing_extensions import override
+import logging
 
 if TYPE_CHECKING:
     from datamint.entities import Project
 
+_LOGGER = logging.getLogger(__name__)
 
-class AnnotationSetsApi(BaseApi):
-    ENDPOINT_BASE = "/annotationsets"
 
+class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
+                            UpdatableEntityApi[AnnotationWorklist]):
+
+    def __init__(self, config: Any, client: Any = None) -> None:
+        super().__init__(config, AnnotationWorklist, 'annotationsets', client)
+
+    @overload
     def create(self,
                name: str,
                resource_ids: list[str],
@@ -18,7 +25,38 @@ class AnnotationSetsApi(BaseApi):
                annotators: list[str] | None = None,
                frame_labels: list[str] | None = None,
                image_labels: list[str] | None = None,
-               ) -> str:
+               *,
+               return_entity: Literal[True] = True,
+               exists_ok: bool = False
+               ) -> AnnotationWorklist: ...
+
+    @overload
+    def create(self,
+               name: str,
+               resource_ids: list[str],
+               description: str | None = None,
+               annotations: list[dict] | None = None,
+               annotators: list[str] | None = None,
+               frame_labels: list[str] | None = None,
+               image_labels: list[str] | None = None,
+               *,
+               return_entity: Literal[False],
+               exists_ok: bool = False
+               ) -> str: ...
+
+    @override
+    def create(self,
+               name: str,
+               resource_ids: list[str],
+               description: str | None = None,
+               annotations: list[dict] | None = None,
+               annotators: list[str] | None = None,
+               frame_labels: list[str] | None = None,
+               image_labels: list[str] | None = None,
+               *,
+               return_entity: bool = True,
+               exists_ok: bool = False,
+               ) -> str | AnnotationWorklist:
         """Create a new annotation worklist.
 
         Args:
@@ -44,43 +82,23 @@ class AnnotationSetsApi(BaseApi):
             payload['frame_labels'] = frame_labels
         if image_labels is not None:
             payload['image_labels'] = image_labels
-        response = self._make_request('POST', f'{self.ENDPOINT_BASE}', json=payload)
-        respdata = response.json()
-        if isinstance(respdata, dict):
-            return respdata.get('id')
-        return respdata
-
-    def update(self, annotation_set_id: str, **kwargs) -> None:
-        """Partially update an annotation worklist.
-
-        Args:
-            annotation_set_id: The annotation set ID to update.
-            **kwargs: Fields to update (e.g. ``name``, ``annotators``,
-                ``resource_ids``, ``status``).
-        """
-        payload = {k: v for k, v in kwargs.items() if v is not None}
-        self._make_request('PATCH', f'{self.ENDPOINT_BASE}/{annotation_set_id}', json=payload)
+        return self._create(payload, return_entity=return_entity, exists_ok=exists_ok)
 
     def update_segmentation_group(self,
-                                  annotation_set: 'str | Project',
+                                  annotation_worklist: str | AnnotationWorklist,
                                   definitions: list[dict],
                                   segmentation_value_type: str = 'single_label',
                                   renames: list[str] | None = None) -> None:
-        """Replace the segmentation-group definitions for an annotation set.
+        """Replace the segmentation-group definitions for an annotation worklist.
 
         Args:
-            annotation_set: The annotation set ID or Project instance.
+            annotation_worklist: The annotation worklist ID or AnnotationWorklist instance.
             definitions: List of definition dicts with keys ``identifier``,
                 ``color``, and ``index``.
             segmentation_value_type: ``'single_label'`` (default) or
                 ``'multi_label'``.
             renames: Optional rename pairs (old→new identifier strings).
         """
-        if isinstance(annotation_set, str):
-            annotation_set_id = annotation_set
-        else:
-            annotation_set_id = annotation_set.worklist_id
-
         payload: dict = {
             'segmentationData': {
                 'segmentationValueType': segmentation_value_type,
@@ -89,43 +107,38 @@ class AnnotationSetsApi(BaseApi):
         }
         if renames is not None:
             payload['renames'] = renames
-        endpoint = f'{self.ENDPOINT_BASE}/{annotation_set_id}/segmentation-group'
-        self._make_request('PUT', endpoint, json=payload)
+        self._make_entity_request('PUT', annotation_worklist,
+                                  'segmentation-group',
+                                  json=payload)
 
-    def get_segmentation_group(self, annotation_set: 'str | Project') -> dict:
-        """Get the segmentation group for a given annotation set ID or Project."""
+    def get_segmentation_group(self, annotation_set: str) -> dict:
+        """Get the segmentation group for a given annotation set ID."""
 
-        if isinstance(annotation_set, str):
-            annotation_set_id = annotation_set
-        else:
-            annotation_set_id = annotation_set.worklist_id
+        return self._make_entity_request('GET',
+                                         annotation_set,
+                                         'segmentation-group').json()
 
-        endpoint = f"/{self.ENDPOINT_BASE}/{annotation_set_id}/segmentation-group"
-        return self._make_request("GET", endpoint).json()
-
-    def get_annotations_specs(self, annotation_set: 'str | Project') -> Sequence[AnnotationSpec]:
-        """Get the annotations specs for a given annotation set ID or Project."""
-
-        if isinstance(annotation_set, str):
-            annotation_set_id = annotation_set
-        else:
-            annotation_set_id = annotation_set.worklist_id
-
-        result = self._get_by_id(annotation_set_id)
-
-        return [AnnotationSpec(**annspec) for annspec in result['annotations']]
-
-    def _get_by_id(self, annotation_set_id: str) -> dict[str, Any]:
-        """Get an annotation set by its ID.
+    def get_by_project(self, project: 'str | Project') -> list[AnnotationWorklist]:
+        """Get the worklist IDs associated with a project.
 
         Args:
-            annotation_set_id: The ID of the annotation set to retrieve.
+            project: The project ID or Project instance.
 
         Returns:
-            A dictionary representing the annotation set.
+            List of worklist IDs.
         """
-        endpoint = f"/{self.ENDPOINT_BASE}/{annotation_set_id}"
-        result = self._make_request("GET", endpoint).json()
-
-        result['annotations'] = [AnnotationSpec(**annspec) for annspec in result['annotations']]
-        return result
+        proj_id = CreatableEntityApi._entid(project)
+        response = self._make_request('GET',
+                                      endpoint=f'projects/{proj_id}/worklists')
+        ret = []
+        remap_keys = {'worklist_id': 'id', 'worklist_name': 'name'}
+        for item in response.json():
+            for old_key, new_key in remap_keys.items():
+                if old_key in item:
+                    if new_key in item:
+                        _LOGGER.warning(f"Key conflict when remapping '{old_key}' to '{new_key}' in response item: "
+                                        " both keys are present. Keeping original keys.")
+                    else:
+                        item[new_key] = item.pop(old_key)
+            ret.append(self._init_entity_obj(**item))
+        return ret

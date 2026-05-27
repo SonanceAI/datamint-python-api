@@ -2,17 +2,25 @@
 import logging
 from typing import Literal, TYPE_CHECKING
 from collections.abc import Sequence
+
 from .base_entity import BaseEntity, MISSING_FIELD
 from typing import Any
 import webbrowser
-from pydantic import PrivateAttr, Field
+from pydantic import PrivateAttr, Field, BaseModel
+from functools import cached_property
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.projects_api import ProjectsApi
     from .resource import Resource
     from datamint.entities.annotations.annotation_spec import AnnotationSpec
+    from datamint.entities.annotation_worklist import AnnotationWorklist
 
 logger = logging.getLogger(__name__)
+
+
+class _ProjectAnnotatorInfo(BaseModel):
+    email: str
+    worklist_ids: list[str]
 
 
 class Project(BaseEntity):
@@ -31,8 +39,6 @@ class Project(BaseEntity):
         dataset_id: ID of the associated dataset
         worklist_id: ID of the associated worklist
         ai_model_id: Optional ID of the associated AI model
-        viewable_ai_segs: Optional configuration for viewable AI segments
-        editable_ai_segs: Optional configuration for editable AI segments
         archived: Whether the project is archived
         resource_count: Total number of resources in the project
         annotated_resource_count: Number of resources that have been annotated
@@ -46,19 +52,15 @@ class Project(BaseEntity):
     created_at: str
     created_by: str
     dataset_id: str
-    worklist_id: str
     archived: bool
     resource_count: int
-    annotated_resource_count: int
     description: str | None
-    viewable_ai_segs: list | None
-    editable_ai_segs: list | None
     registered_model: Any | None = Field(default=MISSING_FIELD)
     ai_model_id: str | None = Field(default=MISSING_FIELD)
     closed_resources_count: int = Field(default=MISSING_FIELD)
     resources_to_annotate_count: int = Field(default=MISSING_FIELD)
     most_recent_experiment: str | None = Field(default=MISSING_FIELD)
-    annotators: list[dict] = Field(default=MISSING_FIELD)
+    annotators: list[_ProjectAnnotatorInfo] = Field(default=MISSING_FIELD)
     archived_on: str | None = Field(default=MISSING_FIELD)
     archived_by: str | None = Field(default=MISSING_FIELD)
     is_active_learning: bool = Field(default=MISSING_FIELD)
@@ -66,6 +68,10 @@ class Project(BaseEntity):
     require_review: bool = Field(default=MISSING_FIELD)
 
     _api: 'ProjectsApi' = PrivateAttr()
+
+    def fetch_worklists(self) -> Sequence['AnnotationWorklist']:
+        """Fetch the worklists associated with this project from the API."""
+        return self._api.get_worklists(self.id)
 
     def fetch_resources(self) -> Sequence['Resource']:
         """Fetch resources associated with this project from the API,
@@ -145,26 +151,13 @@ class Project(BaseEntity):
         """Open the project in the default web browser."""
         webbrowser.open(self.url)
 
-    def as_torch_dataset(self,
-                         root_dir: str | None = None,
-                         auto_update: bool = True,
-                         return_as_semantic_segmentation: bool = False):
-        from datamint.dataset import Dataset
-        return Dataset(project=self,
-                       root=root_dir,
-                       auto_update=auto_update,
-                       return_as_semantic_segmentation=return_as_semantic_segmentation,
-                       all_annotations=True)
-
-    def get_annotations_specs(self) -> Sequence['AnnotationSpec']:
-        """Get the annotations specs for this project.
-
-        Returns:
-            Sequence of AnnotationSpec instances for the project.
-
-        Example:
-            >>> project = api.projects.get_by_name("My Project")
-            >>> specs = project.get_annotations_specs()
-            >>> [spec.identifier for spec in specs]
-        """
-        return self._api.get_annotations_specs(self)
+    # def as_torch_dataset(self,
+    #                      root_dir: str | None = None,
+    #                      auto_update: bool = True,
+    #                      return_as_semantic_segmentation: bool = False):
+    #     from datamint.dataset import Dataset
+    #     return Dataset(project=self,
+    #                    root=root_dir,
+    #                    auto_update=auto_update,
+    #                    return_as_semantic_segmentation=return_as_semantic_segmentation,
+    #                    all_annotations=True)

@@ -1,4 +1,6 @@
-from pydantic import ConfigDict, BaseModel
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 from .types import AnnotationType
 
 
@@ -42,3 +44,13 @@ class AnnotationSpec(BaseModel):
 class CategoryAnnotationSpec(AnnotationSpec):
     type: AnnotationType = AnnotationType.CATEGORY
     values: list[str]
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CategoryAnnotationSpec):
+            return NotImplemented
+        return self._comparison_payload() == other._comparison_payload()
+
+    def _comparison_payload(self) -> dict[str, Any]:
+        payload = self.model_dump(warnings='none')
+        payload['values'] = sorted(self.values)
+        return payload

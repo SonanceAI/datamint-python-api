@@ -1,7 +1,7 @@
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         ChannelsApi, UsersApi, DatasetsInfoApi,
-                        AnnotationSetsApi, DeployModelApi,
+                        AnnotationWorklistApi, DeployModelApi,
                         InferenceApi
                         )
 from .endpoints.models_api import ModelsApi
@@ -25,7 +25,7 @@ class Api:
         'users': UsersApi,
         'datasets': DatasetsInfoApi,
         'models': ModelsApi,
-        'annotationsets': AnnotationSetsApi,
+        'annotationworklists': AnnotationWorklistApi,
         'deploy': DeployModelApi,
         'inference': InferenceApi,
     }
@@ -169,8 +169,13 @@ class Api:
         return self._get_endpoint('models')
 
     @property
-    def annotationsets(self) -> AnnotationSetsApi:
-        return self._get_endpoint('annotationsets')
+    def annotationworklists(self) -> AnnotationWorklistApi:
+        return self._get_endpoint('annotationworklists')
+
+    @property
+    def annotationsets(self) -> AnnotationWorklistApi:
+        """Alias for annotationworklists endpoint."""
+        return self.annotationworklists
 
     @property
     def deploy(self) -> DeployModelApi:
