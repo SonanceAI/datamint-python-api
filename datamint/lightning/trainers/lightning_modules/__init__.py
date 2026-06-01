@@ -1,6 +1,6 @@
 from .base import DatamintLightningModule
 from .segmentation_module import SegmentationModule
-from .segmentation_modules import SMPSegmentationModule, UNetPPModule
+from .segmentation_modules import SMPSegmentationModule, UNetPPModule, DeepLabV3PlusModule
 from .classification_module import ClassificationModule
 
-__all__ = ["DatamintLightningModule", "SegmentationModule", "SMPSegmentationModule", "UNetPPModule", "ClassificationModule"]
+__all__ = ["DatamintLightningModule", "SegmentationModule", "SMPSegmentationModule", "UNetPPModule", "DeepLabV3PlusModule", "ClassificationModule"]
