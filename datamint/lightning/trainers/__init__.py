@@ -6,6 +6,7 @@ from .seg2d_trainer import SemanticSegmentation2DTrainer
 from .seg3d_trainer import SemanticSegmentation3DTrainer
 from .classification_trainer import ClassificationTrainer, ImageClassificationTrainer
 from .specialized.unetpp import UNetPPTrainer
+from .specialized.deeplabv3plus import DeepLabV3PlusTrainer
 
 __all__ = [
     "BaseTrainer",
@@ -13,6 +14,7 @@ __all__ = [
     "SemanticSegmentation2DTrainer",
     "SemanticSegmentation3DTrainer",
     "UNetPPTrainer",
+    "DeepLabV3PlusTrainer",
     "ClassificationTrainer",
     "ImageClassificationTrainer",
 ]
