@@ -30,7 +30,7 @@ def _resource_payload(**overrides) -> dict:
         'metadata': {'width': 693, 'height': 582},
         'source_filepath': '/tmp/normal/normal.png',
         'tags': ['ultrasound', 'split:train'],
-        'user_info': {'firstname': None, 'lastname': None},
+        'user_info': {'firstname': 'John', 'lastname': 'Doe'},
     }
     payload.update(overrides)
     return payload
