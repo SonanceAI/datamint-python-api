@@ -113,3 +113,6 @@ dev/
 
 # vscode
 .vscode/
+
+# claude
+CLAUDE.md
