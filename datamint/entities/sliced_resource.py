@@ -1,12 +1,13 @@
 from __future__ import annotations
 import gzip
 import logging
-from typing import Any, Literal, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 from functools import cached_property
 from medimgkit.readers import read_array_normalized
 from medimgkit import dicom_utils, nifti_utils, ViewPlane
 from datamint.entities.cache_manager import CacheManager
 import numpy as np
+from .sliced_resource_base import SlicedResourceBase
 
 if TYPE_CHECKING:
     from datamint.entities import Resource
@@ -17,7 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 _SLICE_ARRAY_CACHEKEY = "slice_array"
 
 
-class SlicedVolumeResource:
+class SlicedVolumeResource(SlicedResourceBase):
     """Proxy that presents a single 2D slice of a 3D volume Resource.
 
     This class wraps a :class:`~datamint.entities.resource.Resource` and represents a specific 2D slice
@@ -47,7 +48,7 @@ class SlicedVolumeResource:
         slice_axis: ViewPlane,
         sliced_vols_cache: CacheManager | None = None,
     ):
-        self._parent = parent
+        super().__init__(parent)
         self.slice_index = slice_index
         self.slice_axis = slice_axis
         if sliced_vols_cache is None:
@@ -90,14 +91,6 @@ class SlicedVolumeResource:
     def get_depth(self) -> int:
         """A single slice has depth 1."""
         return 1
-
-    def _get_version_info(self) -> dict:
-        """Get version info from the parent resource for cache validation."""
-        return {
-            'created_at': self._parent.created_at,
-            'deleted_at': self._parent.deleted_at,
-            'size': self._parent.size,
-        }
 
     def _slice_cache_entity_id(self) -> str:
         return f"{self._parent.id}:axis{self.slice_axis}:slice{self.slice_index}"
@@ -159,13 +152,6 @@ class SlicedVolumeResource:
         return sliced
 
     @cached_property
-    def data_metainfo(self) -> dict:
-        """Volume metadata. Loaded once and cached for the lifetime of this resource."""
-        raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
-        _, metainfo = read_array_normalized(raw, return_metainfo=True)
-        return metainfo
-
-    @cached_property
     def slice_axis_idx(self) -> int:
         """Raw axis index for the slice axis. Computed once and cached."""
         if self._parent.is_dicom():
@@ -188,11 +174,6 @@ class SlicedVolumeResource:
             raise ValueError(
                 f"Unsupported resource type for slicing axis: {self._parent.filename}|{self._parent.mimetype}")
 
-    @property
-    def parent_resource(self) -> Resource:
-        """The original volume Resource being proxied."""
-        return self._parent
-
     def __repr__(self) -> str:
         axis_names = {0: 'axial', 1: 'coronal', 2: 'sagittal'}
         axis_name = axis_names.get(self.slice_axis, str(self.slice_axis))
@@ -201,16 +182,17 @@ class SlicedVolumeResource:
             f"axis='{axis_name}', slice={self.slice_index})"
         )
 
-    def is_cached(self) -> bool:
-        return self._parent.is_cached()
-
     def __getstate__(self):
-        state = super().__getstate__()
+        state = self.__dict__.copy()
         if '_api' in state:
             _LOGGER.info("Removing _api from SlicedVolumeResource state for pickling."
                          " It shouldn't be there.")
             del state['_api']
         if 'data_metainfo' in state:
-            _ = self.slice_axis_idx # ensure other cached properties are computed before deleting data_metainfo
+            _ = self.slice_axis_idx  # ensure dependent cached properties are available without data_metainfo
+            state = self.__dict__.copy()
             del state['data_metainfo']
         return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)

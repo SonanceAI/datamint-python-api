@@ -8,11 +8,11 @@ from __future__ import annotations
 import gzip
 import logging
 from typing import Any, TYPE_CHECKING
-from functools import cached_property
 
 from medimgkit.readers import read_array_normalized
 from datamint.entities.cache_manager import CacheManager
 import numpy as np
+from .sliced_resource_base import SlicedResourceBase
 
 if TYPE_CHECKING:
     from datamint.entities import Resource
@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger(__name__)
 _FRAME_ARRAY_CACHEKEY = "frame_array"
 
 
-class SlicedVideoResource:
+class SlicedVideoResource(SlicedResourceBase):
     """Proxy that presents a single frame of a video Resource.
 
     Wraps a :class:`~datamint.entities.resource.Resource` and represents a specific frame by index.
@@ -74,14 +74,6 @@ class SlicedVideoResource:
         """A single frame has depth 1."""
         return 1
 
-    def _get_version_info(self) -> dict:
-        """Get version info from the parent resource for cache validation."""
-        return {
-            'created_at': self._parent.created_at,
-            'deleted_at': self._parent.deleted_at,
-            'size': self._parent.size,
-        }
-
     def _frame_cache_entity_id(self) -> str:
         return f"{self._parent.id}:frame{self.frame_index}"
 
@@ -103,8 +95,8 @@ class SlicedVideoResource:
             return np.ascontiguousarray(cached_frame)
 
         raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
-        frame, self.data_metainfo = read_array_normalized(raw, return_metainfo=True, 
-                                                        index=self.frame_index)  # frame.shape is (C, H, W)
+        frame, self.data_metainfo = read_array_normalized(raw, return_metainfo=True,
+                                                          index=self.frame_index)  # frame.shape is (C, H, W)
         _LOGGER.debug(f'Fetched raw frame data for frame index {self.frame_index}. Frame shape: {frame.shape}')
         frame = np.ascontiguousarray(frame)
 
@@ -127,18 +119,6 @@ class SlicedVideoResource:
 
         return frame
 
-    @cached_property
-    def data_metainfo(self) -> dict:
-        """Video metadata. Loaded once and cached for the lifetime of this resource."""
-        raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
-        _, metainfo = read_array_normalized(raw, return_metainfo=True)
-        return metainfo
-
-    @property
-    def parent_resource(self) -> Resource:
-        """The original video Resource being proxied."""
-        return self._parent
-
     def __repr__(self) -> str:
         return (
             f"SlicedVideoResource(filename='{self._parent.filename}', "
@@ -153,3 +133,11 @@ class SlicedVideoResource:
         if name == 'data_metainfo':
             return super().__getattribute__(name)
         return getattr(self._parent, name)
+
+    def __getstate__(self) -> dict[str, Any]:
+        state = self.__dict__.copy()
+        state.pop('_api', None)
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self.__dict__.update(state)
