@@ -225,7 +225,7 @@ class BaseEntity(BaseEntityModel):
         # nested Pydantic models are preserved as model instances rather than
         # being converted to plain dicts (as model_dump() would do).
         for field_name in updated_ent.__pydantic_fields__:
-            if hasattr(updated_ent, field_name):
+            if hasattr(updated_ent, field_name): # FIXME: might be always true
                 setattr(self, field_name, getattr(updated_ent, field_name))
 
         # Also propagate any extra (unknown) fields

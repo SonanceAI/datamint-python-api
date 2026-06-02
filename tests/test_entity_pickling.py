@@ -124,7 +124,7 @@ def _make_line_annotation() -> LineAnnotation:
         id='line-1',
         identifier='measurement',
         geometry=LineGeometry(
-            points=((1, 2, None), (3, 4, None)),
+            points=((1, 2, 0), (3, 4, 0)),
             coordinate_system='pixel',
         ),
     )
@@ -135,7 +135,7 @@ def _make_box_annotation() -> BoxAnnotation:
         id='box-1',
         identifier='lesion',
         geometry=BoxGeometry(
-            points=((1, 2, None), (5, 6, None)),
+            points=((1, 2, 0), (5, 2, 0), (1, 6, 0), (5, 6, 0)),
             coordinate_system='pixel',
         ),
     )

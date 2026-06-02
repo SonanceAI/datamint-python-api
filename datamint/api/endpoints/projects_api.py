@@ -303,22 +303,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
         self._make_request('DELETE', f'/{self.endpoint_base}/{proj_id}/members/{user_id}')
 
     # ------------------------------------------------------------------
-    # Worklist
-    # ------------------------------------------------------------------
-
-    def get_worklist(self, project: str | Project) -> dict:
-        """Get the annotation worklist object for a project.
-
-        Args:
-            project: The project ID or Project instance.
-
-        Returns:
-            The worklist data dict.
-        """
-        response = self._make_entity_request('GET', project, add_path='worklist')
-        return response.json()
-
-    # ------------------------------------------------------------------
     # Annotation statuses
     # ------------------------------------------------------------------
 

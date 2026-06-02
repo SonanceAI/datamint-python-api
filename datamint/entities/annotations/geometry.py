@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Literal, TypeAlias
+from typing import Any, ClassVar, Literal, TypeAlias
 import logging
 from nibabel.nifti1 import Nifti1Image
 import numpy as np
@@ -9,7 +9,8 @@ from medimgkit import ViewPlane, dicom_utils, nifti_utils
 from pydantic import BaseModel, ConfigDict, field_validator
 
 CoordinateSystem: TypeAlias = Literal['pixel', 'patient']
-Point3D: TypeAlias = tuple[int | float, int | float, int | float | None]
+Point3D: TypeAlias = tuple[int | float, int | float, int | float]
+Vector3D: TypeAlias = tuple[float, float, float]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def _normalize_point(point: np.ndarray | list | tuple, *, allow_2d: bool = True)
         return (
             _normalize_required_coordinate(x),
             _normalize_required_coordinate(y),
-            None,
+            0,
         )
 
     if len(point) == 3:
@@ -57,11 +58,29 @@ def _normalize_point(point: np.ndarray | list | tuple, *, allow_2d: bool = True)
         return (
             _normalize_required_coordinate(x),
             _normalize_required_coordinate(y),
-            _normalize_optional_coordinate(z),
+            _normalize_required_coordinate(z),
         )
 
     expected = '2 or 3' if allow_2d else '3'
     raise ValueError(f'Points must contain {expected} coordinates, got {len(point)}.')
+
+
+def _normalize_vector(vector: np.ndarray | list | tuple | None) -> Vector3D | None:
+    if vector is None:
+        return None
+
+    if isinstance(vector, np.ndarray):
+        vector = vector.tolist()
+
+    if not isinstance(vector, (list, tuple)) or len(vector) != 3:
+        raise TypeError(f'Expected a 3D vector, got {type(vector)}.')
+
+    x, y, z = vector
+    return (
+        float(_normalize_required_coordinate(x)),
+        float(_normalize_required_coordinate(y)),
+        float(_normalize_required_coordinate(z)),
+    )
 
 
 class Geometry(BaseModel):
@@ -69,9 +88,9 @@ class Geometry(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
 
-    type: str
-    viewPlaneNormal: tuple[float, float, float] | None = None
-    viewUp: tuple[float, float, float] | None = None
+    type: ClassVar[str]
+    viewPlaneNormal: Vector3D | None = None
+    viewUp: Vector3D | None = None
     coordinate_system: CoordinateSystem = 'patient'
 
     def to_dict(self) -> dict[str, Any]:
@@ -153,14 +172,14 @@ class _TwoPointGeometry(Geometry):
             viewPlaneNormal = -np.cross(view_right, viewUp)
             viewPlaneNormal /= np.linalg.norm(viewPlaneNormal)
             viewUp /= np.linalg.norm(viewUp)
-            return viewPlaneNormal, viewUp
+            return _normalize_vector(viewPlaneNormal), _normalize_vector(viewUp)
         elif isinstance(metadata, pydicom.Dataset):
             slice_orient = get_slice_orientation(metadata, 0)
             viewPlaneNormal = slice_orient / np.linalg.norm(slice_orient)
             # the second direction vector in the image orientation corresponds to the "up" direction (column direction) in the view
             viewUp = dicom_utils.get_image_orientation(metadata, slice_index=0)[3:6]
             viewUp = viewUp / np.linalg.norm(viewUp)
-            return viewPlaneNormal, viewUp
+            return _normalize_vector(viewPlaneNormal), _normalize_vector(viewUp)
         else:
             raise TypeError(f'Unsupported metadata type: {type(metadata)}')
 
@@ -250,8 +269,171 @@ class _TwoPointGeometry(Geometry):
 
 
 class LineGeometry(_TwoPointGeometry):
-    type: Literal['line'] = 'line'
+    type: ClassVar[str] = 'line'
 
 
-class BoxGeometry(_TwoPointGeometry):
-    type: Literal['square'] = 'square'
+class BoxGeometry(Geometry):
+    points: tuple[Point3D, Point3D, Point3D, Point3D]
+    type: ClassVar[str] = 'square'
+
+    @field_validator('points', mode='before')
+    @classmethod
+    def _validate_points(cls, value: Any) -> tuple[Point3D, Point3D, Point3D, Point3D]:
+        if not isinstance(value, (list, tuple)) or len(value) != 4:
+            raise ValueError('Box geometries require exactly four corner points.')
+
+        point1, point2, point3, point4 = value
+        return (
+            _normalize_point(point1, allow_2d=False),
+            _normalize_point(point2, allow_2d=False),
+            _normalize_point(point3, allow_2d=False),
+            _normalize_point(point4, allow_2d=False),
+        )
+
+    @property
+    def point1(self) -> Point3D:
+        return self.points[0]
+
+    @property
+    def point2(self) -> Point3D:
+        return self.points[3]
+
+    @classmethod
+    def from_coordinates(
+        cls,
+        point1: tuple[int, int] | tuple[float, float, float],
+        point2: tuple[int, int] | tuple[float, float, float],
+        *,
+        coords_system: CoordinateSystem = 'pixel',
+        slice_plane: ViewPlane | None = None,
+        frame_index: int | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> 'BoxGeometry':
+        if coords_system == 'pixel':
+            return cls._from_pixel_coordinates(
+                point1,
+                point2,
+                frame_index=frame_index,
+                metadata=metadata,
+                slice_plane=slice_plane,
+            )
+
+        if coords_system == 'patient':
+            normalized_point1 = _normalize_point(point1, allow_2d=False)
+            normalized_point2 = _normalize_point(point2, allow_2d=False)
+            viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+            points = cls._box_points_from_corners(
+                normalized_point1,
+                normalized_point2,
+                viewPlaneNormal=viewPlaneNormal,
+                viewUp=viewUp,
+            )
+            return cls(
+                points=points,
+                coordinate_system='patient',
+                viewPlaneNormal=viewPlaneNormal,
+                viewUp=viewUp,
+            )
+
+        raise ValueError(f'Unknown coordinate system: {coords_system}')
+
+    @staticmethod
+    def _box_points_from_corners(
+        point1: Point3D,
+        point2: Point3D,
+        *,
+        viewPlaneNormal: Vector3D | None = None,
+        viewUp: Vector3D | None = None,
+    ) -> tuple[Point3D, Point3D, Point3D, Point3D]:
+        if viewPlaneNormal is None or viewUp is None:
+            z = point1[2]
+            return (
+                (point1[0], point1[1], z),
+                (point2[0], point1[1], z),
+                (point1[0], point2[1], z),
+                (point2[0], point2[1], z),
+            )
+
+        view_right = np.cross(np.asarray(viewPlaneNormal, dtype=float), np.asarray(viewUp, dtype=float))
+        view_right_norm = np.linalg.norm(view_right)
+        if view_right_norm == 0:
+            raise ValueError('Could not determine box orientation from metadata.')
+        view_right = view_right / view_right_norm
+
+        normalized_view_up = np.asarray(viewUp, dtype=float)
+        view_up_norm = np.linalg.norm(normalized_view_up)
+        if view_up_norm == 0:
+            raise ValueError('Could not determine box orientation from metadata.')
+        normalized_view_up = normalized_view_up / view_up_norm
+        view_down = -normalized_view_up
+
+        point1_arr = np.asarray(point1, dtype=float)
+        point2_arr = np.asarray(point2, dtype=float)
+        delta = point2_arr - point1_arr
+        width = float(np.dot(delta, view_right))
+        height = float(np.dot(delta, view_down))
+
+        top_right = point1_arr + width * view_right
+        bottom_left = point1_arr + height * view_down
+
+        return (
+            _normalize_point(point1_arr, allow_2d=False),
+            _normalize_point(top_right, allow_2d=False),
+            _normalize_point(bottom_left, allow_2d=False),
+            _normalize_point(point2_arr, allow_2d=False),
+        )
+
+    @classmethod
+    def _from_pixel_coordinates(
+        cls,
+        point1: tuple[int, int] | tuple[float, float, float],
+        point2: tuple[int, int] | tuple[float, float, float],
+        *,
+        frame_index: int | None = None,
+        slice_plane: ViewPlane | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> 'BoxGeometry':
+        normalized_point1 = _normalize_point(point1)
+        normalized_point2 = _normalize_point(point2)
+
+        viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+
+        if metadata is not None:
+            patient_point1, patient_point2 = _TwoPointGeometry._pixel_to_patient_coordinates(
+                normalized_point1,
+                normalized_point2,
+                frame_index=frame_index,
+                slice_plane=slice_plane,
+                metadata=metadata,
+            )
+            points = cls._box_points_from_corners(
+                _normalize_point(patient_point1, allow_2d=False),
+                _normalize_point(patient_point2, allow_2d=False),
+                viewPlaneNormal=viewPlaneNormal,
+                viewUp=viewUp,
+            )
+            return cls(
+                points=points,
+                coordinate_system='patient',
+                viewPlaneNormal=viewPlaneNormal,
+                viewUp=viewUp,
+            )
+
+        _LOGGER.warning('No metadata provided for pixel to patient coordinate conversion;'
+                        ' This is not recommended as the coordinates might be wrongly interpreted')
+
+        z_index = frame_index
+        pixel_point1 = (
+            normalized_point1[0],
+            normalized_point1[1],
+            z_index if z_index is not None else normalized_point1[2],
+        )
+        pixel_point2 = (
+            normalized_point2[0],
+            normalized_point2[1],
+            z_index if z_index is not None else normalized_point2[2],
+        )
+        return cls(
+            points=cls._box_points_from_corners(pixel_point1, pixel_point2),
+            coordinate_system='pixel',
+        )

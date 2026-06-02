@@ -1090,6 +1090,62 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             raise TypeError('Expected a single annotation id for image classification creation.')
         return created
 
+    def _resolve_metadata_for_annotation(
+        self,
+        resource: str | Resource,
+        coords_system: CoordinateSystem,
+        metadata: pydicom.Dataset | Nifti1Image | Any,
+    ) -> pydicom.Dataset | Nifti1Image | Any:
+        """Resolve imaging metadata for geometry coordinate conversion.
+
+        For simple 2D image resources (PNG, JPEG, etc.), metadata is not needed
+        and ``None`` is returned directly. For DICOM and NIfTI resources, the
+        metadata is fetched from the server or converted as necessary.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            coords_system: The coordinate system ('pixel' or 'patient').
+            metadata: Pre-existing metadata, or ``None`` to fetch/convert.
+
+        Returns:
+            A ``pydicom.Dataset`` or ``Nifti1Image`` suitable for coordinate
+            conversion, or ``None`` when not required.
+        """
+        # No metadata needed for pixel coordinates
+        if coords_system != 'patient':
+            return None
+
+        # Metadata already provided
+        if metadata is not None:
+            return metadata
+
+        # Simple 2D image resources (PNG, JPEG, etc.) don't have imaging
+        # metadata for coordinate conversion – skip it.
+        if isinstance(resource, Resource):
+            if resource.is_image():
+                return None
+        else:
+            # Need to resolve the Resource first
+            resource = self._resources_api.get_by_id(self._entid(resource))
+            if resource.is_image():
+                return None
+
+        # DICOM: fetch raw dataset
+        if resource.is_dicom():
+            return resource.fetch_file_data(use_cache='loadonly', auto_convert=True)
+
+        # NIfTI: convert stored dict to NIfTI object
+        if resource.is_nifti():
+            dict_metadata = resource.metadata
+            return metadata_to_nifti_obj(dict_metadata)
+
+        # Other types cannot support patient-coordinate conversion
+        raise NotImplementedError(
+            'pixel to patient coordinate conversion is only supported for '
+            'DICOM and NIfTI resources. Please provide the metadata or send '
+            'coordinates in patient coordinates.'
+        )
+
     def add_line_annotation(self,
                             point1: tuple[int, int] | tuple[float, float, float],
                             point2: tuple[int, int] | tuple[float, float, float],
@@ -1114,7 +1170,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 to the DICOM metadata.
             If `coords_system` is 'patient', it must be a 3d point.
             point2: The second point of the line. See `point1` for more details.
-            resource_id: The resource unique id.
+            resource: The resource unique id or Resource instance.
             identifier: The annotation identifier, also as known as the annotation's label.
             frame_index: The frame index of the annotation.
             dicom_metadata: (DEPRECATED) The DICOM metadata of the image. If provided, the coordinates will be converted to the
@@ -1141,27 +1197,18 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 )
         """
 
-        resource_id = self._entid(resource)
+        resolved_metadata = self._resolve_metadata_for_annotation(
+            resource,
+            coords_system,
+            metadata,
+        )
 
         if dicom_metadata is not None:
             import warnings
             warnings.warn("The 'dicom_metadata' parameter is deprecated. "
                           "Please use 'metadata' parameter instead", DeprecationWarning)
-            metadata = dicom_metadata
-
-        if metadata is None and coords_system != 'patient':
-            # collect it from server
-            if not isinstance(resource, Resource):
-                resource = self._resources_api.get_by_id(resource_id)
-            if resource.is_dicom():
-                metadata = resource.fetch_file_data(use_cache='loadonly',
-                                                    auto_convert=True)
-            elif resource.is_nifti():
-                dict_metadata = resource.metadata
-                metadata = metadata_to_nifti_obj(dict_metadata)
-            else:
-                raise NotImplementedError('pixel to patient coordinate conversion is only supported for DICOM and NIfTI resources.'
-                                          ' Please provide the metadata or send coordinates in patient coordinates.')
+            if resolved_metadata is None:
+                resolved_metadata = dicom_metadata
 
         annotation = LineAnnotation.from_points(
             point1,
@@ -1169,7 +1216,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             identifier=identifier,
             frame_index=frame_index,
             slice_plane=slice_plane,
-            metadata=metadata,
+            metadata=resolved_metadata,
             coords_system=coords_system,
             annotation_worklist_id=worklist_id,
             imported_from=imported_from,
@@ -1177,6 +1224,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id,
         )
 
+        resource_id = self._entid(resource)
         created = self.create(resource_id, annotation)
         if not isinstance(created, str):
             raise TypeError('Expected a single annotation id for line annotation creation.')
@@ -1185,23 +1233,77 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     def add_box_annotation(self,
                            point1: tuple[int, int] | tuple[float, float, float],
                            point2: tuple[int, int] | tuple[float, float, float],
-                           resource_id: str,
+                           resource: str | Resource,
                            identifier: str,
                            frame_index: int | None = None,
-                           dicom_metadata: pydicom.Dataset | str | Path | None = None,
+                           slice_plane: ViewPlane | None = None,
+                           metadata: pydicom.Dataset | Nifti1Image | None = None,
                            coords_system: CoordinateSystem = 'pixel',
-                           project: str | None = None,
                            worklist_id: str | None = None,
                            imported_from: str | None = None,
                            author_email: str | None = None,
                            model_id: str | None = None) -> str:
-        """Add a box annotation to a resource."""
+        """
+        Add a box annotation to a resource.
+
+        Args:
+            point1: The first point of the box (top-left corner). Can be a 2d or 3d point.
+                If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
+                If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
+                to the DICOM metadata.
+            point2: The second point of the box (bottom-right corner). See `point1` for more details.
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier, also known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            slice_plane: The view plane for the slice (e.g., ViewPlane.AXIAL, ViewPlane.SAGITTAL, ViewPlane.AXIAL).
+            metadata: The DICOM or NIfTI metadata of the resource. If provided and `coords_system` is 'patient',
+                the coordinates will be converted automatically using the metadata.
+            coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'.
+                If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
+            model_id: The model unique id. Optional.
+
+        Example:
+            .. code-block:: python
+
+                resource = api.resources.get_list(project_name='Example Project')[0]
+
+                # Pixel coordinates
+                api.annotations.add_box_annotation(
+                    (0, 0),
+                    (100, 200),
+                    resource=resource,
+                    identifier='Box1',
+                    frame_index=2,
+                )
+
+                # Patient coordinates (requires DICOM/NIfTI metadata)
+                api.annotations.add_box_annotation(
+                    (10.5, 20.3, 30.1),
+                    (50.2, 60.4, 70.5),
+                    resource=resource,
+                    identifier='Box2',
+                    coords_system='patient',
+                )
+        """
+
+        resolved_metadata = self._resolve_metadata_for_annotation(
+            resource,
+            coords_system,
+            metadata,
+        )
+
+        resource_id = self._entid(resource)
+
         annotation = BoxAnnotation.from_points(
             point1,
             point2,
             identifier=identifier,
             frame_index=frame_index,
-            dicom_metadata=dicom_metadata,
+            slice_plane=slice_plane,
+            metadata=resolved_metadata,
             coords_system=coords_system,
             annotation_worklist_id=worklist_id,
             imported_from=imported_from,
