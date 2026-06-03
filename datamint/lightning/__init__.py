@@ -10,6 +10,7 @@ from .trainers import (
     SegmentationTrainer,
     UNetPPTrainer,
     DeepLabV3PlusTrainer,
+    TransUNetTrainer,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "SegmentationTrainer",
     "UNetPPTrainer",
     "DeepLabV3PlusTrainer",
+    "TransUNetTrainer",
 ]
