@@ -8,6 +8,8 @@ from .classification_trainer import ClassificationTrainer, ImageClassificationTr
 from .specialized.unetpp import UNetPPTrainer
 from .specialized.deeplabv3plus import DeepLabV3PlusTrainer
 from .specialized.transunet import TransUNetTrainer
+from .specialized.yolox import YOLOXTrainer
+from .detection_trainer import DetectionTrainer
 
 __all__ = [
     "BaseTrainer",
@@ -17,6 +19,8 @@ __all__ = [
     "UNetPPTrainer",
     "DeepLabV3PlusTrainer",
     "TransUNetTrainer",
+    "YOLOXTrainer",
     "ClassificationTrainer",
     "ImageClassificationTrainer",
+    "DetectionTrainer",
 ]

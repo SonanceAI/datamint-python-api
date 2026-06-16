@@ -11,6 +11,7 @@ from .trainers import (
     UNetPPTrainer,
     DeepLabV3PlusTrainer,
     TransUNetTrainer,
+    YOLOXTrainer,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "UNetPPTrainer",
     "DeepLabV3PlusTrainer",
     "TransUNetTrainer",
+    "YOLOXTrainer",
 ]

@@ -107,9 +107,10 @@ class DatamintDataModule(L.LightningDataModule):
         use_server_splits: bool | None = None,
         train_transform: Callable | None = None,
         eval_transform: Callable | None = None,
+        collate_fn: Callable | None = None,
     ) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform"])
+        self.save_hyperparameters(ignore=["dataset", "train_transform", "eval_transform", "collate_fn"])
         if train_transform is not None:
             self.hparams["train_transform"] = _serialize_transform(train_transform)
         if eval_transform is not None:
@@ -135,6 +136,7 @@ class DatamintDataModule(L.LightningDataModule):
         self._use_server_splits = use_server_splits
         self._train_transform = train_transform
         self._eval_transform = eval_transform
+        self.collate_fn = collate_fn
 
         # Populated by setup()
         self._train_dataset: DatamintBaseDataset | None = None
@@ -220,7 +222,7 @@ class DatamintDataModule(L.LightningDataModule):
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
             persistent_workers=self._num_workers > 0,
-            collate_fn=self.dataset.get_collate_fn(),
+            collate_fn=self.collate_fn if self.collate_fn is not None else self.dataset.get_collate_fn(),
         )
 
     def val_dataloader(self):
@@ -233,7 +235,7 @@ class DatamintDataModule(L.LightningDataModule):
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
             persistent_workers=self._num_workers > 0,
-            collate_fn=self.dataset.get_collate_fn(),
+            collate_fn=self.collate_fn if self.collate_fn is not None else self.dataset.get_collate_fn(),
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -251,7 +253,7 @@ class DatamintDataModule(L.LightningDataModule):
             num_workers=self._num_workers,
             pin_memory=self._pin_memory,
             persistent_workers=self._num_workers > 0,
-            collate_fn=self.dataset.get_collate_fn(),
+            collate_fn=self.collate_fn if self.collate_fn is not None else self.dataset.get_collate_fn(),
         )
 
     def get_mlflow_dataset_split(self, split: str) -> 'DatamintMLflowDataset | None':

@@ -17,6 +17,7 @@ from .volume_dataset import VolumeDataset
 from .video_dataset import VideoDataset
 from .sliced_dataset import SlicedVolumeDataset
 from .sliced_video_dataset import SlicedVideoDataset
+from .detection_dataset import DetectionDataset, detection_collate_fn
 
 __all__ = [
     # Core
@@ -29,4 +30,6 @@ __all__ = [
     'VideoDataset',
     'SlicedVolumeDataset',
     'SlicedVideoDataset',
+    'DetectionDataset',
+    'detection_collate_fn',
 ]
