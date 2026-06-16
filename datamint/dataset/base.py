@@ -501,15 +501,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if isinstance(annotation_spec, CategoryAnnotationSpec):
             payload['values'] = sorted(annotation_spec.values)
         return payload
-
-    @staticmethod
-    def _get_patient_id(resource: 'Resource') -> str | None:
-        """ Extract patient ID from resource, if available. We also check for metadata in case of DICOM resources where patient_id might be stored in metadata. """
-        patient_id = getattr(resource, 'patient_id', None)
-        if patient_id is None and hasattr(resource, 'metadata') and isinstance(resource.metadata, dict):
-            patient_id = resource.metadata.get('PatientID')
-        
-        return patient_id
     
     def _raise_ambiguous_worklist_schema(self, summary: str, details: Sequence[str]) -> None:
         for detail in details:
@@ -1390,7 +1381,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         patient_indices: dict[str | None, list[int]] = defaultdict(list)
         
         for idx, resource in enumerate(self.resources):
-            pid = self._get_patient_id(resource)
+            pid = resource.get_patient_id()
             
             if pid is None:
                 if none_patient_id_strategy == 'error':

@@ -1,6 +1,5 @@
 """Tests for patient-wise dataset splitting: group_by_patient() and split(by_patient=True)."""
 import pytest
-from types import SimpleNamespace
 
 from datamint.dataset.base import DatamintBaseDataset
 
@@ -22,8 +21,20 @@ class _TestDataset(DatamintBaseDataset):
         return {'image': img, 'segmentations': segmentations}
 
 
+class _MockResource:
+    def __init__(self, resource_id: str, patient_id: str | None, metadata: dict | None = None):
+        self.id = resource_id
+        self.patient_id = patient_id
+        self.metadata = metadata or {}
+
+    def get_patient_id(self) -> str | None:
+        if self.patient_id is not None:
+            return self.patient_id
+        return self.metadata.get('PatientID')
+
+
 def _make_resource(resource_id: str, patient_id: str | None, metadata: dict | None = None):
-    return SimpleNamespace(id=resource_id, patient_id=patient_id, metadata=metadata or {})
+    return _MockResource(resource_id, patient_id, metadata)
 
 
 def _make_dataset(patient_ids: list[str | None]) -> _TestDataset:
@@ -162,8 +173,8 @@ class TestSplitByPatient:
         ds = _make_dataset(patient_ids)
         parts = ds.split(train=0.7, test=0.3, by_patient=True, seed=42)
 
-        train_pids = {ds._get_patient_id(r) for r in parts['train'].resources}
-        test_pids = {ds._get_patient_id(r) for r in parts['test'].resources}
+        train_pids = {r.get_patient_id() for r in parts['train'].resources}
+        test_pids = {r.get_patient_id() for r in parts['test'].resources}
         assert train_pids & test_pids == set()
 
     def test_all_resources_accounted_for(self):
@@ -210,9 +221,9 @@ class TestSplitByPatient:
         parts = ds.split(train=0.7, val=0.15, test=0.15, by_patient=True, seed=42)
 
         assert set(parts.keys()) == {'train', 'val', 'test'}
-        train_pids = {ds._get_patient_id(r) for r in parts['train'].resources}
-        val_pids = {ds._get_patient_id(r) for r in parts['val'].resources}
-        test_pids = {ds._get_patient_id(r) for r in parts['test'].resources}
+        train_pids = {r.get_patient_id() for r in parts['train'].resources}
+        val_pids = {r.get_patient_id() for r in parts['val'].resources}
+        test_pids = {r.get_patient_id() for r in parts['test'].resources}
         assert not (train_pids & val_pids)
         assert not (train_pids & test_pids)
         assert not (val_pids & test_pids)
