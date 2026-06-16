@@ -484,7 +484,12 @@ class Resource(BaseResource):
         version_info = self._generate_version_info()
         cached_data = self._cache.get(self.id, _IMAGE_CACHEKEY, version_info)
         return cached_data is not None
-
+    
+    def get_patient_id(self) -> str | None:
+        if self.patient_id is not None:
+            return self.patient_id
+        return self.metadata.get('PatientID') if isinstance(self.metadata, dict) else None
+    
     @property
     def filepath_cached(self) -> Path | None:
         """Get the file path of the cached resource data, if available.

@@ -501,7 +501,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if isinstance(annotation_spec, CategoryAnnotationSpec):
             payload['values'] = sorted(annotation_spec.values)
         return payload
-
+    
     def _raise_ambiguous_worklist_schema(self, summary: str, details: Sequence[str]) -> None:
         for detail in details:
             _LOGGER.error(f"{summary}: {detail}")
@@ -1159,6 +1159,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         use_server_splits: bool | None = None,
         use_project_splits: bool | None = None,
         as_of_timestamp: str | None = None,
+        by_patient: bool = False,
+        none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'] = 'individual',
         **splits: float,
     ) -> dict[str, 'DatamintBaseDataset']:
         """Split the dataset into multiple named subsets.
@@ -1176,7 +1178,10 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
             # Local split
             parts = dataset.split(train=0.7, val=0.15, test=0.15, seed=42)
-            train_ds = parts['train']
+            train_ds = parts['train']   
+            
+            # Patient-wise split 
+            parts = dataset.split(train = 0.8, test = 0.2, by_patient=True, seed=42)
 
             # Project-scoped split — inferred for project-backed datasets
             parts = dataset.split()
@@ -1186,6 +1191,12 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         Args:
             seed: Random seed for reproducible local splitting.
+            by_patient: If ``True``, shuffle and assign whole patients to
+                splits rather than individual resources, preventing cross-patient
+                data leakage. Requires ratio kwards; mutually exclusive with
+                ``use_project_splits`` and ``use_server_splits``.
+            none_patient_id_strategy: Strategy for handling resources without patient IDs 
+            when ``by_patient=True``. See :meth:`group_by_patient` for details.
             use_project_splits: If ``True``, read split assignments from the
                 project splits API. If ``None`` (default), project-backed
                 datasets prefer this mode when no ratios are provided.
@@ -1204,6 +1215,18 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Raises:
             ValueError: If ratios are invalid or arguments conflict.
         """
+        if by_patient:
+            if use_project_splits or use_server_splits:
+                raise ValueError(
+                    "by_patient=True cannot be combined with use_project_splits or use_server_splits."
+                )
+        
+            if not splits:
+                raise ValueError(
+                    "by_patient=True requires ratio kwargs (e.g. train=0.8, test=0.2) to determine split sizes."
+                )
+            return self._split_locally_by_patient(dict(splits), seed, none_patient_id_strategy)
+        
         if use_project_splits is None and use_server_splits is None and not splits:
             use_project_splits = getattr(self, 'project', None) is not None or as_of_timestamp is not None
 
@@ -1349,6 +1372,112 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         return result
 
+    def _group_resources_indices_by_patient(
+        self,
+        none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'],
+    ) -> 'dict[str | None, list[int]]':
+        from collections import defaultdict
+        
+        patient_indices: dict[str | None, list[int]] = defaultdict(list)
+        
+        for idx, resource in enumerate(self.resources):
+            pid = resource.get_patient_id()
+            
+            if pid is None:
+                if none_patient_id_strategy == 'error':
+                    raise ValueError((
+                        f"Resource at index {idx} (id={getattr(resource, 'id', '?')!r}) has no patient_id."
+                        "Set none_patient_id_strategy='individual' to treat each as its own patient, "
+                        "'group' to group all together, or 'skip' to exclude them."
+                    ))
+                elif none_patient_id_strategy == 'skip':
+                    continue
+                elif none_patient_id_strategy == 'individual':
+                    pid = f'__no_patient_{getattr(resource, "id", idx)}__'
+            
+            patient_indices[pid].append(idx)
+        
+        return dict(patient_indices)
+    
+    def group_by_patient(
+        self, 
+        none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'] = 'individual',
+    ) -> 'dict[str | None, DatamintBaseDataset]':
+        """ Group dataset resources by patient ID. 
+        Returns one-subdataset per unique patient. Useful for patient-level operations such as leave-one-patient-out cross-validation.
+        
+        Args:
+            none_patient_id_strategy: How to handle resources with no patient_id. 
+                - 'individual': Treat each resource with no patient_id as its own unique patient (default).
+                - 'group': Group all resources with no patient_id into a single "None" patient group.
+                - 'skip': Exclude resources with no patient_id from the result.
+                - 'error': Raise an error if any resource has no patient_id.
+        
+        Returns:
+            Dict mapping patient_id (or None) to a DatamintBaseDataset containing only resources for that patient.
+        
+        """
+        
+        _valid_strategies = 'individual', 'group', 'skip', 'error'
+        
+        if none_patient_id_strategy not in _valid_strategies:
+            raise ValueError(
+                f"none_patient_id_strategy must be one of {_valid_strategies}, got {none_patient_id_strategy!r}"
+            )
+        
+        patient_indices = self._group_resources_indices_by_patient(none_patient_id_strategy)
+        
+        return {pid: self.subset(indices) for pid, indices in patient_indices.items()}
+    
+    def _split_locally_by_patient(
+        self,
+        splits: dict[str, float],
+        seed: int | None,
+        none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'],
+    ) -> 'dict[str, DatamintBaseDataset]':
+        """Split dataset by patient groups, ensuring all resources from the same patient are in the same split."""
+        
+        if len(splits) < 2:
+            raise ValueError("At least 2 splits are required (e.g. train=0.7, test=0.3).")
+
+        for name, ratio in splits.items():
+            if ratio <= 0:
+                raise ValueError (f"Split ratio for '{name}' must be positive, got {ratio}.")
+        
+        total = sum(splits.values())
+        if abs(total - 1.0) > 0.01:
+            raise ValueError(
+                f"Split ratios must sum to 1.0 (got {total:.4f}). Provided: {splits} "
+            )
+        
+        patient_indices = self._group_resources_indices_by_patient(none_patient_id_strategy)
+        patients_ids = list(patient_indices.keys())
+        
+        import random 
+        rng = random.Random(seed)
+        rng.shuffle(patients_ids)
+        
+        n = len(patients_ids)
+        split_items = list(splits.items())
+        split_resource_indices: dict[str, list[int]] = {name: [] for name in splits}
+        
+        start = 0
+        for i, (name, ratio) in enumerate(split_items):
+            end = n if i == len(split_items) - 1 else start + round(ratio * n)
+            for pid in patients_ids[start:end]:
+                split_resource_indices[name].extend(patient_indices[pid])
+            start = end 
+        
+        result = {name: self.subset(indices) for name, indices in split_resource_indices.items()}
+        
+        for name, ds in result.items():
+            ds.split_name = name
+            ds.split_source = 'local_by_patient'
+            ds.split_as_of_timestamp = None
+            
+        return result
+                    
+    
     def filter(
         self,
         *,
