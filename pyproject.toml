@@ -64,6 +64,8 @@ pytest-cov = { version = "^7.1.0", optional = true }
 responses = { version = "^0.20.0", optional = true }
 aioresponses = { version = "^0.7.8", optional = true }
 respx = { version = ">=0.22.0", optional = true }
+nnunetv2 = { version = ">=2.4,<3.0", optional = true }
+filelock = { version = ">=3.0", optional = true }
 
 
 [tool.poetry.group.dev.dependencies] # for `poetry install`
@@ -77,6 +79,7 @@ respx = ">=0.22.0"
 [tool.poetry.extras]
 docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "setuptools"]
 dev = ["pytest", "pytest-cov", "responses", "aioresponses", "respx"]
+nnunet = ["nnunetv2", "filelock"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

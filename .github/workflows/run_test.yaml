@@ -68,8 +68,17 @@ jobs:
         run: |
           pytest tests --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --cov=datamint --cov-report=html --tb=short -v
         timeout-minutes: 45
-        env: 
+        env:
             PYTHONIOENCODING: utf-8
+        if: runner.os != 'Windows'
+
+      - name: Run import tests with pytest (Windows)
+        run: |
+          pytest tests/test_imports.py --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml --tb=short -v
+        timeout-minutes: 10
+        env:
+            PYTHONIOENCODING: utf-8
+        if: runner.os == 'Windows'
 
       - name: Test datamint-config CLI
         run: datamint-config --api-key testapikey

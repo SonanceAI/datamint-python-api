@@ -273,7 +273,7 @@ class DatamintDataModule(L.LightningDataModule):
         if getattr(mlds.source, "_split", "") != split:
             _LOGGER.warning(
                 f"Requested MLflow dataset for split '{split}', but the dataset's "
-                f"split is '{getattr(mlds.source, "_split", "")}'. This may cause confusion in MLflow."
+                f"split is '{getattr(mlds.source, '_split', '')}'. This may cause confusion in MLflow."
             )
         return mlds
 
