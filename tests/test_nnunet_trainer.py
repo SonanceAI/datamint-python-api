@@ -33,7 +33,7 @@ def _mock_nnunetv2():
         def print_to_log_file(self, *a, **kw): pass
     submodules['nnunetv2.training.nnUNetTrainer.nnUNetTrainer'].nnUNetTrainer = _FakeNNUNetTrainer
     for name, mod in submodules.items():
-        sys.modules.setdefault(name, mod)
+        sys.modules[name] = mod
 
 _mock_nnunetv2()
 

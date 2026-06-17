@@ -318,8 +318,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         _LOGGER.info("Prefetch complete.")
 
     def __getstate__(self) -> dict:
-        state = super().__getstate__()
-        # Strip _api (contains unpicklable connections)
+        get = getattr(super(), '__getstate__', None)
+        state = get() if get is not None else self.__dict__.copy()
         if '_api' in state:
             del state['_api']
         return state
