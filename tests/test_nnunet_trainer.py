@@ -94,9 +94,10 @@ def test_fingerprint_and_plan_writes_expected_files(trainer, tmp_path):
     def fake_plan():
         (preprocessed_dir / 'nnUNetPlans.json').write_text('{}')
 
-    with patch('nnunetv2.experiment_planning.dataset_fingerprint'
-               '.fingerprint_extractor.DatasetFingerprintExtractor') as MockFP, \
-         patch('nnunetv2.experiment_planning.experiment_planners.default_experiment_planner.ExperimentPlanner') as MockPlan:
+    fp_mod = sys.modules['nnunetv2.experiment_planning.dataset_fingerprint.fingerprint_extractor']
+    plan_mod = sys.modules['nnunetv2.experiment_planning.experiment_planners.default_experiment_planner']
+    with patch.object(fp_mod, 'DatasetFingerprintExtractor') as MockFP, \
+         patch.object(plan_mod, 'ExperimentPlanner') as MockPlan:
         MockFP.return_value.run.side_effect = fake_fp
         MockPlan.return_value.plan_experiment.side_effect = fake_plan
         trainer._run_fingerprint_and_plan(dataset_id=1)
