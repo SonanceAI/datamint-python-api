@@ -1,7 +1,16 @@
 """Tests for YOLOXModule."""
+import sys
 import torch
 import pytest
 from unittest.mock import MagicMock, patch
+
+# Mock yolox before any import touches it. sys.modules['yolox.models'] must be
+# the same object as getattr(yolox_mock, 'models') so that both `import yolox.models`
+# (production code) and patch('yolox.models.yolox_s') (tests) resolve to the same object.
+_yolox_mock = MagicMock()
+sys.modules.setdefault('yolox', _yolox_mock)
+sys.modules.setdefault('yolox.models', _yolox_mock.models)
+sys.modules.setdefault('yolox.utils', _yolox_mock.utils)
 
 from datamint.lightning.trainers.lightning_modules.detection_modules.yolox_module import YOLOXModule
 from datamint.entities.annotations import BoxAnnotation
