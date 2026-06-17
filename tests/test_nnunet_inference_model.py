@@ -1,7 +1,9 @@
 """"
-Test nnU-Net prediction pipeline using NNUNetInferenceModel. This includes loading the model context, running inference on a mock resource, and verifying that the output segmentation has the expected class map. 
+Test nnU-Net prediction pipeline using NNUNetInferenceModel. This includes loading the model context, running inference on a mock resource, and verifying that the output segmentation has the expected class map.
 We also check that temporary directories are cleaned up after prediction.
 """
+import pytest
+pytest.importorskip("nnunetv2", minversion="2.4")
 
 import sys
 import numpy as np

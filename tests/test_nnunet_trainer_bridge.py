@@ -2,6 +2,7 @@
 logged correctly, and that the version guard prevents usage with old nnunetv2 versions."""
 import json
 import pytest
+pytest.importorskip("nnunetv2", minversion="2.4")
 from unittest.mock import MagicMock, patch
 import sys
 

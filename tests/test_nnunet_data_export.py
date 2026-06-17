@@ -1,6 +1,8 @@
 """
 Testing the DatamintToNNUNetExporter class to ensure it correctly writes dataset.json, preserves voxel spacing, merges segmentations, and creates the expected directory structure for nnUNet.
 """
+import pytest
+pytest.importorskip("nnunetv2", minversion="2.4")
 import json
 import numpy as np
 import nibabel as nib

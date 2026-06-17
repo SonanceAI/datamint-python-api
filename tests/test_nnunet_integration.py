@@ -11,6 +11,7 @@ Requirements:
 """
 import random
 import pytest
+pytest.importorskip("nnunetv2", minversion="2.4")
 from pathlib import Path
 
 PROJECT_NAME = "NNUNET__TEST_Synapse_Tutorial"

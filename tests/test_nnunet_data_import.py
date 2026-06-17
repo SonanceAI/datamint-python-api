@@ -1,6 +1,8 @@
-""" 
+"""
 Test the NNUNetToDatamintImporter class for importing nnUNet predictions into Datamint.
 """
+import pytest
+pytest.importorskip("nnunetv2", minversion="2.4")
 import json
 import numpy as np
 import nibabel as nib
