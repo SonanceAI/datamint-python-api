@@ -5,11 +5,8 @@ from .segmentation_trainer import SegmentationTrainer
 from .seg2d_trainer import SemanticSegmentation2DTrainer
 from .seg3d_trainer import SemanticSegmentation3DTrainer
 from .classification_trainer import ClassificationTrainer, ImageClassificationTrainer
-from .specialized.unetpp import UNetPPTrainer
-from .specialized.deeplabv3plus import DeepLabV3PlusTrainer
-from .specialized.transunet import TransUNetTrainer
+from .specialized import UNetPPTrainer, DeepLabV3PlusTrainer, TransUNetTrainer, UNETRPPTrainer, NNUNetTrainer
 from .vol_seg_trainer import VolumeSegmentationTrainer
-from .specialized.unetrpp import UNETRPPTrainer
 
 __all__ = [
     "BaseTrainer",
@@ -23,4 +20,5 @@ __all__ = [
     "UNETRPPTrainer",
     "ClassificationTrainer",
     "ImageClassificationTrainer",
+    "NNUNetTrainer",
 ]

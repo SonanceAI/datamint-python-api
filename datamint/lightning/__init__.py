@@ -12,6 +12,7 @@ from .trainers import (
     UNetPPTrainer,
     DeepLabV3PlusTrainer,
     TransUNetTrainer,
+    NNUNetTrainer,
     UNETRPPTrainer,
 )
 
@@ -27,5 +28,6 @@ __all__ = [
     "UNetPPTrainer",
     "DeepLabV3PlusTrainer",
     "TransUNetTrainer",
+    "NNUNetTrainer",
     "UNETRPPTrainer",
 ]
