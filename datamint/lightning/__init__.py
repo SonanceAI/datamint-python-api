@@ -28,4 +28,6 @@ __all__ = [
     "UNetPPTrainer",
     "DeepLabV3PlusTrainer",
     "TransUNetTrainer",
+    "NNUNetTrainer",
+    "UNETRPPTrainer",
 ]
