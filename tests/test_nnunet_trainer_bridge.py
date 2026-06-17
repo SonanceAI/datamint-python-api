@@ -1,8 +1,16 @@
 """  Test the _DatamintNNUNetTrainer bridge class that extends nnUNetTrainer to log checkpoints and validation summaries to MLflow. We verify that checkpoints are logged as artifacts, that validation metrics are
 logged correctly, and that the version guard prevents usage with old nnunetv2 versions."""
 import json
+import importlib.metadata as _meta
 import pytest
-pytest.importorskip("nnunetv2", minversion="2.4")
+
+try:
+    _ver = tuple(int(x) for x in _meta.version('nnunetv2').split('.')[:2])
+    if not ((2, 4) <= _ver < (3, 0)):
+        pytest.skip("nnunetv2>=2.4,<3.0 required", allow_module_level=True)
+except _meta.PackageNotFoundError:
+    pytest.skip("nnunetv2 not installed", allow_module_level=True)
+
 from unittest.mock import MagicMock, patch
 import sys
 
