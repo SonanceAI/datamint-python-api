@@ -5,7 +5,8 @@ from .segmentation_trainer import SegmentationTrainer
 from .seg2d_trainer import SemanticSegmentation2DTrainer
 from .seg3d_trainer import SemanticSegmentation3DTrainer
 from .classification_trainer import ClassificationTrainer, ImageClassificationTrainer
-from .specialized import UNetPPTrainer, DeepLabV3PlusTrainer, TransUNetTrainer, UNETRPPTrainer, NNUNetTrainer
+from .detection_trainer import DetectionTrainer
+from .specialized import UNetPPTrainer, DeepLabV3PlusTrainer, TransUNetTrainer, UNETRPPTrainer, NNUNetTrainer, YOLOXTrainer
 from .vol_seg_trainer import VolumeSegmentationTrainer
 
 __all__ = [
@@ -21,4 +22,6 @@ __all__ = [
     "ClassificationTrainer",
     "ImageClassificationTrainer",
     "NNUNetTrainer",
+    "YOLOXTrainer",
+    "DetectionTrainer"
 ]
