@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import tempfile
 from pathlib import Path
 
@@ -24,10 +25,10 @@ class NNUNetInferenceModel(BaseDatamintModel):
     The bundle must contain::
 
         nnunet_bundle/
-          nnUNetPlans.json
-          dataset_fingerprint.json
+          plans.json
+          dataset.json
           fold_0/
-            checkpoint_best.pth
+            checkpoint_final.pth
 
     All three are required by
     ``nnUNetPredictor.initialize_from_trained_model_folder``.
@@ -64,10 +65,12 @@ class NNUNetInferenceModel(BaseDatamintModel):
         works correctly in tests.
         """
         super().load_context(context)
+        os.environ.setdefault('nnUNet_extTrainer', str(Path(__file__).parent))
+        import torch
         import nnunetv2.inference.predict_from_raw_data as _pred_mod
 
         bundle_path = context.artifacts['nnunet_bundle']
-        predictor = _pred_mod.nnUNetPredictor()
+        predictor = _pred_mod.nnUNetPredictor(device=torch.device(self.inference_device))
         predictor.initialize_from_trained_model_folder(
             model_training_output_dir=bundle_path,
             use_folds=self.folds,
@@ -91,6 +94,11 @@ class NNUNetInferenceModel(BaseDatamintModel):
         """
         nifti = resource.fetch_file_data(use_cache=True, auto_convert=True)
         out_path = Path(out_dir) / f'case_{case_index:03d}_0000.nii.gz'
+        # convert_format already called get_fdata() to force-load into a float64
+        # cache before closing the backing file handle. Using get_fdata() here
+        # returns that cache; np.asarray(nifti.dataobj) would bypass it and
+        # try to re-read from the closed handle, causing ValueError.
+        nifti = nib.Nifti1Image(nifti.get_fdata(), nifti.affine, nifti.header)
         nib.save(nifti, str(out_path))
         return out_path
 
@@ -141,8 +149,13 @@ class NNUNetInferenceModel(BaseDatamintModel):
             for i, resource in enumerate(model_input, start=1):
                 self._write_resource_as_nifti(resource, in_dir, case_index=i)
 
-            self._predictor.predict_from_files(
-                str(in_dir), str(out_dir), save_probabilities=False
+            # predict_from_files spawns subprocesses for preprocessing which
+            # crash silently in memory-constrained containers. The sequential
+            # variant runs everything in the main process and is correct for
+            # single-volume serving.
+            self._predictor.predict_from_files_sequential(
+                str(in_dir), str(out_dir),
+                save_probabilities=False,
             )
 
             for pred_path in sorted(out_dir.glob('*.nii.gz')):

@@ -112,6 +112,16 @@ class NNUNetToDatamintImporter:
                 )
 
             resource_uuid = case_map[case_id]
+
+            arr = nib.load(str(pred_path)).get_fdata()
+            if not np.any(arr):
+                _LOGGER.warning(
+                    "Skipping %s — prediction is all background (no foreground voxels). "
+                    "This is expected when the model has not trained long enough.",
+                    pred_path.name,
+                )
+                continue
+
             seg = self._nifti_to_segmentation(pred_path, class_map, model_id=mlflow_model_id)
 
             self._api.annotations.upload_volume_segmentation(

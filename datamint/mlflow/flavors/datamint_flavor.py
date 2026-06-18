@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 import mlflow
 from mlflow.models import Model, ModelInputExample, ModelSignature
 import datamint
@@ -69,17 +70,112 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
     return (data_example, merged_params)
 
 
-def _resolve_requirements(pip_requirements, extra_pip_requirements):
+# Path where MLflow copies the model in the deploy container
+_DEPLOY_MODEL_PATH = '/opt/ml/model'
+
+
+def _datamint_requirement() -> tuple[str, Path | None]:
+    """Return (requirement_string, local_wheel_path_or_None).
+
+    When datamint is installed in editable mode the wheel is built locally so
+    it can be bundled directly into the model directory.  The requirement string
+    then references the ``file://`` path it will have inside the deploy container
+    after ``COPY model_dir/ /opt/ml/model``.
+    """
+    import importlib.metadata as _imeta
+    import json as _json
+
+    dist = _imeta.Distribution.from_name('datamint')
+    direct_url_text = dist.read_text('direct_url.json')
+
+    if direct_url_text is None:
+        return f'datamint=={datamint.__version__}', None
+
+    info = _json.loads(direct_url_text)
+    if not info.get('dir_info', {}).get('editable', False):
+        return f'datamint=={datamint.__version__}', None
+
+    from urllib.parse import urlparse
+    source_dir = Path(urlparse(info['url']).path)
+    return _build_datamint_wheel(source_dir)
+
+
+def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path]:
+    """Build a wheel from *source_dir* and return (requirement_str, wheel_path).
+
+    The wheel is written to a mkdtemp directory; the caller is responsible for
+    cleanup (done in save_model via try/finally).
+
+    Venvs inside the package dir (e.g. datamint/env/) contain symlinks that
+    resolve to system paths outside the project root, causing poetry-core to
+    crash with a ValueError.  Building from a clean copy avoids this.
+    """
+    import sys
+    import subprocess
+    import shutil
+    import tempfile as _tmp
+
+    _IGNORE = shutil.ignore_patterns(
+        'env', '.venv', 'venv',
+        '*.egg-info', '__pycache__', '.git', 'dist', 'build', '.tox',
+    )
+
+    logger.info("Building datamint wheel from %s for deploy container...", source_dir)
+    tmpdir = Path(_tmp.mkdtemp(prefix='datamint_wheel_'))
+    build_src = tmpdir / 'src'
+    wheel_dir = tmpdir / 'wheel'
+    wheel_dir.mkdir(parents=True)
+
+    try:
+        shutil.copytree(source_dir, build_src, ignore=_IGNORE, symlinks=False)
+        subprocess.run(
+            [sys.executable, '-m', 'pip', 'wheel', str(build_src), '--no-deps', '-w', str(wheel_dir)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise RuntimeError(
+            f"pip wheel failed for {source_dir}.\n"
+            f"stdout:\n{e.output}\nstderr:\n{e.stderr}"
+        ) from e
+
+    wheels = list(wheel_dir.glob('datamint*.whl'))
+    if not wheels:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise RuntimeError(f"pip wheel produced no datamint wheel in {wheel_dir}.")
+
+    wheel_path = wheels[0]
+    requirement = f'datamint @ file://{_DEPLOY_MODEL_PATH}/artifacts/{wheel_path.name}'
+    logger.info("datamint wheel built at %s; will be bundled with model", wheel_path)
+    return requirement, wheel_path
+
+
+def _resolve_requirements(
+    pip_requirements,
+    extra_pip_requirements,
+) -> tuple[object, object, dict[str, str]]:
+    """Return (pip_requirements, extra_pip_requirements, extra_artifacts).
+
+    *extra_artifacts* maps artifact key -> local file path for any wheel files
+    that must be copied into the model directory so pip can install them without
+    an MLflow client inside the Docker build.
+    """
     import medimgkit
 
     def _get_req_name(req):
+        if req.endswith('.whl'):
+            return req.split('/')[-1].split('-')[0].lower().replace('_', '-')
         try:
             return Requirement(req).name.lower()
         except Exception:
             return req.split("==")[0].strip().lower()
 
+    datamint_req, datamint_wheel_path = _datamint_requirement()
+
     datamint_requirements = [
-        f'datamint=={datamint.__version__}',
+        datamint_req,
         f'medimgkit=={medimgkit.__version__}',
     ]
 
@@ -100,7 +196,11 @@ def _resolve_requirements(pip_requirements, extra_pip_requirements):
         elif isinstance(pip_requirements, Sequence) and not isinstance(pip_requirements, str):
             pip_requirements = list(pip_requirements) + missing_requirements
 
-    return pip_requirements, extra_pip_requirements
+    extra_artifacts: dict[str, str] = {}
+    if datamint_wheel_path is not None:
+        extra_artifacts['datamint_wheel'] = str(datamint_wheel_path)
+
+    return pip_requirements, extra_pip_requirements, extra_artifacts
 
 
 def save_model(datamint_model: BaseDatamintModel,
@@ -134,7 +234,14 @@ def save_model(datamint_model: BaseDatamintModel,
     model_config = model_config or {}
     model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
 
-    pip_requirements, extra_pip_requirements = _resolve_requirements(pip_requirements, extra_pip_requirements)
+    pip_requirements, extra_pip_requirements, extra_artifacts = _resolve_requirements(
+        pip_requirements, extra_pip_requirements
+    )
+    # Merge any bundled wheels (e.g. editable-install datamint) into the model
+    # artifacts dict so MLflow copies them into the model directory.
+    artifacts = {**(artifacts or {}), **extra_artifacts}
+    # Temp dirs holding built wheels; cleaned up after pyfunc.save_model copies them.
+    _wheel_tmpdirs = {Path(p).parent.parent for p in extra_artifacts.values()}
 
     if hasattr(datamint_model, '_clear_linked_models_cache'):
         datamint_model._clear_linked_models_cache()
@@ -181,6 +288,8 @@ def save_model(datamint_model: BaseDatamintModel,
         **kwargs
     )
 
+    import shutil as _shutil
+
     pt_model = datamint_model.get_pytorch_model() if hasattr(datamint_model, 'get_pytorch_model') else None
     if pt_model is not None:
         if hasattr(datamint_model, '_clear_linked_models_cache'):
@@ -190,18 +299,33 @@ def save_model(datamint_model: BaseDatamintModel,
             logger.debug(f"Saving PyTorch model to temporary file {tmp_file.name}")
             torch.save(pt_model, tmp_file.name, pickle_module=mlflow_pytorch_pickle_module)
             pyfunc_kwargs['artifacts'] = {
-                **(artifacts or {}),
+                **artifacts,
                 DatamintModel._PYTORCH_ARTIFACT_NAME: tmp_file.name,
             }
-
             logger.debug(
                 "Saving PyFunc model with PyTorch artifact for model %s...",
                 datamint_model.__class__.__name__,
             )
-            return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+            try:
+                return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+            finally:
+                for d in _wheel_tmpdirs:
+                    _shutil.rmtree(d, ignore_errors=True)
+
+    # DatamintLightningModule is an nn.Module itself, so its CUDA weights are
+    # embedded directly in the cloudpickle. Move to CPU before serialization
+    # so the pickle is device-agnostic and loads on CPU-only containers.
+    import torch.nn as nn
+    _underlying = datamint_model.another_model if isinstance(datamint_model, _DatamintModelWrapper) else datamint_model
+    if isinstance(_underlying, nn.Module):
+        _underlying.cpu()
 
     logger.debug(f'Saving PyFunc model for model {datamint_model.__class__.__name__}...')
-    return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+    try:
+        return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+    finally:
+        for d in _wheel_tmpdirs:
+            _shutil.rmtree(d, ignore_errors=True)
 
 
 def log_model(

@@ -354,6 +354,12 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         requirements = list(self.extra_pip_requirements)
         if not any('lightning' in req.lower() for req in requirements):
             requirements.append(f'lightning=={L.__version__}')
+        try:
+            import timm
+            if not any('timm' in req.lower() for req in requirements):
+                requirements.append(f'timm=={timm.__version__}')
+        except ImportError:
+            pass
         return requirements
 
     def _finalize_logged_model(self,
