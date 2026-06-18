@@ -28,9 +28,7 @@ datamint/
 │   └── dto/                # Data transfer objects
 ├── dataset/                # Dataset abstractions
 │   ├── base.py             # DatamintBaseDataset
-│   ├── image_dataset.py    # ImageDataset
-│   ├── volume_dataset.py   # VolumeDataset
-│   └── video_dataset.py    # VideoDataset
+│   └── ...
 ├── entities/               # Domain models
 │   ├── annotations/        # Annotation types (box, segmentation, etc.)
 │   └── resources/          # Resource types (DICOM, NIfTI, etc.)
@@ -40,10 +38,11 @@ datamint/
 ├── mlflow/                 # MLflow integration
 │   ├── flavors/            # Model flavors and prediction routing
 │   ├── tracking/           # Custom DatamintStore
-│   └── artifact/           # DatamintArtifactsRepository
+│   └── artifact/           # DatamintArtifactsRepository plugin
 ├── client_cmd_tools/       # CLI tools (datamint-upload, datamint-config)
-└── utils/                  # Utilities (collection, nifti, visualization)
+└── utils/                  # General Utilities
 ```
+
 
 ## Development Setup
 
@@ -133,3 +132,7 @@ Sphinx sources are in [`docs/source/`](../docs/source/).
 
 Tests run on Ubuntu, macOS, and Windows with Python 3.10 and 3.12.
 On PRs, only Ubuntu + Python 3.10.
+
+## Design philosophies and architecture decisions
+
+- [Dataset Module Design Philosophy](https://sonance-ai.atlassian.net/wiki/x/AYC5Dg)
