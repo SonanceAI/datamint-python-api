@@ -108,8 +108,8 @@ dmypy.json
 logs/
 junit/
 
-# dev files and folders
-dev/
+# local dev files and folders
+.local
 
 # vscode
 .vscode/
