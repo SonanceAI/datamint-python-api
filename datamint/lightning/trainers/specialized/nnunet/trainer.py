@@ -490,42 +490,33 @@ class NNUNetTrainer(BaseTrainer):
         from datamint.lightning.trainers.specialized.nnunet.inference_model import (
             NNUNetInferenceModel,
         )
-
-        dataset_dir_name = f'Dataset{dataset_id:03d}_{self._dataset_name}'
-        preprocessed_dir = self.nnunet_work_dir / 'preprocessed' / dataset_dir_name
+        
+        # nnUNet writes plans.json and dataset.json to output_folder_base after training.
+        # initialize_from_trained_model_folder reads both from there.
+        output_folder_base = Path(bridge.output_folder_base)
 
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             bundle = Path(tmp) / 'nnunet_bundle'
             bundle.mkdir()
 
-            shutil.copy(preprocessed_dir / 'nnUNetPlans.json', bundle / 'nnUNetPlans.json')
-            shutil.copy(
-                preprocessed_dir / 'dataset_fingerprint.json',
-                bundle / 'dataset_fingerprint.json',
-            )
+            shutil.copy(output_folder_base / 'plans.json', bundle / 'plans.json')
+            shutil.copy(output_folder_base / 'dataset.json', bundle / 'dataset.json')
 
             fold_dir = bundle / f'fold_{bridge.fold}'
             fold_dir.mkdir()
 
-            # nnUNet uses the final checkpoint for inference (not the best-by-validation).
+            # nnUNet uses the final checkpoint for inference.
             final_ckpt = Path(bridge.output_folder) / 'checkpoint_final.pth'
             if not final_ckpt.exists():
                 raise RuntimeError(
                     f"checkpoint_final.pth not found at '{final_ckpt}'. "
                     "Training may not have completed successfully."
                 )
-            import torch as _torch
-            # Patch trainer_name to the standard nnUNetTrainer so the deploy
-            # container doesn't need our custom _DatamintNNUNetTrainer class.
-            # _DatamintNNUNetTrainer only adds MLflow logging hooks — it uses
-            # the identical network architecture as the parent nnUNetTrainer.
-            ckpt = _torch.load(str(final_ckpt), map_location='cpu', weights_only=False)
-            ckpt['trainer_name'] = 'nnUNetTrainer'
-            _torch.save(ckpt, fold_dir / 'checkpoint_final.pth')
+            shutil.copy(str(final_ckpt), fold_dir / 'checkpoint_final.pth')
 
             labels: dict[str, int] = _json.loads(
-                (self.nnunet_work_dir / 'raw' / dataset_dir_name / 'dataset.json').read_text()
+                (output_folder_base / 'dataset.json').read_text()
             ).get('labels', {})
             class_map: dict[int, str] = {v: k for k, v in labels.items() if v != 0}
 

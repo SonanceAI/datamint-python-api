@@ -141,6 +141,12 @@ class BaseDatamintModel(PythonModel, ABC):
             else:
                 device = "cpu"
 
+        if device and str(device).startswith('cuda') and not torch.cuda.is_available():
+            logger.warning(
+                "Requested device '%s' but CUDA is not available. Falling back to CPU.", device
+            )
+            device = 'cpu'
+
         logger.info("Set inference device: %s", device)
         self._inference_device = device
         return device
