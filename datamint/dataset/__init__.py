@@ -19,6 +19,7 @@ from .sliced_dataset import SlicedVolumeDataset
 from .sliced_video_dataset import SlicedVideoDataset
 from .detection_dataset import DetectionDataset, detection_collate_fn
 from .factory import build_dataset
+from .split_result import SplitResult
 
 __all__ = [
     # Core
@@ -35,4 +36,5 @@ __all__ = [
     'detection_collate_fn',
     # Factory
     'build_dataset',
+    'SplitResult',
 ]

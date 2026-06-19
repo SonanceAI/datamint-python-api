@@ -20,10 +20,12 @@ from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
 from datamint.entities.annotations import AnnotationType
 
+
 if TYPE_CHECKING:
     from datamint.entities import Resource, Project, Annotation
     from albumentations import BaseCompose
     from datamint.mlflow.data import DatamintMLflowDataset
+    from .split_result import SplitResult
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1162,7 +1164,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         by_patient: bool = False,
         none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'] = 'individual',
         **splits: float,
-    ) -> dict[str, 'DatamintBaseDataset']:
+    ) -> 'SplitResult':
+        
         """Split the dataset into multiple named subsets.
 
         The mode is selected automatically when no explicit split mode is
@@ -1215,23 +1218,26 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Raises:
             ValueError: If ratios are invalid or arguments conflict.
         """
+
+        from .split_result import SplitResult
+        
         if by_patient:
             if use_project_splits or use_server_splits:
                 raise ValueError(
                     "by_patient=True cannot be combined with use_project_splits or use_server_splits."
                 )
-        
+
             if not splits:
                 raise ValueError(
                     "by_patient=True requires ratio kwargs (e.g. train=0.8, test=0.2) to determine split sizes."
                 )
-            return self._split_locally_by_patient(dict(splits), seed, none_patient_id_strategy)
-        
+            return SplitResult(self._split_locally_by_patient(dict(splits), seed, none_patient_id_strategy))
+
         if use_project_splits is None and use_server_splits is None and not splits:
             use_project_splits = getattr(self, 'project', None) is not None or as_of_timestamp is not None
 
         if use_project_splits:
-            return self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp)
+            return SplitResult(self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp))
 
         if as_of_timestamp is not None:
             raise ValueError(
@@ -1246,9 +1252,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             import warnings
             warnings.warn("use_server_splits and splitting by resource tags are deprecated in favor of use_project_splits. "
                           "Please migrate to project-scoped splits for better reproducibility and management.", DeprecationWarning)
-            return self._split_by_server_tags(splits)
+            return SplitResult(self._split_by_server_tags(splits))
 
-        return self._split_locally(splits, seed)
+        return SplitResult(self._split_locally(splits, seed))
 
     def _split_by_project_api(
         self,
