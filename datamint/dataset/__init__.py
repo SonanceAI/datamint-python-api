@@ -6,7 +6,7 @@ Provides specialized dataset classes for different medical imaging modalities:
 - VideoDataset: Temporal sequences (videos, multi-frame DICOM)
 - VolumetricDataset: 3D volumes (NIfTI, CT, MRI)
 
-Use `create_dataset()` for automatic type detection, or instantiate directly.
+Use `build_dataset()` for automatic type detection, or instantiate directly.
 """
 
 # New modular architecture
@@ -18,6 +18,7 @@ from .video_dataset import VideoDataset
 from .sliced_dataset import SlicedVolumeDataset
 from .sliced_video_dataset import SlicedVideoDataset
 from .detection_dataset import DetectionDataset, detection_collate_fn
+from .factory import build_dataset
 
 __all__ = [
     # Core
@@ -32,4 +33,6 @@ __all__ = [
     'SlicedVideoDataset',
     'DetectionDataset',
     'detection_collate_fn',
+    # Factory
+    'build_dataset',
 ]
