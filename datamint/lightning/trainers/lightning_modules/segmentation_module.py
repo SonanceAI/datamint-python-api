@@ -63,7 +63,7 @@ class SegmentationModule(DatamintLightningModule):
 
     def _common_step(self, batch: dict, stage: str) -> Tensor:
         images = batch['image']  # shape (B, C, H, W)
-        masks = batch['segmentations'][:, 1:]  # exclude background channel
+        masks = batch['masks'][:, 1:]  # exclude background channel
         # masks.shape is (B, C, H, W) where C is num_classes (excluding background)
 
         logits = self(images)
@@ -140,7 +140,7 @@ class SegmentationModule(DatamintLightningModule):
 
     def _compute_sample_metrics(self, logits: Tensor, batch: dict) -> dict[str, Tensor]:
         """Per-sample IoU and Dice."""
-        masks = batch['segmentations'][:, 1:].float()
+        masks = batch['masks'][:, 1:].float()
         preds = (logits > 0).float()
         intersection = (preds * masks).sum(dim=[1, 2, 3])
         union = ((preds + masks) > 0).float().sum(dim=[1, 2, 3])

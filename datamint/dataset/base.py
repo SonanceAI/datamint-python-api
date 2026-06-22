@@ -86,6 +86,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         # all_annotations: bool = False,
         return_metainfo: bool = True,
         return_segmentations: bool = True,
+        return_boxes: bool = False,
         return_as_semantic_segmentation: bool = False,
         semantic_seg_merge_strategy: MergeStrategy | None = None,
         alb_transform: 'Callable | BaseCompose | None' = None,
@@ -152,6 +153,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         # Store configuration
         self.return_metainfo = return_metainfo
         self.return_segmentations = return_segmentations
+        self.return_boxes = return_boxes
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.semantic_seg_merge_strategy: MergeStrategy | None = semantic_seg_merge_strategy
         self.include_unannotated = include_unannotated
@@ -629,6 +631,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             self.image_lsets, self.image_lcodes = self._infer_labels_set(framed=False)
             self.seglabel_list, self.seglabel2code = self._infer_segmentation_group()
 
+        self.box_class_map: dict[str, int] = self._build_box_class_map()
+
     def _augment_labels_from_annotations(self) -> None:
         """Augment project-defined label sets with identifiers found in actual annotations.
 
@@ -855,6 +859,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         """Segmentation label names."""
         return self.seglabel_list
 
+    @property
+    def box_labels_set(self) -> list[str]:
+        """Box annotation class names, alphabetically ordered."""
+        return sorted(self.box_class_map, key=self.box_class_map.__getitem__)
+
     def _infer_segmentation_group(self) -> tuple[list[str], dict[str, int]]:
         """Infer segmentation labels from annotations when no project is provided."""
         seglabel_set: set[str] = set()
@@ -871,6 +880,55 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         seglabel2code = {label: idx + 1 for idx, label in enumerate(seglabel_list)}
 
         return seglabel_list, seglabel2code
+
+    def _build_box_class_map(self) -> dict[str, int]:
+        """Build {class_name: index} for box annotations, alphabetically sorted."""
+        from datamint.entities.annotations import AnnotationType
+        class_names: set[str] = set()
+        for anns in self.resource_annotations:
+            for ann in anns:
+                if getattr(ann, 'annotation_type', None) == AnnotationType.SQUARE and ann.identifier:
+                    class_names.add(ann.identifier)
+        return {name: idx for idx, name in enumerate(sorted(class_names))}
+
+    def _load_boxes(
+        self,
+        annotations: 'Sequence[Annotation]',
+    ) -> tuple['Tensor', 'Tensor']:
+        """Extract box tensors from square annotations.
+
+        Returns:
+            Tuple of (boxes, box_labels) where boxes is (N, 4) float32 in
+            pascal_voc pixel coords and box_labels is (N,) int64 class indices.
+        """
+        valid: list[tuple[float, float, float, float, str]] = []
+        for ann in annotations:
+            if not ann.identifier:
+                _LOGGER.warning("Skipping box annotation with no identifier.")
+                continue
+            geometry = getattr(ann, 'geometry', None)
+            if geometry is None:
+                continue
+            x1, y1, _ = geometry.point1
+            x2, y2, _ = geometry.point2
+            x1, y1, x2, y2 = float(x1), float(y1), float(x2), float(y2)
+            if x2 <= x1 or y2 <= y1:
+                _LOGGER.warning(
+                    "Skipping degenerate box (x2<=x1 or y2<=y1): (%s, %s, %s, %s)",
+                    x1, y1, x2, y2,
+                )
+                continue
+            valid.append((x1, y1, x2, y2, ann.identifier))
+
+        if not valid:
+            return torch.zeros((0, 4), dtype=torch.float32), torch.zeros((0,), dtype=torch.int64)
+
+        boxes = torch.tensor([(x1, y1, x2, y2) for x1, y1, x2, y2, _ in valid], dtype=torch.float32)
+        labels = torch.tensor(
+            [self.box_class_map.get(name, 0) for _, _, _, _, name in valid],
+            dtype=torch.int64,
+        )
+        return boxes, labels
 
     def _process_segmentation_group(self, groups: dict) -> tuple[list[str], dict[str, int]]:
         """Get segmentation labels from the server."""
@@ -979,28 +1037,41 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if isinstance(img, np.ndarray):
             img = self._preprocess_image_array(img)
         annotations = result['annotations']
-        # resource = result['resource']
-        # _LOGGER.debug(f"Loaded image {resource.filename} with shape {img.shape}")
 
-        # Process segmentations
+        # Load all requested annotation targets
+        targets: dict[str, Any] = {}
+        seg_labels = None
+
         if self.return_segmentations:
-            seg_anns = AnnotationProcessor.filter_annotations(annotations,
-                                                              type='segmentation',
-                                                              scope='all')
+            seg_anns = AnnotationProcessor.filter_annotations(annotations, type='segmentation', scope='all')
             segmentations, seg_labels, _ = self.annotation_processor.load_segmentations(seg_anns)
-            # Apply albumentations if present
-            if self.alb_transform:
-                aug_result = self.apply_alb_transform(img, segmentations)
-                img = aug_result['image']
-                result['image'] = img
-                segmentations = aug_result['segmentations']
+            targets['masks'] = segmentations
 
-            segmentations, seg_labels = self._process_segmentations(segmentations, seg_labels,
-                                                                    output_shape=img.shape[1:])
+        if self.return_boxes:
+            box_anns = [ann for ann in annotations if getattr(ann, 'annotation_type', None) == 'square']
+            boxes, box_labels_tensor = self._load_boxes(box_anns)
+            targets['boxes'] = boxes
+            targets['box_labels'] = box_labels_tensor
 
-            result['segmentations'] = segmentations
+        # Apply albumentations to all targets at once
+        if self.alb_transform:
+            aug = self.apply_alb_transform(img, targets)
+            img = aug.pop('image')
+            targets.update(aug)
+
+        result['image'] = img
+
+        # Post-process and write to result
+        if self.return_segmentations:
+            masks = targets.get('masks', {})
+            masks, seg_labels = self._process_segmentations(masks, seg_labels, output_shape=img.shape[1:])
+            result['masks'] = masks
             if seg_labels:
-                result['seg_labels'] = seg_labels
+                result['mask_labels'] = seg_labels
+
+        if self.return_boxes:
+            result['boxes'] = targets.get('boxes', torch.zeros((0, 4), dtype=torch.float32))
+            result['box_labels'] = targets.get('box_labels', torch.zeros((0,), dtype=torch.int64))
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
@@ -1012,17 +1083,19 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
     def apply_alb_transform(
         self,
         img: np.ndarray,
-        segmentations: dict[str, np.ndarray]
+        targets: dict[str, Any],
     ) -> dict[str, Any]:
-        """Apply albumentations transform to image and masks.
+        """Apply albumentations transform to image and annotation targets.
+
+        Args:
+            img: Image array.
+            targets: Dict of annotation targets to transform. May contain:
+                - ``'masks'``: per-annotator segmentation masks
+                - ``'boxes'``: (N, 4) float32 tensor in pascal_voc pixel coords
+                - ``'box_labels'``: (N,) int64 tensor of class indices
 
         Returns:
-            Dict with transformed 'image' and 'segmentations' (dict).
-                It is recommended that 'image' has shape (C, depth, H, W)
-                and each segmentation of 'segmentations' has shape (num_instances, depth, H, W), so that
-                common downstream processing can be applied.
-                If not, please override :py:meth:`_process_segmentations` accordingly.
-
+            Dict with ``'image'`` key plus the same target keys, all transformed.
         """
         pass
 
@@ -1052,6 +1125,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         project_id = getattr(project, 'id', 'unknown') if project is not None else 'unknown'
 
         extra_params = {
+            'return_segmentations': self.return_segmentations,
+            'return_boxes': self.return_boxes,
             'return_as_semantic_segmentation': self.return_as_semantic_segmentation,
             'semantic_seg_merge_strategy': str(self.semantic_seg_merge_strategy),
             'include_unannotated': self.include_unannotated,

@@ -6,7 +6,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 from datamint.lightning.trainers.detection_trainer import DetectionTrainer
-from datamint.dataset.detection_dataset import DetectionDataset, detection_collate_fn
+from datamint.dataset.image_dataset import ImageDataset, detection_collate_fn
 from datamint.lightning.datamodule import DatamintDataModule
 
 
@@ -33,18 +33,25 @@ def _bare_trainer():
 
 # -- _build_dataset tests
 
-def test_build_dataset_returns_detection_dataset():
+def test_build_dataset_returns_image_dataset():
     trainer = _bare_trainer()
-    with patch.object(DetectionDataset, '__init__', return_value=None):
+    with patch.object(ImageDataset, '__init__', return_value=None):
         ds = trainer._build_dataset(project='thyroid')
-    assert isinstance(ds, DetectionDataset)
+    assert isinstance(ds, ImageDataset)
 
 
 def test_build_dataset_passes_project_kwarg():
     trainer = _bare_trainer()
-    with patch.object(DetectionDataset, '__init__', return_value=None) as mock_init:
+    with patch.object(ImageDataset, '__init__', return_value=None) as mock_init:
         trainer._build_dataset(project='thyroid')
     assert mock_init.call_args.kwargs.get('project') == 'thyroid'
+
+
+def test_build_dataset_sets_return_boxes():
+    trainer = _bare_trainer()
+    with patch.object(ImageDataset, '__init__', return_value=None) as mock_init:
+        trainer._build_dataset(project='thyroid')
+    assert mock_init.call_args.kwargs.get('return_boxes') is True
 
 
 # -- _build_datamodule tests

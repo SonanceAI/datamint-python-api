@@ -62,29 +62,31 @@ class MultiFrameDataset(DatamintBaseDataset):
     def apply_alb_transform(
         self,
         img: np.ndarray,
-        segmentations: dict[str, np.ndarray],
+        targets: dict[str, Any],
     ) -> dict[str, Any]:
         """Apply albumentations transform to 4D image and masks.
 
         Args:
             img: Image array of shape ``(C, depth, H, W)``.
-            segmentations: Dict of author -> mask arrays of shape
-                ``(#instances, depth, H, W)``.
+            targets: Dict of annotation targets. Supports ``'masks'`` (dict of
+                author -> mask arrays of shape ``(#instances, depth, H, W)``).
 
         Returns:
-            Dict with transformed ``'image'`` and ``'segmentations'``.
+            Dict with transformed ``'image'`` and ``'masks'``.
         """
         if self.alb_transform is None:
             raise ValueError("alb_transform is not set")
         if img.ndim != 4:
             raise ValueError(f"Expected 4D image array (C, depth, H, W), got shape {img.shape}")
 
+        segmentations = targets.get('masks', {})
+
         # transpose to (depth, H, W, C)
         img = np.transpose(img, (1, 2, 3, 0))
 
         replay_alb_transf = albumentations.ReplayCompose([self.alb_transform])
         _LOGGER.debug(
-            f'before alb transform image shape: {img.shape} | segmentations shape: {[segmentations[a].shape for a in segmentations]}')
+            f'before alb transform image shape: {img.shape} | masks shape: {[segmentations[a].shape for a in segmentations]}')
 
         aug_data = replay_alb_transf(volume=img)  # First call
         replay_data = aug_data['replay']
@@ -108,7 +110,7 @@ class MultiFrameDataset(DatamintBaseDataset):
                 aug_img = aug_img.permute(3, 0, 1, 2)
             _LOGGER.debug(f"augmented image tensor shape after permute: {aug_img.shape}")
 
-        return {
-            'image': aug_img,
-            'segmentations': aug_segmentations,
-        }
+        result: dict[str, Any] = {'image': aug_img}
+        if aug_segmentations:
+            result['masks'] = aug_segmentations
+        return result

@@ -538,7 +538,7 @@ class UNETRPPModule(SegmentationModule):
     def training_step(self, batch: dict, batch_idx: int) -> Tensor:
         device = next(self.parameters()).device
         images = self._to_float_tensor(batch['image']).to(device)
-        masks  = self._to_float_tensor(batch['segmentations'])[:, 1:].to(device)
+        masks  = self._to_float_tensor(batch['masks'])[:, 1:].to(device)
 
         images, masks = self._random_crop_3d(images, masks)
 
@@ -565,7 +565,7 @@ class UNETRPPModule(SegmentationModule):
     def _eval_step(self, batch: dict, stage: str) -> Tensor | None:
         device = next(self.parameters()).device
         images = self._to_float_tensor(batch['image']).to(device)
-        masks  = self._to_float_tensor(batch['segmentations'])[:, 1:].to(device)
+        masks  = self._to_float_tensor(batch['masks'])[:, 1:].to(device)
 
         logits = self._sliding_window_inference(images)
         loss = self.criterion(logits, masks) if self.criterion else None
