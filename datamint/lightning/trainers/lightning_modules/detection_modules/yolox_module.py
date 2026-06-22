@@ -129,7 +129,7 @@ class YOLOXModule(DatamintLightningModule):
 
     def training_step(self, batch: dict, batch_idx: int) -> Tensor:
         images: Tensor = batch['image']
-        targets = self._build_targets(batch['boxes'], batch['labels'], images.device)
+        targets = self._build_targets(batch['boxes'], batch['box_labels'], images.device)
         outputs: dict = self.model(images, targets)
         self.log('train/loss', outputs['total_loss'], prog_bar=True, on_step=True, on_epoch=True)
         self.log('train/iou_loss', outputs['iou_loss'], on_step=False, on_epoch=True)
@@ -167,7 +167,7 @@ class YOLOXModule(DatamintLightningModule):
                 })
             target_list.append({
                 'boxes': batch['boxes'][i].cpu(),
-                'labels': batch['labels'][i].cpu(),
+                'labels': batch['box_labels'][i].cpu(),
             })
 
         self.map_metric.update(pred_list, target_list)
