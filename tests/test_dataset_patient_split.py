@@ -17,8 +17,8 @@ class _TestDataset(DatamintBaseDataset):
     def _get_raw_item(self, index: int) -> dict:
         return {'image': None, 'metainfo': {}, 'annotations': []}
 
-    def apply_alb_transform(self, img, segmentations):
-        return {'image': img, 'segmentations': segmentations}
+    def apply_alb_transform(self, img, targets):
+        return {'image': img, **targets}
 
 
 class _MockResource:

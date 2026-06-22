@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 import albumentations as A
 
 from datamint.lightning.trainers.specialized.yolox import YOLOXTrainer
-from datamint.dataset.detection_dataset import DetectionDataset
+from datamint.dataset.image_dataset import ImageDataset
 from datamint.lightning.trainers.lightning_modules.detection_modules.yolox_module import YOLOXModule
 
 
 @pytest.fixture()
 def trainer():
-    ds = MagicMock(spec=DetectionDataset)
-    ds._class_map = {'cyst': 0, 'nodule': 1}
+    ds = MagicMock(spec=ImageDataset)
+    ds.box_class_map = {'cyst': 0, 'nodule': 1}
     t = YOLOXTrainer.__new__(YOLOXTrainer)
     t.dataset = ds
     t.model_size = 's'
@@ -53,7 +53,7 @@ def test_build_model_forwards_thresholds(trainer):
 
 
 def test_build_model_raises_when_no_classes(trainer):
-    trainer.dataset._class_map = {}
+    trainer.dataset.box_class_map = {}
     with pytest.raises(ValueError, match='No box annotation classes'):
         trainer._build_model(loss_fn=None, metrics={})
 
@@ -61,7 +61,7 @@ def test_build_model_raises_when_no_classes(trainer):
 # -- image_size normalization test --
 
 def test_image_size_int_becomes_tuple():
-    with patch.object(DetectionDataset, '__init__', return_value=None):
+    with patch.object(ImageDataset, '__init__', return_value=None):
         t = YOLOXTrainer.__new__(YOLOXTrainer)
         t.image_size = 416 
         if isinstance(t.image_size, int):

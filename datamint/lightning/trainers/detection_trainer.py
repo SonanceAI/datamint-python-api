@@ -6,7 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 from torch import nn
 
-from datamint.dataset.detection_dataset import DetectionDataset, detection_collate_fn
+from datamint.dataset.image_dataset import ImageDataset, detection_collate_fn
 from datamint.lightning.datamodule import DatamintDataModule
 from .base_trainer import BaseTrainer
 
@@ -19,7 +19,7 @@ class DetectionTrainer(BaseTrainer):
 
     Provides shared defaults for all detection models:
 
-    * **Dataset** – :class:`~datamint.dataset.DetectionDataset`
+    * **Dataset** – :class:`~datamint.dataset.ImageDataset` with ``return_boxes=True``
     * **Collate** – :func:`~datamint.dataset.detection_collate_fn` (variable-length boxes)
     * **Metrics** – Mean Average Precision (torchmetrics)
     * **Monitor** – ``val/map`` (maximise)
@@ -32,12 +32,12 @@ class DetectionTrainer(BaseTrainer):
         self,
         project: 'str | Project',
         **kwargs: Any,
-    ) -> DetectionDataset:
-        return DetectionDataset(project=project, **kwargs)
+    ) -> ImageDataset:
+        return ImageDataset(project=project, return_boxes=True, **kwargs)
 
     def _build_datamodule(
         self,
-        dataset: DetectionDataset,
+        dataset: ImageDataset,
         train_transform: Any,
         eval_transform: Any,
     ) -> DatamintDataModule:

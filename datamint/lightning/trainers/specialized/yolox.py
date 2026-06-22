@@ -26,10 +26,10 @@ class YOLOXTrainer(DetectionTrainer):
         results = trainer.fit()
 
     Args:
-        dataset: A pre-built :class:`~datamint.dataset.DetectionDataset`.
+        dataset: A pre-built :class:`~datamint.dataset.ImageDataset`.
             Mutually exclusive with *project*.
         project: Project name or :class:`~datamint.entities.Project` object.
-            A :class:`~datamint.dataset.DetectionDataset` is created automatically.
+            A :class:`~datamint.dataset.ImageDataset` is created automatically.
         model_size: YOLOX size variant — ``'nano'``, ``'tiny'``, ``'s'``,
             ``'m'``, ``'l'``, or ``'x'``.  Defaults to ``'s'``, which
             balances speed and accuracy for most medical imaging tasks.
@@ -53,7 +53,7 @@ class YOLOXTrainer(DetectionTrainer):
         split_as_of_timestamp: Historical timestamp for reproducible splits.
         auto_deploy_adapter: Auto-log a deploy adapter after training.
         trainer_kwargs: Extra kwargs forwarded to :class:`lightning.Trainer`.
-        dataset_kwargs: Extra kwargs forwarded to :class:`~datamint.dataset.DetectionDataset`.
+        dataset_kwargs: Extra kwargs forwarded to :class:`~datamint.dataset.ImageDataset`.
     """
 
     def __init__(
@@ -155,7 +155,7 @@ class YOLOXTrainer(DetectionTrainer):
         loss_fn: nn.Module | None,
         metrics: dict,
     ) -> 'DatamintLightningModule':
-        num_classes = len(self.dataset._class_map)
+        num_classes = len(self.dataset.box_class_map)
         if num_classes == 0:
             raise ValueError(
                 "No box annotation classes found in the dataset. "
@@ -163,7 +163,7 @@ class YOLOXTrainer(DetectionTrainer):
                 "Make sure your project has BoxAnnotation objects with an identifier set."
             )
 
-        class_names = sorted(self.dataset._class_map, key=self.dataset._class_map.__getitem__)
+        class_names = sorted(self.dataset.box_class_map, key=self.dataset.box_class_map.__getitem__)
         return YOLOXModule(
             num_classes=num_classes,
             model_size=self.model_size,
