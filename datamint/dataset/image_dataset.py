@@ -85,7 +85,8 @@ class ImageDataset(VolumeDataset):
         box_labels_tensor = targets.get('box_labels')
         if boxes_tensor is not None:
             alb_kwargs['bboxes'] = boxes_tensor.tolist() if isinstance(boxes_tensor, torch.Tensor) else list(boxes_tensor)
-            alb_kwargs['box_labels'] = box_labels_tensor.tolist() if isinstance(box_labels_tensor, torch.Tensor) else list(box_labels_tensor)
+            # Use 'labels': the standard albumentations label_fields key convention.
+            alb_kwargs['labels'] = box_labels_tensor.tolist() if isinstance(box_labels_tensor, torch.Tensor) else list(box_labels_tensor)
 
         aug = self.alb_transform(**alb_kwargs)
         aug_img = aug['image']
@@ -104,10 +105,10 @@ class ImageDataset(VolumeDataset):
                 start += count
             result['masks'] = aug_segmentations
 
-        # Reconstruct boxes
+        # Reconstruct boxes, map 'labels' back to 'box_labels' in our output dict
         if boxes_tensor is not None:
             aug_bboxes: list = list(aug.get('bboxes', []))
-            aug_box_labels: list = list(aug.get('box_labels', []))
+            aug_box_labels: list = list(aug.get('labels', []))
             if aug_bboxes:
                 result['boxes'] = torch.tensor(aug_bboxes, dtype=torch.float32)
                 result['box_labels'] = torch.tensor(aug_box_labels, dtype=torch.int64)

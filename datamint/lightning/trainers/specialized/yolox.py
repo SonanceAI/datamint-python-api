@@ -118,7 +118,7 @@ class YOLOXTrainer(DetectionTrainer):
 
         bbox_params = A.BboxParams(
             format='pascal_voc',
-            label_fields=['labels', 'identifiers'],
+            label_fields=['labels'],
             min_visibility=0.0,
         )
         return A.Compose([
@@ -136,7 +136,7 @@ class YOLOXTrainer(DetectionTrainer):
 
         bbox_params = A.BboxParams(
             format='pascal_voc',
-            label_fields=['labels', 'identifiers'],
+            label_fields=['labels'],
             min_visibility=0.0,
         )
         return A.Compose([

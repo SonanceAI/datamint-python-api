@@ -1008,6 +1008,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                         segmentations,
                         strategy=self.semantic_seg_merge_strategy
                     )
+                    if isinstance(segmentations, np.ndarray):
+                        segmentations = torch.from_numpy(segmentations).to(torch.get_default_dtype())
                     _LOGGER.debug("Merged segmentation shape: %s", segmentations.shape)
                 else:
                     if output_shape is None:

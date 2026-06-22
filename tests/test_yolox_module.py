@@ -88,7 +88,7 @@ def test_training_step_logs_train_loss(module):
     batch = {
         'image': torch.zeros(2, 3, 416, 416),
         'boxes': [torch.zeros(2, 4), torch.zeros(1, 4)],
-        'labels': [torch.zeros(2, dtype=torch.int64), torch.zeros(1, dtype=torch.int64)],
+        'box_labels': [torch.zeros(2, dtype=torch.int64), torch.zeros(1, dtype=torch.int64)],
     }
     with patch.object(module, 'log') as mock_log:
         loss = module.training_step(batch, 0)
@@ -111,7 +111,7 @@ def test_training_step_returns_total_loss(module):
     batch = {
         'image': torch.zeros(1, 3, 416, 416),
         'boxes': [torch.zeros(0, 4)],
-        'labels': [torch.zeros(0, dtype=torch.int64)],
+        'box_labels': [torch.zeros(0, dtype=torch.int64)],
     }
     with patch.object(module, 'log'):
         loss = module.training_step(batch, 0)

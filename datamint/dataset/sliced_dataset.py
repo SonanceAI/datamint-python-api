@@ -459,7 +459,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
         Returns dict with:
         - 'image': np.ndarray or Tensor of shape (C, H, W).
-        - 'segmentations' (if enabled): segmentation masks with depth dimension removed.
+        - 'masks' (if enabled): segmentation masks with depth dimension removed.
         - 'image_labels': dict of annotator -> label tensor.
         """
         if index >= len(self):
@@ -482,10 +482,10 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
             # Apply albumentations if present
             if self.alb_transform:
-                aug_result = self.apply_alb_transform(img, sliced_segs)
+                aug_result = self.apply_alb_transform(img, {'masks': sliced_segs})
                 img = aug_result['image']
                 result['image'] = img
-                sliced_segs = aug_result['segmentations']
+                sliced_segs = aug_result.get('masks', {})
 
             segmentations_processed, seg_labels_out = self._process_segmentations(sliced_segs, seg_labels,
                                                                                   output_shape=img.shape[1:])
@@ -497,9 +497,9 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                     if isinstance(segmentations_processed[author], (Tensor, np.ndarray)):
                         segmentations_processed[author] = segmentations_processed[author].squeeze(1)
 
-            result['segmentations'] = segmentations_processed
+            result['masks'] = segmentations_processed
             if seg_labels_out:
-                result['seg_labels'] = seg_labels_out
+                result['mask_labels'] = seg_labels_out
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
@@ -520,21 +520,21 @@ class SlicedVolumeDataset(DatamintBaseDataset):
     def apply_alb_transform(
         self,
         img: np.ndarray,
-        segmentations: dict[str, np.ndarray],
+        targets: dict[str, Any],
     ) -> dict[str, Any]:
         """Apply 2D albumentations transform to a single-slice image and masks.
 
-        Uses the same approach as ImageDataset: treats the data as 2D.
-
         Args:
             img: Image array of shape (C, 1, H, W) or (C, H, W).
-            segmentations: Dict of author -> mask arrays of shape (#instances, 1, H, W) or (#instances, H, W).
+            targets: Dict with optional key ``'masks'``: author -> array (#instances, 1, H, W).
 
         Returns:
-            Dict with transformed 'image' and 'segmentations'.
+            Dict with transformed ``'image'`` and ``'masks'``.
         """
         if self.alb_transform is None:
             raise ValueError("alb_transform is not set")
+
+        segmentations = targets.get('masks', {})
 
         # Squeeze depth=1 if present
         orig_dim = img.ndim
@@ -578,10 +578,10 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         if orig_dim == 4:
             aug_img = aug_img[:, np.newaxis, :, :]
 
-        return {
-            'image': aug_img,
-            'segmentations': aug_segmentations,
-        }
+        result: dict[str, Any] = {'image': aug_img}
+        if aug_segmentations:
+            result['masks'] = aug_segmentations
+        return result
 
     def __repr__(self) -> str:
         base = super().__repr__()
