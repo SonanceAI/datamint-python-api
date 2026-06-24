@@ -38,7 +38,7 @@ class ClassificationModule(DatamintLightningModule):
         num_classes: int,
         loss_fn: nn.Module,
         metrics_factories: dict[str, Callable[[], Any]],
-        class_names: list[str],
+        class_names: list[tuple[str, str]],
         image_size: tuple[int, int] | None,
         lr: float = 1e-4,
         pretrained: bool = True,
@@ -109,8 +109,8 @@ class ClassificationModule(DatamintLightningModule):
         result: dict[str, Tensor] = {
             'confidence': probs.max(dim=1).values,  # (B,)
         }
-        for i, name in enumerate(self.class_names):
-            result[f'confidence/{name}'] = probs[:, i]
+        for i, (ident, val) in enumerate(self.class_names):
+            result[f'confidence/{ident}/{val}'] = probs[:, i]
         return result
 
     def _compute_sample_metrics(self, logits: Tensor, batch: dict) -> dict[str, Tensor]:
@@ -179,9 +179,9 @@ class ClassificationModule(DatamintLightningModule):
                 probs = torch.softmax(logits, dim=1)
                 confidence = float(probs.max(dim=1).values.item())
                 pred_idx = int(logits.argmax(dim=1).item())
-                class_name = self.class_names[pred_idx]
+                identifier, value = self.class_names[pred_idx]
                 all_preds.append([ImageClassification(
-                    name='category', value=class_name,
+                    name=identifier, value=value,
                     confiability=confidence,
                 )])
         return all_preds

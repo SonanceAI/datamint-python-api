@@ -13,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 class _WorklistAnnotatorInfo(BaseModel):
     email: str
     status: str
-    expertise_level: str
+    expertise_level: str | None = None
 
 
 class AnnotationWorklist(BaseEntity):
@@ -36,7 +36,7 @@ class AnnotationWorklist(BaseEntity):
                 key=lambda annotator: (
                     annotator['email'],
                     annotator['status'],
-                    annotator['expertise_level'],
+                    annotator['expertise_level'] or '',
                 ),
             )
 

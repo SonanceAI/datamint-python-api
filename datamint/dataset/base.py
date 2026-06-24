@@ -1310,11 +1310,28 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 )
             return SplitResult(self._split_locally_by_patient(dict(splits), seed, none_patient_id_strategy))
 
+        _auto_project = False
         if use_project_splits is None and use_server_splits is None and not splits:
-            use_project_splits = getattr(self, 'project', None) is not None or as_of_timestamp is not None
+            if getattr(self, 'project', None) is not None or as_of_timestamp is not None:
+                use_project_splits = True
+                _auto_project = True
 
         if use_project_splits:
-            return SplitResult(self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp))
+            if _auto_project:
+                try:
+                    return SplitResult(self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp))
+                except ValueError:
+                    import warnings
+                    warnings.warn(
+                        "No split assignments found on the server for this project. "
+                        "Generating a local train=0.7 / val=0.15 / test=0.15 split. "
+                        "Call parts.save() to persist it to the server.",
+                        UserWarning,
+                        stacklevel=2,
+                    )
+                    splits = {'train': 0.7, 'val': 0.15, 'test': 0.15}
+            else:
+                return SplitResult(self._split_by_project_api(splits, as_of_timestamp=as_of_timestamp))
 
         if as_of_timestamp is not None:
             raise ValueError(
