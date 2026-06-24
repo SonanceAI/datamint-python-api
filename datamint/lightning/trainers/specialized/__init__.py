@@ -4,6 +4,7 @@ from .transunet import TransUNetTrainer
 from .unetrpp import UNETRPPTrainer
 from .nnunet.trainer import NNUNetTrainer
 from .yolox import YOLOXTrainer
+from .efficientnetv2 import EfficientNetV2Trainer
 
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "UNETRPPTrainer",
     "NNUNetTrainer",
     "YOLOXTrainer",
+    "EfficientNetV2Trainer",
 ]
