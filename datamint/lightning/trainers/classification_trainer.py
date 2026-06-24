@@ -85,6 +85,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
             return_segmentations=False,
             include_unannotated=False,
             image_categories_merge_strategy='mode',
+            allow_external_annotations=True,
         )
         dataset_params = {**default_params, **kwargs}
         return ImageDataset(
@@ -120,6 +121,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
 
         return A.Compose([
             self._build_resize_transform(),
+            A.ToRGB(),
             A.HorizontalFlip(p=0.5),
             A.RandomBrightnessContrast(p=0.3),
             A.Normalize(),
@@ -132,6 +134,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
 
         return A.Compose([
             self._build_resize_transform(),
+            A.ToRGB(),
             A.Normalize(),
             ToTensorV2(),
         ])

@@ -117,13 +117,9 @@ class ImageDataset(VolumeDataset):
                 result['box_labels'] = torch.zeros((0,), dtype=torch.int64)
 
         # transpose back to (C, H, W)
+        # torch.Tensor means ToTensorV2 was used, which always outputs (C, H, W) — no permutation needed
         if isinstance(aug_img, np.ndarray):
             aug_img = np.transpose(aug_img, (2, 0, 1))
-        elif isinstance(aug_img, torch.Tensor):
-            if aug_img.shape[0] == img_hwc.shape[-1]:  # C already in dim 0
-                aug_img = aug_img.permute(0, 1, 2)
-            else:
-                aug_img = aug_img.permute(2, 0, 1)
         # back to (C, 1, H, W)
         aug_img = aug_img[:, np.newaxis, :, :]
         result['image'] = aug_img
