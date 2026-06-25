@@ -325,6 +325,16 @@ class BaseTrainer(ABC):
         """Build a DatamintModel deployment adapter.  Override in subclasses."""
         return None
 
+    def _build_annotation_specs(self) -> list | None:
+        """Return annotation specs describing what this model predicts.
+
+        Override in task-specific subclasses to return the appropriate
+        list of :class:`~datamint.entities.annotations.annotation_spec.AnnotationSpec`
+        objects derived from the dataset.  Returns ``None`` by default,
+        which means no annotation specs will be saved with the model.
+        """
+        return None
+
     # ── Concrete helpers ────────────────────────────────────────
 
     def _resolve_dataset(self) -> DatamintBaseDataset:
@@ -378,15 +388,18 @@ class BaseTrainer(ABC):
         _LOGGER.debug("Using %s for model checkpointing with monitor='%s' mode='%s'",
                       checkpoint_cls.__name__, metric_name, mode)
 
-        callbacks: list = [
-            checkpoint_cls(
-                monitor=metric_name,
-                mode=mode,
-                save_top_k=1,
-                register_model_name=model_name,
-                register_model_on='test',
-                log_model_metrics=True,  # TODO: move this functionality to a separate callback or here
-            )]
+        checkpoint_kwargs: dict[str, Any] = dict(
+            monitor=metric_name,
+            mode=mode,
+            save_top_k=1,
+            register_model_name=model_name,
+            register_model_on='test',
+            log_model_metrics=True,
+        )
+        if checkpoint_cls is MLFlowDatamintModelCheckpoint:
+            checkpoint_kwargs['annotation_specs'] = self._build_annotation_specs()
+
+        callbacks: list = [checkpoint_cls(**checkpoint_kwargs)]
 
         callbacks.append(_LogDatasetSplitsCallback(self))
 

@@ -15,6 +15,8 @@ from albumentations.pytorch import ToTensorV2
 from datamint.dataset import VolumeDataset
 from datamint.lightning.datamodule import DatamintDataModule
 
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
+from datamint.entities.annotations.types import AnnotationType
 from .segmentation_trainer import SegmentationTrainer
 
 if TYPE_CHECKING:
@@ -158,3 +160,9 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
             eval_transform=eval_transform,
             pin_memory=False,
         )
+
+    def _build_annotation_specs(self) -> list[AnnotationSpec]:
+        return [
+            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='volume', identifier=name, required=False)
+            for name in self.dataset.seglabel_list
+        ]

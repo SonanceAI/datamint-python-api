@@ -676,6 +676,10 @@ class MLFlowDatamintModelCheckpoint(_BaseMLFlowModelCheckpoint):
     so no forward-wrapping is performed.
     """
 
+    def __init__(self, *args, annotation_specs: list | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.annotation_specs = annotation_specs
+
     @override
     def log_model_to_mlflow(self,
                             model: 'nn.Module | L.LightningModule | BaseDatamintModel',
@@ -698,6 +702,7 @@ class MLFlowDatamintModelCheckpoint(_BaseMLFlowModelCheckpoint):
             model,
             name=Path(self._last_checkpoint_saved).stem,
             signature=self._inferred_signature,
+            annotation_specs=self.annotation_specs,
             run_id=run_id,
             extra_pip_requirements=self._build_requirements(),
             code_paths=self.code_paths,

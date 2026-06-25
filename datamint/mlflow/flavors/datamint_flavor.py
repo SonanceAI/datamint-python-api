@@ -7,6 +7,7 @@ import datamint.mlflow.flavors
 from mlflow import pyfunc
 from .model import BaseDatamintModel, DatamintModel, _DatamintModelWrapper
 from .task_type import TaskType
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from collections.abc import Sequence
 from dataclasses import asdict
 from packaging.requirements import Requirement
@@ -207,6 +208,7 @@ def save_model(datamint_model: BaseDatamintModel,
                path,
                task_type: TaskType | str | None = None,
                supported_modes: Sequence[str] | None = None,
+               annotation_specs: Sequence[AnnotationSpec] | None = None,
                data_path=None,
                code_paths=None,
                infer_code_paths=False,
@@ -259,12 +261,14 @@ def save_model(datamint_model: BaseDatamintModel,
     linked_models = datamint_model._get_linked_models_uri() if hasattr(datamint_model, '_get_linked_models_uri') else {}
     resolved_task_type = task_type or getattr(datamint_model, 'task_type', None)
     task_type_value = resolved_task_type.value if isinstance(resolved_task_type, TaskType) else resolved_task_type
+    resolved_specs = annotation_specs or getattr(datamint_model, 'annotation_specs', None)
     flavor_params = {
         "datamint_version": datamint.__version__,
         "supported_modes": supported_modes or datamint_model.get_supported_modes(),
         "model_settings": asdict(datamint_model.settings),
         "linked_models": linked_models,
         "task_type": task_type_value,
+        "annotation_specs": [s.model_dump(mode='json', warnings='none', exclude_none=True) for s in resolved_specs] if resolved_specs else None,
     }
     mlflow_model.add_flavor(FLAVOR_NAME, **flavor_params)
     model_config.update(flavor_params)
@@ -332,6 +336,7 @@ def log_model(
     datamint_model: BaseDatamintModel,
     task_type: TaskType | str | None = None,
     supported_modes: Sequence[str] | None = None,
+    annotation_specs: Sequence[AnnotationSpec] | None = None,
     name: str = "datamint_model",
     data_path=None,
     code_paths=None,
@@ -351,6 +356,7 @@ def log_model(
         datamint_model=datamint_model,
         task_type=task_type,
         supported_modes=supported_modes,
+        annotation_specs=annotation_specs,
         name=name,
         flavor=datamint.mlflow.flavors.datamint_flavor,
         data_path=data_path,
@@ -386,17 +392,23 @@ def _load_pyfunc(path: str, model_config=None) -> pyfunc.PyFuncModel:
         dt_model = dt_model.another_model
         pf_model._model_impl.python_model = dt_model
 
-    # Restore task_type from flavor metadata if not already set on the model
-    if not dt_model.task_type:
+    # Restore task_type and annotation_specs from flavor metadata if not already set on the model
+    if not dt_model.task_type or not dt_model.annotation_specs:
         try:
             mlflow_model_meta = Model.load(path)
             flavor_data = mlflow_model_meta.flavors.get(FLAVOR_NAME, {})
-            task_type_str = flavor_data.get('task_type')
-            if task_type_str:
-                dt_model.task_type = TaskType(task_type_str)
-        except ValueError:
-            logger.warning(f"Unknown task_type in flavor metadata: {task_type_str}")
+            if not dt_model.task_type:
+                task_type_str = flavor_data.get('task_type')
+                if task_type_str:
+                    try:
+                        dt_model.task_type = TaskType(task_type_str)
+                    except ValueError:
+                        logger.warning(f"Unknown task_type in flavor metadata: {task_type_str}")
+            if not dt_model.annotation_specs:
+                raw_specs = flavor_data.get('annotation_specs')
+                if raw_specs:
+                    dt_model.annotation_specs = [AnnotationSpec.create(**s) for s in raw_specs]
         except Exception as e:
-            logger.debug(f"Could not restore task_type from flavor metadata: {e}")
+            logger.debug(f"Could not restore metadata from flavor: {e}")
 
     return pf_model

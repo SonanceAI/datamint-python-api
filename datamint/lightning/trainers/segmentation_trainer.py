@@ -8,6 +8,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
+from datamint.entities.annotations.types import AnnotationType
 from .base_trainer import BaseTrainer
 
 
@@ -56,3 +58,9 @@ class SegmentationTrainer(BaseTrainer):
 
     def _monitor_metric(self) -> tuple[str, str]:
         return 'val/iou', 'max'
+
+    def _build_annotation_specs(self) -> list[AnnotationSpec]:
+        return [
+            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='image', identifier=name, required=False)
+            for name in self.dataset.seglabel_list
+        ]
