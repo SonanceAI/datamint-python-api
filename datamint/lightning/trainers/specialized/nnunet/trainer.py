@@ -13,6 +13,8 @@ from rich import print as rprint
 from datamint.lightning.trainers.base_trainer import BaseTrainer
 from datamint.dataset.volume_dataset import VolumeDataset
 from datamint.lightning.trainers.specialized.nnunet.data_export import DatamintToNNUNetExporter
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
+from datamint.entities.annotations.types import AnnotationType
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -86,6 +88,19 @@ class NNUNetTrainer(BaseTrainer):
 
     def _build_dataset(self, project: 'str | Project', **kwargs) -> VolumeDataset:
         return VolumeDataset(project=project, **kwargs)
+
+    def _build_annotation_specs(self) -> list[AnnotationSpec]:
+        from datamint.dataset import VolumeDataset
+        ds = VolumeDataset(
+            project=self._user_project,
+            return_as_semantic_segmentation=True,
+            allow_external_annotations=True,
+            include_unannotated=False,
+        )
+        return [
+            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='volume', identifier=name, required=False)
+            for name in ds.seglabel_list
+        ]
 
     def _build_model(self, *args, **kwargs):
         raise NotImplementedError(

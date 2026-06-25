@@ -13,6 +13,7 @@ import torch
 from typing_extensions import override
 
 from datamint.entities.annotations import Annotation, ImageSegmentation, ImageClassification
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.resource import BaseResource
 from datamint.entities.resources.volume_resource import VolumeResource
 from datamint.entities.sliced_resource import SlicedVolumeResource
@@ -69,6 +70,10 @@ class BaseDatamintModel(PythonModel, ABC):
     task_type: ClassVar[TaskType | None] = None
     """Semantic task category for this model class. Subclasses should override
     at the class body level (e.g. ``task_type = TaskType.IMAGE_SEGMENTATION``)."""
+
+    annotation_specs: ClassVar[list[AnnotationSpec] | None] = None
+    """Annotation specs this model produces. Subclasses can override at the class body level.
+    When ``None``, specs may be provided via ``log_model``/``save_model`` instead."""
 
     def __init__(
         self,
