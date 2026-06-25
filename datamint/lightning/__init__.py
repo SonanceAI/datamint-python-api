@@ -15,6 +15,7 @@ from .trainers import (
     YOLOXTrainer,
     NNUNetTrainer,
     UNETRPPTrainer,
+    EfficientNetV2Trainer,
 )
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "YOLOXTrainer",
     "NNUNetTrainer",
     "UNETRPPTrainer",
+    "EfficientNetV2Trainer",
 ]
