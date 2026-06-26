@@ -62,7 +62,7 @@ class BaseTrainer(ABC):
             stopping.  Set to ``None`` to disable early stopping.
         mlflow_experiment_name: MLflow experiment name.  Auto-generated
             from the project name when ``None``.
-        register_model_name: Name for MLflow Model Registry.
+        model_name: Name for the model in the registry.
             Auto-generated when ``None``.
         auto_deploy_adapter: When ``True``, auto-generate a
             :class:`~datamint.mlflow.flavors.model.DatamintModel`
@@ -87,7 +87,7 @@ class BaseTrainer(ABC):
         max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
-        register_model_name: str | None = None,
+        model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
@@ -110,7 +110,7 @@ class BaseTrainer(ABC):
         self.max_epochs = max_epochs
         self.early_stopping_patience = early_stopping_patience
         self.mlflow_experiment_name = mlflow_experiment_name
-        self.register_model_name = register_model_name
+        self.model_name = model_name
         self.auto_deploy_adapter = auto_deploy_adapter
         self.trainer_kwargs = trainer_kwargs or {}
         self.trainer_kwargs.update(kwargs)
@@ -378,7 +378,7 @@ class BaseTrainer(ABC):
         else:
             _LOGGER.debug("No validation split available; checkpointing will not monitor a val metric.")
             metric_name, mode = None, 'min'
-        model_name = (self.register_model_name or self._project_name) if register_model else None
+        model_name = (self.model_name or self._project_name) if register_model else None
 
         if isinstance(self.model, PythonModel):
             checkpoint_cls = MLFlowDatamintModelCheckpoint
@@ -392,7 +392,7 @@ class BaseTrainer(ABC):
             monitor=metric_name,
             mode=mode,
             save_top_k=1,
-            register_model_name=model_name,
+            model_name=model_name,
             register_model_on='test',
             log_model_metrics=True,
         )

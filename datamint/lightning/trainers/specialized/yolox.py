@@ -49,7 +49,7 @@ class YOLOXTrainer(DetectionTrainer):
         early_stopping_patience: Patience for early stopping on ``val/map``.
             Set to ``None`` to disable.
         mlflow_experiment_name: MLflow experiment name.
-        register_model_name: MLflow Model Registry name.
+        model_name: Name for the model in the registry.
         split_as_of_timestamp: Historical timestamp for reproducible splits.
         auto_deploy_adapter: Auto-log a deploy adapter after training.
         trainer_kwargs: Extra kwargs forwarded to :class:`lightning.Trainer`.
@@ -75,7 +75,7 @@ class YOLOXTrainer(DetectionTrainer):
         max_epochs: int = 50,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
-        register_model_name: str | None = None,
+        model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
         dataset_kwargs: dict[str, Any] | None = None,
@@ -94,7 +94,7 @@ class YOLOXTrainer(DetectionTrainer):
             max_epochs=max_epochs,
             early_stopping_patience=early_stopping_patience,
             mlflow_experiment_name=mlflow_experiment_name,
-            register_model_name=register_model_name,
+            model_name=model_name,
             auto_deploy_adapter=auto_deploy_adapter,
             trainer_kwargs=trainer_kwargs,
             dataset_kwargs=dataset_kwargs,

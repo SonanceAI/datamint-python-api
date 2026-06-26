@@ -54,7 +54,7 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
         max_epochs: Maximum training epochs.
         early_stopping_patience: Epochs without val improvement before stop.
         mlflow_experiment_name: MLflow experiment name (auto-generated if None).
-        register_model_name: MLflow model registry name (auto-generated if None).
+        model_name: Name for the model in the registry (auto-generated if None).
         auto_deploy_adapter: Auto-generate a deployment adapter after training.
         trainer_kwargs: Extra kwargs forwarded to :class:`lightning.Trainer`.
         dataset_kwargs: Extra kwargs forwarded to :class:`VolumeDataset`.
@@ -79,7 +79,7 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
         max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
-        register_model_name: str | None = None,
+        model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
         dataset_kwargs: dict[str, Any] | None = None,
@@ -97,7 +97,7 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
             max_epochs=max_epochs,
             early_stopping_patience=early_stopping_patience,
             mlflow_experiment_name=mlflow_experiment_name,
-            register_model_name=register_model_name,
+            model_name=model_name,
             auto_deploy_adapter=auto_deploy_adapter,
             trainer_kwargs=trainer_kwargs,
             dataset_kwargs=dataset_kwargs,

@@ -49,7 +49,7 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
         max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
-        register_model_name: str | None = None,
+        model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
         dataset_kwargs: dict[str, Any] | None = None,
@@ -89,7 +89,7 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
                 stopping.  Set to ``None`` to disable early stopping.
             mlflow_experiment_name: MLflow experiment name.  Auto-generated
                 from the project name when ``None``.
-            register_model_name: Name for MLflow Model Registry.
+            model_name: Name for the model in the registry.
                 Auto-generated when ``None``.
             auto_deploy_adapter: When ``True``, auto-generate a
                 :class:`~datamint.mlflow.flavors.model.DatamintModel`
@@ -113,7 +113,7 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
             max_epochs=max_epochs,
             early_stopping_patience=early_stopping_patience,
             mlflow_experiment_name=mlflow_experiment_name,
-            register_model_name=register_model_name,
+            model_name=model_name,
             auto_deploy_adapter=auto_deploy_adapter,
             trainer_kwargs=trainer_kwargs,
             dataset_kwargs=dataset_kwargs,

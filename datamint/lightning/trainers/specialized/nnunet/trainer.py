@@ -463,7 +463,7 @@ class NNUNetTrainer(BaseTrainer):
         self._run_fingerprint_and_plan(dataset_id)
         self._run_preprocessing(dataset_id)
 
-        model_name = self.register_model_name or self._project_name
+        model_name = self.model_name or self._project_name
 
         with self._start_mlflow_run() as run:
             run_id = run.info.run_id
