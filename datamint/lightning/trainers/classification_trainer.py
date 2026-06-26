@@ -67,7 +67,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
     Default model: **ResNet-34** (via ``timm``) pretrained on ImageNet.
 
     Args:
-        model_name: ``timm`` model name.  Defaults to ``'resnet34'``.
+        architecture: ``timm`` model name.  Defaults to ``'resnet34'``.
         pretrained: Use pretrained weights.  Defaults to ``True``.
         image_size: Optional target image size ``(H, W)`` or a single int
             for square images. When omitted, the trainer keeps the original
@@ -82,13 +82,13 @@ class ImageClassificationTrainer(ClassificationTrainer):
     def __init__(
         self,
         *,
-        model_name: str = 'resnet34',
+        architecture: str = 'resnet34',
         pretrained: bool = True,
         image_size: int | tuple[int, int] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
-        self.model_name = model_name
+        self.architecture = architecture
         self.pretrained = pretrained
         if isinstance(image_size, int):
             self.image_size = (image_size, image_size)
@@ -116,7 +116,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
         metrics: dict[str, Any],
     ) -> L.LightningModule:
         return ClassificationModule(
-            model_name=self.model_name,
+            model_name=self.architecture,
             num_classes=len(self.dataset.image_categories_set),
             loss_fn=loss_fn,
             metrics_factories=metrics,

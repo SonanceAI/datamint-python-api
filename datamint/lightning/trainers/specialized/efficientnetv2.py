@@ -16,7 +16,7 @@ class EfficientNetV2Trainer(ImageClassificationTrainer):
     Default model: **EfficientNetV2-S** pretrained on ImageNet at 384×384.
     
     Args:
-        model_name: ``timm`` model name. Defaults to ``'efficientnetv2_s'``.
+        architecture: ``timm`` model name. Defaults to ``'efficientnetv2_s'``.
             Other valid choices: ``'efficientnetv2_m'``, ``'efficientnetv2_l'``,
             ``'efficientnetv2_xl'``, ``'efficientnetv2_rw_t'``.
         image_size: Target image size ``(H, W)`` or a single int for square
@@ -32,11 +32,11 @@ class EfficientNetV2Trainer(ImageClassificationTrainer):
     def __init__(
         self,
         *,
-        model_name: str = 'efficientnetv2_s',
+        architecture: str = 'efficientnetv2_s',
         image_size: int | tuple[int, int] = 384,
         **kwargs: Any,
     ) -> None:
-        super().__init__(model_name=model_name, image_size=image_size, **kwargs)
+        super().__init__(architecture=architecture, image_size=image_size, **kwargs)
 
     @override
     def _train_transform(self) -> 'BaseCompose':
