@@ -9,7 +9,8 @@ if TYPE_CHECKING:
     # New modular datasets
     from .dataset.image_dataset import ImageDataset
     from .dataset.volume_dataset import VolumeDataset
-    
+    from .mlflow.flavors.validation import validate_model, ValidationReport, ValidationIssue, ModelValidationError
+
 else:
     import lazy_loader as lazy
 
@@ -21,6 +22,8 @@ else:
             # New modular dataset classes
             "dataset.image_dataset": ["ImageDataset"],
             "dataset.volume_dataset": ["VolumeDataset"],
+            "mlflow.flavors.validation": ["validate_model", "ValidationReport",
+                                          "ValidationIssue", "ModelValidationError"],
         },
     )
 
