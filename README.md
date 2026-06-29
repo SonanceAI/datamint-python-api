@@ -173,6 +173,6 @@ api = Api(verify_ssl=False)
 
 ## 🆘 Support
 
-[Full Documentation](https://datamint-python-api.readthedocs.io/)  
+[Full Documentation](https://sonanceai.github.io/datamint-python-api)  
 [GitHub Issues](https://github.com/SonanceAI/datamint-python-api/issues)
 
