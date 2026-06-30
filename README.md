@@ -119,6 +119,14 @@ datamint-upload /path/to/dicoms \
 ```
 Use `--ai-model` when uploaded segmentation files should be linked to an existing deployed model by name. `--segmentation_names` accepts YAML mappings and ITK-SNAP label export CSV/TXT files.
 
+### Scaffold a New Project
+
+```bash
+datamint-init
+```
+
+Generates a numbered set of scripts (`01_upload_data.py` through `06_deploy.py`) for your task (detection, segmentation, or classification). Run it once in a new directory and follow the scripts in order.
+
 ### Configuration Management
 
 ```bash
