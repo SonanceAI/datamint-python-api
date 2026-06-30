@@ -95,6 +95,19 @@ class SlicedVolumeResource(SlicedResourceBase):
     def _slice_cache_entity_id(self) -> str:
         return f"{self._parent.id}:axis{self.slice_axis}:slice{self.slice_index}"
 
+    def fetch_file_data(self, auto_convert: bool = False, use_cache: bool = False) -> np.ndarray:
+        """Return the 2D slice as an (H, W) or (H, W, C) numpy array.
+
+        Overrides the parent delegation so that image models calling
+        ``fetch_file_data`` on a sliced proxy get the 2D slice, not the
+        full 3D volume.
+        """
+        sliced = self.fetch_slice_data()  # (C, H, W)
+        hwc = np.moveaxis(sliced, 0, -1)  # (H, W, C)
+        if hwc.shape[-1] == 1:
+            hwc = hwc[..., 0]  # (H, W) for single-channel
+        return hwc
+
     def fetch_slice_data(self) -> np.ndarray:
         """Fetch the 2D slice as a (C, H, W) array.
 

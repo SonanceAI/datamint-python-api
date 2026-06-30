@@ -36,6 +36,8 @@ Folders are numbered in the recommended learning order.
 ### 05 — Deployment
 1. [`01_deploy_registered_model`](05_deployment/01_deploy_registered_model.ipynb) — Deploy a model already registered in Datamint
 2. [`02_deploy_external_model`](05_deployment/02_deploy_external_model.ipynb) — Wrap and deploy a model trained outside Datamint
+3. [`03_validate_model`](05_deployment/03_validate_model.ipynb) — Validate a model before promoting it to production
+4. [`04_predict_images_volumes_and_videos`](05_deployment/04_predict_images_volumes_and_videos.ipynb) — Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges
 
 ### 06 — End-to-End Use Cases
 

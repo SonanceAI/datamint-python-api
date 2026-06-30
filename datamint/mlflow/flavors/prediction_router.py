@@ -25,6 +25,19 @@ class ModeSpec:
     fallback_to_default: bool = True
 
 
+def bridge_mode(fn: Callable) -> Callable:
+    """Marks a method as a bridge implementation.
+
+    Bridge methods are only auto-registered in the router when their
+    prerequisite mode is already in the registry (see
+    ``PredictionRouter._BRIDGE_MODE_PREREQS``).  Without this marker the
+    router would treat them as ordinary overrides and expose them regardless
+    of whether the prerequisite is implemented.
+    """
+    fn._is_bridge = True  # type: ignore[attr-defined]
+    return fn
+
+
 def prediction_mode(
     mode: PredictionMode,
     *,
@@ -65,6 +78,12 @@ class PredictionRouter:
     _RESERVED_PARAMS = frozenset({"mode", "confidence_threshold"})
     _DELEGATED_MODE_MAP = {
         PredictionMode.IMAGE: PredictionMode.SLICE,
+    }
+    # prerequisite → bridge modes that become available when prerequisite is registered
+    _BRIDGE_MODE_PREREQS: dict[PredictionMode, PredictionMode] = {
+        PredictionMode.VOLUME: PredictionMode.SLICE,
+        PredictionMode.FRAME: PredictionMode.IMAGE,
+        PredictionMode.ALL_FRAMES: PredictionMode.IMAGE,
     }
 
     def __init__(self, model_instance: Any,
@@ -116,6 +135,27 @@ class PredictionRouter:
                         source_mode.value, target_mode.value
                     )
                     registry[source_mode] = (method, ModeSpec(mode=source_mode))
+
+        # Step 4: register bridge modes when their prerequisite is in the registry.
+        # Bridge methods are marked with @bridge_mode; they are skipped in Pass 2
+        # (as base-class methods) and only activated here when the prerequisite mode
+        # is actually implemented.
+        for bridge_mode_key, prereq_mode in PredictionRouter._BRIDGE_MODE_PREREQS.items():
+            if bridge_mode_key in registry:
+                continue
+            if prereq_mode not in registry:
+                continue
+            method_name = f"predict_{bridge_mode_key.value}"
+            method = getattr(model, method_name, None)
+            if method is None:
+                continue
+            method_func = getattr(method, "__func__", method)
+            if getattr(method_func, "_is_bridge", False):
+                _LOGGER.info(
+                    "Registering bridge handler for '%s' mode (prereq: '%s')",
+                    bridge_mode_key.value, prereq_mode.value,
+                )
+                registry[bridge_mode_key] = (method, ModeSpec(mode=bridge_mode_key))
 
         return registry
 
