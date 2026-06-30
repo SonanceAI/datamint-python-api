@@ -17,9 +17,10 @@ from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.resource import BaseResource
 from datamint.entities.resources.volume_resource import VolumeResource
 from datamint.entities.sliced_resource import SlicedVolumeResource
+from datamint.entities.sliced_video_resource import SlicedVideoResource
 from datamint.mlflow.flavors.model_loader import LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
-from datamint.mlflow.flavors.prediction_router import PredictionRouter
+from datamint.mlflow.flavors.prediction_router import PredictionRouter, bridge_mode
 from datamint.mlflow.flavors.task_type import TaskType
 
 logger = logging.getLogger(__name__)
@@ -240,6 +241,7 @@ class BaseDatamintModel(PythonModel, ABC):
     def predict_image(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionImageResult:
         raise NotImplementedError("predict_image is not implemented")
 
+    @bridge_mode
     def predict_slice(
         self,
         model_input: list[BaseResource],
@@ -247,10 +249,57 @@ class BaseDatamintModel(PythonModel, ABC):
         axis: ViewPlane,
         **kwargs: Any,
     ) -> PredictionImageResult:
+        """Process a single volume slice through :meth:`predict_image`."""
+        if "image" in self.get_supported_modes():
+            image_inputs = []
+            for r in model_input:
+                if isinstance(r, SlicedVolumeResource):
+                    image_inputs.append(r)
+                elif isinstance(r, VolumeResource) or (hasattr(r, 'is_volume') and r.is_volume()):
+                    image_inputs.append(SlicedVolumeResource(r, slice_index=slice_index, slice_axis=axis))
+                else:
+                    raise ValueError(f"Unsupported resource type for slice prediction: {type(r)}")
+            return self.predict_image(image_inputs, **kwargs)
         raise NotImplementedError("predict_slice is not implemented")
 
+    @bridge_mode
     def predict_volume(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionResult:
+        """Process each volume by iterating axial slices through :meth:`predict_slice`."""
+        if "slice" in self.get_supported_modes():
+            axis: ViewPlane = 'axial'
+            results = []
+            for resource in model_input:
+                slices = SlicedVolumeResource.slice_over(resource, slice_axis=axis)
+                resource_anns: list = []
+                for sliced in slices:
+                    preds = self.predict_slice([sliced], slice_index=sliced.slice_index, axis=axis, **kwargs)
+                    resource_anns.extend(preds[0])
+                results.append(resource_anns)
+            return results
         raise NotImplementedError("predict_volume is not implemented")
+
+    @bridge_mode
+    def predict_frame(self, model_input: list[BaseResource], frame_index: int, **kwargs: Any) -> PredictionImageResult:
+        """Process a single video frame through :meth:`predict_image`."""
+        if "image" in self.get_supported_modes():
+            frame_inputs = [SlicedVideoResource(r, frame_index=frame_index) for r in model_input]
+            return self.predict_image(frame_inputs, **kwargs)
+        raise NotImplementedError("predict_frame is not implemented")
+
+    @bridge_mode
+    def predict_all_frames(self, model_input: list[BaseResource], **kwargs: Any) -> PredictionResult:
+        """Process all video frames independently through :meth:`predict_image`."""
+        if "image" in self.get_supported_modes():
+            results = []
+            for resource in model_input:
+                frames = SlicedVideoResource.slice_over(resource)
+                resource_anns: list = []
+                for frame in frames:
+                    preds = self.predict_image([frame], **kwargs)
+                    resource_anns.extend(preds[0])
+                results.append(resource_anns)
+            return results
+        raise NotImplementedError("predict_all_frames is not implemented")
 
 
 class DatamintModel(BaseDatamintModel):
@@ -380,39 +429,6 @@ class DatamintModel(BaseDatamintModel):
 
     def _clear_ptmodel(self) -> None:
         self._set_ptmodel(None)
-
-    # ------------------------------------------------------------------
-    # Prediction dispatch overrides
-    # ------------------------------------------------------------------
-
-    @override
-    def predict_slice(
-        self,
-        model_input: list[BaseResource],
-        slice_index: int,
-        axis: ViewPlane,
-        **kwargs: Any,
-    ) -> PredictionImageResult:
-        # if predict_image is implemented, route slice predictions to predict_image by default
-        if "image" in self.get_supported_modes():
-            # transform volume resources into 2D image resources for predict_image
-            image_inputs = []
-            # volume_cache = CacheManager(
-            #     'sliced_volumes',
-            #     enable_memory_cache=True,
-            #     memory_cache_maxsize=2,
-            # )
-            for r in model_input:
-                if isinstance(r, VolumeResource):
-                    image_inputs.append(SlicedVolumeResource(r,
-                                                             slice_index=slice_index,
-                                                             slice_axis=axis)
-                                        )
-                else:
-                    raise ValueError(f"Unsupported resource type for slice prediction: {type(r)}")
-
-            return self.predict_image(image_inputs, **kwargs)
-        raise NotImplementedError("predict_slice is not implemented")
 
     # ------------------------------------------------------------------
     # Serialization — also clears loader cache on restore

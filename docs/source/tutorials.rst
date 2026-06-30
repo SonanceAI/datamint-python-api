@@ -35,6 +35,7 @@ Deployment
 * `01_deploy_registered_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/01_deploy_registered_model.ipynb>`_: Deploy a model registered in MLflow as a managed Datamint endpoint.
 * `02_deploy_external_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_: Adapt and deploy an externally-trained model in Datamint.
 * `03_validate_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_validate_model.ipynb>`_: Validate a model before promoting it to production.
+* `04_predict_images_volumes_and_videos.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/04_predict_images_volumes_and_videos.ipynb>`_: Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges.
 
 End-to-End Examples
 -------------------

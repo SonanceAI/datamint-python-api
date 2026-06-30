@@ -33,9 +33,9 @@ class SlicedResourceBase:
     def _get_version_info(self) -> dict:
         """Get version info from the parent resource for cache validation."""
         return {
-            'created_at': self._parent.created_at,
-            'deleted_at': self._parent.deleted_at,
-            'size': self._parent.size,
+            'created_at': getattr(self._parent, 'created_at', None),
+            'deleted_at': getattr(self._parent, 'deleted_at', None),
+            'size': getattr(self._parent, 'size', None),
         }
 
     @cached_property
