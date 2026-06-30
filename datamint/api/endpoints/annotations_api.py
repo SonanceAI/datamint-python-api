@@ -31,7 +31,7 @@ from datamint.entities.annotations import (
     LineAnnotation,
     annotation_from_dict,
 )
-from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.exceptions import ItemNotFoundError, ServerError
 from datamint.utils.nifti_utils import metadata_to_nifti_obj
 
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
@@ -453,7 +453,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                       the basename of the path will be used.
 
         Raises:
-            DatamintException: If the upload fails.
+            ServerError: If the upload fails.
 
         """
         f, filename, close_file, content_type = self._prepare_upload_file(file,
@@ -470,7 +470,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                            session=session,
                                                            data=form)
             if isinstance(respdata, dict) and 'error' in respdata:
-                raise DatamintException(respdata['error'])
+                raise ServerError(respdata['error'])
         finally:
             if close_file:
                 f.close()
@@ -494,7 +494,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                       the basename of the path will be used.
 
         Raises:
-            DatamintException: If the upload fails.
+            ServerError: If the upload fails.
         """
         f, filename, close_file, content_type = self._prepare_upload_file(file,
                                                                           filename,
@@ -509,7 +509,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                       files=files)
             respdata = resp.json()
             if isinstance(respdata, dict) and 'error' in respdata:
-                raise DatamintException(respdata['error'])
+                raise ServerError(respdata['error'])
         finally:
             if close_file:
                 f.close()
@@ -550,7 +550,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                       json=annotations_payload).json()
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
-                raise DatamintException(r['error'])
+                raise ServerError(r['error'])
         if is_single_annotation:
             return respdata[0]
         return respdata
@@ -788,7 +788,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                        json=annotations)
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
-                raise DatamintException(r['error'])
+                raise ServerError(r['error'])
         return respdata
 
     @staticmethod
@@ -917,7 +917,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         raise
 
                     if 'error' in respdata:
-                        raise DatamintException(respdata['error'])
+                        raise ServerError(respdata['error'])
                     return respdata
             else:
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
@@ -951,7 +951,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 raise
 
             if 'error' in respdata:
-                raise DatamintException(respdata['error'])
+                raise ServerError(respdata['error'])
             return respdata
         else:
             raise ValueError(f"Unsupported file_path type for volume upload: {type(file_path)}")
@@ -1460,7 +1460,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             project_id: Optional project ID to associate with the annotation.
 
         Raises:
-            DatamintException: If the update fails.
+            ServerError: If the update fails.
         """
         annotation_id = self._entid(annotation)
 
@@ -1477,7 +1477,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         respdata = resp.json()
         if isinstance(respdata, dict) and 'error' in respdata:
-            raise DatamintException(respdata['error'])
+            raise ServerError(respdata['error'])
 
     def approve(self, annotation: str | Annotation) -> None:
         """Approve an annotation.

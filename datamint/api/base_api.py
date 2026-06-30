@@ -3,7 +3,14 @@ from typing import TYPE_CHECKING
 from collections.abc import Generator, AsyncGenerator
 import httpx
 from dataclasses import dataclass
-from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.exceptions import (
+    ItemNotFoundError,
+    AuthenticationError,
+    PermissionDeniedError,
+    ValidationError,
+    NetworkError,
+    ServerError,
+)
 import aiohttp
 import json
 from PIL import Image
@@ -126,7 +133,7 @@ class BaseApi:
             original_error: The original SSL-related exception
 
         Raises:
-            DatamintException: With helpful troubleshooting information
+            NetworkError: With helpful troubleshooting information
         """
         error_msg = (
             f"SSL Certificate verification failed: {original_error}\n\n"
@@ -141,7 +148,7 @@ class BaseApi:
             "   api = Api(verify_ssl=False)\n\n"
             "For more help, see: https://github.com/SonanceAI/datamint-python-api#-ssl-certificate-troubleshooting"
         )
-        raise DatamintException(error_msg) from original_error
+        raise NetworkError(error_msg) from original_error
 
     def _create_aiohttp_connector(self, force_close: bool = False) -> aiohttp.TCPConnector:
         """Create aiohttp connector with SSL configuration.
@@ -417,7 +424,7 @@ class BaseApi:
         except httpx.ConnectError as e:
             if "CERTIFICATE_VERIFY_FAILED" in str(e) or "certificate verify failed" in str(e).lower():
                 self._raise_ssl_error(e)
-            raise
+            raise NetworkError(str(e)) from e
         except httpx.HTTPError as e:
             try:
                 response_json = response.json()
@@ -426,18 +433,21 @@ class BaseApi:
             error_msg = f"{getattr(e, 'message', str(e))} | {getattr(response, 'text', '')}"
             if response_json:
                 error_msg = f"{error_msg} | {response_json}"
-            try:
-                e.message = error_msg
-            except Exception:
-                logger.debug("Unable to set message attribute on exception")
-                pass
 
             status_code = response.status_code
-            if status_code in (400, 404):
+            if status_code == 401:
+                raise AuthenticationError(error_msg) from e
+            if status_code == 403:
+                raise PermissionDeniedError(error_msg) from e
+            if status_code in (400, 422):
+                raise ValidationError(error_msg) from e
+            if status_code == 404:
                 new_error_msg = error_msg.replace('404 Not Found', '')
                 if ' not found' in new_error_msg.lower() or 'Not Found' in new_error_msg:
-                    # Will be caught by the caller and properly initialized:
                     raise ItemNotFoundError('unknown', {})
+                raise ValidationError(error_msg) from e
+            if status_code >= 500:
+                raise ServerError(error_msg, status_code=status_code) from e
             raise
         return response_json
 
@@ -447,9 +457,10 @@ class BaseApi:
         response_json = None
         try:
             response.raise_for_status()
+        except aiohttp.ClientConnectionError as e:
+            raise NetworkError(str(e)) from e
         except aiohttp.ClientError as e:
             error_msg = str(getattr(e, 'message', e))
-            # log the raw response for debugging
             status_code = BaseApi.get_status_code(e)
             # Only read the body on error to get detailed message; do NOT read on success
             # as that would exhaust the stream before callers can iterate over it.
@@ -461,15 +472,18 @@ class BaseApi:
                 error_msg = f"{error_msg} | {response_json}"
 
             logger.error(f"HTTP error {status_code} for {url}: {error_msg}")
-            try:
-                e.message = error_msg
-            except Exception:
-                logger.debug("Unable to set message attribute on exception")
-                pass
-            if status_code in (400, 404):
+            if status_code == 401:
+                raise AuthenticationError(error_msg) from e
+            if status_code == 403:
+                raise PermissionDeniedError(error_msg) from e
+            if status_code in (400, 422):
+                raise ValidationError(error_msg) from e
+            if status_code == 404:
                 if ' not found' in error_msg.lower() or 'Not Found' in error_msg:
-                    # Will be caught by the caller and properly initialized:
                     raise ItemNotFoundError('unknown', {})
+                raise ValidationError(error_msg) from e
+            if status_code >= 500:
+                raise ServerError(error_msg, status_code=status_code) from e
             raise
         return response_json
 

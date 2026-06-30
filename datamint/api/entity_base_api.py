@@ -3,7 +3,7 @@ from collections.abc import Sequence, AsyncGenerator
 import logging
 import httpx
 from datamint.entities.base_entity import BaseEntity
-from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.exceptions import ItemNotFoundError, ServerError
 import aiohttp
 import asyncio
 from .base_api import ApiConfig, BaseApi
@@ -216,7 +216,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
                                                        f'/{self.endpoint_base}',
                                                        json=entity_data)
         if 'error' in respdata:
-            raise DatamintException(respdata['error'])
+            raise ServerError(respdata['error'])
         if isinstance(respdata, str):
             return respdata
         if isinstance(respdata, list):

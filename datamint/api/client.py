@@ -6,7 +6,7 @@ from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         )
 from .endpoints.models_api import ModelsApi
 import datamint.configs
-from datamint.exceptions import DatamintException
+from datamint.exceptions import AuthenticationError, NetworkError
 import logging
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class Api:
             if api_key is None:
                 msg = f"API key not provided! Use the environment variable " + \
                     f"{Api.DATAMINT_API_VENV_NAME} or pass it as an argument."
-                raise DatamintException(msg)
+                raise AuthenticationError(msg)
         self.config = ApiConfig(
             server_url=server_url,
             api_key=api_key,
@@ -94,8 +94,8 @@ class Api:
         try:
             self.projects.get_list(limit=1)
         except Exception as e:
-            raise DatamintException("Error connecting to the Datamint API." +
-                                    f" Please check your api_key and/or other configurations.") from e
+            raise NetworkError("Error connecting to the Datamint API."
+                               " Please check your api_key and/or other configurations.") from e
 
     def close(self) -> None:
         """Close underlying HTTP clients and any shared aiohttp sessions.
