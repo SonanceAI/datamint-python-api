@@ -4,7 +4,7 @@ from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities import Project, Resource
 from datamint.entities.annotations.annotation import Annotation
-from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
 from datamint.entities.annotations import AnnotationType
 from datamint.utils.collection_utils import ChainedSequence
 import httpx
@@ -431,7 +431,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                             session=session,
                                                             timeout=timeout)
             if 'error' in resp_data:
-                raise DatamintException(resp_data['error'])
+                raise ServerError(resp_data['error'])
             _LOGGER.debug("Response on uploading %s: %s", filename, resp_data)
             return resp_data['id']
         except Exception as e:
@@ -845,7 +845,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         Raises:
             ItemNotFoundError: If `publish_to` is supplied, and the project does not exist.
-            DatamintException: If the upload fails.
+            ServerError: If the upload fails.
 
         Example:
             .. code-block:: python
@@ -902,7 +902,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             return r
         else:
             # This should not happen with single file uploads, but handle it just in case
-            raise DatamintException(f"Unexpected return from upload_resources: {type(result)} | {result}")
+            raise ServerError(f"Unexpected return from upload_resources: {type(result)} | {result}")
 
     async def _async_download_file(self,
                                    resource: str | Resource,
@@ -1211,7 +1211,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         Raises:
             ItemNotFoundError: If the resource does not exists.
-            DatamintException: If the resource is not a video or dicom.
+            ServerError: If the resource is not a video or dicom.
         """
         # check if the resource is an single frame image (png,jpeg,...) first.
         # If so, download the whole resource file and return the image.
@@ -1219,8 +1219,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             resource = self.get_by_id(resource)
         if resource.is_image():
             if frame_index != 0:
-                raise DatamintException(f"Resource {resource.id} is not a multi-frame resource, "
-                                        f"but frame_index is {frame_index}.")
+                raise ValidationError(f"Resource {resource.id} is not a multi-frame resource, "
+                                      f"but frame_index is {frame_index}.")
             return self.download_resource_file(resource, auto_convert=True)
 
         try:
@@ -1231,8 +1231,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             if response.status_code == 200:
                 return Image.open(io.BytesIO(response.content))
             else:
-                raise DatamintException(
-                    f"Error downloading frame {frame_index} of resource {self._entid(resource)}: {response.text}")
+                raise ServerError(
+                    f"Error downloading frame {frame_index} of resource {self._entid(resource)}: {response.text}",
+                    status_code=response.status_code)
         except ItemNotFoundError as e:
             e.set_params('resource', {'resource_id': self._entid(resource)})
             raise e

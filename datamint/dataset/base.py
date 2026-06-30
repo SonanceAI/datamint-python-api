@@ -15,7 +15,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
 from datamint.entities.annotation_worklist import AnnotationWorklist
-from datamint.exceptions import DatamintException
+from datamint.exceptions import DatamintException, ItemNotFoundError
 from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
 from datamint.entities.annotations import AnnotationType
@@ -451,7 +451,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if isinstance(project, str):
             project = self._api.projects.get_by_name(project)
             if project is None:
-                raise DatamintDatasetException(f"Project '{project}' not found.")
+                raise ItemNotFoundError('Project', {'name': project})
         else:
             # Attach API to project if not already set
             if not hasattr(project, '_api') or project._api is None:

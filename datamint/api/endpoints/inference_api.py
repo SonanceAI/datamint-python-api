@@ -9,6 +9,7 @@ import httpx
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.inferencejob import InferenceJob
+from datamint.exceptions import JobTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
 
         def _check_timeout() -> None:
             if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError(f"Inference job {job_id} did not finish within {timeout}s")
+                raise JobTimeoutError(f"Inference job {job_id} did not finish within {timeout}s")
 
         def _notify(event: dict) -> None:
             if on_status is None:

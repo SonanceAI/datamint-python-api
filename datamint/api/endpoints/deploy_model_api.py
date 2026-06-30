@@ -7,7 +7,7 @@ import time
 
 import httpx
 
-from datamint.exceptions import ResourceNotFoundError
+from datamint.exceptions import ResourceNotFoundError, JobTimeoutError
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.deployjob import DeployJob
 
@@ -88,7 +88,7 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
 
         def _check_timeout() -> None:
             if deadline is not None and time.monotonic() >= deadline:
-                raise TimeoutError(f"Deployment job {job_id} did not finish within {timeout}s")
+                raise JobTimeoutError(f"Deployment job {job_id} did not finish within {timeout}s")
 
         def _notify(event: dict) -> None:
             if on_status is None:

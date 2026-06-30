@@ -195,7 +195,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                 # get the project id by its name
                 project_found = self._get_by_name_or_id(project)
                 if project_found is None:
-                    raise ValueError(f"Project '{project}' not found.")
+                    raise ItemNotFoundError('Project', {'name': project})
                 project_id = project_found.id
         else:
             project_id = project.id

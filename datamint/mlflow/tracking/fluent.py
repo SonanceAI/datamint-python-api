@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 import threading
 import logging
 from datamint import Api
-from datamint.exceptions import DatamintException
+from datamint.exceptions import ItemNotFoundError
 import os
 from datamint.mlflow.env_vars import EnvVars
 from datamint.mlflow.env_utils import ensure_mlflow_configured
@@ -43,7 +43,7 @@ def _find_project_by_name(project_name: str):
     dt_client = Api(check_connection=False)
     project = dt_client.projects.get_by_name(project_name)
     if project is None:
-        raise DatamintException(f"Project with name '{project_name}' does not exist.")
+        raise ItemNotFoundError('Project', {'name': project_name})
     return project
 
 
@@ -60,7 +60,7 @@ def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
             pass  # Not a valid UUID, treat as name
     project = dt_client.projects.get_by_name(project_name_or_id)
     if project is None:
-        raise DatamintException(f"Project '{project_name_or_id}' does not exist.")
+        raise ItemNotFoundError('Project', {'name_or_id': project_name_or_id})
     return project
 
 
