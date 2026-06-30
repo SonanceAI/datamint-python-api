@@ -4,6 +4,7 @@ from mlflow.utils.proto_json_utils import message_to_json
 from functools import partial
 import json
 from typing_extensions import override
+from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
 
 
 class DatamintStore(RestStore):
@@ -58,6 +59,13 @@ class DatamintStore(RestStore):
             return super().get_experiment_by_name(experiment_name)
         if project_id is None:
             project_id = get_active_project_id()
+            if project_id is None:
+                raise MlflowException(
+                    message="No active project found. "
+                    "Please set the active project using `datamint.mlflow.set_project()` and "
+                    "ensure it is called before `mlflow.set_experiment()` and `mlflow.start_run()`.",
+                    error_code=INVALID_PARAMETER_VALUE,
+                )
         try:
             req_body = message_to_json(GetExperimentByName(experiment_name=experiment_name))
             if project_id:
