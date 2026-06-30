@@ -406,7 +406,7 @@ class NNUNetTrainer(BaseTrainer):
 
         api = self.dataset._api
         NNUNetToDatamintImporter(api, dataset_dir).import_predictions(
-            pred_dir, class_map=class_map
+            pred_dir, class_map=class_map, mlflow_model_id=self.model_name or self._project_name
         )
 
     # ── Public entry point ────────────────────────────────────────────────────

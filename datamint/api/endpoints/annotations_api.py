@@ -1090,6 +1090,70 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             raise TypeError('Expected a single annotation id for image classification creation.')
         return created
 
+    def upload_predictions(
+        self,
+        resource: str | Resource,
+        predictions: list[Annotation],
+        model_name: str | None = None,
+        source: str | None = None,
+    ) -> list[str]:
+        """Upload model prediction annotations for a resource.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            predictions: List of Annotation objects from model.predict().
+            model_name: The registered model name. Stored as ``created_by_model`` on
+                each annotation so predictions can be distinguished from human labels.
+            source: Annotation source tag — reserved for DAT-967, no-op until server supports it.
+
+        Returns:
+            List of created annotation ids.
+        """
+        from datamint.entities.annotations import ImageSegmentation, VolumeSegmentation
+
+        annotation_ids = []
+        for ann in predictions:
+            if isinstance(ann, VolumeSegmentation):
+                mask = ann.segmentation_data
+                if mask is None:
+                    _LOGGER.warning(
+                        "Skipping volume segmentation with no mask data for resource %s", self._entid(resource)
+                    )
+                    continue
+                ids = self.upload_volume_segmentation(
+                    resource=resource,
+                    file_path=mask,
+                    name=ann.class_map,
+                    ai_model_name=model_name,
+                )
+                annotation_ids.extend(ids)
+
+            elif isinstance(ann, ImageSegmentation):
+                mask = ann.segmentation_data
+                if mask is None:
+                    _LOGGER.warning(
+                        "Skipping segmentation with no mask data for resource %s", self._entid(resource)
+                    )
+                    continue
+                ids = self.upload_segmentations(
+                    resource=resource,
+                    file_path=mask,
+                    name=ann.identifier,
+                    frame_index=ann.frame_index,
+                    ai_model_name=model_name,
+                )
+                annotation_ids.extend(ids)
+
+            else:
+                ann.model_id = model_name  # server maps model_id → created_by_model
+                created = self.create(resource, ann)
+                if isinstance(created, list):
+                    annotation_ids.extend(created)
+                else:
+                    annotation_ids.append(created)
+
+        return annotation_ids
+
     def _resolve_metadata_for_annotation(
         self,
         resource: str | Resource,
