@@ -533,6 +533,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                             frame_index=frame_index,
                             transpose_segmentation=transpose_segmentation,
                             model_id=ai_model,
+                            source='imported',
                             session=session,
                         )
             return rid
