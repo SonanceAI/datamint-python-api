@@ -214,8 +214,42 @@ class BaseDatamintModel(PythonModel, ABC):
         Routes to the appropriate handler based on ``params['mode']``.
         **Do not override** — implement :meth:`predict_default` (or other
         ``predict_*`` hooks) instead.
+
+        Pass ``params={'log_predictions': True, 'model_name': ...}`` to also upload
+        the resulting annotations to the Datamint server, tagged ``source='model_deploy'``.
+        This is meant for local inference against a model loaded via
+        :func:`datamint.mlflow.flavors.load_model` (testing a registered model outside
+        of ``Trainer.fit()``), as opposed to predictions made automatically during
+        training, which are tagged ``source='model_pipeline'`` instead.
         """
-        return self._router.dispatch(model_input, params or {})
+        params = dict(params or {})
+        log_predictions = params.pop('log_predictions', False)
+        model_name = params.pop('model_name', None)
+
+        result = self._router.dispatch(model_input, params)
+
+        if log_predictions:
+            self._log_predictions(model_input, result, model_name=model_name)
+
+        return result
+
+    def _log_predictions(
+        self,
+        resources: list[BaseResource],
+        predictions: PredictionResult,
+        model_name: str | None,
+    ) -> None:
+        """Upload predictions as annotations tagged ``source='model_deploy'``. """
+        for resource, preds in zip(resources, predictions):
+            if not preds:
+                continue
+            try:
+                annotations_api = resource._api._api_instance.annotations
+                annotations_api.upload_predictions(resource, preds, model_name=model_name, source='model_deploy')
+            except Exception as e:
+                logger.warning(
+                    "Failed to log predictions for resource %s: %s", getattr(resource, 'id', resource), e
+                )
 
     def get_supported_modes(self) -> list[str]:
         """Return the list of prediction modes supported by this model."""
