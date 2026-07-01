@@ -37,7 +37,8 @@ class CreateAnnotationDto:
                  is_model: bool | None = None,
                  model_id: str | None = None,
                  geometry: 'Geometry | None' = None,
-                 units: str | None = None):
+                 units: str | None = None,
+                 source: str | None = None):
         self.type = type if isinstance(type, AnnotationType) else AnnotationType(type)
         self.value = value
         self.identifier = identifier
@@ -56,6 +57,7 @@ class CreateAnnotationDto:
             is_model = True
         self.is_model = is_model
         self.geometry = geometry
+        self.source = source
 
         if geometry is not None and self.type != geometry.type:
             raise ValueError(f"Annotation type {self.type} does not match geometry type {geometry.type}.")
@@ -73,6 +75,7 @@ class CreateAnnotationDto:
             'units': self.units,
             "geometry": self.geometry.to_dict() if self.geometry else None,
             "is_model": self.is_model,
-            "model_id": self.model_id
+            "model_id": self.model_id,
+            "source": self.source,
         }
         return _remove_none(ret)

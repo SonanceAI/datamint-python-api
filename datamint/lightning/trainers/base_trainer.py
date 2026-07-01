@@ -224,6 +224,10 @@ class BaseTrainer(ABC):
                 _LOGGER.debug("Building deploy adapter...")
                 adapter = self._build_deploy_adapter()
 
+            # 9. Upload test predictions as annotations
+            predict_model = self.model if isinstance(self.model, BaseDatamintModel) else adapter
+            self._upload_test_predictions(predict_model)
+
         return {
             'trainer': self._lightning_trainer,
             'model': self.model,
@@ -252,6 +256,44 @@ class BaseTrainer(ABC):
             _LOGGER.info("Starting test...")
 
             return self._lightning_trainer.test(self.model, datamodule=self.datamodule)
+
+    def _upload_test_predictions(self, predict_model: 'BaseDatamintModel | None' = None) -> None:
+        """Run inference on the test split and upload predictions as annotations."""
+        if predict_model is None:
+            _LOGGER.debug("No deployable model available; skipping test prediction upload.")
+            return
+
+        if not isinstance(predict_model, BaseDatamintModel):
+            _LOGGER.debug("Model does not implement DatamintModel protocol; skipping test prediction upload.")
+            return
+
+        test_dataset = self.datamodule.get_dataset_split('test')
+        if test_dataset is None or len(test_dataset) == 0:
+            _LOGGER.debug("No test split available; skipping test prediction upload.")
+            return
+
+        model_name = self.model_name or self._project_name
+
+        # Lightning moves the model back to CPU after test(); re-sync to inference device.
+        predict_model.to(predict_model.inference_device)
+        predict_model.eval()
+
+        annotations_api = self.dataset._api.annotations
+        resources = test_dataset.resources
+        _LOGGER.info("Uploading test predictions for %d resources...", len(resources))
+
+        for resource in resources:
+            try:
+                preds_per_resource = predict_model.predict([resource])
+                preds = preds_per_resource[0] if preds_per_resource else []
+                if preds:
+                    annotations_api.upload_predictions(resource, preds, model_name=model_name, source='model_pipeline')
+            except Exception as e:
+                _LOGGER.warning(
+                    "Failed to upload predictions for resource %s: %s", resource.id, e
+                )
+
+        _LOGGER.info("Finished uploading test predictions.")
 
     # ── Template hooks (subclasses override these) ──────────────
 

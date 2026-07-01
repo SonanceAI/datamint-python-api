@@ -224,6 +224,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                           model_id: str | None = None,
                                           transpose_segmentation: bool = False,
                                           upload_volume: bool | str = 'auto',
+                                          source: str | None = None,
                                           session: aiohttp.ClientSession | None = None,
                                           ) -> Sequence[str]:
         """
@@ -241,6 +242,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation.
             upload_volume: Whether to upload the volume as a single file or split into frames.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
         Returns:
             List of annotation IDs created.
@@ -266,6 +268,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 worklist_id=worklist_id,
                 model_id=model_id,
                 transpose_segmentation=transpose_segmentation,
+                source=source,
                 session=session,
             )
 
@@ -296,6 +299,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 discard_empty_segmentations=discard_empty_segmentations,
                 worklist_id=worklist_id,
                 model_id=model_id,
+                source=source,
                 session=session,
             )
             annotids.extend(frame_annotids)
@@ -311,6 +315,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                       discard_empty_segmentations: bool = True,
                                                       worklist_id: str | None = None,
                                                       model_id: str | None = None,
+                                                      source: str | None = None,
                                                       session: aiohttp.ClientSession | None = None,
                                                       ) -> list[str]:
         """
@@ -327,6 +332,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             discard_empty_segmentations: Whether to discard empty segmentations.
             worklist_id: The annotation worklist unique id.
             model_id: The model unique id.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
         Returns:
             List of annotation IDs created.
@@ -379,7 +385,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         imported_from=imported_from,
                         import_author=author_email,
                         model_id=model_id,
-                        annotation_worklist_id=worklist_id
+                        annotation_worklist_id=worklist_id,
+                        source=source,
                     )
                     annotations.append(ann)
 
@@ -580,6 +587,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                    worklist_id: str | None = None,
                                    ai_model_name: str | None = None,
                                    transpose_segmentation: bool = False,
+                                   source: str | None = None,
                                    ) -> list[str]:
         """
         Upload a 3D volume segmentation to a resource.
@@ -597,6 +605,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             ai_model_name: The AI model name.
             transpose_segmentation: Whether to transpose the segmentation before uploading.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
         Returns:
             List of annotation unique ids created.
@@ -644,6 +653,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id=worklist_id,
             model_id=model_id,
             transpose_segmentation=transpose_segmentation,
+            source=source,
         )
         return list(loop.run_until_complete(task))
 
@@ -658,6 +668,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              worklist_id: str | None = None,
                              transpose_segmentation: bool = False,
                              ai_model_name: str | None = None,
+                             source: str | None = None,
                              ) -> list[str]:
         """
         Upload frame-by-frame segmentations to a resource.
@@ -687,6 +698,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation or not.
             ai_model_name: Optional AI model name to associate with the segmentation.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
         Returns:
             List of segmentation unique ids.
@@ -751,7 +763,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id=worklist_id,
             model_id=model_id,
             transpose_segmentation=transpose_segmentation,
-            upload_volume=False
+            upload_volume=False,
+            source=source,
         )
         return list(loop.run_until_complete(task))
 
@@ -857,6 +870,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                 worklist_id: str | None = None,
                                                 model_id: str | None = None,
                                                 transpose_segmentation: bool = False,
+                                                source: str | None = None,
                                                 session: aiohttp.ClientSession | None = None,
                                                 ) -> Sequence[str]:
         """
@@ -871,6 +885,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
         Returns:
             List of annotation IDs created.
@@ -903,6 +918,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         form.add_field('model_id', model_id)  # Add model_id if provided
                     if worklist_id is not None:
                         form.add_field('annotation_worklist_id', worklist_id)
+                    if source is not None:
+                        form.add_field('source', source)
                     form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
                     try:
@@ -936,6 +953,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 form.add_field('model_id', model_id)
             if worklist_id is not None:
                 form.add_field('annotation_worklist_id', worklist_id)
+            if source is not None:
+                form.add_field('source', source)
             if name is not None:
                 form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
@@ -1089,6 +1108,73 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if not isinstance(created, str):
             raise TypeError('Expected a single annotation id for image classification creation.')
         return created
+
+    def upload_predictions(
+        self,
+        resource: str | Resource,
+        predictions: list[Annotation],
+        model_name: str | None = None,
+        source: str | None = None,
+    ) -> list[str]:
+        """Upload model prediction annotations for a resource.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            predictions: List of Annotation objects from model.predict().
+            model_name: The registered model name. Stored as ``created_by_model`` on
+                each annotation so predictions can be distinguished from human labels.
+            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+
+        Returns:
+            List of created annotation ids.
+        """
+        from datamint.entities.annotations import ImageSegmentation, VolumeSegmentation
+
+        annotation_ids = []
+        for ann in predictions:
+            if isinstance(ann, VolumeSegmentation):
+                mask = ann.segmentation_data
+                if mask is None:
+                    _LOGGER.warning(
+                        "Skipping volume segmentation with no mask data for resource %s", self._entid(resource)
+                    )
+                    continue
+                ids = self.upload_volume_segmentation(
+                    resource=resource,
+                    file_path=mask,
+                    name=ann.class_map,
+                    ai_model_name=model_name,
+                    source=source,
+                )
+                annotation_ids.extend(ids)
+
+            elif isinstance(ann, ImageSegmentation):
+                mask = ann.segmentation_data
+                if mask is None:
+                    _LOGGER.warning(
+                        "Skipping segmentation with no mask data for resource %s", self._entid(resource)
+                    )
+                    continue
+                ids = self.upload_segmentations(
+                    resource=resource,
+                    file_path=mask,
+                    name=ann.identifier,
+                    frame_index=ann.frame_index,
+                    ai_model_name=model_name,
+                    source=source,
+                )
+                annotation_ids.extend(ids)
+
+            else:
+                ann.model_id = model_name  # server maps model_id → created_by_model
+                ann.source = source
+                created = self.create(resource, ann)
+                if isinstance(created, list):
+                    annotation_ids.extend(created)
+                else:
+                    annotation_ids.append(created)
+
+        return annotation_ids
 
     def _resolve_metadata_for_annotation(
         self,
