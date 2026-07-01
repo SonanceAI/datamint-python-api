@@ -587,7 +587,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                    worklist_id: str | None = None,
                                    ai_model_name: str | None = None,
                                    transpose_segmentation: bool = False,
-                                   source: str | None = None,
+                                   source: str | None = 'imported',
                                    ) -> list[str]:
         """
         Upload a 3D volume segmentation to a resource.
@@ -605,7 +605,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             ai_model_name: The AI model name.
             transpose_segmentation: Whether to transpose the segmentation before uploading.
-            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
         Returns:
             List of annotation unique ids created.
@@ -668,7 +669,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              worklist_id: str | None = None,
                              transpose_segmentation: bool = False,
                              ai_model_name: str | None = None,
-                             source: str | None = None,
+                             source: str | None = 'imported',
                              ) -> list[str]:
         """
         Upload frame-by-frame segmentations to a resource.
@@ -698,7 +699,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation or not.
             ai_model_name: Optional AI model name to associate with the segmentation.
-            source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
         Returns:
             List of segmentation unique ids.
@@ -1083,6 +1085,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                     value: str,
                                     imported_from: str | None = None,
                                     model_id: str | None = None,
+                                    source: str | None = 'imported',
                                     ) -> str:
         """
         Create an image-level classification annotation.
@@ -1093,6 +1096,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             value: The classification value.
             imported_from: The imported from source value.
             model_id: The model unique id.
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
         Returns:
             The id of the created annotation.
@@ -1102,6 +1107,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             value=value,
             imported_from=imported_from,
             model_id=model_id,
+            source=source,
         )
 
         created = self.create(resource, annotation)
@@ -1245,7 +1251,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             worklist_id: str | None = None,
                             imported_from: str | None = None,
                             author_email: str | None = None,
-                            model_id: str | None = None) -> str:
+                            model_id: str | None = None,
+                            source: str | None = 'imported') -> str:
         """
         Add a line annotation to a resource.
 
@@ -1268,6 +1275,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from: The imported from source value.
             author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
             model_id: The model unique id. Optional.
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
         Example:
             .. code-block:: python
@@ -1308,6 +1317,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from=imported_from,
             import_author=author_email,
             model_id=model_id,
+            source=source,
         )
 
         resource_id = self._entid(resource)
@@ -1328,7 +1338,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                            worklist_id: str | None = None,
                            imported_from: str | None = None,
                            author_email: str | None = None,
-                           model_id: str | None = None) -> str:
+                           model_id: str | None = None,
+                           source: str | None = 'imported') -> str:
         """
         Add a box annotation to a resource.
 
@@ -1350,6 +1361,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from: The imported from source value.
             author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
             model_id: The model unique id. Optional.
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
         Example:
             .. code-block:: python
@@ -1395,6 +1408,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from=imported_from,
             import_author=author_email,
             model_id=model_id,
+            source=source,
         )
 
         created = self.create(resource_id, annotation)
