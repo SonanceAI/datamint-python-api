@@ -287,7 +287,7 @@ class BaseTrainer(ABC):
                 preds_per_resource = predict_model.predict([resource])
                 preds = preds_per_resource[0] if preds_per_resource else []
                 if preds:
-                    annotations_api.upload_predictions(resource, preds, model_name=model_name)
+                    annotations_api.upload_predictions(resource, preds, model_name=model_name, source='model_pipeline')
             except Exception as e:
                 _LOGGER.warning(
                     "Failed to upload predictions for resource %s: %s", resource.id, e

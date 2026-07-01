@@ -298,6 +298,7 @@ class Annotation(AnnotationBase):
             model_id=self.model_id,
             geometry=geometry,
             units=self.units,
+            source=getattr(self, 'source', None),
         )
 
     @classmethod

@@ -73,6 +73,7 @@ class NNUNetToDatamintImporter:
         pred_dir: Path | str,
         class_map: dict[int, str],
         mlflow_model_id: str | None = None,
+        source: str | None = None,
     ) -> list:
         """Upload nnUNet prediction NIfTI files to Datamint as volume annotations.
 
@@ -87,6 +88,7 @@ class NNUNetToDatamintImporter:
             pred_dir: Directory containing nnUNet prediction ``.nii.gz`` files.
             class_map: ``{label_int: class_name}`` applied to every prediction.
             mlflow_model_id: Optional MLflow model ID tagged on each annotation.
+            source: Annotation source tag (e.g. 'model_pipeline').
 
         Returns:
             List of :class:`VolumeSegmentation` instances that were uploaded.
@@ -129,6 +131,7 @@ class NNUNetToDatamintImporter:
                 file_path=pred_path,
                 name=class_map,
                 ai_model_name=mlflow_model_id,
+                source=source,
             )
             _LOGGER.info(
                 "Imported prediction %s → resource %s", pred_path.name, resource_uuid
