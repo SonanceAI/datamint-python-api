@@ -32,6 +32,7 @@ Datamint
    trainer_api
    tutorials
    datamint_vs_raw_pytorch
+   ssl_troubleshooting
 
 .. toctree::
    :maxdepth: 1

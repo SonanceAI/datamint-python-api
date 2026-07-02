@@ -1,43 +1,47 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Datamint logo" width="120">
+</p>
+
 # Datamint Python API
 
 ![Build Status](https://github.com/SonanceAI/datamint-python-api/actions/workflows/run_test.yaml/badge.svg)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-A comprehensive Python SDK for interacting with the Datamint platform, providing seamless integration for medical imaging workflows, dataset management, and machine learning experiments.
+Datamint turns medical imaging ML work. Dataset management, annotation, training, and deployment into a few lines of Python, with built-in support for DICOM/NIfTI/PNG, PyTorch Lightning trainers, and MLflow tracking.
+
+**Common use cases:** 🩻 Segmentation · 🏷️ Classification · 📦 Detection
 
 ## 📋 Table of Contents
 
+- [See it in action](#-see-it-in-action)
 - [Features](#-features)
-- [Installation](#-installation)
-- [Quick Setup](#-setup-api-key)
+- [Quick Start](#-quick-start)
 - [Documentation](#-documentation)
-- [Command Line Tools](#️-command-line-tools)
 - [Support](#-support)
+
+## 🎬 See it in action
+
+From a project name to a deployed, validated model, patient-wise splitting, training, and deployment included:
+
+![Datamint pipeline demo](assets/pipeline-demo.gif)
 
 ## 🚀 Features
 
 - **Dataset Management**: Download, upload, and manage medical imaging datasets using intuitive object-based APIs or CLI tools
 - **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements) with ease
 - **Experiment Tracking**: Seamless support for experiment management via MLflow integration
-- **PyTorch Lightning Integration**: Streamlined machine learning workflows featuring specialized `LightningDataModules`, built-in trainers (`SegmentationTrainer`), and automated MLflow checkpoint logging
+- **One-line Trainers**: Train segmentation, classification, and detection models with built-in PyTorch Lightning trainers, skipping the dataset class, training loop, and logging setup
 - **DICOM Support**: Native handling of DICOM files, including powerful anonymization capabilities during upload to protect patient privacy
 - **Multi-format Support**: Robust support for a wide range of medical imaging formats: PNG, JPEG, NIfTI (NIfTI/NRRD), DICOMs and more
 
-See the full documentation at https://sonanceai.github.io/datamint-python-api/
+## ⚡ Quick Start
 
-## 📦 Installation
-
-> [!NOTE]
-> We recommend using a virtual environment to avoid package conflicts.
-
-### From PyPI
+**1. Install**
 
 `pip install -U datamint`
 
-### Virtual Environment Setup
-
 <details>
-<summary>Click to expand virtual environment setup instructions</summary>
+<summary>Using a virtual environment (recommended)</summary>
 
 We recommend that you install Datamint in a dedicated virtual environment, to avoid conflicting with your system packages.
 For instance, create the enviroment once with `python3 -m venv datamint-env` and then activate it whenever you need it with:
@@ -48,7 +52,7 @@ For instance, create the enviroment once with `python3 -m venv datamint-env` and
    ```
 
 2. **Activate the environment** (run whenever you need it):
-   
+
    | Platform | Command |
    |----------|---------|
    | Linux/macOS | `source datamint-env/bin/activate` |
@@ -62,28 +66,33 @@ For instance, create the enviroment once with `python3 -m venv datamint-env` and
 
 </details>
 
-## ⚙ Setup API key
+**2. Configure your API key**
 
-To use the Datamint API, you need to setup your API key (ask your administrator if you don't have one). Use one of the following methods to setup your API key:
-
-### Method 1: Command-line tool (recommended)
-
-Run ``datamint-config`` (or ``python -m datamint config`` if that doesn't work) in the terminal and follow the instructions. See [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html#configuring-the-datamint-settings) for more details.
-
-### Method 2: Environment variable
-
-Specify the API key as an environment variable.
-
-**Bash:**
 ```bash
-export DATAMINT_API_KEY="my_api_key"
-# run your commands (e.g., `datamint-upload`, `python script.py`)
+datamint-config
 ```
 
-**Python:**
+Follow the prompts (ask your administrator if you don't have a key yet). Environment variable and programmatic options are in the [Setup API Key guide](https://sonanceai.github.io/datamint-python-api/getting_started.html#setup-api-key).
+
+**3. Scaffold a project — the fastest way to start**
+
+```bash
+datamint-init
+```
+
+This is the recommended on-ramp: it asks for a project name and task type (**segmentation**, **classification**, or **detection**), then generates a ready-to-run, numbered set of scripts (`01_upload_data.py` → `06_deploy.py`) — upload data, train, and deploy by running them in order.
+
+**4. ...or write it yourself**
+
 ```python
-import os
-os.environ["DATAMINT_API_KEY"] = "my_api_key"
+from datamint import Api
+from datamint.lightning import UNetPPTrainer
+
+api = Api()
+api.projects.create(name="my-project", exists_ok=True)
+
+trainer = UNetPPTrainer(project="my-project")
+results = trainer.fit()
 ```
 
 ## 📚 Documentation
@@ -94,93 +103,11 @@ os.environ["DATAMINT_API_KEY"] = "my_api_key"
 | [📖 API Reference](https://sonanceai.github.io/datamint-python-api/client_api.html) | Complete API documentation |
 | [🔥 PyTorch Integration](https://sonanceai.github.io/datamint-python-api/pytorch_integration.html) | ML workflow integration |
 | [🧠 Trainer Guide](https://sonanceai.github.io/datamint-python-api/trainer_api.html) | Built-in trainers, trainer lifecycle, and custom model integration |
-| [💡 Examples](examples/) | Practical usage examples |
-
-## 🛠️ Command Line Tools
-
-Full documentation at [command_line_tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html).
-
-### Upload Resources
-
-**Upload DICOM files with anonymization:**
-```bash
-datamint-upload /path/to/dicoms --recursive --channel "training-data" --publish --tag "my_data_tag"
-```
-It anonymizes by default.
-
-**Upload resources with segmentations and associate them with a deployed model:**
-```bash
-datamint-upload /path/to/dicoms \
-   --recursive \
-   --segmentation_path /path/to/segmentations \
-   --segmentation_names /path/to/segmentation_names.yaml \
-   --ai-model "knee-segmentation-v2" \
-   --publish
-```
-Use `--ai-model` when uploaded segmentation files should be linked to an existing deployed model by name. `--segmentation_names` accepts YAML mappings and ITK-SNAP label export CSV/TXT files.
-
-### Scaffold a New Project
-
-```bash
-datamint-init
-```
-
-Generates a numbered set of scripts (`01_upload_data.py` through `06_deploy.py`) for your task (detection, segmentation, or classification). Run it once in a new directory and follow the scripts in order.
-
-### Configuration Management
-
-```bash
-# Interactive setup
-datamint-config
-
-# Set API key
-datamint-config --api-key "your-key"
-```
-
-## 🔒 SSL Certificate Troubleshooting
-
-If you encounter SSL certificate verification errors like:
-```
-SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate
-```
-
-### Quick Fix
-
-**1. Upgrade certifi:**
-```bash
-pip install --upgrade certifi
-```
-
-**2. Set environment variables:**
-```bash
-export SSL_CERT_FILE=$(python -m certifi)
-export REQUESTS_CA_BUNDLE=$(python -m certifi)
-```
-
-**3. Run your script:**
-```bash
-python your_script.py
-```
-
-### Alternative Solutions
-
-**Option 1: Use Custom CA Bundle**
-```python
-from datamint import Api
-
-api = Api(verify_ssl="/path/to/your/ca-bundle.crt")
-```
-
-**Option 2: Disable SSL Verification (Development Only)**
-```python
-from datamint import Api
-
-# ⚠️ WARNING: Only use in development with self-signed certificates
-api = Api(verify_ssl=False)
-```
+| [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | Full reference for `datamint-upload`, `datamint-init`, and `datamint-config` |
+| [🔒 SSL Troubleshooting](https://sonanceai.github.io/datamint-python-api/ssl_troubleshooting.html) | Fixing `SSLCertVerificationError` |
+| [📓 Notebooks](notebooks/) | Numbered, runnable tutorials. Start at `01_getting_started` and work through annotations, datasets, experiment tracking, deployment, and a full end-to-end example |
 
 ## 🆘 Support
 
 [Full Documentation](https://sonanceai.github.io/datamint-python-api)  
 [GitHub Issues](https://github.com/SonanceAI/datamint-python-api/issues)
-
