@@ -5,10 +5,12 @@ on:
     branches: [main]
 
 
-# Cancel any in-progress job or run
+# Queue deployments instead of force-cancelling: the "github-pages" environment
+# already serializes runs, and cancel-in-progress can kill a job mid-deployment,
+# leaving a stuck "queued" deployment that blocks all subsequent runs.
 concurrency:
-  group: gh-${{ github.ref }}
-  cancel-in-progress: true
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   pages:
