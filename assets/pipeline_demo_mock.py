@@ -13,7 +13,7 @@ def step(title):
 
 def finale():
     print("\033[H\033[2J", end="")
-    print("🏁  From raw data to a deployed model — 7 lines, 0 boilerplate")
+    print("🏁  From raw data to a deployed model in 7 lines")
     print()
     print("✅ Dataset loaded — any format, auto-detected")
     print("✅ Patient-wise split — no data leakage")

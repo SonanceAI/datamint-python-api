@@ -30,7 +30,7 @@ From a project name to a deployed, validated model, patient-wise splitting, trai
 - **Dataset Management**: Download, upload, and manage medical imaging datasets using intuitive object-based APIs or CLI tools
 - **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements) with ease
 - **Experiment Tracking**: Seamless support for experiment management via MLflow integration
-- **PyTorch Lightning Integration**: Streamlined machine learning workflows featuring specialized `LightningDataModules`, built-in trainers (`SegmentationTrainer`), and automated MLflow checkpoint logging
+- **One-line Trainers**: Train segmentation, classification, and detection models with built-in PyTorch Lightning trainers, skipping the dataset class, training loop, and logging setup
 - **DICOM Support**: Native handling of DICOM files, including powerful anonymization capabilities during upload to protect patient privacy
 - **Multi-format Support**: Robust support for a wide range of medical imaging formats: PNG, JPEG, NIfTI (NIfTI/NRRD), DICOMs and more
 
@@ -89,6 +89,8 @@ from datamint import Api
 from datamint.lightning import UNetPPTrainer
 
 api = Api()
+api.projects.create(name="my-project", exists_ok=True)
+
 trainer = UNetPPTrainer(project="my-project")
 results = trainer.fit()
 ```
