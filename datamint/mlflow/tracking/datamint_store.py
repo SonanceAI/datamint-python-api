@@ -2,9 +2,8 @@ from mlflow.store.tracking.rest_store import RestStore
 from mlflow.exceptions import MlflowException
 from mlflow.utils.proto_json_utils import message_to_json
 from functools import partial
-import json
 from typing_extensions import override
-from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
+from datamint.mlflow.store_utils import _resolve_project_id, _inject_project_id_into_body
 
 
 class DatamintStore(RestStore):
@@ -30,48 +29,34 @@ class DatamintStore(RestStore):
 
     def create_experiment(self, name, artifact_location=None, tags=None, project_id: str | None = None) -> str:
         from mlflow.protos.service_pb2 import CreateExperiment
-        from datamint.mlflow.tracking.fluent import get_active_project_id
 
         if self.invalid:
             return super().create_experiment(name, artifact_location, tags)
-        if project_id is None:
-            project_id = get_active_project_id()
+
+        resolved_project_id = _resolve_project_id(project_id)
         tag_protos = [tag.to_proto() for tag in tags] if tags else []
         req_body = message_to_json(
             CreateExperiment(name=name, artifact_location=artifact_location, tags=tag_protos)
         )
 
-        req_body = json.loads(req_body)
-        req_body["project_id"] = project_id  # FIXME: this should be in the proto
-        req_body = json.dumps(req_body)
+        req_body = _inject_project_id_into_body(req_body, resolved_project_id)
 
         response_proto = self._call_endpoint(CreateExperiment, req_body)
         return response_proto.experiment_id
 
     @override
     def get_experiment_by_name(self, experiment_name, project_id: str | None = None):
-        from datamint.mlflow.tracking.fluent import get_active_project_id
         from mlflow.protos.service_pb2 import GetExperimentByName
         from mlflow.entities import Experiment
         from mlflow.protos import databricks_pb2
 
         if self.invalid:
             return super().get_experiment_by_name(experiment_name)
-        if project_id is None:
-            project_id = get_active_project_id()
-            if project_id is None:
-                raise MlflowException(
-                    message="No active project found. "
-                    "Please set the active project using `datamint.mlflow.set_project()` and "
-                    "ensure it is called before `mlflow.set_experiment()` and `mlflow.start_run()`.",
-                    error_code=INVALID_PARAMETER_VALUE,
-                )
+
+        resolved_project_id = _resolve_project_id(project_id)
         try:
             req_body = message_to_json(GetExperimentByName(experiment_name=experiment_name))
-            if project_id:
-                body = json.loads(req_body)
-                body["project_id"] = project_id
-                req_body = json.dumps(body)
+            req_body = _inject_project_id_into_body(req_body, resolved_project_id)
 
             response_proto = self._call_endpoint(GetExperimentByName, req_body)
             return Experiment.from_proto(response_proto.experiment)
