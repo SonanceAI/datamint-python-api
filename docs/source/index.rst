@@ -1,7 +1,7 @@
 .. DatamintAPI documentation master file
 
-.. image:: ../images/logo_no_bg.png
-   :width: 150px
+.. image:: ../images/logo.png
+   :height: 250
    :align: center
    :alt: Datamint
 
