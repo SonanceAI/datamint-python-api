@@ -11,15 +11,14 @@ def step(title):
     print()
 
 
+def gain(text):
+    print()
+    print(f"✅ {text}")
+
+
 def finale():
     print("\033[H\033[2J", end="")
     print("🏁  From raw data to a deployed model in 7 lines")
-    print()
-    print("✅ Dataset loaded — any format, auto-detected")
-    print("✅ Patient-wise split — no data leakage")
-    print("✅ Trained & tracked in MLflow")
-    print("✅ Validated before shipping")
-    print("✅ Deployed and live")
 
 
 def _bar(pct, width=22):
