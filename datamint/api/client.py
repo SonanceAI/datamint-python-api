@@ -30,6 +30,13 @@ class Api:
         'inference': InferenceApi,
     }
 
+    # (server_url, api_key, verify_ssl) signatures already verified successfully in
+    # this process. Lets check_connection=True skip a redundant network round-trip
+    # (e.g. one per DataLoader worker or dataset auto-refresh) once a given
+    # configuration is known to work. A changed value simply misses the cache,
+    # forcing a fresh check.
+    _verified_connections: set[tuple[str, str | None, bool | str]] = set()
+
     def __init__(self,
                  server_url: str | None = None,
                  api_key: str | None = None,
@@ -43,7 +50,9 @@ class Api:
             api_key: Optional API key for authentication
             timeout: Request timeout in seconds
             max_retries: Maximum number of retry attempts
-            check_connection: Whether to check connection on initialization
+            check_connection: Whether to check connection on initialization. Skipped
+                automatically if this exact (server_url, api_key, verify_ssl) combination
+                already passed a check earlier in this process.
             verify_ssl: Whether to verify SSL certificates. Default is True.
                 Set to False only in development environments with self-signed certificates.
                 Can also be a path to a CA bundle file for custom certificate verification.
@@ -87,7 +96,8 @@ class Api:
         self._highclient = None
         self._mlclient = None
         self._endpoints: dict[str, BaseApi] = {}
-        if check_connection:
+        self._connection_signature = (server_url, api_key, verify_ssl)
+        if check_connection and self._connection_signature not in Api._verified_connections:
             self.check_connection()
 
     def check_connection(self):
@@ -96,6 +106,7 @@ class Api:
         except Exception as e:
             raise NetworkError("Error connecting to the Datamint API."
                                " Please check your api_key and/or other configurations.") from e
+        Api._verified_connections.add(self._connection_signature)
 
     def close(self) -> None:
         """Close underlying HTTP clients and any shared aiohttp sessions.

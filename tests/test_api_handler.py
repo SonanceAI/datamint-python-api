@@ -91,7 +91,8 @@ class TestAPIHandler:
                       'annotated_resource_count': '3',
                       'most_recent_experiment': None,
                       'closed_resources_count': '3',
-                      'resources_to_annotate_count': 33}
+                      'resources_to_annotate_count': 33,
+                      'archived': False}
                      ]
         }
 
@@ -142,6 +143,29 @@ class TestAPIHandler:
         ### Test wrong url ###
         with pytest.raises(DatamintException):
             api_handler = Api(server_url='wrong', check_connection=True)
+
+    @respx.mock
+    def test_check_connection_is_cached_and_resets_on_config_change(self, get_projects_sample: dict):
+        Api._verified_connections.clear()
+        route = respx.get(f"{_TEST_URL}/projects").mock(
+            return_value=httpx.Response(200, json=get_projects_sample)
+        )
+
+        # First Api() with these credentials performs a real connection check.
+        Api(_TEST_URL, 'test_api_key', check_connection=True)
+        assert route.call_count == 1
+
+        # A second Api() with the *same* credentials should skip the check.
+        Api(_TEST_URL, 'test_api_key', check_connection=True)
+        assert route.call_count == 1
+
+        # A different api_key is treated as an unverified configuration.
+        Api(_TEST_URL, 'other_api_key', check_connection=True)
+        assert route.call_count == 2
+
+        # check_connection=False never triggers a check either way.
+        Api(_TEST_URL, 'yet_another_key', check_connection=False)
+        assert route.call_count == 2
 
     @respx.mock
     def test_get_resources(self, get_resources_sample: dict):
