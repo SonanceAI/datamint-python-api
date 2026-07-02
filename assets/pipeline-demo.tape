@@ -26,7 +26,10 @@ Enter
 Sleep 1400ms
 Type@55ms `print(f"{type(dataset).__name__}: {len(dataset)} resources")`
 Enter
-Sleep 2600ms
+Sleep 700ms
+Type `gain("Any format handled automatically")`
+Enter
+Sleep 2000ms
 
 Hide
 Type `step("✂️  2/5  Patient-wise split — no leakage between sets")`
@@ -42,7 +45,10 @@ Enter
 Sleep 900ms
 Type `parts.save()`
 Enter
-Sleep 2200ms
+Sleep 700ms
+Type `gain("No data leakage across patients")`
+Enter
+Sleep 2000ms
 
 Hide
 Type `step("🧠  3/5  Train")`
@@ -64,7 +70,10 @@ Enter
 Sleep 1000ms
 Type@55ms `print(f"iou: {metrics['iou']:.4f}")`
 Enter
-Sleep 2600ms
+Sleep 700ms
+Type `gain("Trained & tracked automatically in MLflow")`
+Enter
+Sleep 2000ms
 
 Hide
 Type `step("✅  4/5  Validate before shipping it")`
@@ -77,7 +86,10 @@ Enter
 Sleep 800ms
 Type `print(report)`
 Enter
-Sleep 2200ms
+Sleep 700ms
+Type `gain("Caught before shipping")`
+Enter
+Sleep 2000ms
 
 Hide
 Type `step("🚀  5/5  Deploy")`
@@ -90,10 +102,13 @@ Enter
 Sleep 800ms
 Type `print(f"Status: {job.status}")`
 Enter
-Sleep 1800ms
+Sleep 700ms
+Type `gain("Live in production")`
+Enter
+Sleep 2000ms
 
 Hide
 Type `finale()`
 Enter
 Show
-Sleep 4500ms
+Sleep 3000ms
