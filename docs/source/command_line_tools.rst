@@ -22,10 +22,11 @@ You should see this in the first line:
 
     usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
 
-There are two command-line tools available:
+There are three command-line tools available:
 
 - ``datamint-config``: To configure the Datamint API key and URL.
 - ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
+- ``datamint-train``: To train a model on a Datamint project using a built-in one-line trainer.
 
 Configuring the Datamint settings
 ---------------------------------
@@ -260,3 +261,36 @@ See all available options by running ``datamint-upload --help``:
                         Disable the default excluded extensions list. By default, common non-medical file extensions are excluded unless --include-extensions is used.
   --version             show program's version number and exit
   --verbose             Print debug messages
+
+Training a model
+-----------------
+
+The ``datamint-train`` command-line tool trains a model on a Datamint project without
+writing any Python. It auto-detects the task (segmentation, classification, or detection)
+and data format (2D or 3D) from the project's annotations and resources, then picks a
+sensible default model if you don't specify one:
+
+.. code-block:: bash
+
+    datamint-train --project MyProject --model yolox --max-epochs 20
+    datamint-train --project MyProject                # auto-detect task, format, and model
+
+To preview the detected plan (task, format, model, hyperparameters) without training, use
+``--dry-run``:
+
+.. code-block:: bash
+
+    datamint-train --project MyProject --dry-run
+
+Or run the guided wizard, which walks you through the same choices and confirms the plan
+before starting:
+
+.. code-block:: bash
+
+    datamint-train --interactive
+
+Advanced training options (custom losses, transforms, encoders, ``trainer_kwargs``, etc.)
+are intentionally not exposed here — use the Python SDK instead, see
+:doc:`Training your Model <trainer_api>`.
+
+See all available options by running ``datamint-train --help``.
