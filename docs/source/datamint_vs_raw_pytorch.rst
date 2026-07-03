@@ -559,8 +559,8 @@ Further reading
 ---------------
 
 - :ref:`pytorch_integration` -- Dataset and datamodule details.
-- :ref:`trainer_api` -- Trainer API reference and external-model patterns.
-- `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/segmentation_2d_trainer_BUSI_tutorial.ipynb>`_
+- :ref:`trainer_api` -- Training your Model reference and external-model patterns.
+- `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/02_busi_segmentation.ipynb>`_
   -- Runnable end-to-end segmentation tutorial.
-- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/external_model_deployment_tutorial.ipynb>`_
+- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_
   -- Deploy a custom model trained with Datamint.

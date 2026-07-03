@@ -13,7 +13,7 @@ Key integration features:
 
 - **ImageDataset / VolumeDataset / VideoDataset**: Modular, PyTorch-compatible datasets for 2D images, 3D volumes, and video sequences
 - **DatamintDataModule**: Lightning-compatible data module
-- **Trainer API**: Task-focused trainers such as ``UNetPPTrainer`` and ``SemanticSegmentation2DTrainer``
+- **Training your Model**: Task-focused trainers such as ``UNetPPTrainer`` and ``SemanticSegmentation2DTrainer``
 - **MLFlowModelCheckpoint**: Advanced model checkpointing with MLflow integration
 - **Automatic Experiment Tracking**: Seamless logging and model registration
 - **Medical Image Optimizations**: Specialized handling for medical data formats
@@ -145,10 +145,10 @@ future training runs to reuse the exact same assignment state.
 you can trace which project split snapshot was used during training and replay
 it later.
 
-Trainer API
------------
+Training your Model
+--------------------
 
-Use the Trainer API when you want Datamint to build the dataset, datamodule,
+Use the trainers when you want Datamint to build the dataset, datamodule,
 default model, MLflow logger, and checkpoint callbacks for you.
 
 .. code-block:: python
