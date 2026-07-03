@@ -8,7 +8,8 @@ import sys
 _COMMANDS: dict[str, str] = {
     "config": "datamint.client_cmd_tools.datamint_config",
     "upload": "datamint.client_cmd_tools.datamint_upload",
-    "init": "datamint.client_cmd_tools.datamint_init"
+    "init": "datamint.client_cmd_tools.datamint_init",
+    "train": "datamint.client_cmd_tools.datamint_train",
 }
 
 
