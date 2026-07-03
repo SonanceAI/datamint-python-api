@@ -1,8 +1,8 @@
 .. _trainer_api:
 
 
-Trainer API
-===========
+Training your Model
+====================
 
 The trainer layer in ``datamint.lightning`` packages the usual Lightning workflow into a
 small number of task-focused entry points. A trainer can:
@@ -17,10 +17,69 @@ small number of task-focused entry points. A trainer can:
 Available Trainers
 ------------------
 
-``UNetPPTrainer``
-   The fastest way to train a 2-D semantic segmentation model with a sensible UNet++
-   configuration. For pure 3-D volume projects, it automatically slices the volumes into
-   2-D samples before training.
+The **one-line trainers** below come with a model already wired in — construct one with
+``project=`` (plus any architecture-specific keyword arguments) and call ``fit()``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 18 32 30
+
+   * - Trainer
+     - Task
+     - Model
+     - Supported format
+   * - ``UNetPPTrainer``
+     - 2-D segmentation
+     - UNet++ (SMP, ``resnet34`` encoder)
+     - 2-D images; auto-slices 3-D volume projects
+   * - ``DeepLabV3PlusTrainer``
+     - 2-D segmentation
+     - DeepLabV3+ (SMP, ASPP)
+     - 2-D images; auto-slices 3-D volume projects
+   * - ``TransUNetTrainer``
+     - 2-D segmentation
+     - TransUNet (ViT-R50 hybrid encoder + CUP decoder)
+     - 2-D images, fixed 224×224; auto-slices 3-D volume projects
+   * - ``UNETRPPTrainer``
+     - 3-D segmentation
+     - UNETR++ (transformer encoder with EPA + CNN decoder)
+     - 3-D volumes only (true 3-D, no slicing)
+   * - ``NNUNetTrainer``
+     - 2-D/3-D segmentation
+     - nnU-Net v2
+     - 3-D volume projects (NIfTI/DICOM series); ``configuration=`` picks ``2d``,
+       ``3d_fullres``, ``3d_lowres``, or ``3d_cascade_fullres``
+   * - ``ImageClassificationTrainer``
+     - 2-D classification
+     - Configurable ``timm`` backbone
+     - 2-D images
+   * - ``EfficientNetV2Trainer``
+     - 2-D classification
+     - EfficientNetV2 (``timm``, S/M/L/XL/rw_t)
+     - 2-D images
+   * - ``YOLOXTrainer``
+     - 2-D object detection
+     - YOLOX (nano/tiny/s/m/l/x)
+     - 2-D images
+
+.. note::
+
+   **A note on nnU-Net**
+
+   ``NNUNetTrainer`` is the odd one out among the one-line trainers:
+
+   - It requires the optional ``nnunet`` extra: ``pip install datamint[nnunet]``
+     (installs ``nnunetv2`` and ``filelock``).
+   - It needs a project made of 3-D volumes, and runs nnU-Net's own fingerprinting →
+     planning → preprocessing → training pipeline instead of Datamint's Lightning
+     model/loss/metrics wiring used by every other trainer.
+   - It does not accept ``model=`` — the external-model patterns described below don't
+     apply to it.
+   - ``fit()`` can be long-running, since fingerprinting, preprocessing, and the full
+     nnU-Net training loop all happen inside the call.
+
+If you need more control over the model, transforms, or loss, drop down to the
+generic task trainers instead — they require passing ``model=`` explicitly:
 
 ``SemanticSegmentation2DTrainer``
    A more explicit 2-D segmentation trainer when you want to control the model,
@@ -30,8 +89,14 @@ Available Trainers
 ``SemanticSegmentation3DTrainer``
    Slice-based semantic segmentation for projects of 3-D volumes.
 
-``ImageClassificationTrainer``
-   Image classification using a ``timm`` backbone.
+``VolumeSegmentationTrainer``
+   True 3-D segmentation without slicing, for volume-native architectures.
+
+``ClassificationTrainer``
+   Abstract base for classification tasks when you want to bring your own model.
+
+``DetectionTrainer``
+   Abstract base for object detection tasks when you want to bring your own model.
 
 
 Quick Start
@@ -137,10 +202,10 @@ MLflow model behaviour, and deployment-friendly prediction methods, subclass
    from datamint.lightning.trainers.lightning_modules import SegmentationModule
 
 
-   class DeepLabV3PlusModule(SegmentationModule):
+   class MAnetModule(SegmentationModule):
        def __init__(self, *args, **kwargs):
            super().__init__(*args, class_names=["benign", "malignant"], **kwargs)
-           self.model = smp.DeepLabV3Plus(
+           self.model = smp.MAnet(
                encoder_name="resnet50",
                encoder_weights="imagenet",
                in_channels=3,
@@ -154,7 +219,7 @@ MLflow model behaviour, and deployment-friendly prediction methods, subclass
    trainer = SemanticSegmentation2DTrainer(
        project="BUSI_Segmentation",
        image_size=256,
-       model=DeepLabV3PlusModule,
+       model=MAnetModule,
    )
 
    results = trainer.fit()
@@ -248,8 +313,10 @@ or wrap the final model in a ``DatamintModel`` afterwards.
 Related Examples
 ----------------
 
-- `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/use_cases/segmentation_2d_trainer_BUSI_tutorial.ipynb>`_
-- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/external_model_deployment_tutorial.ipynb>`_
+- `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/02_busi_segmentation.ipynb>`_
+- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_
+- `UNETR++ on the Synapse dataset <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/01_synapse_unetrpp.ipynb>`_
+- `nnU-Net on the Synapse dataset <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/02_synapse_nnunet.ipynb>`_
 
 For a side-by-side comparison of raw PyTorch / Lightning code versus Datamint,
 see :doc:`datamint_vs_raw_pytorch <datamint_vs_raw_pytorch>`.

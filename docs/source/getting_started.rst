@@ -67,7 +67,7 @@ Next Steps
 - Master the command-line interface: :ref:`command_line_tools`
 - Check out our Python API documentation: :ref:`client_python_api`
 - Our PyTorch, Lightning and MLflow integration: :ref:`pytorch_integration`
-- Use the built-in Trainer API and custom model integration patterns: :ref:`trainer_api`
+- Use the built-in trainers and custom model integration patterns: :ref:`trainer_api`
 
 Troubleshooting
 ---------------
