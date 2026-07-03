@@ -70,6 +70,14 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             labels that are not part of the project's official schema (e.g., labels
             from other projects or legacy annotations). If False, these annotations
             will be filtered out.
+        trusted_annotation_sources: Annotation ``source`` values considered trustworthy
+            ground truth for training/evaluation (e.g. ``'imported'``, ``'manual'``).
+            Annotations with a ``source`` set to something else -- notably
+            ``'model_deploy'`` or ``'model_pipeline'`` (predictions written back by a
+            deployed model or a previous training run) -- are excluded, so a model
+            cannot be retrained on its own past predictions. Annotations with no
+            ``source`` at all (legacy annotations predating this tag) are always kept.
+            Pass ``None`` to disable this filtering entirely and include every source.
     """
 
     resources: Sequence['Resource']
@@ -103,6 +111,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         image_labels_merge_strategy: MergeStrategy | None = None,
         image_categories_merge_strategy: MergeStrategy | None = None,
         worklists: Sequence[AnnotationWorklist] | Literal['all'] | None = 'all',
+        trusted_annotation_sources: Sequence[str] | None = ('imported', 'manual'),
     ):
         # Validate merge strategy values
         _valid_strategies = ('union', 'intersection', 'mode', None)
@@ -174,6 +183,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self.allow_external_annotations = allow_external_annotations
         self.image_labels_merge_strategy: MergeStrategy | None = image_labels_merge_strategy
         self.image_categories_merge_strategy: MergeStrategy | None = image_categories_merge_strategy
+        self.trusted_annotation_sources = (
+            set(trusted_annotation_sources) if trusted_annotation_sources is not None else None
+        )
 
         # Internal state
         self._logged_uint16_conversion = False
@@ -234,6 +246,17 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             resource=self.resources,
             group_by_resource=True,
         ))
+
+        # Exclude annotations from untrusted sources (e.g. 'model_deploy'/'model_pipeline'
+        # predictions written back by a deployed model or a previous training run) so a
+        # model can't be retrained on its own past predictions. Annotations with no
+        # 'source' at all (legacy, predating this tag) are always kept.
+        if self.trusted_annotation_sources is not None:
+            trusted = self.trusted_annotation_sources
+            self.resource_annotations = [
+                [ann for ann in anns if getattr(ann, 'source', None) is None or ann.source in trusted]
+                for anns in self.resource_annotations
+            ]
 
         # Setup dataset (labels, annotation processor, filters)
         self._setup_dataset()
@@ -1140,6 +1163,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             'exclude_image_label_names': self.exclude_image_label_names,
             'include_frame_label_names': self.include_frame_label_names,
             'exclude_frame_label_names': self.exclude_frame_label_names,
+            'trusted_annotation_sources': (
+                sorted(self.trusted_annotation_sources) if self.trusted_annotation_sources is not None else None
+            ),
             'split_source': self.split_source,
             'split_as_of_timestamp': self.split_as_of_timestamp,
         }

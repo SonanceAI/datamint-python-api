@@ -103,6 +103,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 'return_metainfo', 'return_segmentations',
                 'return_as_semantic_segmentation', 'semantic_seg_merge_strategy',
                 'include_unannotated', 'allow_external_annotations',
+                'trusted_annotation_sources',
                 'image_labels_merge_strategy', 'image_categories_merge_strategy',
                 'split_name', 'split_source',
                 'split_as_of_timestamp', 'alb_transform',

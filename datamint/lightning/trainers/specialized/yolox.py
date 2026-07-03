@@ -120,6 +120,7 @@ class YOLOXTrainer(DetectionTrainer):
             format='pascal_voc',
             label_fields=['labels'],
             min_visibility=0.0,
+            clip=True,
         )
         return A.Compose([
             A.Resize(self.image_size[0], self.image_size[1]),
@@ -138,6 +139,7 @@ class YOLOXTrainer(DetectionTrainer):
             format='pascal_voc',
             label_fields=['labels'],
             min_visibility=0.0,
+            clip=True,
         )
         return A.Compose([
             A.Resize(self.image_size[0], self.image_size[1]),
