@@ -2,6 +2,9 @@
 
 Client Python API
 =================
+
+:bdg-warning:`Intermediate`
+
 This chapter describes how to use the |ApiClass| class in Python,
 to interact with the Datamint API.
 Before continuing, you may want to check the :ref:`setup-api-key` section to easily set up your API key, if you haven't done so yet.

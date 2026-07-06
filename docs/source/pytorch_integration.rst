@@ -4,6 +4,8 @@
 PyTorch & Lightning Integration
 ===============================
 
+:bdg-warning:`Intermediate`
+
 The Datamint Python API provides seamless integration with PyTorch and PyTorch Lightning, enabling efficient machine learning workflows for medical imaging tasks.
 
 Overview

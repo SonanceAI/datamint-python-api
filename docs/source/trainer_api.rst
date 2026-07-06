@@ -4,6 +4,8 @@
 Training your Model
 ====================
 
+:bdg-warning:`Intermediate`
+
 The trainer layer in ``datamint.lightning`` packages the usual Lightning workflow into a
 small number of task-focused entry points. A trainer can:
 

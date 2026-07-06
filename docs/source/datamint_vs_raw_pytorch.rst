@@ -1,6 +1,8 @@
 Datamint vs Raw PyTorch
 =======================
 
+:bdg-danger:`Advanced`
+
 This page shows how Datamint removes boilerplate from common medical-imaging
 training workflows by comparing side-by-side a raw PyTorch / Lightning setup
 with the equivalent Datamint code.  All examples target **2-D semantic

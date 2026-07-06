@@ -97,15 +97,21 @@ results = trainer.fit()
 
 ## 📚 Documentation
 
-| Resource | Description |
-|----------|-------------|
-| [🚀 Getting Started](https://sonanceai.github.io/datamint-python-api/getting_started.html) | Step-by-step setup and basic usage |
-| [📖 API Reference](https://sonanceai.github.io/datamint-python-api/client_api.html) | Complete API documentation |
-| [🔥 PyTorch Integration](https://sonanceai.github.io/datamint-python-api/pytorch_integration.html) | ML workflow integration |
-| [🧠 Trainer Guide](https://sonanceai.github.io/datamint-python-api/trainer_api.html) | Built-in trainers, trainer lifecycle, and custom model integration |
-| [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | Full reference for `datamint upload`, `datamint init`, and `datamint config` |
-| [🔒 SSL Troubleshooting](https://sonanceai.github.io/datamint-python-api/ssl_troubleshooting.html) | Fixing `SSLCertVerificationError` |
-| [📓 Notebooks](notebooks/) | Numbered, runnable tutorials. Start at `01_getting_started` and work through annotations, datasets, experiment tracking, deployment, and a full end-to-end example |
+**Difficulty levels:**
+
+- ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) no ML knowledge needed 
+- ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow)assumes SDK familiarity, introduces ML/dataset concepts
+- ![Advanced](https://img.shields.io/badge/level-advanced-red) full training pipelines, custom models, 3D data, multi-step workflows.
+
+| Resource | Level | Description |
+|----------|-------|-------------|
+| [🚀 Getting Started](https://sonanceai.github.io/datamint-python-api/getting_started.html) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Step-by-step setup and basic usage |
+| [📖 API Reference](https://sonanceai.github.io/datamint-python-api/client_api.html) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Complete API documentation |
+| [🔥 PyTorch Integration](https://sonanceai.github.io/datamint-python-api/pytorch_integration.html) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | ML workflow integration |
+| [🧠 Trainer Guide](https://sonanceai.github.io/datamint-python-api/trainer_api.html) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Built-in trainers, trainer lifecycle, and custom model integration |
+| [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Full reference for `datamint upload`, `datamint init`, and `datamint config` |
+| [🔒 SSL Troubleshooting](https://sonanceai.github.io/datamint-python-api/ssl_troubleshooting.html) | — | Fixing `SSLCertVerificationError` |
+| [📓 Notebooks](notebooks/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) ![Advanced](https://img.shields.io/badge/level-advanced-red) | Numbered, runnable tutorials. Start at `01_getting_started` and work through annotations, datasets, experiment tracking, deployment, and a full end-to-end example |
 
 ## 🆘 Support
 
