@@ -118,14 +118,14 @@ def ensure_mlflow_configured() -> None:
         if not os.getenv('MLFLOW_TRACKING_URI'):
             raise ValueError(
                 "MLflow environment not configured. Please either:\n"
-                "1. Run 'datamint-config --default-url <url>',  or\n"
+                "1. Run 'datamint config --default-url <url>',  or\n"
                 "2. Set DATAMINT_API_URL environment variable, or\n"
                 "3. Manually set MLFLOW_TRACKING_URI environment variable"
             )
         if not os.getenv('MLFLOW_TRACKING_TOKEN'):
             raise ValueError(
                 "MLflow environment not configured. Please either:\n"
-                "1. Run 'datamint-config', or\n"
+                "1. Run 'datamint config', or\n"
                 "2. Set DATAMINT_API_KEY environment variable, or\n"
                 "3. Manually set MLFLOW_TRACKING_TOKEN environment variable"
             )

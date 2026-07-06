@@ -32,12 +32,12 @@ Verify your installation
 Scaffold your first project
 ===========================
 
-``datamint-init`` generates a ready-to-run set of numbered scripts tailored to your task
+``datamint init`` generates a ready-to-run set of numbered scripts tailored to your task
 (detection, segmentation, or classification):
 
 .. code-block:: bash
 
-    datamint-init
+    datamint init
 
 It asks for a project name and task type, then writes six scripts into a new directory
 (upload data, explore, build a dataset, train, evaluate, and deploy), so you can follow
@@ -95,4 +95,4 @@ Troubleshooting
 
     .. code-block:: bash
 
-        datamint-config
+        datamint config

@@ -59,7 +59,7 @@ Configure your API access:
 
 .. code-block:: bash
 
-   datamint-config
+   datamint config
 
 Start using the API:
 

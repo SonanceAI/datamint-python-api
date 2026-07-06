@@ -35,7 +35,7 @@ Once you have your API key, choose one of the following options:
 
 .. code-block:: bash
 
-    datamint-config --api-key YOUR_API_KEY
+    datamint config --api-key YOUR_API_KEY
 
 **Option 2: Setting an environment variable**
 

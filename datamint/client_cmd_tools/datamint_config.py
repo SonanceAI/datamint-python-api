@@ -11,6 +11,7 @@ from rich.table import Table
 from typing_extensions import NotRequired
 
 from datamint import configs
+from datamint.utils.env import is_legacy_cli_invocation
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -751,22 +752,29 @@ def main():
     console_handlers = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)]
     if console_handlers:
         console = console_handlers[0].console
+
+    if is_legacy_cli_invocation('config'):
+        console.print(
+            "[warning]'datamint-config' is deprecated and will be removed in a future "
+            "release. Use 'datamint config' instead.[/warning]"
+        )
+
     parser = argparse.ArgumentParser(
         description='🔧 Datamint API Configuration Tool',
         epilog="""
 Examples:
-  datamint-config                           # Interactive mode
-  datamint-config --api-key YOUR_KEY        # Set API key
-    datamint-config --list-local-data         # Show local cache/data groups and filter selectors
-  datamint-config --clean-local-data resources
+  datamint config                           # Interactive mode
+  datamint config --api-key YOUR_KEY        # Set API key
+    datamint config --list-local-data         # Show local cache/data groups and filter selectors
+  datamint config --clean-local-data resources
                                            # Clean a cache namespace
-    datamint-config --clean-local-data channel:training-data
+    datamint config --clean-local-data channel:training-data
                                                                                      # Clean cached resources for one upload channel
-    datamint-config --clean-local-data tag:tutorial
+    datamint config --clean-local-data tag:tutorial
                                                                                      # Clean cached resources matching one tag
-  datamint-config --clean-local-data "Example Project"
+  datamint config --clean-local-data "Example Project"
                                            # Clean a legacy dataset folder
-  datamint-config --clean-all-local-data    # Clean all local data groups
+  datamint config --clean-all-local-data    # Clean all local data groups
   
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
