@@ -3,6 +3,8 @@
 Command-line tools
 ==================
 
+:bdg-success:`Beginner`
+
 All Datamint command-line tools are invoked through a single ``datamint`` command, followed
 by a subcommand and its arguments — the same ``tool <command> ARGS`` pattern used by tools
 like ``docker``, ``git``, and ``pip``:

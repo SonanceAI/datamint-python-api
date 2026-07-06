@@ -21,9 +21,82 @@ Datamint
 - `Datamint Platform <https://app.datamint.io/>`_
 - `GitHub <https://github.com/SonanceAI/datamint-python-api>`_
 
+**Difficulty levels:**
+
+- :bdg-success:`Beginner` no ML knowledge needed
+- :bdg-warning:`Intermediate` assumes SDK familiarity, introduces ML/dataset concepts
+- :bdg-danger:`Advanced` full training pipelines, custom models, 3D data, multi-step workflows
+
+User Guide
+----------
+
+.. grid:: 1 2 3 3
+   :gutter: 2
+
+   .. grid-item-card:: Quick Start
+      :link: getting_started
+      :link-type: doc
+
+      :bdg-success:`Beginner`
+
+      Install the package, configure your API key, and make your first calls.
+
+   .. grid-item-card:: Command-line tools
+      :link: command_line_tools
+      :link-type: doc
+
+      :bdg-success:`Beginner`
+
+      Run the unified ``datamint <command>`` CLI for uploads, config, training, and inference.
+
+   .. grid-item-card:: Client Python API
+      :link: client_api
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Use the ``Api`` class directly for full control over resources, projects, and annotations.
+
+   .. grid-item-card:: PyTorch & Lightning Integration
+      :link: pytorch_integration
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Plug Datamint datasets into PyTorch and Lightning training loops.
+
+   .. grid-item-card:: Training your Model
+      :link: trainer_api
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Train models with built-in one-line trainers -- no training loop to write.
+
+   .. grid-item-card:: Tutorials
+      :link: tutorials
+      :link-type: doc
+
+      Browse runnable example notebooks, from getting started through full end-to-end pipelines.
+
+   .. grid-item-card:: Datamint vs Raw PyTorch
+      :link: datamint_vs_raw_pytorch
+      :link-type: doc
+
+      :bdg-danger:`Advanced`
+
+      Side-by-side comparison of raw PyTorch/Lightning code vs the Datamint equivalent.
+
+   .. grid-item-card:: SSL Troubleshooting
+      :link: ssl_troubleshooting
+      :link-type: doc
+
+      Fix ``SSLCertVerificationError`` issues when connecting to the API.
+
 .. toctree::
    :maxdepth: 2
    :caption: User Guide
+   :hidden:
 
    getting_started
    command_line_tools
@@ -34,49 +107,23 @@ Datamint
    datamint_vs_raw_pytorch
    ssl_troubleshooting
 
-.. toctree::
-   :maxdepth: 1
-   :caption: Python Modules Reference
-
-   datamint.apihandler
-   datamint.api.base_classes
-   datamint.dataset
-   datamint.entities
-   datamint.lightning_api
-   datamint.mlflow_api
-   datamint.exceptions
-
 Quick Start
 -----------
-
-Install the package:
 
 .. code-block:: bash
 
    pip install datamint
-
-Configure your API access:
-
-.. code-block:: bash
-
    datamint config
-
-Start using the API:
 
 .. code-block:: python
 
    from datamint import Api
 
-   # Initialize API handler
    api = Api()
    all_projects = api.projects.get_all()
 
-   # Upload a resource
-   api.resources.upload_resource("/path/to/image.dcm")
-
-   # Load a dataset for training
-   from datamint.dataset import ImageDataset
-   dataset = ImageDataset(project="my-project")
+See the full :doc:`Quick Start guide <getting_started>` for installing in a virtual
+environment, configuring your API key, and scaffolding a project with ``datamint init``.
 
 Architecture Overview
 ---------------------
@@ -245,6 +292,18 @@ Community & Support
 -------------------
 
 `GitHub Issues <https://github.com/SonanceAI/datamint-python-api/issues>`_
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Python Modules Reference
+
+   datamint.apihandler
+   datamint.api.base_classes
+   datamint.dataset
+   datamint.entities
+   datamint.lightning_api
+   datamint.mlflow_api
+   datamint.exceptions
 
 Indices and Tables
 ------------------

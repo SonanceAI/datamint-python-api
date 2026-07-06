@@ -1,6 +1,8 @@
 Quick Start
 =========================================
 
+:bdg-success:`Beginner`
+
 This guide will help you set up and start using the Datamint Python API for your medical imaging projects.
 
 Installation
