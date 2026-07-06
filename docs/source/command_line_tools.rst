@@ -27,6 +27,7 @@ There are three command-line tools available:
 - ``datamint-config``: To configure the Datamint API key and URL.
 - ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
 - ``datamint-train``: To train a model on a Datamint project using a built-in one-line trainer.
+- ``datamint-inference``: To run local inference with a registered Datamint model against a local file.
 
 Configuring the Datamint settings
 ---------------------------------
@@ -294,3 +295,32 @@ are intentionally not exposed here — use the Python SDK instead, see
 :doc:`Training your Model <trainer_api>`.
 
 See all available options by running ``datamint-train --help``.
+
+Running local inference
+------------------------
+
+The ``datamint-inference`` command-line tool runs a registered Datamint model against a
+local file, without writing any Python. It loads the model via MLflow
+(``models:/<name>/latest``), runs it against the given file, and prints the resulting
+predictions:
+
+.. code-block:: bash
+
+    datamint-inference file.png --model-name MyModel
+
+Models are looked up by project. By default, the project name is assumed to be the same
+as ``--model-name``. If the model was registered under a different project, pass
+``--project`` explicitly:
+
+.. code-block:: bash
+
+    datamint-inference file.png --model-name my-model-alias --project MyProject
+
+To also save a visualization of the predictions overlaid on the input file, use
+``--output``:
+
+.. code-block:: bash
+
+    datamint-inference file.png --model-name MyModel --output result.png
+
+See all available options by running ``datamint-inference --help``.

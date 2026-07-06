@@ -10,6 +10,7 @@ _COMMANDS: dict[str, str] = {
     "upload": "datamint.client_cmd_tools.datamint_upload",
     "init": "datamint.client_cmd_tools.datamint_init",
     "train": "datamint.client_cmd_tools.datamint_train",
+    "inference": "datamint.client_cmd_tools.datamint_inference",
 }
 
 
