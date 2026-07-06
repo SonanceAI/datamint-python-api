@@ -23,9 +23,9 @@ def _resolve_version() -> str:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="python -m datamint",
+        prog="datamint",
         description="Datamint command-line interface.",
-        epilog="Available commands: config, upload",
+        epilog=f"Available commands: {', '.join(_COMMANDS)}.",
     )
     parser.add_argument(
         "command",
@@ -43,11 +43,25 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     parser = _build_parser()
-    # Parse only the first positional argument; leave the rest for the subcommand.
-    args, remaining = parser.parse_known_args()
+    argv = sys.argv[1:]
+
+    if not argv:
+        # Bare "datamint" with no subcommand: show help instead of an argparse error
+        parser.print_help()
+        sys.exit(0)
+
+    # Parse only the first token (the command name) so that flags meant for the subcommand
+    # (e.g. "datamint upload --help") are forwarded untouched instead of being swallowed by
+    # this top-level parser's own -h/--help/--version handling, which would otherwise trigger
+    # as soon as it sees them anywhere in the argument list.
+    args = parser.parse_args(argv[:1])
+    remaining = argv[1:]
 
     # Replace argv so the subcommand sees only its own arguments.
-    sys.argv = [f"datamint-{args.command}", *remaining]
+    # Note: a space (not a hyphen) so nested argparse usage lines read "datamint <command>"
+    # (argparse's default prog is os.path.basename(sys.argv[0]), which is the string as-is
+    # when it has no path separator).
+    sys.argv = [f"datamint {args.command}", *remaining]
 
     module_path = _COMMANDS[args.command]
     try:

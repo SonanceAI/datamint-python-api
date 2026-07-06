@@ -3,14 +3,23 @@
 Command-line tools
 ==================
 
-To see if the Datamint command-line tools were installed correctly, run:
+All Datamint command-line tools are invoked through a single ``datamint`` command, followed
+by a subcommand and its arguments — the same ``tool <command> ARGS`` pattern used by tools
+like ``docker``, ``git``, and ``pip``:
 
 .. code-block:: bash
 
-    datamint-config --help
+    datamint config --help
 
 .. note::
-   If the ``datamint-config`` command does not work, try:
+   Older versions used a separate hyphenated script per command (``datamint-config``,
+   ``datamint-upload``, ``datamint-init``, ``datamint-train``, ``datamint-inference``).
+   These still work for backward compatibility, but are deprecated — each prints a warning
+   telling you to switch to the ``datamint <command>`` form, and they will be removed in a
+   future release.
+
+.. note::
+   If the ``datamint config`` command does not work, try:
 
    .. code-block:: bash
 
@@ -20,26 +29,27 @@ You should see this in the first line:
 
 .. code-block:: bash
 
-    usage: datamint-config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
+    usage: datamint config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
 
-There are three command-line tools available:
+There are five command-line tools available:
 
-- ``datamint-config``: To configure the Datamint API key and URL.
-- ``datamint-upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
-- ``datamint-train``: To train a model on a Datamint project using a built-in one-line trainer.
-- ``datamint-inference``: To run local inference with a registered Datamint model against a local file.
+- ``datamint config``: To configure the Datamint API key and URL.
+- ``datamint upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
+- ``datamint init``: To scaffold a ready-to-run project (upload, train, and deploy scripts).
+- ``datamint train``: To train a model on a Datamint project using a built-in one-line trainer.
+- ``datamint inference``: To run local inference with a registered Datamint model against a local file.
 
 Configuring the Datamint settings
 ---------------------------------
 
-The ``datamint-config`` command-line tool is useful for configuring the Datamint API key and URL,
+The ``datamint config`` command-line tool is useful for configuring the Datamint API key and URL,
 consequently avoiding the need to manually pass them as arguments or environment variables to the other commands later.
 
 To manage Datamint configurations, just run
 
 .. code-block:: bash
 
-    datamint-config
+    datamint config
 
 It starts an interactive prompt, guiding you through the configuration process.
 
@@ -47,7 +57,7 @@ To set the API key without the interactive prompt, use the command-line option `
 
 .. code-block:: bash
 
-    datamint-config --api-key YOUR_API_KEY
+    datamint config --api-key YOUR_API_KEY
 
 Local data management
 +++++++++++++++++++++
@@ -58,24 +68,24 @@ instead of individual cached resources, so cleanup happens at that higher level:
 
 .. code-block:: bash
 
-    datamint-config --list-local-data            # List all local data namespaces
-    datamint-config --clean-local-data resources  # Clean resource cache
-    datamint-config --clean-local-data annotations # Clean annotation cache
-    datamint-config --clean-all-local-data       # Clean all local data
+    datamint config --list-local-data            # List all local data namespaces
+    datamint config --clean-local-data resources  # Clean resource cache
+    datamint config --clean-local-data annotations # Clean annotation cache
+    datamint config --clean-all-local-data       # Clean all local data
 
 Uploading DICOMs/resources to Datamint server
 ---------------------------------------------
 
 To upload DICOM files to the Datamint server, use the
-``datamint-upload`` command. For example, to upload all the DICOM files in the
+``datamint upload`` command. For example, to upload all the DICOM files in the
 ``/path/to/dicom_files`` directory, run:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/dicom_files/
+    datamint upload /path/to/dicom_files/
 
 .. note::
-   If the ``datamint-upload`` command does not work, try:
+   If the ``datamint upload`` command does not work, try:
 
    .. code-block:: bash
 
@@ -87,39 +97,39 @@ retain the personal identifiable information (PII) in the DICOM files, use the
 
 .. code-block:: bash
 
-    datamint-upload /path/to/dicom_files/ --retain-pii
+    datamint upload /path/to/dicom_files/ --retain-pii
 
 To upload all DICOMs in a directory and also in its subdirectories,
 you can use the recursive option ``-r`` flag:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/dicom_files/ -r
+    datamint upload /path/to/dicom_files/ -r
 
 In Datamint, you can use channels to organize your DICOMs/resources.
 In that case, use the ``--channel`` flag:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/video.mp4 --channel "CT scans"
+    datamint upload /path/to/video.mp4 --channel "CT scans"
 
 To upload resources, associating them with a tag, run:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/dicom_files --tag "my_tag"
+    datamint upload /path/to/dicom_files --tag "my_tag"
 
 You can specify multiple tags by repeating the ``--tag`` flag:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/dicom_files --tag "tag1" --tag "tag2"
+    datamint upload /path/to/dicom_files --tag "tag1" --tag "tag2"
 
 You can bypass the inbox/review and directly publish your resources with the ``--publish`` flag:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/resource_file --publish
+    datamint upload /path/to/resource_file --publish
 
 Example using include and exclude extensions options:
 +++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -128,13 +138,13 @@ To upload only DICOM files, run:
 
 .. code-block:: bash
 
-    datamint-upload /root_dir --include-extensions dcm
+    datamint upload /root_dir --include-extensions dcm
 
 To upload all files except the .txt and .csv files, run:
 
 .. code-block:: bash
 
-    datamint-upload /root_dir --exclude-extensions txt csv
+    datamint upload /root_dir --exclude-extensions txt csv
 
 Uploading segmentations along with the resources
 +++++++++++++++++++++++++++++++++++++++++++++++++
@@ -143,7 +153,7 @@ To upload segmentations along with the resources, you can use
 
 .. code-block:: bash
 
-    datamint-upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --publish
+    datamint upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --publish
 
 Both ``data/OAI_CARE/dicoms/`` and ``data/OAI_CARE/segmentations/`` must obey the same folder structure.
 Both folders and files can have arbitrary names.
@@ -171,7 +181,7 @@ You can provide the segmentation names file with the ``--segmentation_names`` fl
 
 .. code-block:: bash
 
-    datamint-upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
+    datamint upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --publish
 
 Associating uploaded segmentations with a deployed model
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -181,7 +191,7 @@ If the uploaded segmentations were produced by a deployed Datamint model, use
 
 .. code-block:: bash
 
-    datamint-upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --ai-model knee-segmentation-v2 --publish
+    datamint upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --segmentation_names segmentation_names.yaml --ai-model knee-segmentation-v2 --publish
 
 The value passed to ``--ai-model`` must match the name of an existing deployed
 model on the server. This option only affects uploaded segmentations; resource
@@ -195,13 +205,13 @@ For example, if you have ``image.nii.gz``, it will automatically include ``image
 
 .. code-block:: bash
 
-    datamint-upload /path/to/nifti_files/ -r
+    datamint upload /path/to/nifti_files/ -r
 
 This feature can be disabled with ``--no-auto-detect-json`` flag:
 
 .. code-block:: bash
 
-    datamint-upload /path/to/nifti_files/ -r --no-auto-detect-json
+    datamint upload /path/to/nifti_files/ -r --no-auto-detect-json
 
 Checking uploaded segmentations
 +++++++++++++++++++++++++++++++
@@ -218,7 +228,7 @@ To check if the segmentations were uploaded correctly, you can see some informat
 All available options
 +++++++++++++++++++++
 
-See all available options by running ``datamint-upload --help``:
+See all available options by running ``datamint upload --help``:
 
   -h, --help            show this help message and exit
   --path FILE           Path to the resource file(s) or a directory (alternative to positional argument)
@@ -266,47 +276,47 @@ See all available options by running ``datamint-upload --help``:
 Training a model
 -----------------
 
-The ``datamint-train`` command-line tool trains a model on a Datamint project without
+The ``datamint train`` command-line tool trains a model on a Datamint project without
 writing any Python. It auto-detects the task (segmentation, classification, or detection)
 and data format (2D or 3D) from the project's annotations and resources, then picks a
 sensible default model if you don't specify one:
 
 .. code-block:: bash
 
-    datamint-train --project MyProject --model yolox --max-epochs 20
-    datamint-train --project MyProject                # auto-detect task, format, and model
+    datamint train --project MyProject --model yolox --max-epochs 20
+    datamint train --project MyProject                # auto-detect task, format, and model
 
 To preview the detected plan (task, format, model, hyperparameters) without training, use
 ``--dry-run``:
 
 .. code-block:: bash
 
-    datamint-train --project MyProject --dry-run
+    datamint train --project MyProject --dry-run
 
 Or run the guided wizard, which walks you through the same choices and confirms the plan
 before starting:
 
 .. code-block:: bash
 
-    datamint-train --interactive
+    datamint train --interactive
 
 Advanced training options (custom losses, transforms, encoders, ``trainer_kwargs``, etc.)
 are intentionally not exposed here — use the Python SDK instead, see
 :doc:`Training your Model <trainer_api>`.
 
-See all available options by running ``datamint-train --help``.
+See all available options by running ``datamint train --help``.
 
 Running local inference
 ------------------------
 
-The ``datamint-inference`` command-line tool runs a registered Datamint model against a
+The ``datamint inference`` command-line tool runs a registered Datamint model against a
 local file, without writing any Python. It loads the model via MLflow
 (``models:/<name>/latest``), runs it against the given file, and prints the resulting
 predictions:
 
 .. code-block:: bash
 
-    datamint-inference file.png --model-name MyModel
+    datamint inference file.png --model-name MyModel
 
 Models are looked up by project. By default, the project name is assumed to be the same
 as ``--model-name``. If the model was registered under a different project, pass
@@ -314,13 +324,13 @@ as ``--model-name``. If the model was registered under a different project, pass
 
 .. code-block:: bash
 
-    datamint-inference file.png --model-name my-model-alias --project MyProject
+    datamint inference file.png --model-name my-model-alias --project MyProject
 
 To also save a visualization of the predictions overlaid on the input file, use
 ``--output``:
 
 .. code-block:: bash
 
-    datamint-inference file.png --model-name MyModel --output result.png
+    datamint inference file.png --model-name MyModel --output result.png
 
-See all available options by running ``datamint-inference --help``.
+See all available options by running ``datamint inference --help``.

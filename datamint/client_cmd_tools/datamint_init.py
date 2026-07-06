@@ -5,6 +5,8 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.rule import Rule
 
+from datamint.utils.env import is_legacy_cli_invocation
+
 console = Console()
 
 # ---------------------------------------------------------------------------
@@ -31,7 +33,7 @@ Run the scripts in order:
 
 ```bash
 pip install datamint
-datamint-config --api-key YOUR_API_KEY
+datamint config --api-key YOUR_API_KEY
 ```
 
 """
@@ -483,7 +485,7 @@ Run the scripts in order:
 
 ```bash
 pip install datamint
-datamint-config --api-key YOUR_API_KEY
+datamint config --api-key YOUR_API_KEY
 ```
 
 """
@@ -923,7 +925,7 @@ Run the scripts in order:
 
 ```bash
 pip install datamint
-datamint-config --api-key YOUR_API_KEY
+datamint config --api-key YOUR_API_KEY
 ```
 
 """
@@ -1443,7 +1445,7 @@ def _generate_segmentation_files(project_name: str) -> dict[str, str]:
 
 def _print_header() -> None:
     console.print()
-    console.rule("[bold]datamint-init[/bold]")
+    console.rule("[bold]datamint init[/bold]")
     console.print()
     console.print(
         " This command generates a set of Python scripts that walk you\n"
@@ -1465,6 +1467,12 @@ def _print_header() -> None:
 
 
 def main() -> None:
+    if is_legacy_cli_invocation('init'):
+        console.print(
+            "[yellow]'datamint-init' is deprecated and will be removed in a future "
+            "release. Use 'datamint init' instead.[/yellow]"
+        )
+
     _print_header()
 
     try:

@@ -25,3 +25,10 @@ def ensure_asyncio_loop():
         import nest_asyncio
         nest_asyncio.apply()
         _ASYNCIO_LOOP_PATCHED = True
+
+
+def is_legacy_cli_invocation(command: str) -> bool:
+    """Check if the current process was launched via the deprecated `datamint-<command>` script."""
+    import os
+    import sys
+    return os.path.basename(sys.argv[0]) == f"datamint-{command}"

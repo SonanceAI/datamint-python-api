@@ -15,7 +15,7 @@ Quick reference for developers working on the `datamint-python-api` SDK.
 
 ## Configuration
 
-The SDK uses a local configuration file for authentication and settings. When the user runs [`datamint-config`](./datamint/client_cmd_tools/datamint_config.py), configuration is stored in `~/.config/datamintapi/datamintapi.yaml` (via [PlatformDirs](https://pypi.org/project/platformdirs/)).
+The SDK uses a local configuration file for authentication and settings. When the user runs [`datamint config`](./datamint/client_cmd_tools/datamint_config.py), configuration is stored in `~/.config/datamintapi/datamintapi.yaml` (via [PlatformDirs](https://pypi.org/project/platformdirs/)).
 
 ## Module Structure
 
@@ -39,7 +39,7 @@ datamint/
 │   ├── flavors/            # Model flavors and prediction routing
 │   ├── tracking/           # Custom DatamintStore
 │   └── artifact/           # DatamintArtifactsRepository plugin
-├── client_cmd_tools/       # CLI tools (datamint-upload, datamint-config)
+├── client_cmd_tools/       # CLI tools (datamint upload, datamint config)
 └── utils/                  # General Utilities
 ```
 

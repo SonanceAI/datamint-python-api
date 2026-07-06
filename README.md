@@ -69,7 +69,7 @@ For instance, create the enviroment once with `python3 -m venv datamint-env` and
 **2. Configure your API key**
 
 ```bash
-datamint-config
+datamint config
 ```
 
 Follow the prompts (ask your administrator if you don't have a key yet). Environment variable and programmatic options are in the [Setup API Key guide](https://sonanceai.github.io/datamint-python-api/getting_started.html#setup-api-key).
@@ -77,7 +77,7 @@ Follow the prompts (ask your administrator if you don't have a key yet). Environ
 **3. Scaffold a project — the fastest way to start**
 
 ```bash
-datamint-init
+datamint init
 ```
 
 This is the recommended on-ramp: it asks for a project name and task type (**segmentation**, **classification**, or **detection**), then generates a ready-to-run, numbered set of scripts (`01_upload_data.py` → `06_deploy.py`) — upload data, train, and deploy by running them in order.
@@ -103,7 +103,7 @@ results = trainer.fit()
 | [📖 API Reference](https://sonanceai.github.io/datamint-python-api/client_api.html) | Complete API documentation |
 | [🔥 PyTorch Integration](https://sonanceai.github.io/datamint-python-api/pytorch_integration.html) | ML workflow integration |
 | [🧠 Trainer Guide](https://sonanceai.github.io/datamint-python-api/trainer_api.html) | Built-in trainers, trainer lifecycle, and custom model integration |
-| [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | Full reference for `datamint-upload`, `datamint-init`, and `datamint-config` |
+| [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | Full reference for `datamint upload`, `datamint init`, and `datamint config` |
 | [🔒 SSL Troubleshooting](https://sonanceai.github.io/datamint-python-api/ssl_troubleshooting.html) | Fixing `SSLCertVerificationError` |
 | [📓 Notebooks](notebooks/) | Numbered, runnable tutorials. Start at `01_getting_started` and work through annotations, datasets, experiment tracking, deployment, and a full end-to-end example |
 

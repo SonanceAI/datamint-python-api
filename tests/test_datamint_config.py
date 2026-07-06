@@ -117,6 +117,24 @@ class TestDatamintConfig:
             # Verify the API key was set with correct key
             mock_set_values.assert_called_once()
 
+    @patch('datamint.configs.set_values')
+    def test_legacy_hyphenated_invocation_prints_deprecation_warning(self, mock_set_values, capsys) -> None:
+        """Invoking via the old 'datamint-config' script name should warn."""
+        with patch('sys.argv', ['datamint-config', '--api-key', 'test_key']):
+            from datamint.client_cmd_tools.datamint_config import main
+            main()
+
+        assert 'deprecated' in capsys.readouterr().out
+
+    @patch('datamint.configs.set_values')
+    def test_unified_invocation_does_not_print_deprecation_warning(self, mock_set_values, capsys) -> None:
+        """Invoking via the unified 'datamint config' dispatch should not warn."""
+        with patch('sys.argv', ['datamint config', '--api-key', 'test_key']):
+            from datamint.client_cmd_tools.datamint_config import main
+            main()
+
+        assert 'deprecated' not in capsys.readouterr().out
+
     def test_show_configurations_functionality(self) -> None:
         """Test show_all_configurations without user interaction."""
         from datamint.client_cmd_tools.datamint_config import show_all_configurations

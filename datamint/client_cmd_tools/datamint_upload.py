@@ -14,6 +14,7 @@ from collections import defaultdict
 from datamint import __version__ as datamint_version
 from datamint import configs
 from datamint.utils.logging_utils import load_cmdline_logging_config, ConsoleWrapperHandler
+from datamint.utils.env import is_legacy_cli_invocation
 from rich.console import Console
 import yaml
 from collections.abc import Iterable
@@ -769,6 +770,12 @@ def main():
     global CONSOLE
     load_cmdline_logging_config()
     CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+
+    if is_legacy_cli_invocation('upload'):
+        CONSOLE.print(
+            "[warning]'datamint-upload' is deprecated and will be removed in a future "
+            "release. Use 'datamint upload' instead.[/warning]"
+        )
 
     try:
         args, files_path, segfiles, metadata_files = _parse_args()

@@ -1,4 +1,4 @@
-"""datamint-inference command-line tool.
+"""datamint inference command-line tool.
 
 Run local inference with a registered Datamint model against a local file, without
 writing any Python. Loads the model via MLflow (`models:/<name>/latest`), builds a
@@ -16,6 +16,7 @@ from rich.table import Table
 
 from datamint.client_cmd_tools.datamint_upload import _is_valid_path_argparse, handle_api_key
 from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.utils.env import is_legacy_cli_invocation
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,11 +159,11 @@ def _parse_args() -> argparse.Namespace:
         description='Run local inference with a registered Datamint model against a local file.',
         epilog="""
 Examples:
-  datamint-inference file.png --model-name MyModel
+  datamint inference file.png --model-name MyModel
                                            # Predict using the model registered as 'MyModel'
-  datamint-inference file.png --model-name my-model-alias --project MyProject
+  datamint inference file.png --model-name my-model-alias --project MyProject
                                            # Model registered under a different name than its project
-  datamint-inference file.png --model-name MyModel --output result.png
+  datamint inference file.png --model-name MyModel --output result.png
                                            # Also save a visualization of the predictions
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
@@ -188,6 +189,12 @@ def main() -> None:
     global CONSOLE
     load_cmdline_logging_config()
     CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+
+    if is_legacy_cli_invocation('inference'):
+        CONSOLE.print(
+            "[warning]'datamint-inference' is deprecated and will be removed in a future "
+            "release. Use 'datamint inference' instead.[/warning]"
+        )
 
     args = _parse_args()
 

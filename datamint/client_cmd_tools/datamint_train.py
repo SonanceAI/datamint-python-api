@@ -1,4 +1,4 @@
-"""datamint-train command-line tool.
+"""datamint train command-line tool.
 
 Train a model on a Datamint project using a built-in one-line trainer, without writing
 any Python. Auto-detects the task (segmentation/classification/detection) and data format
@@ -23,6 +23,7 @@ from rich.table import Table
 from datamint import Api, configs
 from datamint.client_cmd_tools.datamint_upload import handle_api_key
 from datamint.exceptions import DatamintException
+from datamint.utils.env import is_legacy_cli_invocation
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
 
 if TYPE_CHECKING:
@@ -94,7 +95,7 @@ def _detect(console: Console, project_name: str) -> tuple['DatamintBaseDataset',
 
     if isinstance(dataset, VideoDataset):
         raise DatamintTrainCliError(
-            "Video projects aren't supported by datamint-train yet. "
+            "Video projects aren't supported by datamint train yet. "
             "Use the Python SDK (datamint.lightning) to build a custom training loop."
         )
 
@@ -255,9 +256,9 @@ def _valid_aliases_for(task: str, fmt: str) -> list[str]:
 
 def _print_header(console: Console) -> None:
     console.print()
-    console.rule("[bold]datamint-train[/bold]")
+    console.rule("[bold]datamint train[/bold]")
     console.print()
-    console.print(" Answer a few questions and datamint-train will pick a model for you.")
+    console.print(" Answer a few questions and datamint train will pick a model for you.")
     console.print()
 
 
@@ -355,12 +356,12 @@ def _parse_args() -> argparse.Namespace:
         description='Train a model on a Datamint project using a built-in one-line trainer.',
         epilog="""
 Examples:
-  datamint-train --project MyProject --model yolox --max-epochs 20
+  datamint train --project MyProject --model yolox --max-epochs 20
                                            # Train a specific model
-  datamint-train --project MyProject      # Auto-detect task, data format, and model
-  datamint-train --project MyProject --dry-run
+  datamint train --project MyProject      # Auto-detect task, data format, and model
+  datamint train --project MyProject --dry-run
                                            # Preview the detected plan without training
-  datamint-train --interactive            # Guided wizard, no flags needed
+  datamint train --interactive            # Guided wizard, no flags needed
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html#training-a-model
         """,
@@ -398,6 +399,12 @@ def main() -> None:
     global CONSOLE
     load_cmdline_logging_config()
     CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+
+    if is_legacy_cli_invocation('train'):
+        CONSOLE.print(
+            "[warning]'datamint-train' is deprecated and will be removed in a future "
+            "release. Use 'datamint train' instead.[/warning]"
+        )
 
     args = _parse_args()
 
