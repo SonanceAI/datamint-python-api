@@ -549,4 +549,5 @@ class NNUNetTrainer(BaseTrainer):
                 name='nnunet_model',
                 artifacts={'nnunet_bundle': str(bundle)},
                 extra_pip_requirements=[f'nnunetv2=={_nnunet_ver}'],
+                annotation_specs=self._build_annotation_specs(),
             )
