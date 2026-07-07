@@ -33,11 +33,12 @@ You should see this in the first line:
 
     usage: datamint config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
 
-There are five command-line tools available:
+There are six command-line tools available:
 
 - ``datamint config``: To configure the Datamint API key and URL.
 - ``datamint upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
 - ``datamint init``: To scaffold a ready-to-run project (upload, train, and deploy scripts).
+- ``datamint example``: To populate a project with a ready-made example dataset, no data of your own required.
 - ``datamint train``: To train a model on a Datamint project using a built-in one-line trainer.
 - ``datamint inference``: To run local inference with a registered Datamint model against a local file.
 
@@ -274,6 +275,42 @@ See all available options by running ``datamint upload --help``:
                         Disable the default excluded extensions list. By default, common non-medical file extensions are excluded unless --include-extensions is used.
   --version             show program's version number and exit
   --verbose             Print debug messages
+
+Populating a project with example data
+---------------------------------------
+
+If you don't have your own annotated data yet, ``datamint example`` downloads a small
+public dataset and uploads it into a new Datamint project so you can try the one-line
+trainers immediately:
+
+.. code-block:: bash
+
+    datamint example bccd
+    datamint example busi --project MyBusiProject
+
+Four datasets are available, one per supported task type:
+
+- ``bccd``: Blood cell object detection (`BCCD <https://github.com/Shenggan/BCCD_Dataset>`_).
+- ``busi``: Breast ultrasound 2D segmentation (`BUSI <https://www.kaggle.com/datasets/sabahesaraki/breast-ultrasound-images-dataset>`_).
+- ``synapse``: Multi-organ CT 3D segmentation (`Synapse <https://www.kaggle.com/datasets/dogcdt/synapse>`_).
+- ``fracatlas``: Fracture image classification (`FracAtlas <https://doi.org/10.6084/m9.figshare.22363012>`_).
+
+Downloaded data is cached under ``~/.datamint/examples/<dataset>/`` so re-running the same
+command doesn't re-download. It shows up alongside your other local data in
+``datamint config --list-local-data`` / ``--clean-local-data``.
+
+You can also populate a project this way without the CLI:
+
+.. code-block:: python
+
+    from datamint.examples import busi_dataset
+
+    busi_dataset.create("MyBusiProject")
+
+``datamint init`` offers this as an option too. Answer "yes" when asked whether to
+populate the scaffolded project with example data instead of your own.
+
+See all available options by running ``datamint example --help``.
 
 Training a model
 -----------------

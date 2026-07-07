@@ -16,7 +16,7 @@ else:
 
     __getattr__, __dir__, __all__ = lazy.attach(
         __name__,
-        submodules=['dataset', "dataset.dataset"],
+        submodules=['dataset', "dataset.dataset", "examples"],
         submod_attrs={
             "api.client": ["Api"],
             # New modular dataset classes
