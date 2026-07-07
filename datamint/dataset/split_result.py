@@ -54,4 +54,4 @@ class SplitResult(dict):
             )
 
         for split_name, ds in self.items():
-            api.projects.assign_splits(project, ds.resources, split_name)
+            api.projects.assign_splits(ds.resources, split_name, project=project)

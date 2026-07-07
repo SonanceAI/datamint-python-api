@@ -60,6 +60,30 @@ class EntityAlreadyExistsError(DatamintException):
 
 
 # ---------------------------------------------------------------------------
+# Client-side session state
+# ---------------------------------------------------------------------------
+
+class DefaultProjectNotSetError(DatamintException):
+    """Raised when a method requires a project, none was passed, and no default
+    project has been selected via `datamint.select_project()` (or the selected
+    default could not be found on this connection)."""
+
+    def __init__(self, hint: str | None = None):
+        self.hint = hint
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        if self.hint:
+            return (f"No project specified, and the default project '{self.hint}' "
+                    f"(set via select_project()) could not be found on this "
+                    f"connection. Pass project=... explicitly, or call "
+                    f"select_project() with a valid project.")
+        return ("No project specified and no default project is set. Pass "
+                "project=... explicitly, or call "
+                "datamint.select_project('<name-or-id>') once per session.")
+
+
+# ---------------------------------------------------------------------------
 # Input validation
 # ---------------------------------------------------------------------------
 

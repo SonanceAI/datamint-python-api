@@ -46,8 +46,8 @@ def test_projects_api_members_and_annotation_statuses(
         projects_api = ProjectsApi(api_config, client=client)
 
         members = projects_api.get_members(api_ids.project_id)
-        projects_api.set_member(api_ids.project_id, api_ids.user_id, ["PROJECT_ANNOTATOR"])
-        projects_api.remove_member(api_ids.project_id, api_ids.user_id)
+        projects_api.set_member(api_ids.user_id, ["PROJECT_ANNOTATOR"], project=api_ids.project_id)
+        projects_api.remove_member(api_ids.user_id, project=api_ids.project_id)
         statuses = projects_api.get_annotation_statuses(
             api_ids.project_id,
             status="annotated",
@@ -88,7 +88,6 @@ def test_projects_api_download_annotations_streams_export_to_disk(
     with make_client(handler) as client:
         projects_api = ProjectsApi(api_config, client=client)
         projects_api.download_annotations(
-            api_ids.project_id,
             output_path,
             format="csv",
             annotators=[api_ids.email],
@@ -96,6 +95,7 @@ def test_projects_api_download_annotations_streams_export_to_disk(
             from_date="2026-04-01",
             to_date="2026-04-13",
             progress_bar=False,
+            project=api_ids.project_id,
         )
 
     request = requests[0]

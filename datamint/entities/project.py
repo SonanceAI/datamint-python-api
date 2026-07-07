@@ -139,7 +139,7 @@ class Project(BaseEntity):
             >>> project.set_work_status(resource, "annotated")
         """
 
-        return self._api.set_work_status(self, resource, status)
+        return self._api.set_work_status(resource, status, self)
 
     @property
     def url(self) -> str:
