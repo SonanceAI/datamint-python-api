@@ -1396,6 +1396,29 @@ print("Saved deploy_result.png")
 
 
 # ---------------------------------------------------------------------------
+# Example-data one-liner (replaces 01_upload_data.py when the user opts in)
+# ---------------------------------------------------------------------------
+
+_EXAMPLE_SCRIPT_01 = """\
+# Docs: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
+#
+# Populates this project with the __EXAMPLE_DATASET_LABEL__ example dataset -
+# no need to bring your own data. Run this script once.
+
+from datamint.examples import __EXAMPLE_MODULE__
+
+__EXAMPLE_MODULE__.create("__PROJECT_NAME__")
+"""
+
+_EXAMPLE_DATASETS = {
+    "detection": ("bccd_dataset", "BCCD (blood cell detection)"),
+    "classification": ("fracatlas_dataset", "FracAtlas (fracture classification)"),
+    "segmentation_2d": ("busi_dataset", "BUSI (breast ultrasound segmentation)"),
+    "segmentation_3d": ("synapse_dataset", "Synapse (multi-organ CT segmentation)"),
+}
+
+
+# ---------------------------------------------------------------------------
 # Template rendering
 # ---------------------------------------------------------------------------
 
@@ -1403,8 +1426,15 @@ def _render(template: str, project_name: str) -> str:
     return template.replace("__PROJECT_NAME__", project_name)
 
 
-def _generate_detection_files(project_name: str) -> dict[str, str]:
-    return {
+def _render_example_script_01(project_name: str, example_module: str, dataset_label: str) -> str:
+    return (_EXAMPLE_SCRIPT_01
+           .replace("__PROJECT_NAME__", project_name)
+           .replace("__EXAMPLE_MODULE__", example_module)
+           .replace("__EXAMPLE_DATASET_LABEL__", dataset_label))
+
+
+def _generate_detection_files(project_name: str, example_key: str | None = None) -> dict[str, str]:
+    files = {
         "README.md":         _render(_README, project_name),
         "01_upload_data.py": _render(_SCRIPT_01, project_name),
         "02_explore.py":     _render(_SCRIPT_02, project_name),
@@ -1413,10 +1443,14 @@ def _generate_detection_files(project_name: str) -> dict[str, str]:
         "05_evaluate.py":    _render(_SCRIPT_05, project_name),
         "06_deploy.py":      _render(_SCRIPT_06, project_name),
     }
+    if example_key is not None:
+        module, label = _EXAMPLE_DATASETS[example_key]
+        files["01_upload_data.py"] = _render_example_script_01(project_name, module, label)
+    return files
 
 
-def _generate_classification_files(project_name: str) -> dict[str, str]:
-    return {
+def _generate_classification_files(project_name: str, example_key: str | None = None) -> dict[str, str]:
+    files = {
         "README.md":         _render(_CLS_README, project_name),
         "01_upload_data.py": _render(_CLS_SCRIPT_01, project_name),
         "02_explore.py":     _render(_CLS_SCRIPT_02, project_name),
@@ -1425,10 +1459,14 @@ def _generate_classification_files(project_name: str) -> dict[str, str]:
         "05_evaluate.py":    _render(_CLS_SCRIPT_05, project_name),
         "06_deploy.py":      _render(_CLS_SCRIPT_06, project_name),
     }
+    if example_key is not None:
+        module, label = _EXAMPLE_DATASETS[example_key]
+        files["01_upload_data.py"] = _render_example_script_01(project_name, module, label)
+    return files
 
 
-def _generate_segmentation_files(project_name: str) -> dict[str, str]:
-    return {
+def _generate_segmentation_files(project_name: str, example_key: str | None = None) -> dict[str, str]:
+    files = {
         "README.md":         _render(_SEG_README, project_name),
         "01_upload_data.py": _render(_SEG_SCRIPT_01, project_name),
         "02_explore.py":     _render(_SEG_SCRIPT_02, project_name),
@@ -1437,6 +1475,10 @@ def _generate_segmentation_files(project_name: str) -> dict[str, str]:
         "05_evaluate.py":    _render(_SEG_SCRIPT_05, project_name),
         "06_deploy.py":      _render(_SEG_SCRIPT_06, project_name),
     }
+    if example_key is not None:
+        module, label = _EXAMPLE_DATASETS[example_key]
+        files["01_upload_data.py"] = _render_example_script_01(project_name, module, label)
+    return files
 
 
 # ---------------------------------------------------------------------------
@@ -1486,6 +1528,15 @@ def main() -> None:
             choices=["detection", "segmentation", "classification"],
             console=console,
         ).strip()
+
+        example_key = None
+        if Confirm.ask(" Populate this project with example data instead of your own?",
+                       default=False, console=console):
+            if task == "segmentation":
+                dims = Prompt.ask(" 2D or 3D?", choices=["2d", "3d"], console=console).strip()
+                example_key = f"segmentation_{dims}"
+            else:
+                example_key = task
     except (KeyboardInterrupt, EOFError):
         console.print()
         sys.exit(0)
@@ -1504,11 +1555,11 @@ def main() -> None:
 
     out_dir.mkdir(exist_ok=True)
     if task == "classification":
-        files = _generate_classification_files(project_name)
+        files = _generate_classification_files(project_name, example_key)
     elif task == "segmentation":
-        files = _generate_segmentation_files(project_name)
+        files = _generate_segmentation_files(project_name, example_key)
     else:
-        files = _generate_detection_files(project_name)
+        files = _generate_detection_files(project_name, example_key)
 
     console.print()
     console.print(f" Generating scripts in [bold]./{project_name}/[/bold] ...")

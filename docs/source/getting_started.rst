@@ -45,6 +45,10 @@ It asks for a project name and task type, then writes six scripts into a new dir
 (upload data, explore, build a dataset, train, evaluate, and deploy), so you can follow
 them in order without writing boilerplate.
 
+Don't have your own data yet? ``datamint init`` can populate the project with a small
+public example dataset instead — see :ref:`command_line_tools` for details, or run
+``datamint example --help`` directly.
+
 Your first API call
 ===================
 

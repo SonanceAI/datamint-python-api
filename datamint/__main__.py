@@ -11,6 +11,7 @@ _COMMANDS: dict[str, str] = {
     "init": "datamint.client_cmd_tools.datamint_init",
     "train": "datamint.client_cmd_tools.datamint_train",
     "inference": "datamint.client_cmd_tools.datamint_inference",
+    "example": "datamint.client_cmd_tools.datamint_example",
 }
 
 
