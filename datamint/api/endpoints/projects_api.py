@@ -7,7 +7,7 @@ from datamint.entities.project import Project
 from datamint.entities.project_resource_split import ProjectResourceSplit
 import httpx
 from datamint.entities.resource import Resource
-from datamint.exceptions import EntityAlreadyExistsError, ItemNotFoundError
+from datamint.exceptions import DefaultProjectNotSetError, EntityAlreadyExistsError, ItemNotFoundError
 if TYPE_CHECKING:
     from . import AnnotationWorklistApi, ResourcesApi
     from datamint.entities.annotation_worklist import AnnotationWorklist
@@ -32,8 +32,9 @@ class ProjectsApi(CRUDEntityApi[Project]):
         super().__init__(config, Project, 'projects', client)
         self.resources_api = resources_api or ResourcesApi(config, client=client, projects_api=self)
         self.annotationworklist_api = annotationworklist_api or AnnotationWorklistApi(config, client=client)
+        self._default_project: Project | None = None
 
-    def get_project_resources(self, project: Project | str) -> list[Resource]:
+    def get_project_resources(self, project: Project | str | None = None) -> list[Resource]:
         """Get resources associated with a specific project.
 
         Args:
@@ -42,6 +43,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         Returns:
             A list of resource instances associated with the project.
         """
+        project = self._resolve_project_or_default(project)
         response = self._get_child_entities(project, 'resources')
         resources_data = response.json()
         resources = [self.resources_api._init_entity_obj(**item) for item in resources_data]
@@ -170,9 +172,35 @@ class ProjectsApi(CRUDEntityApi[Project]):
                 return proj
         return None
 
+    def _resolve_project_or_default(self, project: str | Project | None) -> str | Project:
+        """Return `project` unchanged if given (no-op, same zero-cost passthrough
+        as before this method existed), otherwise fall back to the session's
+        default project (set via `datamint.select_project()`).
+
+        Raises:
+            DefaultProjectNotSetError: `project` is None and no default project
+                is set (or the default couldn't be found on this connection).
+        """
+        if project is not None:
+            return project
+
+        if self._default_project is not None:
+            return self._default_project
+
+        from datamint.default_project import get_default_project_hint
+        hint = get_default_project_hint()
+        if hint is None:
+            raise DefaultProjectNotSetError()
+
+        resolved = self._get_by_name_or_id(hint)
+        if resolved is None:
+            raise DefaultProjectNotSetError(hint=hint)
+        self._default_project = resolved
+        return resolved
+
     def add_resources(self,
                       resources: str | Sequence[str] | Resource | Sequence[Resource],
-                      project: str | Project,
+                      project: str | Project | None = None,
                       ) -> None:
         """
         Add resources to a project.
@@ -180,7 +208,11 @@ class ProjectsApi(CRUDEntityApi[Project]):
         Args:
             resources: The resource unique id or a list of resource unique ids.
             project: The project name, id or :class:`Project` object to add the resource to.
+                Falls back to the session's default project (see `datamint.select_project()`)
+                when omitted.
         """
+        project = self._resolve_project_or_default(project)
+
         if isinstance(resources, str):
             resources_ids = [resources]
         elif isinstance(resources, Resource):
@@ -236,19 +268,20 @@ class ProjectsApi(CRUDEntityApi[Project]):
     #                     file.write(data)
 
     def set_work_status(self,
-                        project: str | Project,
                         resource: str | Resource,
-                        status: Literal['opened', 'annotated', 'closed']) -> None:
+                        status: Literal['opened', 'annotated', 'closed'],
+                        project: str | Project | None = None) -> None:
         """
         Set the status of a resource.
 
         Args:
-            project: The project unique id or a project object.
             resource: The resource unique id or a resource object.
             status: The new status to set.
+            project: The project unique id or a project object. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
         resource_id = self._entid(resource)
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
 
         jsondata = {
             'status': status
@@ -262,44 +295,48 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # Project members
     # ------------------------------------------------------------------
 
-    def get_members(self, project: str | Project) -> list[dict]:
+    def get_members(self, project: str | Project | None = None) -> list[dict]:
         """List all members of a project with their roles.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
             List of member dicts (keys: ``project_id``, ``user_id``, ``roles``,
             ``expertise_level``, ``status``, ``firstname``, ``lastname``).
         """
+        project = self._resolve_project_or_default(project)
         response = self._make_entity_request('GET', project, add_path='members')
         return response.json()
 
     def set_member(self,
-                   project: str | Project,
                    user_id: str,
-                   roles: list[str]) -> None:
+                   roles: list[str],
+                   project: str | Project | None = None) -> None:
         """Set (or update) a user's roles in a project.
 
         Args:
-            project: The project ID or Project instance.
             user_id: The user's UUID.
             roles: List of role strings, e.g. ``['PROJECT_ANNOTATOR']``.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
         self._make_request('POST', f'/{self.endpoint_base}/{proj_id}/members/{user_id}',
                            json={'roles': roles})
 
     def remove_member(self,
-                      project: str | Project,
-                      user_id: str) -> None:
+                      user_id: str,
+                      project: str | Project | None = None) -> None:
         """Remove a user from a project.
 
         Args:
-            project: The project ID or Project instance.
             user_id: The user's UUID.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
         self._make_request('DELETE', f'/{self.endpoint_base}/{proj_id}/members/{user_id}')
 
     # ------------------------------------------------------------------
@@ -307,14 +344,15 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # ------------------------------------------------------------------
 
     def get_annotation_statuses(self,
-                                project: str | Project,
+                                project: str | Project | None = None,
                                 status: str | None = None,
                                 user_id: str | None = None,
                                 resource_id: str | None = None) -> list[dict]:
         """Get per-resource annotation statuses for a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
             status: Optional status filter.
             user_id: Optional user ID filter.
             resource_id: Optional resource ID filter.
@@ -322,6 +360,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         Returns:
             List of annotation status dicts.
         """
+        project = self._resolve_project_or_default(project)
         params = {k: v for k, v in {'status': status, 'user_id': user_id,
                                     'resource_id': resource_id}.items() if v is not None}
         response = self._make_entity_request('GET', project, add_path='annotation-statuses',
@@ -334,20 +373,22 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_splits(
         self,
-        project: str | Project,
+        project: str | Project | None = None,
         split_name: str | None = None,
         as_of_timestamp: str | None = None,
     ) -> list[ProjectResourceSplit]:
         """List resource split assignments for a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
             split_name: Optional split name filter.
             as_of_timestamp: Optional historical timestamp filter.
 
         Returns:
             List of project split assignments.
         """
+        project = self._resolve_project_or_default(project)
         params: dict[str, str] = {}
         if split_name is not None:
             params['split_name'] = split_name
@@ -359,18 +400,19 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def assign_splits(
         self,
-        project: str | Project,
         resources: Sequence[str] | Sequence[Resource],
         split_name: str,
+        project: str | Project | None = None,
     ) -> None:
         """Assign a split name to multiple project resources.
 
         Args:
-            project: The project ID or Project instance.
             resources: Resources to assign.
             split_name: Split name to assign, such as ``'train'``.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
-
+        project = self._resolve_project_or_default(project)
         resources = [self._entid(res) for res in resources]
 
         self._make_entity_request(
@@ -382,15 +424,20 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_resource_split(
         self,
-        project: str | Project,
         resource: Resource | str,
+        project: str | Project | None = None,
     ) -> ProjectResourceSplit | None:
         """Get the split assignment for a single resource within a project.
+
+        Args:
+            resource: The resource ID or Resource instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns ``None`` when the resource does not currently have a split
         assignment.
         """
-        project_id = self._entid(project)
+        project_id = self._entid(self._resolve_project_or_default(project))
         resource_id = self._entid(resource)
 
         try:
@@ -409,17 +456,18 @@ class ProjectsApi(CRUDEntityApi[Project]):
         return ProjectResourceSplit(**data) if data else None
 
     def reset_annotator_status(self,
-                               project: str | Project,
                                resource: str | Resource,
-                               annotator: str) -> None:
+                               annotator: str,
+                               project: str | Project | None = None) -> None:
         """Reset annotation status for a specific annotator on a resource.
 
         Args:
-            project: The project ID or Project instance.
             resource: The resource ID or Resource instance.
             annotator: The annotator's email address.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
         resource_id = self._entid(resource)
         self._make_request('DELETE',
                            f'/{self.endpoint_base}/{proj_id}/resources/{resource_id}'
@@ -430,18 +478,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # ------------------------------------------------------------------
 
     def download_annotations(self,
-                             project: str | Project,
                              output_path: str | Path,
                              format: str = 'csv',
                              annotators: list[str] | None = None,
                              annotations: list[str] | None = None,
                              from_date: str | None = None,
                              to_date: str | None = None,
-                             progress_bar: bool = True) -> None:
+                             progress_bar: bool = True,
+                             project: str | Project | None = None) -> None:
         """Download annotation data as a CSV or Excel file.
 
         Args:
-            project: The project ID or Project instance.
             output_path: Local file path to save the downloaded data.
             format: Export format, ``'csv'`` (default) or ``'xlsx'``.
             annotators: Optional list of annotator emails to include.
@@ -449,10 +496,12 @@ class ProjectsApi(CRUDEntityApi[Project]):
             from_date: Optional start date filter (ISO string).
             to_date: Optional end date filter (ISO string).
             progress_bar: Whether to display a progress bar.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
         """
         from tqdm.auto import tqdm
 
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
         params: dict = {'format': format}
         if from_date is not None:
             params['from'] = from_date
@@ -480,57 +529,64 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # ------------------------------------------------------------------
 
     def get_annotators_stats(self,
-                             project: str | Project,
+                             project: str | Project | None = None,
                              email: str | None = None) -> list[dict]:
         """Get per-annotator completion statistics for a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
             email: Optional annotator email to filter results.
 
         Returns:
             List of per-annotator stat dicts.
         """
+        project = self._resolve_project_or_default(project)
         params = {'email': email} if email is not None else None
         response = self._make_entity_request('GET', project, add_path='annotators-statistic',
                                              params=params)
         return response.json()
 
-    def get_annotations_stats(self, project: str | Project) -> dict:
+    def get_annotations_stats(self, project: str | Project | None = None) -> dict:
         """Get aggregate annotation statistics (counts per type) for a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
             Annotation statistics dict.
         """
+        project = self._resolve_project_or_default(project)
         response = self._make_entity_request('GET', project, add_path='annotations-statistic')
         return response.json()
 
-    def get_files_matrix_stats(self, project: str | Project) -> dict:
+    def get_files_matrix_stats(self, project: str | Project | None = None) -> dict:
         """Get a matrix of resource × annotator completion statistics.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
             Files-matrix statistics dict.
         """
+        project = self._resolve_project_or_default(project)
         response = self._make_entity_request('GET', project, add_path='files-matrix-statistic')
         return response.json()
 
-    def get_annotator_status(self, project: str | Project, email: str) -> dict:
+    def get_annotator_status(self, email: str, project: str | Project | None = None) -> dict:
         """Get a specific annotator's progress status in a project.
 
         Args:
-            project: The project ID or Project instance.
             email: The annotator's email address.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
             Annotator status dict.
         """
-        proj_id = self._entid(project)
+        proj_id = self._entid(self._resolve_project_or_default(project))
         response = self._make_request('GET',
                                       f'/{self.endpoint_base}/{proj_id}/users/{email}/status')
         return response.json()
@@ -540,14 +596,15 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # ------------------------------------------------------------------
 
     def get_review_messages(self,
-                            project: str | Project,
+                            project: str | Project | None = None,
                             annotator: str | None = None,
                             resource_id: str | None = None,
                             statuses: list[str] | None = None) -> list[dict]:
         """Get review feedback messages for a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
             annotator: Optional annotator email filter.
             resource_id: Optional resource ID filter.
             statuses: Optional list of status strings to filter by.
@@ -555,6 +612,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
         Returns:
             List of review message dicts.
         """
+        project = self._resolve_project_or_default(project)
         params: dict = {}
         if annotator is not None:
             params['annotator'] = annotator
@@ -570,17 +628,26 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # Project models
     # ------------------------------------------------------------------
 
-    def get_models(self, project: str | Project) -> list[dict]:
+    def get_models(self, project: str | Project | None = None) -> list[dict]:
         """List ML models associated with a project.
 
         Args:
-            project: The project ID or Project instance.
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
             List of model dicts.
         """
+        project = self._resolve_project_or_default(project)
         response = self._make_entity_request('GET', project, add_path='models')
         return response.json()
 
-    def get_worklists(self, project: str | Project) -> Sequence['AnnotationWorklist']:
+    def get_worklists(self, project: str | Project | None = None) -> Sequence['AnnotationWorklist']:
+        """List annotation worklists for a project.
+
+        Args:
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
+        """
+        project = self._resolve_project_or_default(project)
         return self.annotationworklist_api.get_by_project(project)

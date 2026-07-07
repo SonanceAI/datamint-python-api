@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .dataset.image_dataset import ImageDataset
     from .dataset.volume_dataset import VolumeDataset
     from .mlflow.flavors.validation import validate_model, ValidationReport, ValidationIssue, ModelValidationError
+    from .default_project import select_project
 
 else:
     import lazy_loader as lazy
@@ -24,6 +25,7 @@ else:
             "dataset.volume_dataset": ["VolumeDataset"],
             "mlflow.flavors.validation": ["validate_model", "ValidationReport",
                                           "ValidationIssue", "ModelValidationError"],
+            "default_project": ["select_project"],
         },
     )
 

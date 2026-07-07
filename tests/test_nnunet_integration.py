@@ -43,8 +43,8 @@ def test_full_nnunet_pipeline():
     n_train = int(0.70 * n)
     n_test = int(0.30 * n)
 
-    api.projects.assign_splits(proj, all_resources[:n_train], split_name='train')
-    api.projects.assign_splits(proj, all_resources[n_train:n_train + n_test], split_name='test')
+    api.projects.assign_splits(all_resources[:n_train], split_name='train', project=proj)
+    api.projects.assign_splits(all_resources[n_train:n_train + n_test], split_name='test', project=proj)
 
     print(f"Train: {n_train} Test: {n_test}")
 
