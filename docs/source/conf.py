@@ -136,7 +136,10 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx_autodoc_typehints',
     'sphinxcontrib.mermaid',
+    'sphinx_rtd_dark_mode',
 ]
+
+default_dark_mode = False
 
 rst_prolog = """
 .. |ApiClass| replace:: :py:class:`~datamint.api.client.Api`
