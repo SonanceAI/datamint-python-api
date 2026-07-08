@@ -11,27 +11,24 @@ First, import the |ApiClass| class and create an instance:
 
 The |ApiClass| class provides access to different endpoint handlers:
 
-+----------------------------+---------------------------------------------------------------+
-| Handler                    | Purpose                                                       |
-+----------------------------+---------------------------------------------------------------+
-| ``api.resources``          | Uploading, downloading, and managing resources                |
-+----------------------------+---------------------------------------------------------------+
-| ``api.annotations``        | Creating and managing annotations/segmentations               |
-+----------------------------+---------------------------------------------------------------+
-| ``api.projects``           | Creating and managing projects                                |
-+----------------------------+---------------------------------------------------------------+
-| ``api.channels``           | Organizing resources into channels                            |
-+----------------------------+---------------------------------------------------------------+
-| ``api.users``              | User management operations                                    |
-+----------------------------+---------------------------------------------------------------+
-| ``api.models``             | Managing registered models                                    |
-+----------------------------+---------------------------------------------------------------+
-| ``api.annotationsets``     | Working with annotation set configurations                    |
-+----------------------------+---------------------------------------------------------------+
-| ``api.deploy``             | Deploying models to the Datamint platform                     |
-+----------------------------+---------------------------------------------------------------+
-| ``api.inference``          | Running and managing inference jobs                           |
-+----------------------------+---------------------------------------------------------------+
++------------------------+--------------------------------------------------+
+| Property               | Purpose                                          |
++------------------------+--------------------------------------------------+
+| ``api.resources``      | Upload, download, and manage data files          |
++------------------------+--------------------------------------------------+
+| ``api.annotations``    | Create and manage annotations                    |
++------------------------+--------------------------------------------------+
+| ``api.projects``       | Organize resources into projects                 |
++------------------------+--------------------------------------------------+
+| ``api.channels``       | Group resources by category                        |
++------------------------+--------------------------------------------------+
+| ``api.models``         | Register and manage ML models                    |
++------------------------+--------------------------------------------------+
+| ``api.deploy``         | Deploy models                                      |
++------------------------+--------------------------------------------------+
+| ``api.inference``      | Run inference jobs                                 |
++------------------------+--------------------------------------------------+
+
 
 Most day-to-day workflows can stay object-based. Endpoint handlers return
 entity objects such as :py:class:`~datamint.entities.resource.Resource`,
@@ -152,8 +149,8 @@ To delete a resource:
     resource = api.resources.get_list(filename="temp_file.dcm")[0]
     api.resources.delete(resource)
 
-    # Delete multiple resources
-    api.resources.delete_resources(resources_to_delete)
+    # Delete multiple resources at once
+    api.resources.bulk_delete(resources_to_delete)
 
 Working with Annotations
 ------------------------
@@ -343,8 +340,9 @@ to inspect one resource within a project:
     train_resources = resources[:100]
     val_resources = resources[100:120]
 
-    api.projects.assign_splits(project, train_resources, "train")
-    api.projects.assign_splits(project, val_resources, "val")
+    # Note: assign_splits(resources, split_name, project) — project is the third argument
+    api.projects.assign_splits(train_resources, "train", project)
+    api.projects.assign_splits(val_resources, "val", project)
 
     assignments = api.projects.get_splits(project)
     train_assignments = api.projects.get_splits(project, split_name="train")
@@ -423,8 +421,5 @@ User management operations:
     # List all users
     users = api.users.get_all()
 
-    # Get user by email
+    # Get user by email (email serves as the entity ID)
     user = api.users.get_by_email("user@example.com")
-
-    # Get current user info
-    current_user = api.users.get_current_user()
