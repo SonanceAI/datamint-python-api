@@ -11,6 +11,61 @@ Datamint turns medical imaging ML work. Dataset management, annotation, training
 
 **Common use cases:** 🩻 Segmentation · 🏷️ Classification · 📦 Detection
 
+Datamint handles the full journey from **raw files** to a **deployed model**:
+
+```mermaid
+flowchart LR
+    Files(["📁 Your Files"])
+
+    subgraph s1 [1 · Ingest]
+        Resource(["📦 Resource"])
+    end
+
+    subgraph s2 [2 · Organize & Annotate]
+        direction TB
+        Project(["🗂️ Project"])
+        Annotations(["🏷️ Annotations"])
+        Project -.->|annotate| Annotations
+    end
+
+    subgraph s3 [3 · Train]
+        direction LR
+        Dataset(["🧮 Dataset"])
+        Trainer(["🧠 Trainer"])
+        Model(["📈 Model"])
+        Dataset -->|train| Trainer -->|register| Model
+    end
+
+    subgraph s4 [4 · Deploy & Predict]
+        direction LR
+        DeployJob(["🚀 Deploy Job"])
+        Inference(["🔮 Inference"])
+        DeployJob -->|predict| Inference
+    end
+
+    Files -->|upload| Resource
+    Resource -->|organize| Project
+    Project -->|load| Dataset
+    Model -->|deploy| DeployJob
+
+    classDef ingestNode fill:#ffffff,stroke:#1f6feb,stroke-width:2px,color:#0b2b4c
+    classDef organizeNode fill:#ffffff,stroke:#1a7f37,stroke-width:2px,color:#0b3a1c
+    classDef mlNode fill:#ffffff,stroke:#8250df,stroke-width:2px,color:#2c1a4d
+    classDef deployNode fill:#ffffff,stroke:#d1720f,stroke-width:2px,color:#4d2b00
+    classDef fileNode fill:#f6f8fa,stroke:#57606a,stroke-width:2px,color:#24292f
+
+    class Files fileNode
+    class Resource ingestNode
+    class Project,Annotations organizeNode
+    class Dataset,Trainer,Model mlNode
+    class DeployJob,Inference deployNode
+
+    style s1 fill:#dceeff,stroke:#1f6feb,stroke-width:2px,color:#0b2b4c
+    style s2 fill:#dbf5df,stroke:#1a7f37,stroke-width:2px,color:#0b3a1c
+    style s3 fill:#ecdcff,stroke:#8250df,stroke-width:2px,color:#2c1a4d
+    style s4 fill:#ffe8c7,stroke:#d1720f,stroke-width:2px,color:#4d2b00
+```
+
 ## 📋 Table of Contents
 
 - [See it in action](#-see-it-in-action)
@@ -21,7 +76,7 @@ Datamint turns medical imaging ML work. Dataset management, annotation, training
 
 ## 🎬 See it in action
 
-From a project name to a deployed, validated model, patient-wise splitting, training, and deployment included:
+**Create** a project, **split** the data, **train**, and **deploy**, all through the API:
 
 ![Datamint pipeline demo](assets/pipeline-demo.gif)
 
