@@ -33,14 +33,3 @@ jobs:
         # `torch`/`torchvision` from there, while everything else is still fetched from PyPI.
         PIP_INDEX_URL: https://download.pytorch.org/whl/cpu
         PIP_EXTRA_INDEX_URL: https://pypi.org/simple
-
-    # sphinx-notes/pages@v3 deploys straight to Pages but doesn't leave a
-    # downloadable copy of the build. This grabs the same HTML directory it
-    # just built (steps.deployment.outputs.artifact) and attaches it as a
-    # regular workflow-run artifact so it can be downloaded from the Actions UI.
-    - name: Upload built HTML as a downloadable artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: sphinx-html-docs
-        path: ${{ steps.deployment.outputs.artifact }}
-        retention-days: 30
