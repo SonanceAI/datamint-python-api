@@ -1,4 +1,5 @@
 import httpx
+import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.users_api import UsersApi
@@ -35,12 +36,12 @@ def test_users_api_invite_get_and_manage_invitations(
             firstname="Annotator",
             lastname="User",
             return_url="https://app.datamint.io/return",
-            project_id=api_ids.project_id,
+            project=api_ids.project_id,
             project_roles=["PROJECT_ANNOTATOR"],
             annotation_worklist_id=api_ids.annotation_set_id,
         )
         user = users_api.get_by_email(api_ids.email)
-        invitations = users_api.get_invitations(project_id=api_ids.project_id)
+        invitations = users_api.get_invitations(project=api_ids.project_id)
         users_api.revoke_invitation(api_ids.email)
 
     assert invite_result == {"status": "sent"}
@@ -61,3 +62,33 @@ def test_users_api_invite_get_and_manage_invitations(
     }
     assert requests[2].url.params["project_id"] == api_ids.project_id
     assert requests[3].method == "DELETE"
+
+
+def test_users_api_project_id_deprecated_alias(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = decoded_path(request)
+        if request.method == "POST" and path == "/users/invite":
+            return httpx.Response(200, json={"status": "sent"})
+        if request.method == "GET" and path == "/users/invitations":
+            return httpx.Response(200, json=[])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        users_api = UsersApi(api_config, client=client)
+
+        with pytest.warns(DeprecationWarning, match="project_id"):
+            users_api.invite(api_ids.email, project_id=api_ids.project_id)
+        with pytest.warns(DeprecationWarning, match="project_id"):
+            users_api.get_invitations(project_id=api_ids.project_id)
+
+    assert json_body(requests[0])["project_id"] == api_ids.project_id
+    assert requests[1].url.params["project_id"] == api_ids.project_id

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import httpx
+import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.projects_api import ProjectsApi
@@ -52,7 +53,7 @@ def test_projects_api_members_and_annotation_statuses(
             api_ids.project_id,
             status="annotated",
             user_id=api_ids.user_id,
-            resource_id=api_ids.resource_id,
+            resource=api_ids.resource_id,
         )
 
     assert members == members_payload
@@ -148,3 +149,61 @@ def test_projects_api_download_annotations_streams_export_to_disk(
     assert request.url.params["from"] == "2026-04-01"
     assert request.url.params["to"] == "2026-04-13"
     assert output_path.read_bytes() == export_bytes
+
+
+def test_projects_api_deprecated_parameter_aliases(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = decoded_path(request)
+        if request.method == "GET" and path == "/projects":
+            return httpx.Response(200, json=[])
+        if request.method == "POST" and path == "/projects":
+            return httpx.Response(200, json={"id": api_ids.project_id})
+        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/annotation-statuses":
+            return httpx.Response(200, json=[])
+        if request.method == "DELETE" and path == (
+            f"/projects/{api_ids.project_id}/resources/{api_ids.resource_id}"
+            f"/annotator/{api_ids.email}/status-reset"
+        ):
+            return httpx.Response(200, json={})
+        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/users/{api_ids.email}/status":
+            return httpx.Response(200, json={"status": "active"})
+        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/annotators-statistic":
+            return httpx.Response(200, json=[])
+        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/reviewmessages":
+            return httpx.Response(200, json=[])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        projects_api = ProjectsApi(api_config, client=client)
+
+        with pytest.warns(DeprecationWarning, match="resources_ids"):
+            projects_api.create(
+                name="Legacy Project",
+                description="desc",
+                resources_ids=[api_ids.resource_id],
+                return_entity=False,
+            )
+        with pytest.warns(DeprecationWarning, match="resource_id"):
+            projects_api.get_annotation_statuses(api_ids.project_id, resource_id=api_ids.resource_id)
+        with pytest.warns(DeprecationWarning, match="annotator"):
+            projects_api.reset_annotator_status(
+                api_ids.resource_id, project=api_ids.project_id, annotator=api_ids.email,
+            )
+        with pytest.warns(DeprecationWarning, match="email"):
+            projects_api.get_annotator_status(email=api_ids.email, project=api_ids.project_id)
+        with pytest.warns(DeprecationWarning, match="email"):
+            projects_api.get_annotators_stats(project=api_ids.project_id, email=api_ids.email)
+        with pytest.warns(DeprecationWarning, match="annotator"):
+            projects_api.get_review_messages(project=api_ids.project_id, annotator=api_ids.email)
+
+    assert json_body(requests[1])["resource_ids"] == [api_ids.resource_id]
+    assert requests[2].url.params["resource_id"] == api_ids.resource_id

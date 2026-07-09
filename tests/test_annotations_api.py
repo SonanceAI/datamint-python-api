@@ -1,4 +1,7 @@
+from datetime import date
+
 import httpx
+import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.annotations_api import AnnotationsApi
@@ -31,7 +34,7 @@ def test_annotations_api_patch_approve_and_delete_batch(
         annotations_api.patch(
             api_ids.annotation_id,
             identifier="tumor",
-            project_id=api_ids.project_id,
+            project=api_ids.project_id,
         )
         annotations_api.approve(api_ids.annotation_id)
         annotations_api.delete_batch([api_ids.annotation_id, api_ids.annotation_id_2])
@@ -120,3 +123,80 @@ def test_annotations_api_get_by_id_returns_typed_geometry_annotation(
     assert annotation.geometry is not None
     assert annotation.geometry.point1 == (0, 0, 2)
     assert annotation.geometry.point2 == (10, 30, 2)
+
+
+def test_annotations_api_get_list_date_range_deprecated_alias(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST" and decoded_path(request) == "/annotations/search":
+            return httpx.Response(200, json=[])
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+
+        annotations_api.get_list(from_date=date(2026, 1, 1), to_date=date(2026, 1, 31))
+        with pytest.warns(DeprecationWarning, match="date_from"):
+            annotations_api.get_list(date_from=date(2026, 2, 1))
+        with pytest.warns(DeprecationWarning, match="date_to"):
+            annotations_api.get_list(date_to=date(2026, 2, 28))
+
+    assert json_body(requests[0])["from"] == "2026-01-01"
+    assert json_body(requests[0])["to"] == "2026-01-31"
+    assert json_body(requests[1])["from"] == "2026-02-01"
+    assert json_body(requests[2])["to"] == "2026-02-28"
+
+
+def test_annotations_api_patch_project_id_deprecated_alias(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "PATCH" and decoded_path(request) == f"/annotations/{api_ids.annotation_id}":
+            return httpx.Response(200, json={})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+        with pytest.warns(DeprecationWarning, match="project_id"):
+            annotations_api.patch(api_ids.annotation_id, project_id=api_ids.project_id)
+
+    assert json_body(requests[0]) == {"project_id": api_ids.project_id}
+
+
+def test_annotations_api_upload_segmentation_model_name_deprecated_alias(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+) -> None:
+    with make_client(lambda request: httpx.Response(404)) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+
+        with pytest.warns(DeprecationWarning, match="ai_model_name"):
+            with pytest.raises(FileNotFoundError):
+                annotations_api.upload_segmentations(
+                    api_ids.resource_id,
+                    "/nonexistent/segmentation.png",
+                    ai_model_name="legacy-model",
+                )
+        with pytest.warns(DeprecationWarning, match="ai_model_name"):
+            with pytest.raises(FileNotFoundError):
+                annotations_api.upload_volume_segmentation(
+                    api_ids.resource_id,
+                    "/nonexistent/segmentation.nii.gz",
+                    ai_model_name="legacy-model",
+                )

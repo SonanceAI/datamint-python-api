@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import httpx
+import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.datasetsinfo_api import DatasetsInfoApi
@@ -33,7 +34,7 @@ def test_datasets_api_get_resources_and_update_resources(
             api_ids.dataset_id,
             resource_ids_to_add=[api_ids.resource_id],
             resource_ids_to_delete=[api_ids.resource_id_2],
-            project_id=api_ids.project_id,
+            project=api_ids.project_id,
         )
 
     assert resources == resources_payload
@@ -79,3 +80,27 @@ def test_datasets_api_download_streams_export_to_disk(
         "/datasets/download/download-token",
     ]
     assert output_path.read_bytes() == archive_bytes
+
+
+def test_datasets_api_update_resources_project_id_deprecated_alias(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "POST" and decoded_path(request) == f"/datasets/{api_ids.dataset_id}/resources":
+            return httpx.Response(200, json={"updated": True})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        datasets_api = DatasetsInfoApi(api_config, client=client)
+
+        with pytest.warns(DeprecationWarning, match="project_id"):
+            datasets_api.update_resources(api_ids.dataset_id, project_id=api_ids.project_id)
+
+    assert json_body(requests[0])["project_id"] == api_ids.project_id

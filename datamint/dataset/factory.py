@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from datamint.entities.resource import Resource
+    from datamint.entities import Project
     from .base import DatamintBaseDataset
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,7 +27,10 @@ def _classify_resource(resource: 'Resource') -> str:
     return getattr(resource, 'kind', 'unknown')
 
 
-def build_dataset(project_name: str, **kwargs: Any) -> 'DatamintBaseDataset':
+def build_dataset(project: str | Project | None = None,
+                  *,
+                  project_name: str | None = None,
+                  **kwargs: Any) -> 'DatamintBaseDataset':
     """Auto-detect and return the appropriate dataset class for a project.
 
     Fetches a small sample of resources from the project to determine the
@@ -36,7 +41,8 @@ def build_dataset(project_name: str, **kwargs: Any) -> 'DatamintBaseDataset':
     - Videos → :class:`~datamint.dataset.VideoDataset`
 
     Args:
-        project_name: Name of the Datamint project.
+        project: Name, ID, or ``Project`` instance of the Datamint project.
+        project_name: (DEPRECATED) Use ``project`` instead.
         **kwargs: Forwarded to the dataset constructor (transforms, filters, etc.).
 
     Returns:
@@ -52,7 +58,16 @@ def build_dataset(project_name: str, **kwargs: Any) -> 'DatamintBaseDataset':
 
         ds = build_dataset('MyProject', include_unannotated=False)
     """
+    if project_name is not None:
+        warnings.warn("The 'project_name' parameter is deprecated. "
+                      "Please use 'project' instead", DeprecationWarning)
+        if project is None:
+            project = project_name
+    if project is None:
+        raise TypeError("build_dataset() missing required argument: 'project'")
+
     from datamint import Api
+    from datamint.entities import Project as ProjectCls
     from .image_dataset import ImageDataset
     from .volume_dataset import VolumeDataset
     from .video_dataset import VideoDataset
@@ -65,23 +80,25 @@ def build_dataset(project_name: str, **kwargs: Any) -> 'DatamintBaseDataset':
         'video': VideoDataset,
     }
 
+    project_display = project.name if isinstance(project, ProjectCls) else project
+
     api = Api()
-    sample = api.resources.get_list(project_name=project_name, limit=5)
+    sample = api.resources.get_list(project_name=project, limit=5)
 
     if not sample:
-        raise ValueError(f"Project '{project_name}' has no resources.")
+        raise ValueError(f"Project '{project_display}' has no resources.")
 
     kinds = {_classify_resource(r) for r in sample}
     unknown = kinds - set(_KIND_TO_CLS)
     if unknown:
         raise ValueError(
-            f"Project '{project_name}' contains unsupported resource types: {sorted(unknown)}. "
+            f"Project '{project_display}' contains unsupported resource types: {sorted(unknown)}. "
             "Instantiate the dataset class directly."
         )
 
     if kinds == {'image', 'volume'}:
         _LOGGER.warning(
-            f"Project '{project_name}' contains a mix of 2D and 3D DICOM resources. "
+            f"Project '{project_display}' contains a mix of 2D and 3D DICOM resources. "
             "Defaulting to VolumeDataset. Use ImageDataset or VolumeDataset directly "
             "if you need a specific type."
         )
@@ -89,11 +106,11 @@ def build_dataset(project_name: str, **kwargs: Any) -> 'DatamintBaseDataset':
 
     if len(kinds) > 1:
         raise ValueError(
-            f"Project '{project_name}' contains mixed data types: {sorted(kinds)}. "
+            f"Project '{project_display}' contains mixed data types: {sorted(kinds)}. "
             "Instantiate the dataset class directly."
         )
 
     kind = next(iter(kinds))
     dataset_cls = _KIND_TO_CLS[kind]
     _LOGGER.info(f"Detected resource type '{kind}'; using {dataset_cls.__name__}.")
-    return dataset_cls(project=project_name, **kwargs)
+    return dataset_cls(project=project, **kwargs)

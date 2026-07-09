@@ -1,8 +1,12 @@
-from typing import Literal, cast, overload
+from typing import Literal, TYPE_CHECKING, cast, overload
 
 from ..entity_base_api import CreatableEntityApi, ApiConfig
 from datamint.entities import User
 import httpx
+import warnings
+
+if TYPE_CHECKING:
+    from datamint.entities import Project
 
 
 class UsersApi(CreatableEntityApi[User]):
@@ -92,9 +96,11 @@ class UsersApi(CreatableEntityApi[User]):
                firstname: str | None = None,
                lastname: str | None = None,
                return_url: str | None = None,
-               project_id: str | None = None,
+               project: 'str | Project | None' = None,
                project_roles: list[str] | None = None,
                annotation_worklist_id: str | None = None,
+               *,
+               project_id: str | None = None,
                ) -> dict:
         """Send an invitation email to a new user.
 
@@ -103,13 +109,20 @@ class UsersApi(CreatableEntityApi[User]):
             firstname: The invitee's first name.
             lastname: The invitee's last name.
             return_url: URL the invite link should redirect to after acceptance.
-            project_id: Optional project to add the invitee to.
+            project: Optional project ID or Project instance to add the invitee to.
             project_roles: Roles to assign in the given project.
             annotation_worklist_id: Optional annotation worklist to associate.
+            project_id: (DEPRECATED) Use ``project`` instead.
 
         Returns:
             The server response as a dict.
         """
+        if project_id is not None:
+            warnings.warn("The 'project_id' parameter is deprecated. "
+                          "Please use 'project' instead", DeprecationWarning)
+            if project is None:
+                project = project_id
+
         payload: dict = {'email': email}
         if firstname is not None:
             payload['firstname'] = firstname
@@ -117,8 +130,8 @@ class UsersApi(CreatableEntityApi[User]):
             payload['lastname'] = lastname
         if return_url is not None:
             payload['return_url'] = return_url
-        if project_id is not None:
-            payload['project_id'] = project_id
+        if project is not None:
+            payload['project_id'] = self._entid(project)
         if project_roles is not None:
             payload['project_roles'] = project_roles
         if annotation_worklist_id is not None:
@@ -156,18 +169,28 @@ class UsersApi(CreatableEntityApi[User]):
         """
         self._make_entity_request('DELETE', email)
 
-    def get_invitations(self, project_id: str | None = None) -> list[dict]:
+    def get_invitations(self,
+                        project: 'str | Project | None' = None,
+                        *,
+                        project_id: str | None = None) -> list[dict]:
         """List pending user invitations.
 
         Args:
-            project_id: Optional project ID to filter invitations.
+            project: Optional project ID or Project instance to filter invitations.
+            project_id: (DEPRECATED) Use ``project`` instead.
 
         Returns:
             List of invitation dicts.
         """
-        params: dict = {}
         if project_id is not None:
-            params['project_id'] = project_id
+            warnings.warn("The 'project_id' parameter is deprecated. "
+                          "Please use 'project' instead", DeprecationWarning)
+            if project is None:
+                project = project_id
+
+        params: dict = {}
+        if project is not None:
+            params['project_id'] = self._entid(project)
         response = self._make_request('GET', f'/{self.endpoint_base}/invitations',
                                       params=params or None)
         return response.json()
