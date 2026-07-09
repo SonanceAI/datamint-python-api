@@ -291,6 +291,32 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                   add_path=f'resources/{resource_id}/status',
                                   json=jsondata)
 
+    def set_pinned_metrics(self,
+                           metrics: list[str],
+                           project: str | Project | None = None) -> None:
+        """Set the pinned metrics for a project (replaces the full list).
+
+        Args:
+            metrics: The full list of metric names to pin (e.g. ``val/accuracy``
+                for classification, ``val/iou``/``val/dice`` for segmentation,
+                ``val/map`` for detection - see :meth:`Project.set_pinned_metrics`
+                for how the built-in trainers name their logged metrics).
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
+        """
+        proj_id = self._entid(self._resolve_project_or_default(project))
+        self.patch(proj_id, {'pinned_metrics': metrics})
+
+    def get_pinned_metrics(self, project: str | Project | None = None) -> list[str]:
+        """Get the pinned metrics for a project (always fetches fresh from the server).
+
+        Args:
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
+        """
+        proj_id = self._entid(self._resolve_project_or_default(project))
+        return self.get_by_id(proj_id).pinned_metrics
+
     # ------------------------------------------------------------------
     # Project members
     # ------------------------------------------------------------------

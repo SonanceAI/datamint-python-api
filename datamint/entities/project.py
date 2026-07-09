@@ -46,6 +46,7 @@ class Project(BaseEntity):
         closed_resources_count: Number of resources marked as closed/completed
         resources_to_annotate_count: Number of resources still needing annotation
         annotators: List of annotators assigned to this project
+        pinned_metrics: Metric names pinned for display for this project
     """
     id: str
     name: str
@@ -66,6 +67,7 @@ class Project(BaseEntity):
     is_active_learning: bool = Field(default=MISSING_FIELD)
     two_up_display: bool = Field(default=MISSING_FIELD)
     require_review: bool = Field(default=MISSING_FIELD)
+    pinned_metrics: list[str] = Field(default=MISSING_FIELD)
 
     _api: 'ProjectsApi' = PrivateAttr()
 
@@ -140,6 +142,29 @@ class Project(BaseEntity):
         """
 
         return self._api.set_work_status(resource, status, self)
+
+    def set_pinned_metrics(self, metrics: list[str]) -> None:
+        """Set the pinned metrics for this project (replaces the full list).
+
+        Args:
+            metrics: The full list of metric names to pin. Names should match
+                what your training runs actually log. The built-in trainers use
+                a ``{stage}/{metric}`` naming convention, e.g.:
+
+                * Classification:
+                  ``val/accuracy``, ``val/f1``.
+                * Segmentation, 2D or 3D:
+                  ``val/iou``, ``val/dice``.
+                * Detection: ``val/map``.
+
+        Example:
+            >>> project = api.projects.get_by_name("My Project")
+            >>> # classification project
+            >>> project.set_pinned_metrics(["val/accuracy", "val/f1"])
+            >>> # segmentation project
+            >>> project.set_pinned_metrics(["val/iou", "val/dice"])
+        """
+        return self._api.set_pinned_metrics(metrics, self)
 
     @property
     def url(self) -> str:

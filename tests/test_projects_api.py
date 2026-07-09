@@ -63,6 +63,49 @@ def test_projects_api_members_and_annotation_statuses(
     assert requests[3].url.params["resource_id"] == api_ids.resource_id
 
 
+def test_projects_api_pinned_metrics(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    decoded_path,
+    json_body,
+) -> None:
+    requests: list[httpx.Request] = []
+    project_payload = {
+        "id": api_ids.project_id,
+        "name": "Test Project",
+        "created_at": "2026-04-13T10:00:00Z",
+        "created_by": "tester@datamint.io",
+        "dataset_id": "dataset-1",
+        "archived": False,
+        "resource_count": 1,
+        "description": None,
+        "pinned_metrics": ["val/accuracy", "val/f1"],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        path = decoded_path(request)
+        if request.method == "PATCH" and path == f"/projects/{api_ids.project_id}":
+            return httpx.Response(200, json={})
+        if request.method == "GET" and path == f"/projects/{api_ids.project_id}":
+            return httpx.Response(200, json=project_payload)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    with make_client(handler) as client:
+        projects_api = ProjectsApi(api_config, client=client)
+
+        projects_api.set_pinned_metrics(["val/accuracy", "val/f1"], project=api_ids.project_id)
+        pinned = projects_api.get_pinned_metrics(project=api_ids.project_id)
+
+        project = projects_api.get_by_id(api_ids.project_id)
+        project.set_pinned_metrics(["val/iou", "val/dice"])
+
+    assert json_body(requests[0]) == {"pinned_metrics": ["val/accuracy", "val/f1"]}
+    assert pinned == ["val/accuracy", "val/f1"]
+    assert json_body(requests[3]) == {"pinned_metrics": ["val/iou", "val/dice"]}
+
+
 def test_projects_api_download_annotations_streams_export_to_disk(
     api_config: ApiConfig,
     api_ids,
