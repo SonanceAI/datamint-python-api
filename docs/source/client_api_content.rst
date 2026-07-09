@@ -302,6 +302,9 @@ The :py:class:`~datamint.entities.project.Project` entity provides shortcuts for
     resource = project.fetch_resources()[0]
     project.set_work_status(resource, "annotated")
 
+    # Pin the metrics that matter most for this project (replaces the full list)
+    project.set_pinned_metrics(["val/accuracy", "val/f1"])
+
     specs = project.get_annotations_specs()
     print([spec.identifier for spec in specs])
 
