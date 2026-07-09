@@ -6,6 +6,7 @@ import logging
 import time
 
 import httpx
+import warnings
 
 from datamint.exceptions import ResourceNotFoundError, JobTimeoutError
 from ..entity_base_api import EntityBaseApi, ApiConfig
@@ -37,19 +38,32 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
             e.params = {'id': entity_id}
             raise
 
-    def stream_status(self, job_id: str) -> Generator[dict[str, Any], None, None]:
+    def stream_status(self,
+                      job: str | DeployJob | None = None,
+                      *,
+                      job_id: str | None = None) -> Generator[dict[str, Any], None, None]:
         """Stream status updates for a deployment job via Server-Sent Events.
 
         Yields dictionaries parsed from SSE ``data:`` lines until the
         stream is closed by the server.
 
         Args:
-            job_id: The job identifier.
+            job: The job ID string or ``DeployJob`` instance.
+            job_id: (DEPRECATED) Use ``job`` instead.
 
         Yields:
             Parsed JSON dictionaries for each SSE event.
         """
-        with self._stream_request('GET', f'/{self.endpoint_base}/status/{job_id}/stream') as resp:
+        if job_id is not None:
+            warnings.warn("The 'job_id' parameter is deprecated. "
+                          "Please use 'job' instead", DeprecationWarning)
+            if job is None:
+                job = job_id
+        if job is None:
+            raise TypeError("stream_status() missing required argument: 'job'")
+        job_id_str = self._entid(job)
+
+        with self._stream_request('GET', f'/{self.endpoint_base}/status/{job_id_str}/stream') as resp:
             for line in resp.iter_lines():
                 if line.startswith('data:'):
                     payload = line[len('data:'):].strip()

@@ -824,7 +824,7 @@ def main():
                                                      publish_to=args.project,
                                                      segmentation_files=segfiles,
                                                      transpose_segmentation=args.transpose_segmentation,
-                                                     ai_model=args.ai_model,
+                                                     model_name=args.ai_model,
                                                      assemble_dicoms=args.assemble_dicoms,
                                                      metadata=metadata_files,
                                                      progress_bar=True

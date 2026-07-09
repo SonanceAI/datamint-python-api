@@ -62,7 +62,7 @@ class ProjectMR:
         _LOGGER.info(f'Creating project {project_name}...')
         projid = api.projects.create(name=project_name,
                                      description='This is an example project',
-                                     resources_ids=[res.id])
+                                     resource_ids=[res.id])
         proj = api.projects.get_by_id(projid)
 
         if with_annotations:

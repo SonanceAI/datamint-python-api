@@ -6,6 +6,7 @@ import logging
 import time
 
 import httpx
+import warnings
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.inferencejob import InferenceJob
@@ -120,35 +121,61 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
     # Status / cancel
     # ------------------------------------------------------------------
 
-    def get_status(self, job_id: str) -> InferenceJob:
+    def get_status(self,
+                  job: str | InferenceJob | None = None,
+                  *,
+                  job_id: str | None = None) -> InferenceJob:
         """Get the current status of an inference job.
 
         Args:
-            job_id: The job identifier.
+            job: The job ID string or ``InferenceJob`` instance.
+            job_id: (DEPRECATED) Use ``job`` instead.
 
         Returns:
             An ``InferenceJob`` populated with the latest status.
         """
-        response = self._make_request('GET', f'/{self.endpoint_base}/status/{job_id}')
+        if job_id is not None:
+            warnings.warn("The 'job_id' parameter is deprecated. "
+                          "Please use 'job' instead", DeprecationWarning)
+            if job is None:
+                job = job_id
+        if job is None:
+            raise TypeError("get_status() missing required argument: 'job'")
+        job_id_str = self._entid(job)
+
+        response = self._make_request('GET', f'/{self.endpoint_base}/status/{job_id_str}')
         return self._parse_job_response(response.json())
 
     def get_by_id(self, entity_id: str) -> InferenceJob:
         """Alias for ``get_status`` to satisfy ``EntityBaseApi`` interface."""
         return self.get_status(entity_id)
 
-    def stream_status(self, job_id: str) -> Generator[dict[str, Any], None, None]:
+    def stream_status(self,
+                      job: str | InferenceJob | None = None,
+                      *,
+                      job_id: str | None = None) -> Generator[dict[str, Any], None, None]:
         """Stream status updates for an inference job via Server-Sent Events.
 
         Yields dictionaries parsed from SSE ``data:`` lines until the
         stream is closed by the server.
 
         Args:
-            job_id: The job identifier.
+            job: The job ID string or ``InferenceJob`` instance.
+            job_id: (DEPRECATED) Use ``job`` instead.
 
         Yields:
             Parsed JSON dictionaries for each SSE event.
         """
-        with self._stream_request('GET', f'/{self.endpoint_base}/status/{job_id}/stream') as resp:
+        if job_id is not None:
+            warnings.warn("The 'job_id' parameter is deprecated. "
+                          "Please use 'job' instead", DeprecationWarning)
+            if job is None:
+                job = job_id
+        if job is None:
+            raise TypeError("stream_status() missing required argument: 'job'")
+        job_id_str = self._entid(job)
+
+        with self._stream_request('GET', f'/{self.endpoint_base}/status/{job_id_str}/stream') as resp:
             for line in resp.iter_lines():
                 if line.startswith('data:'):
                     payload = line[len('data:'):].strip()
