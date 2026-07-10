@@ -1,3 +1,5 @@
+from typing import Any
+
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
                         ChannelsApi, UsersApi, DatasetsInfoApi,
@@ -144,7 +146,11 @@ class Api:
             client = self._client
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
-            endpoint = api_class(self.config, client=client)
+            # Inject ProjectsApi into InferenceApi for project_name → project_id resolution
+            kwargs: dict[str, Any] = {}
+            if name == 'inference':
+                kwargs['projects_api'] = self.projects
+            endpoint = api_class(self.config, client=client, **kwargs)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self
             self._endpoints[name] = endpoint

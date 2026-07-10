@@ -98,7 +98,7 @@ jobs:
         with:
           name: pytest-results-${{ matrix.os }}-${{ matrix.python-version }}
           path: junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml
-          retention-days: 30
+          retention-days: 15
 
       - name: Upload coverage report
         if: always() && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
@@ -106,4 +106,4 @@ jobs:
         with:
           name: coverage-report
           path: htmlcov/
-          retention-days: 30
+          retention-days: 15

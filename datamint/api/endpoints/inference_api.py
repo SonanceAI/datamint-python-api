@@ -1,5 +1,5 @@
 """API handler for model inference endpoints (MLflow DataMint server)."""
-from typing import Any, Literal
+from typing import Any, Literal, TYPE_CHECKING
 from collections.abc import Callable, Generator
 import json
 import logging
@@ -9,7 +9,11 @@ import httpx
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.inferencejob import InferenceJob
-from datamint.exceptions import JobTimeoutError
+from datamint.exceptions import JobTimeoutError, ItemNotFoundError
+from datamint.mlflow.flavors.model_parser import parse_model_reference
+
+if TYPE_CHECKING:
+    from .projects_api import ProjectsApi
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +30,11 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
 
     def __init__(self,
                  config: ApiConfig,
-                 client: httpx.Client | None = None) -> None:
+                 client: httpx.Client | None = None,
+                 projects_api: 'ProjectsApi | None' = None) -> None:
         super().__init__(config, InferenceJob, 'datamint/api/v1/model-inference', client)
+        from .projects_api import ProjectsApi
+        self.projects_api = projects_api or ProjectsApi(config, client=client)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -39,8 +46,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             data['id'] = data.pop('job_id')
         return self._init_entity_obj(**data)
 
-    @staticmethod
     def _build_common_payload(
+        self,
         model_name: str,
         model_version: int | None = None,
         model_alias: str | None = None,
@@ -50,7 +57,15 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the payload keys shared by every inference request."""
-        payload: dict[str, Any] = {"model_name": model_name}
+        model_ref = parse_model_reference(model_name)
+        payload: dict[str, Any] = {"model_name": model_ref.model_name}
+
+        if model_ref.project_name:
+            project = self.projects_api.get_by_name(model_ref.project_name, include_archived=True)
+            if project is None:
+                raise ItemNotFoundError("project", {"name": model_ref.project_name})
+            payload["project_id"] = project.id
+
         if model_version is not None:
             payload["model_version"] = model_version
         if model_alias is not None:
