@@ -262,6 +262,48 @@ Annotation entities can fetch their own files and lazily resolve the source reso
 
     print(annotation.name, source_resource.filename)
 
+Measuring inter-annotator agreement
+++++++++++++++++++++++++++++++++++
+
+When a worklist assigns 2+ annotators to the same resources, use
+:py:func:`~datamint.utils.annotation_agreement.compute_agreement` to quantify
+how well they agree, and flag resources that need adjudication:
+
+.. code-block:: python
+
+    from datamint.utils.annotation_agreement import compute_agreement
+
+    # Fetch annotations for a worklist, filtered to a single annotation type
+    annotations = api.annotations.get_list(
+        worklist_id=worklist.id,
+        annotation_type="segmentation",
+    )
+
+    result = compute_agreement(annotations, threshold=0.7)
+
+    print(result.overall)            # summary agreement score
+    print(result.per_resource_mean)   # mean score per (resource_id, identifier)
+    print(result.flagged)             # resources below the threshold
+
+The metric is picked automatically based on the annotation type: Dice for
+segmentations, IoU for bounding boxes, and Cohen's/Fleiss' kappa for
+category/label annotations. Pass ``metric="dice"`` (or ``"iou"``,
+``"cohen_kappa"``, ``"fleiss_kappa"``) to override the automatic choice.
+
+With 3+ annotators, Fleiss' kappa requires a consistent count of raters per
+item (not the same rater identities every time, so a pool of 5 annotators
+rotating in groups of 3 per resource works fine). If rater counts vary across
+items, the most common count is used for ``overall`` and items with a
+different count are excluded from it, though they still appear in
+``per_pair``/``per_resource_mean`` (raw pairwise agreement, useful for
+flagging) marked with ``used_in_overall=False``. This means a resource can
+show up as low-agreement in the table even when ``overall`` looks high.
+
+.. automodule:: datamint.utils.annotation_agreement
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Working with Projects
 ---------------------
 
