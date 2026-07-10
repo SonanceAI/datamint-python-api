@@ -44,3 +44,14 @@ def test_default_falls_back_to_dataset_collate_fn():
 
     passed = MockLoader.call_args.kwargs.get('collate_fn')
     assert passed is dm.dataset.get_collate_fn.return_value
+
+
+def test_use_project_splits_forwarded_to_dataset_split():
+    mock_dataset = MagicMock()
+    mock_dataset.split.return_value = {"train": mock_dataset, "val": None, "test": None}
+    dm = DatamintDataModule(dataset=mock_dataset, use_project_splits=True)
+
+    dm._resolve_dataset_splits()
+
+    assert mock_dataset.split.call_args.kwargs["use_project_splits"] is True
+    assert mock_dataset.split.call_args.kwargs["use_server_splits"] is None

@@ -1,10 +1,14 @@
-from typing import Literal
+from typing import Literal, TYPE_CHECKING
 from pathlib import Path
 
 from ..entity_base_api import ApiConfig, DeletableEntityApi
 from datamint.entities.datasetinfo import DatasetInfo
 import httpx
 from tqdm.auto import tqdm
+import warnings
+
+if TYPE_CHECKING:
+    from datamint.entities import Project
 
 
 class DatasetsInfoApi(DeletableEntityApi[DatasetInfo]):
@@ -42,6 +46,8 @@ class DatasetsInfoApi(DeletableEntityApi[DatasetInfo]):
                          dataset: str | DatasetInfo,
                          resource_ids_to_add: list[str] | None = None,
                          resource_ids_to_delete: list[str] | None = None,
+                         project: 'str | Project | None' = None,
+                         *,
                          project_id: str | None = None) -> None:
         """Add or remove resources from a dataset.
 
@@ -49,15 +55,22 @@ class DatasetsInfoApi(DeletableEntityApi[DatasetInfo]):
             dataset: The dataset ID or DatasetInfo instance.
             resource_ids_to_add: List of resource IDs to add.
             resource_ids_to_delete: List of resource IDs to remove.
-            project_id: Optional project ID context.
+            project: Optional project ID or Project instance context.
+            project_id: (DEPRECATED) Use ``project`` instead.
         """
+        if project_id is not None:
+            warnings.warn("The 'project_id' parameter is deprecated. "
+                          "Please use 'project' instead", DeprecationWarning)
+            if project is None:
+                project = project_id
+
         payload: dict = {'all_files_selected': False}
         if resource_ids_to_add is not None:
             payload['resource_ids_to_add'] = resource_ids_to_add
         if resource_ids_to_delete is not None:
             payload['resource_ids_to_delete'] = resource_ids_to_delete
-        if project_id is not None:
-            payload['project_id'] = project_id
+        if project is not None:
+            payload['project_id'] = self._entid(project)
         dataset_id = self._entid(dataset)
         self._make_entity_request('POST', dataset_id, add_path='resources', json=payload)
 

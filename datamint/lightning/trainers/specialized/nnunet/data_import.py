@@ -130,7 +130,7 @@ class NNUNetToDatamintImporter:
                 resource=resource_uuid,
                 file_path=pred_path,
                 name=class_map,
-                ai_model_name=mlflow_model_id,
+                model_name=mlflow_model_id,
                 source=source,
             )
             _LOGGER.info(

@@ -1,6 +1,7 @@
 from typing import Literal, TYPE_CHECKING, overload
 from collections.abc import Sequence
 from pathlib import Path
+import warnings
 
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
@@ -53,11 +54,12 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def create(self,
                name: str,
                description: str,
-               resources_ids: list[str] | None = None,
+               resource_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
+               resources_ids: list[str] | None = None,
                return_entity: Literal[True] = True,
                exists_ok: bool = False
                ) -> Project: ...
@@ -66,11 +68,12 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def create(self,
                name: str,
                description: str,
-               resources_ids: list[str] | None = None,
+               resource_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
+               resources_ids: list[str] | None = None,
                return_entity: Literal[False],
                exists_ok: bool = False
                ) -> str: ...
@@ -78,11 +81,12 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def create(self,
                name: str,
                description: str,
-               resources_ids: list[str] | None = None,
+               resource_ids: list[str] | None = None,
                is_active_learning: bool = False,
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
+               resources_ids: list[str] | None = None,
                return_entity: bool = True,
                exists_ok: bool = False
                ) -> str | Project:
@@ -91,31 +95,38 @@ class ProjectsApi(CRUDEntityApi[Project]):
         Args:
             name: The name of the project.
             description: The description of the project.
-            resources_ids: The list of resource ids to be included in the project.
+            resource_ids: The list of resource ids to be included in the project.
             is_active_learning: Whether the project is an active learning project or not.
             two_up_display: Allow annotators to display multiple resources for annotation.
             return_entity: Whether to return the created Project instance or just its ID.
             exists_ok: If ``True``, do not raise an error when a project with the same
                 name already exists. Instead, the existing project is returned when
                 possible.
+            resources_ids: (DEPRECATED) Use ``resource_ids`` instead.
 
         Returns:
             The id of the created project.
         """
+        if resources_ids is not None:
+            warnings.warn("The 'resources_ids' parameter is deprecated. "
+                          "Please use 'resource_ids' instead", DeprecationWarning)
+            if resource_ids is None:
+                resource_ids = resources_ids
+
         proj = self.get_by_name(name, include_archived=True)
         if proj is not None:
             if exists_ok:
                 return proj if return_entity else proj.id
             else:
                 raise EntityAlreadyExistsError(entity_type='Project', params={'name': name})
-        resources_ids = resources_ids or []
+        resource_ids = resource_ids or []
 
         project_data = {'name': name,
                         'is_active_learning': is_active_learning,
-                        'resource_ids': resources_ids,
+                        'resource_ids': resource_ids,
                         "segmentationData": {"segmentationValueType": segmentation_spec, "definitions": []},
                         'annotation_set': {
-                            "resource_ids": resources_ids,
+                            "resource_ids": resource_ids,
                             "annotations": [],
                         },
                         "two_up_display": two_up_display,
@@ -291,6 +302,32 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                   add_path=f'resources/{resource_id}/status',
                                   json=jsondata)
 
+    def set_pinned_metrics(self,
+                           metrics: list[str],
+                           project: str | Project | None = None) -> None:
+        """Set the pinned metrics for a project (replaces the full list).
+
+        Args:
+            metrics: The full list of metric names to pin (e.g. ``val/accuracy``
+                for classification, ``val/iou``/``val/dice`` for segmentation,
+                ``val/map`` for detection - see :meth:`Project.set_pinned_metrics`
+                for how the built-in trainers name their logged metrics).
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
+        """
+        proj_id = self._entid(self._resolve_project_or_default(project))
+        self.patch(proj_id, {'pinned_metrics': metrics})
+
+    def get_pinned_metrics(self, project: str | Project | None = None) -> list[str]:
+        """Get the pinned metrics for a project (always fetches fresh from the server).
+
+        Args:
+            project: The project ID or Project instance. Falls back to the
+                session's default project (see `datamint.select_project()`) when omitted.
+        """
+        proj_id = self._entid(self._resolve_project_or_default(project))
+        return self.get_by_id(proj_id).pinned_metrics
+
     # ------------------------------------------------------------------
     # Project members
     # ------------------------------------------------------------------
@@ -347,6 +384,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                 project: str | Project | None = None,
                                 status: str | None = None,
                                 user_id: str | None = None,
+                                resource: str | Resource | None = None,
+                                *,
                                 resource_id: str | None = None) -> list[dict]:
         """Get per-resource annotation statuses for a project.
 
@@ -355,14 +394,22 @@ class ProjectsApi(CRUDEntityApi[Project]):
                 session's default project (see `datamint.select_project()`) when omitted.
             status: Optional status filter.
             user_id: Optional user ID filter.
-            resource_id: Optional resource ID filter.
+            resource: Optional resource unique id, or Resource instance, filter.
+            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of annotation status dicts.
         """
+        if resource_id is not None:
+            warnings.warn("The 'resource_id' parameter is deprecated. "
+                          "Please use 'resource' instead", DeprecationWarning)
+            if resource is None:
+                resource = resource_id
+
         project = self._resolve_project_or_default(project)
         params = {k: v for k, v in {'status': status, 'user_id': user_id,
-                                    'resource_id': resource_id}.items() if v is not None}
+                                    'resource_id': self._entid(resource) if resource is not None else None
+                                    }.items() if v is not None}
         response = self._make_entity_request('GET', project, add_path='annotation-statuses',
                                              params=params or None)
         return response.json()
@@ -457,21 +504,32 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def reset_annotator_status(self,
                                resource: str | Resource,
-                               annotator: str,
-                               project: str | Project | None = None) -> None:
+                               annotator_email: str | None = None,
+                               project: str | Project | None = None,
+                               *,
+                               annotator: str | None = None) -> None:
         """Reset annotation status for a specific annotator on a resource.
 
         Args:
             resource: The resource ID or Resource instance.
-            annotator: The annotator's email address.
+            annotator_email: The annotator's email address.
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
+            annotator: (DEPRECATED) Use ``annotator_email`` instead.
         """
+        if annotator is not None:
+            warnings.warn("The 'annotator' parameter is deprecated. "
+                          "Please use 'annotator_email' instead", DeprecationWarning)
+            if annotator_email is None:
+                annotator_email = annotator
+        if annotator_email is None:
+            raise TypeError("reset_annotator_status() missing required argument: 'annotator_email'")
+
         proj_id = self._entid(self._resolve_project_or_default(project))
         resource_id = self._entid(resource)
         self._make_request('DELETE',
                            f'/{self.endpoint_base}/{proj_id}/resources/{resource_id}'
-                           f'/annotator/{annotator}/status-reset')
+                           f'/annotator/{annotator_email}/status-reset')
 
     # ------------------------------------------------------------------
     # Download annotations
@@ -530,19 +588,28 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_annotators_stats(self,
                              project: str | Project | None = None,
+                             annotator_email: str | None = None,
+                             *,
                              email: str | None = None) -> list[dict]:
         """Get per-annotator completion statistics for a project.
 
         Args:
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
-            email: Optional annotator email to filter results.
+            annotator_email: Optional annotator email to filter results.
+            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of per-annotator stat dicts.
         """
+        if email is not None:
+            warnings.warn("The 'email' parameter is deprecated. "
+                          "Please use 'annotator_email' instead", DeprecationWarning)
+            if annotator_email is None:
+                annotator_email = email
+
         project = self._resolve_project_or_default(project)
-        params = {'email': email} if email is not None else None
+        params = {'email': annotator_email} if annotator_email is not None else None
         response = self._make_entity_request('GET', project, add_path='annotators-statistic',
                                              params=params)
         return response.json()
@@ -575,20 +642,33 @@ class ProjectsApi(CRUDEntityApi[Project]):
         response = self._make_entity_request('GET', project, add_path='files-matrix-statistic')
         return response.json()
 
-    def get_annotator_status(self, email: str, project: str | Project | None = None) -> dict:
+    def get_annotator_status(self,
+                             annotator_email: str | None = None,
+                             project: str | Project | None = None,
+                             *,
+                             email: str | None = None) -> dict:
         """Get a specific annotator's progress status in a project.
 
         Args:
-            email: The annotator's email address.
+            annotator_email: The annotator's email address.
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
+            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             Annotator status dict.
         """
+        if email is not None:
+            warnings.warn("The 'email' parameter is deprecated. "
+                          "Please use 'annotator_email' instead", DeprecationWarning)
+            if annotator_email is None:
+                annotator_email = email
+        if annotator_email is None:
+            raise TypeError("get_annotator_status() missing required argument: 'annotator_email'")
+
         proj_id = self._entid(self._resolve_project_or_default(project))
         response = self._make_request('GET',
-                                      f'/{self.endpoint_base}/{proj_id}/users/{email}/status')
+                                      f'/{self.endpoint_base}/{proj_id}/users/{annotator_email}/status')
         return response.json()
 
     # ------------------------------------------------------------------
@@ -597,27 +677,43 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_review_messages(self,
                             project: str | Project | None = None,
+                            annotator_email: str | None = None,
+                            resource: str | Resource | None = None,
+                            statuses: list[str] | None = None,
+                            *,
                             annotator: str | None = None,
-                            resource_id: str | None = None,
-                            statuses: list[str] | None = None) -> list[dict]:
+                            resource_id: str | None = None) -> list[dict]:
         """Get review feedback messages for a project.
 
         Args:
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
-            annotator: Optional annotator email filter.
-            resource_id: Optional resource ID filter.
+            annotator_email: Optional annotator email filter.
+            resource: Optional resource unique id, or Resource instance, filter.
             statuses: Optional list of status strings to filter by.
+            annotator: (DEPRECATED) Use ``annotator_email`` instead.
+            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of review message dicts.
         """
+        if annotator is not None:
+            warnings.warn("The 'annotator' parameter is deprecated. "
+                          "Please use 'annotator_email' instead", DeprecationWarning)
+            if annotator_email is None:
+                annotator_email = annotator
+        if resource_id is not None:
+            warnings.warn("The 'resource_id' parameter is deprecated. "
+                          "Please use 'resource' instead", DeprecationWarning)
+            if resource is None:
+                resource = resource_id
+
         project = self._resolve_project_or_default(project)
         params: dict = {}
-        if annotator is not None:
-            params['annotator'] = annotator
-        if resource_id is not None:
-            params['resourceId'] = resource_id
+        if annotator_email is not None:
+            params['annotator'] = annotator_email
+        if resource is not None:
+            params['resourceId'] = self._entid(resource)
         if statuses is not None:
             params['statuses'] = statuses
         response = self._make_entity_request('GET', project, add_path='reviewmessages',
