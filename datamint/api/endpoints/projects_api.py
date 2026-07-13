@@ -326,7 +326,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                 session's default project (see `datamint.select_project()`) when omitted.
         """
         proj_id = self._entid(self._resolve_project_or_default(project))
-        return self.get_by_id(proj_id).pinned_metrics
+        return self.get_by_id(proj_id).pinned_metrics or []
 
     # ------------------------------------------------------------------
     # Project members
