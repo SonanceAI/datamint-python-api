@@ -1,5 +1,6 @@
 from mlflow.store.model_registry.rest_store import RestStore
-from datamint.mlflow.store_utils import _resolve_project_id, _inject_project_id_into_body
+from datamint.mlflow.store_utils import _inject_project_id_into_body
+from datamint.mlflow.tracking.fluent import get_active_project_id
 from mlflow.exceptions import MlflowException
 from mlflow.utils.proto_json_utils import message_to_json
 from typing_extensions import override
@@ -77,7 +78,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().get_registered_model(name)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(GetRegisteredModel(name=name))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(GetRegisteredModel, req_body)
@@ -102,7 +103,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().create_registered_model(name, tags, description, deployment_job_id)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         proto_tags = [tag.to_proto() for tag in tags or []]
         req_body = message_to_json(
             CreateRegisteredModel(name=name, tags=proto_tags, description=description)
@@ -127,7 +128,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().update_registered_model(name, description, deployment_job_id)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(UpdateRegisteredModel(name=name, description=description))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(UpdateRegisteredModel, req_body)
@@ -149,7 +150,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().rename_registered_model(name, new_name)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(RenameRegisteredModel(name=name, new_name=new_name))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(RenameRegisteredModel, req_body)
@@ -171,7 +172,7 @@ class DatamintModelRegistryStore(RestStore):
             super().delete_registered_model(name)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(DeleteRegisteredModel(name=name))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(DeleteRegisteredModel, req_body)
@@ -200,7 +201,7 @@ class DatamintModelRegistryStore(RestStore):
 
         from mlflow.store.entities.paged_list import PagedList
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             SearchRegisteredModels(
                 filter=filter_string,
@@ -234,7 +235,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().get_latest_versions(name, stages)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(GetLatestVersions(name=name, stages=stages))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(GetLatestVersions, req_body, call_all_endpoints=True)
@@ -259,7 +260,7 @@ class DatamintModelRegistryStore(RestStore):
             super().set_registered_model_tag(name, tag)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(SetRegisteredModelTag(name=name, key=tag.key, value=tag.value))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(SetRegisteredModelTag, req_body)
@@ -280,7 +281,7 @@ class DatamintModelRegistryStore(RestStore):
             super().delete_registered_model_tag(name, key)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(DeleteRegisteredModelTag(name=name, key=key))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(DeleteRegisteredModelTag, req_body)
@@ -302,7 +303,7 @@ class DatamintModelRegistryStore(RestStore):
             super().set_registered_model_alias(name, alias, version)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             SetRegisteredModelAlias(name=name, alias=alias, version=str(version))
         )
@@ -325,7 +326,7 @@ class DatamintModelRegistryStore(RestStore):
             super().delete_registered_model_alias(name, alias)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(DeleteRegisteredModelAlias(name=name, alias=alias))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(DeleteRegisteredModelAlias, req_body)
@@ -355,7 +356,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().create_model_version(name, source, run_id, tags, run_link, description, local_model_path, model_id)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         proto_tags = [tag.to_proto() for tag in tags or []]
         req_body = message_to_json(
             CreateModelVersion(
@@ -393,7 +394,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().transition_model_version_stage(name, version, stage, archive_existing_versions)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             TransitionModelVersionStage(
                 name=name,
@@ -422,7 +423,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().update_model_version(name, version, description)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             UpdateModelVersion(name=name, version=str(version), description=description)
         )
@@ -446,7 +447,7 @@ class DatamintModelRegistryStore(RestStore):
             super().delete_model_version(name, version)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(DeleteModelVersion(name=name, version=str(version)))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(DeleteModelVersion, req_body)
@@ -466,7 +467,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().get_model_version(name, version)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(GetModelVersion(name=name, version=str(version)))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(GetModelVersion, req_body)
@@ -489,7 +490,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().get_model_version_download_uri(name, version)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(GetModelVersionDownloadUri(name=name, version=str(version)))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(GetModelVersionDownloadUri, req_body)
@@ -521,7 +522,7 @@ class DatamintModelRegistryStore(RestStore):
 
         from mlflow.store.entities.paged_list import PagedList
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             SearchModelVersions(
                 filter=filter_string,
@@ -552,7 +553,7 @@ class DatamintModelRegistryStore(RestStore):
             super().set_model_version_tag(name, version, tag)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(
             SetModelVersionTag(name=name, version=str(version), key=tag.key, value=tag.value)
         )
@@ -576,7 +577,7 @@ class DatamintModelRegistryStore(RestStore):
             super().delete_model_version_tag(name, version, key)
             return
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(DeleteModelVersionTag(name=name, version=str(version), key=key))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         self._call_endpoint(DeleteModelVersionTag, req_body)
@@ -596,7 +597,7 @@ class DatamintModelRegistryStore(RestStore):
         if self._should_use_original():
             return super().get_model_version_by_alias(name, alias)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = project_id or get_active_project_id()
         req_body = message_to_json(GetModelVersionByAlias(name=name, alias=alias))
         req_body = _inject_project_id_into_body(req_body, resolved_project_id)
         response_proto = self._call_endpoint(GetModelVersionByAlias, req_body)
