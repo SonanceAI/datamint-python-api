@@ -211,7 +211,7 @@ class BaseDatamintModel(PythonModel, ABC):
     ) -> PredictionResult:
         """Main prediction entry point.
 
-        Routes to the appropriate handler based on ``params['mode']``.
+        Routes to the appropriate handlesr based on ``params['mode']``.
         **Do not override** — implement :meth:`predict_default` (or other
         ``predict_*`` hooks) instead.
 

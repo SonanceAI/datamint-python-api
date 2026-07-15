@@ -27,12 +27,15 @@ def _process_signature(signature: ModelSignature | None,
     from mlflow.types import ParamSchema, ParamSpec
     from mlflow.models.signature import _infer_signature_from_type_hints
 
-    # Define inference parameters
-    params_schema = ParamSchema(
-        [
-            ParamSpec("mode", "string", "default"),  # Default mode
-        ]
-    )
+    # Define inference parameters schema for BaseDatamintModel.predict()
+    # - mode (str): prediction mode to dispatch to (e.g. 'default', 'image', 'slice', etc.)
+    # - log_predictions (bool): whether to upload predictions as annotations to Datamint
+    # - model_name (str | None): name of the model used for tagging uploaded predictions
+    params_schema = ParamSchema([
+        ParamSpec("mode", "string", "default"),
+        ParamSpec("log_predictions", "boolean", False),
+        ParamSpec("model_name", "string", None),
+    ])
 
     if signature is None:
         signature = _infer_signature_from_type_hints(
@@ -53,16 +56,27 @@ def _process_signature(signature: ModelSignature | None,
 
 
 def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample | None, dict[str, Any]]:
-
-    logger.info('Processing input example is disabled for now')
-    raise NotImplementedError('Processing input example is disabled for now')
-
     datamint_params = {
-        "mode": "default",
+        'mode': 'default',
+        'model_name': 'undefined_model_name',
+        'log_predictions': False
     }
     if input_example is None:
-        from datamint.entities.resource import LocalResource
-        input_resource = LocalResource(raw_data=bytes()).model_dump(mode='json')
+        import datetime
+        import json
+
+        input_resource = json.dumps(dict(
+            id='model_id',
+            storage='DicomResource',
+            filename='file.dcm',
+            location='private/location',
+            mimetype='application/dicom',
+            size=14724562,
+            status='inbox',
+            created_at=datetime.datetime.now().isoformat(),
+            created_by='user@mail.com',
+            modality='CT')
+        )
         return [input_resource], datamint_params
     if not isinstance(input_example, tuple):
         return (input_example, datamint_params)
@@ -248,15 +262,12 @@ def save_model(datamint_model: BaseDatamintModel,
     if hasattr(datamint_model, '_clear_linked_models_cache'):
         datamint_model._clear_linked_models_cache()
 
-    if signature is not None:
-        signature = _process_signature(signature, datamint_model)
+    # signature = _process_signature(signature, datamint_model)
     try:
         input_example = _process_input_example(input_example)
-    except NotImplementedError:
-        input_example = None
     except Exception as e:
-        logger.warning(f"Failed to process input example. Proceeding without input example. Error: {e}")
-        input_example = None
+        logger.error(f"Failed to process input example. {e}")
+        raise
 
     linked_models = datamint_model._get_linked_models_uri() if hasattr(datamint_model, '_get_linked_models_uri') else {}
     resolved_task_type = task_type or getattr(datamint_model, 'task_type', None)

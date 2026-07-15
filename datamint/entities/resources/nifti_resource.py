@@ -11,7 +11,7 @@ class NiftiResource(VolumeResource):
     resource_kind: ClassVar[str] = 'nifti'
     resource_priority: ClassVar[int] = 50
     storage_aliases: ClassVar[tuple[str, ...]] = ('NiftiResource', 'NiftiResourceHandler')
-    mimetypes: ClassVar[tuple[str, ...]] = ('application/nifti',)
+    mimetypes: ClassVar[tuple[str, ...]] = ('application/nifti','application/x-nifti')
     filename_suffixes: ClassVar[tuple[str, ...]] = ('.nii', '.nii.gz')
 
     @property
