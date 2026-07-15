@@ -67,7 +67,7 @@ class Project(BaseEntity):
     is_active_learning: bool = Field(default=MISSING_FIELD)
     two_up_display: bool = Field(default=MISSING_FIELD)
     require_review: bool = Field(default=MISSING_FIELD)
-    pinned_metrics: list[str] = Field(default=MISSING_FIELD)
+    pinned_metrics: list[str] | None = Field(default=MISSING_FIELD)
 
     _api: 'ProjectsApi' = PrivateAttr()
 
