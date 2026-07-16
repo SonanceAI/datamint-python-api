@@ -63,9 +63,8 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
     }
     if input_example is None:
         import datetime
-        import json
 
-        input_resource = json.dumps(dict(
+        input_resource = dict(
             id='model_id',
             storage='DicomResource',
             filename='file.dcm',
@@ -75,7 +74,7 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
             status='inbox',
             created_at=datetime.datetime.now().isoformat(),
             created_by='user@mail.com',
-            modality='CT')
+            modality='CT'
         )
         return [input_resource], datamint_params
     if not isinstance(input_example, tuple):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from .volume_resource import VolumeResource
+from medimgkit.nifti_utils import NIFTI_MIMES
 
 
 class NiftiResource(VolumeResource):
@@ -11,7 +12,7 @@ class NiftiResource(VolumeResource):
     resource_kind: ClassVar[str] = 'nifti'
     resource_priority: ClassVar[int] = 50
     storage_aliases: ClassVar[tuple[str, ...]] = ('NiftiResource', 'NiftiResourceHandler')
-    mimetypes: ClassVar[tuple[str, ...]] = ('application/nifti','application/x-nifti')
+    mimetypes: ClassVar[tuple[str, ...]] = tuple(NIFTI_MIMES)
     filename_suffixes: ClassVar[tuple[str, ...]] = ('.nii', '.nii.gz')
 
     @property

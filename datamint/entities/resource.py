@@ -17,6 +17,7 @@ from .base_entity import BaseEntity, MISSING_FIELD
 from .cache_manager import CacheManager
 from datamint.api.base_api import BaseApi
 from datamint.types import CacheMode
+from medimgkit.nifti_utils import NIFTI_MIMES
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.resources_api import ResourcesApi
@@ -153,7 +154,7 @@ class BaseResource(BaseEntity, ABC):
         Returns:
             True if the resource is a NIfTI file, False otherwise
         """
-        return self.mimetype in ('application/nifti', 'image/nifti')
+        return self.mimetype in NIFTI_MIMES
 
     def is_video(self) -> bool:
         """Check if the resource is a video file.

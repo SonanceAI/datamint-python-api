@@ -11,8 +11,8 @@ class DICOMResource(VolumeResource):
     resource_kind: ClassVar[str] = 'dicom'
     resource_priority: ClassVar[int] = 50
     storage_aliases: ClassVar[tuple[str, ...]] = ('DicomResource', 'DicomResourceHandler')
-    mimetypes: ClassVar[tuple[str, ...]] = ('application/dicom',)
-    filename_suffixes: ClassVar[tuple[str, ...]] = ('.dcm',)
+    mimetypes: ClassVar[tuple[str, ...]] = ('application/dicom', 'application/x-dicom')
+    filename_suffixes: ClassVar[tuple[str, ...]] = ('.dcm','.dicom')
 
     @property
     def uids(self) -> dict[str, str]:
