@@ -372,4 +372,22 @@ To also save a visualization of the predictions overlaid on the input file, use
 
     datamint inference file.png --model-name MyModel --output result.png
 
+Estimating prediction uncertainty
++++++++++++++++++++++++++++++++++
+
+Add ``--uncertainty`` to also compute an uncertainty score for each prediction:
+
+.. code-block:: bash
+
+    datamint inference file.png --model-name MyModel --uncertainty
+
+The score ranges from 0 (confident) to 1 (maximally uncertain). It is a predictive
+entropy computed from the model's own output probabilities in a single forward pass, a
+cheap proxy rather than a calibrated estimate. Off by default since it is not needed
+for a normal prediction.
+
+The underlying functions live in :mod:`datamint.utils.uncertainty` and can be called
+directly, or reached from the Python API with
+``model.predict(resources, params={'compute_uncertainty': True})``.
+
 See all available options by running ``datamint inference --help``.

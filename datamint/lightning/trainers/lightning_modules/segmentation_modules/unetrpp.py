@@ -586,8 +586,13 @@ class UNETRPPModule(SegmentationModule):
         """
         device = next(self.parameters()).device
         volume = volume.float().to(device)
-        B, C, D, H, W = volume.shape
+        B, C, D0, H0, W0 = volume.shape
         pd, ph, pw = self.patch_crop_size
+
+        pad_d, pad_h, pad_w = max(0, pd - D0), max(0, ph - H0), max(0, pw - W0)
+        if pad_d or pad_h or pad_w:
+            volume = F.pad(volume, (0, pad_w, 0, pad_h, 0, pad_d))
+        _, _, D, H, W = volume.shape
 
         sd = max(1, int(pd * (1 - self.sw_overlap)))
         sh = max(1, int(ph * (1 - self.sw_overlap)))
@@ -611,7 +616,10 @@ class UNETRPPModule(SegmentationModule):
                     accum[:, :, d0:d0 + pd, h0:h0 + ph, w0:w0 + pw]   += pred * gauss
                     weights[:, :, d0:d0 + pd, h0:h0 + ph, w0:w0 + pw] += gauss
 
-        return accum / weights.clamp(min=1e-6)
+        result = accum / weights.clamp(min=1e-6)
+        if pad_d or pad_h or pad_w:
+            result = result[:, :, :D0, :H0, :W0]
+        return result
 
     @staticmethod
     def _gaussian_kernel(
@@ -628,3 +636,76 @@ class UNETRPPModule(SegmentationModule):
         pd, ph, pw = patch_size
         kernel = _g1d(pd)[:, None, None] * _g1d(ph)[None, :, None] * _g1d(pw)[None, None, :]
         return (kernel / kernel.max()).unsqueeze(0).unsqueeze(0)  # (1, 1, D, H, W)
+
+    # ---- Inference: full-volume prediction -----------------------------------
+
+    def predict_volume(
+        self,
+        model_input,
+        compute_uncertainty: bool = False,
+        uncertainty_top_fraction: float = 0.2,
+        **kwargs: Any,
+    ):
+        """Run sliding-window segmentation inference, returning
+        :class:`~datamint.entities.annotations.VolumeSegmentation` per resource.
+
+        Args:
+            compute_uncertainty: If ``True``, also compute a predictive-entropy
+                uncertainty score per class (see :mod:`datamint.utils.uncertainty`),
+                pooled from per-slice scores to one score per volume, and
+                attach it as ``uncertainty`` on each returned annotation.
+            uncertainty_top_fraction: Fraction of the volume's most-uncertain
+                slices averaged into the per-volume score. Only used when
+                ``compute_uncertainty=True``.
+        """
+        import numpy as np
+        from albumentations.pytorch import ToTensorV2
+        from medimgkit.readers import read_array_normalized
+        from datamint.entities.annotations import VolumeSegmentation
+        from datamint.utils.uncertainty import segmentation_uncertainty, pool_top_k
+
+        transform = self.transform or A.Compose([A.Normalize(), ToTensorV2()])
+        device = self.inference_device
+        self.eval()
+
+        class_names = self.class_names or [f'class_{i}' for i in range(self.num_classes)]
+
+        all_preds: list[list] = []
+        with torch.inference_mode():
+            for res in model_input:
+                res_bytesdata = res.fetch_file_data(auto_convert=False, use_cache=True)
+                img, _ = read_array_normalized(res_bytesdata, return_metainfo=True)  # (N, C, H, W)
+                img = img.transpose(1, 0, 2, 3)  # (C, N, H, W)
+                depth = img.shape[1]
+
+                # Normalize is per-pixel (no spatial context needed across depth), so
+                # applying it slice-by-slice is equivalent to a volume-aware transform.
+                slices = [
+                    transform(image=np.transpose(img[:, d, :, :], (1, 2, 0)))['image']
+                    for d in range(depth)
+                ]
+                volume = torch.stack(slices, dim=1).unsqueeze(0).to(device)  # (1, C, D, H, W)
+
+                logits = self._sliding_window_inference(volume)  # (1, num_classes, D, H, W)
+                probs = torch.sigmoid(logits)
+                pred = logits[0] > 0  # (num_classes, D, H, W)
+
+                anns: list = []
+                for i, name in enumerate(class_names):
+                    mask = pred[i].cpu().numpy().astype(np.int32)  # (D, H, W)
+                    if not mask.any():
+                        continue
+                    extra = {}
+                    if compute_uncertainty:
+                        slice_scores = [
+                            segmentation_uncertainty(probs[0, i, d], pred[i, d])
+                            for d in range(depth)
+                        ]
+                        extra['uncertainty'] = pool_top_k(slice_scores, top_fraction=uncertainty_top_fraction)
+                    anns.append(VolumeSegmentation.from_semantic_segmentation(
+                        segmentation=mask.transpose(1, 2, 0),  # (H, W, D)
+                        class_map=name,
+                        **extra,
+                    ))
+                all_preds.append(anns)
+        return all_preds

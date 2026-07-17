@@ -188,6 +188,9 @@ class BaseDatamintModel(PythonModel, ABC):
                         f'{context.artifacts=} | {context.model_config=}')
         self._detect_device(context)
         self._move_to_device(self.inference_device)
+        
+        #Force a fresh discovery against the code that's actually running now
+        self._invalidate_router()
 
     # ------------------------------------------------------------------
     # Serialization
