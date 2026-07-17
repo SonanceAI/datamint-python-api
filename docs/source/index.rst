@@ -27,8 +27,8 @@ Datamint
 - :bdg-warning:`Intermediate` assumes SDK familiarity, introduces ML/dataset concepts
 - :bdg-danger:`Advanced` full training pipelines, custom models, 3D data, multi-step workflows
 
-User Guide
-----------
+For Developers
+--------------
 
 .. grid:: 1 2 3 3
    :gutter: 2
@@ -95,7 +95,7 @@ User Guide
 
 .. toctree::
    :maxdepth: 2
-   :caption: User Guide
+   :caption: For Developers
    :hidden:
 
    getting_started
@@ -106,6 +106,30 @@ User Guide
    tutorials
    datamint_vs_raw_pytorch
    ssl_troubleshooting
+
+For Non-Developers
+-------------------
+
+Just need to upload images and segmentations, no coding? Start here.
+
+.. grid:: 1 2 3 3
+   :gutter: 2
+
+   .. grid-item-card:: Upload Images & Segmentations
+      :link: for_non_devs
+      :link-type: doc
+
+      :bdg-success:`Beginner`
+
+      No coding required. Set up your computer, get an API key, and upload your files
+      from a terminal, step by step.
+
+.. toctree::
+   :maxdepth: 2
+   :caption: For Non-Developers
+   :hidden:
+
+   for_non_devs
 
 Quick Start
 -----------
