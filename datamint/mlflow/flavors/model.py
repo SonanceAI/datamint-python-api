@@ -3,7 +3,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 import logging
-from typing import Any, ClassVar, TypeAlias, cast
+from typing import Any, ClassVar, TypeAlias
 
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import PyFuncModel

@@ -19,43 +19,9 @@ from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 logger = logging.getLogger(__name__)
 
 FLAVOR_NAME = 'datamint'
-PYTORCH_DATA_SUBPATH = "pytorch_data"
 
 
-def _process_signature(signature: ModelSignature | None,
-                       python_model: BaseDatamintModel) -> ModelSignature:
-    from mlflow.types import ParamSchema, ParamSpec
-    from mlflow.models.signature import _infer_signature_from_type_hints
-
-    # Define inference parameters schema for BaseDatamintModel.predict()
-    # - mode (str): prediction mode to dispatch to (e.g. 'default', 'image', 'slice', etc.)
-    # - log_predictions (bool): whether to upload predictions as annotations to Datamint
-    # - model_name (str | None): name of the model used for tagging uploaded predictions
-    params_schema = ParamSchema([
-        ParamSpec("mode", "string", "default"),
-        ParamSpec("log_predictions", "boolean", False),
-        ParamSpec("model_name", "string", None),
-    ])
-
-    if signature is None:
-        signature = _infer_signature_from_type_hints(
-            python_model=python_model,
-            context=None,
-            type_hints=python_model.predict_type_hints,
-            input_example=None,
-        )
-    assert signature is not None
-
-    # Merge existing params with our new params, ensuring no duplicates
-    existing_params: list[ParamSpec] = signature.params.params if signature.params else []
-    existing_param_names = {param.name for param in existing_params}
-    new_params = [param for param in params_schema.params if param.name not in existing_param_names]
-    signature.params = ParamSchema(existing_params + new_params)
-
-    return signature
-
-
-def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample | None, dict[str, Any]]:
+def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample, dict[str, Any]]:
     datamint_params = {
         'mode': 'default',
         'model_name': 'undefined_model_name',
