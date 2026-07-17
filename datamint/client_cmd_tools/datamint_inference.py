@@ -57,11 +57,12 @@ def _load_model(project_name: str, model_name: str):
         ) from e
 
 
-def _run_inference(model, file_path: str):
+def _run_inference(model, file_path: str, compute_uncertainty: bool = False):
     from datamint.entities.resource import LocalResource
 
     resource = LocalResource(local_filepath=file_path)
-    predictions = model.predict([resource])
+    params = {'compute_uncertainty': True} if compute_uncertainty else None
+    predictions = model.predict([resource], params=params)
     return resource, (predictions[0] if predictions else [])
 
 
@@ -74,11 +75,14 @@ def _print_predictions(console: Console, predictions: list) -> None:
     table.add_column("Type", style="key")
     table.add_column("Identifier")
     table.add_column("Confidence")
+    table.add_column("Uncertainty")
     for ann in predictions:
         confidence = getattr(ann, 'confiability', None)
         conf_str = f"{confidence:.3f}" if isinstance(confidence, (int, float)) else "-"
+        uncertainty = getattr(ann, 'uncertainty', None)
+        unc_str = f"{uncertainty:.3f}" if isinstance(uncertainty, (int, float)) else "-"
         identifier = getattr(ann, 'identifier', None) or getattr(ann, 'text_value', None) or '-'
-        table.add_row(ann.annotation_type, str(identifier), conf_str)
+        table.add_row(ann.annotation_type, str(identifier), conf_str, unc_str)
     console.print(table)
 
 
@@ -144,7 +148,7 @@ def _execute(args: argparse.Namespace, console: Console) -> int:
         model = _load_model(project_name, args.model_name)
 
     with console.status("[accent]Running inference...[/accent]"):
-        resource, predictions = _run_inference(model, args.file)
+        resource, predictions = _run_inference(model, args.file, compute_uncertainty=args.uncertainty)
 
     _print_predictions(console, predictions)
 
@@ -165,6 +169,8 @@ Examples:
                                            # Model registered under a different name than its project
   datamint inference file.png --model-name MyModel --output result.png
                                            # Also save a visualization of the predictions
+  datamint inference file.png --model-name MyModel --uncertainty
+                                           # Also compute a predictive-uncertainty score
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
@@ -180,6 +186,9 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
                         "explicitly to something else).")
     parser.add_argument('--output', type=str, default=None, metavar='PATH',
                         help='Save a rendered visualization of the predictions to this path.')
+    parser.add_argument('--uncertainty', action='store_true', default=False,
+                        help='Also compute a predictive-entropy uncertainty score per prediction '
+                        '(see datamint.utils.uncertainty). Off by default.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print debug messages.')
 
     return parser.parse_args()

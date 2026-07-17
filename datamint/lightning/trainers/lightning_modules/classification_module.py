@@ -153,9 +153,17 @@ class ClassificationModule(DatamintLightningModule):
     def predict_default(
         self,
         model_input,
+        compute_uncertainty: bool = False,
         **kwargs: Any,
     ):
-        """Run classification inference, returning :class:`~datamint.entities.annotations.ImageClassification` per resource."""
+        """Run classification inference, returning :class:`~datamint.entities.annotations.ImageClassification` per resource.
+
+        Args:
+            compute_uncertainty: If ``True``, also compute a predictive-entropy
+                uncertainty score (see :mod:`datamint.utils.uncertainty`) and attach
+                it as ``uncertainty`` on each returned annotation.
+        """
+        from datamint.utils.uncertainty import categorical_entropy
 
         transform = self.transform
         if transform is None:
@@ -180,8 +188,12 @@ class ClassificationModule(DatamintLightningModule):
                 confidence = float(probs.max(dim=1).values.item())
                 pred_idx = int(logits.argmax(dim=1).item())
                 identifier, value = self.class_names[pred_idx]
+                extra = {}
+                if compute_uncertainty:
+                    extra['uncertainty'] = categorical_entropy(probs)[0].item()
                 all_preds.append([ImageClassification(
                     name=identifier, value=value,
                     confiability=confidence,
+                    **extra,
                 )])
         return all_preds

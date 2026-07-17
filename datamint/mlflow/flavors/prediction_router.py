@@ -26,15 +26,8 @@ class ModeSpec:
 
 
 def bridge_mode(fn: Callable) -> Callable:
-    """Marks a method as a bridge implementation.
-
-    Bridge methods are only auto-registered in the router when their
-    prerequisite mode is already in the registry (see
-    ``PredictionRouter._BRIDGE_MODE_PREREQS``).  Without this marker the
-    router would treat them as ordinary overrides and expose them regardless
-    of whether the prerequisite is implemented.
-    """
-    fn._is_bridge = True  # type: ignore[attr-defined]
+    """Marks a method as a bridge implementation. """
+    fn._is_bridge = True  
     return fn
 
 
@@ -213,11 +206,21 @@ class PredictionRouter:
             )
         except Exception:
             is_all_image = False
+        try:
+            is_all_volume = all(r.is_volume() for r in model_input)
+        except Exception:
+            is_all_volume = False
 
-        _LOGGER.debug("Parsing prediction mode: '%s' | is_all_image=%s", mode_str, is_all_image)
+        _LOGGER.debug(
+            "Parsing prediction mode: '%s' | is_all_image=%s | is_all_volume=%s",
+            mode_str, is_all_image, is_all_volume,
+        )
 
-        if mode_str == PredictionMode.DEFAULT.value and is_all_image:
-            mode_str = PredictionMode.IMAGE.value
+        if mode_str == PredictionMode.DEFAULT.value:
+            if is_all_image:
+                mode_str = PredictionMode.IMAGE.value
+            elif is_all_volume:
+                mode_str = PredictionMode.VOLUME.value
         try:
             return PredictionMode(mode_str)
         except ValueError:

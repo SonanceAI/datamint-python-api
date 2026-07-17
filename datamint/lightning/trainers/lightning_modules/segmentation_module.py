@@ -182,11 +182,19 @@ class SegmentationModule(DatamintLightningModule):
             weight_decay=1e-4,
         )
 
-    def predict_image(self, model_input, **kwargs: Any):
-        """Run segmentation inference, returning :class:`~datamint.entities.annotations.ImageSegmentation` per resource."""
+    def predict_image(self, model_input, compute_uncertainty: bool = False, **kwargs: Any):
+        """Run segmentation inference, returning :class:`~datamint.entities.annotations.ImageSegmentation` per resource.
+
+        Args:
+            compute_uncertainty: If ``True``, also compute a predictive-entropy
+                uncertainty score per class (see :mod:`datamint.utils.uncertainty`,
+                restricted to the pixels predicted as that class) and attach
+                it as ``uncertainty`` on each returned annotation. 
+        """
         import cv2
         import numpy as np
         from datamint.entities.annotations import ImageSegmentation
+        from datamint.utils.uncertainty import segmentation_uncertainty
 
         device = self.inference_device
         self.eval()
@@ -216,9 +224,15 @@ class SegmentationModule(DatamintLightningModule):
                         interpolation=cv2.INTER_NEAREST,
                     ) * 255
                     if mask.any():
+                        extra = {}
+                        if compute_uncertainty:
+                            extra['uncertainty'] = segmentation_uncertainty(
+                                probs[0, i], torch.from_numpy(pred[i])
+                            )
                         anns.append(ImageSegmentation(
                             name=name, mask=mask,
                             confiability=class_conf,
+                            **extra,
                         ))
                 all_preds.append(anns)
         return all_preds
