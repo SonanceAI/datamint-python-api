@@ -21,12 +21,6 @@ Datamint
 - `Datamint Platform <https://app.datamint.io/>`_
 - `GitHub <https://github.com/SonanceAI/datamint-python-api>`_
 
-**Difficulty levels:**
-
-- :bdg-success:`Beginner` no ML knowledge needed
-- :bdg-warning:`Intermediate` assumes SDK familiarity, introduces ML/dataset concepts
-- :bdg-danger:`Advanced` full training pipelines, custom models, 3D data, multi-step workflows
-
 For Developers
 --------------
 
