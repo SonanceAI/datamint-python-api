@@ -27,6 +27,7 @@ jobs:
       with:
         documentation_path: docs/source
         cache: true
+        sphinx_build_options: -E
       env:
         # Avoid installing CUDA-enabled PyTorch wheels (they are huge and unnecessary for docs builds).
         # By making the PyTorch CPU wheel index the primary index, `pip install .[...]` will resolve
