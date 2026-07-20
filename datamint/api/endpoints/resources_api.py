@@ -1,5 +1,5 @@
 from typing import TypeAlias, Literal, IO, overload
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from ..base_api import ApiConfig, BaseApi
 from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 from datamint.entities import Project, Resource
@@ -1404,3 +1404,37 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         for _, items in items_gen:
             all_items.extend(items)
         return [self._init_entity_obj(**item) for item in all_items]
+
+    def rank_resources(self,
+                       resources: Sequence[Resource],
+                       score_fn: Callable[[Resource], float | None],
+                       *,
+                       descending: bool = True,
+                       top_k: int | None = None,
+                       ) -> list[tuple[Resource, float]]:
+        """Rank resources using a custom scoring function.
+
+        Args:
+            resources: The resources to rank.
+            score_fn: Called once per resource to produce its score. Return
+                ``None`` to exclude a resource (e.g. one your scoring
+                function can't handle).
+            descending: If ``True`` (default), the highest-scoring resource
+                comes first.
+            top_k: If given, only the ``top_k`` highest-ranked resources are
+                returned. Must be positive.
+
+        Returns:
+            ``(resource, score)`` pairs sorted by score, excluding resources
+            whose ``score_fn`` returned ``None``.
+        """
+        if top_k is not None and top_k <= 0:
+            raise ValueError(f"top_k must be positive, got {top_k}")
+
+        scored = [(res, score_fn(res)) for res in resources]
+        scored = [(res, score) for res, score in scored if score is not None]
+        scored.sort(key=lambda pair: pair[1], reverse=descending)
+
+        if top_k is not None:
+            scored = scored[:top_k]
+        return scored

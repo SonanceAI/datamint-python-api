@@ -152,6 +152,29 @@ To delete a resource:
     # Delete multiple resources at once
     api.resources.bulk_delete(resources_to_delete)
 
+Ranking unlabeled resources
++++++++++++++++++++++++++++
+
+When deciding which unlabeled resources to send for annotation next, use
+:py:meth:`api.resources.rank_resources() <datamint.api.endpoints.resources_api.ResourcesApi.rank_resources>`
+to order them by any scoring function you provide:
+
+.. code-block:: python
+
+    unlabeled = api.resources.get_not_annotated(limit=200)
+
+    ranked = api.resources.rank_resources(unlabeled, my_score_fn, top_k=20)
+    for resource, score in ranked:
+        print(resource.filename, score)
+
+``rank_resources`` sorts highest score first by default (``descending=True``)
+and skips any resource for which ``my_score_fn`` returns ``None``. Pass
+``top_k`` to keep only the highest-ranked resources.
+
+A common scoring function is model uncertainty -- see
+:doc:`command_line_tools` and :mod:`datamint.utils.uncertainty` for how to
+compute it.
+
 Working with Annotations
 ------------------------
 
