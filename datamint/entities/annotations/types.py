@@ -18,3 +18,5 @@ class AnnotationType(StrEnum):
     CIRCLE = 'circle'
     CATEGORY = 'category'
     LABEL = 'label'
+    INTEGER = 'integer'
+    FLOAT = 'float'
