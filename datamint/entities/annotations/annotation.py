@@ -47,6 +47,11 @@ def _normalize_annotation_data(data: dict[str, Any]) -> dict[str, Any]:
     if 'scope' not in converted_data:
         converted_data['scope'] = 'image' if converted_data.get('frame_index') is None else 'frame'
 
+    if converted_data.get('annotation_type') in (AnnotationType.INTEGER, AnnotationType.FLOAT):
+        raw_value = converted_data.pop('text_value', None)
+        if raw_value is not None and converted_data.get('numeric_value') is None:
+            converted_data['numeric_value'] = raw_value
+
     return converted_data
 
 
@@ -290,7 +295,7 @@ class Annotation(AnnotationBase):
             identifier=self.identifier,
             scope=self.scope,
             annotation_worklist_id=self.annotation_worklist_id,
-            value=self.text_value,
+            value=self.text_value if self.text_value is not None else self.numeric_value,
             imported_from=self.imported_from,
             import_author=self.import_author,
             frame_index=self.frame_index,

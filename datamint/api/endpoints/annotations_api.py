@@ -30,6 +30,7 @@ from datamint.entities.annotations import (
     CoordinateSystem,
     ImageClassification,
     LineAnnotation,
+    NumericAnnotation,
     annotation_from_dict,
 )
 from datamint.exceptions import ItemNotFoundError, ServerError
@@ -1149,6 +1150,46 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         created = self.create(resource, annotation)
         if not isinstance(created, str):
             raise TypeError('Expected a single annotation id for image classification creation.')
+        return created
+
+    def create_numeric_annotation(self,
+                                  resource: str | Resource,
+                                  identifier: str,
+                                  value: int | float,
+                                  units: str | None = None,
+                                  imported_from: str | None = None,
+                                  model_id: str | None = None,
+                                  source: str | None = 'imported',
+                                  ) -> str:
+        """
+        Create a numeric value annotation (e.g. a measurement or count).
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier/label.
+            value: The numeric value. ``int`` maps to :attr:`AnnotationType.INTEGER`,
+                ``float`` maps to :attr:`AnnotationType.FLOAT`.
+            units: Optional unit label for the value (e.g. 'years', 'mm').
+            imported_from: The imported from source value.
+            model_id: The model unique id.
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+
+        Returns:
+            The id of the created annotation.
+        """
+        annotation = NumericAnnotation(
+            name=identifier,
+            value=value,
+            units=units,
+            imported_from=imported_from,
+            model_id=model_id,
+            source=source,
+        )
+
+        created = self.create(resource, annotation)
+        if not isinstance(created, str):
+            raise TypeError('Expected a single annotation id for numeric annotation creation.')
         return created
 
     def upload_predictions(
