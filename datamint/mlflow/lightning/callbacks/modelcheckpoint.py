@@ -9,6 +9,7 @@ import inspect
 from torch import nn
 import lightning.pytorch as L
 from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
+from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
 from datamint.mlflow.env_utils import ensure_mlflow_configured
 import mlflow.models
 import mlflow.exceptions
@@ -309,9 +310,11 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
             return self.registered_model_info
 
         # mlflow_client = _get_MLFlowLogger(trainer)._mlflow_client
+        tags = {DATAMINT_LOGGED_MODEL_ID_TAG: self._last_model_id} if self._last_model_id else None
         self.registered_model_info = mlflow.register_model(
             model_uri=self._last_model_uri,
             name=self.model_name,
+            tags=tags,
         )
 
         # Update the registered state hash after successful registration

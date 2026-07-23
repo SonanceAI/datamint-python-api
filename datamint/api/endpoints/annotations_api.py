@@ -586,7 +586,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             modelinfo = self._models_api.get_by_name(ai_model_name)
             if modelinfo is None:
                 try:
-                    available_models = [model['name'] for model in self._models_api.get_all()]
+                    available_models = [model.name for model in self._models_api.get_all()]
                 except Exception:
                     _LOGGER.warning("Could not fetch available AI models from the server.")
                     raise ItemNotFoundError('ai-model',
