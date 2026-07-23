@@ -570,7 +570,8 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
                         ' index, r, g, b, ..., name')
     parser.add_argument('--ai-model', type=str, required=False, metavar="MODEL_NAME",
                         dest='ai_model',
-                        help='Name of a deployed AI model to associate with uploaded segmentations.')
+                        help='Name of an AI model to associate with uploaded segmentations. '
+                        'Created automatically in the registry if it does not already exist.')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--transpose-segmentation', action='store_true', default=False,
@@ -790,13 +791,10 @@ def main():
             _USER_LOGGER.error(f'❌ Connection failed: {e}')
             return
         if args.ai_model:
-            # verify that the model exists
-            model_info = api.models.get_by_name(args.ai_model)
-            if model_info is None:
-                available_models = api.models.get_all()
-                model_names = [model.name for model in available_models]
-                _USER_LOGGER.error(f'❌ AI model "{args.ai_model}" not found. Available models: {model_names}')
-                return
+            # create the model if it doesn't exist yet
+            if api.models.get_by_name(args.ai_model) is None:
+                api.models.create(args.ai_model, exists_ok=True)
+                _USER_LOGGER.info(f'✅ AI model "{args.ai_model}" did not exist yet, created it.')
         print_input_summary(files_path,
                             args=args,
                             segfiles=segfiles,
