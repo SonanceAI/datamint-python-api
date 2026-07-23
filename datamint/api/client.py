@@ -150,6 +150,8 @@ class Api:
             kwargs: dict[str, Any] = {}
             if name == 'inference':
                 kwargs['projects_api'] = self.projects
+            elif name == 'models':
+                kwargs['deploy_api'] = self.deploy
             endpoint = api_class(self.config, client=client, **kwargs)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self

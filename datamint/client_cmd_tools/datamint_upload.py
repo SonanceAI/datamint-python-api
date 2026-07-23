@@ -794,7 +794,7 @@ def main():
             model_info = api.models.get_by_name(args.ai_model)
             if model_info is None:
                 available_models = api.models.get_all()
-                model_names = [model['name'] for model in available_models]
+                model_names = [model.name for model in available_models]
                 _USER_LOGGER.error(f'❌ AI model "{args.ai_model}" not found. Available models: {model_names}')
                 return
         print_input_summary(files_path,
