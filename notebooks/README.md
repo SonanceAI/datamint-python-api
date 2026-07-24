@@ -16,7 +16,7 @@ Folders are numbered in the recommended learning order.
 | [01_getting_started](01_getting_started/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Upload data and explore a project |
 | [02_annotations](02_annotations/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Upload and work with annotations |
 | [03_datasets](03_datasets/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Build PyTorch datasets, splits, and volume loading |
-| [04_experiment_tracking](04_experiment_tracking/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Log metrics and artifacts with MLflow |
+| [04_experiment_tracking](04_experiment_tracking/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Log metrics and artifacts, and manage the model registry, with MLflow |
 | [05_deployment](05_deployment/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Deploy registered and external models |
 | [06_end_to_end](06_end_to_end/) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Full pipelines from data to deployed model |
 
@@ -38,6 +38,7 @@ Folders are numbered in the recommended learning order.
 
 ### 04 — Experiment Tracking
 1. [`01_mlflow_manual_logging`](04_experiment_tracking/01_mlflow_manual_logging.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Log metrics, parameters, and models manually with MLflow
+2. [`02_model_registry`](04_experiment_tracking/02_model_registry.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Register, list, and inspect models and versions with `api.models`
 
 ### 05 — Deployment
 1. [`01_deploy_registered_model`](05_deployment/01_deploy_registered_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Deploy a model already registered in Datamint

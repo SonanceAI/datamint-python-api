@@ -461,6 +461,61 @@ Organize resources with channels
 
 See also the tutorial notebooks: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
 
+Working with Models
+--------------------
+
+``api.models`` is a thin facade over Datamint's MLflow-backed model registry:
+it wraps MLflow's ``RegisteredModel``/``ModelVersion`` objects in
+:py:class:`~datamint.api.endpoints.model_types.Model` /
+:py:class:`~datamint.api.endpoints.model_types.ModelVersion`, so you can
+register, list, and inspect models without knowing MLflow's object model.
+
+Register and list models
++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    # Create a model (or fetch it if it already exists, the default behavior)
+    model = api.models.create("my-model", description="Segmentation model")
+
+    # Look up a model by name; returns None if it doesn't exist
+    model = api.models.get_by_name("my-model")
+
+    # List every registered model
+    all_models = api.models.get_list()
+
+    # Only models with a deployed image
+    deployed_models = api.models.get_list(only_deployed=True)
+
+Models are also created automatically when you pass ``--ai-model`` to
+:doc:`command_line_tools` (``datamint-upload``) with a name that doesn't
+exist yet.
+
+Inspect versions and metrics
+++++++++++++++++++++++++++++
+
+Each :py:class:`~datamint.api.endpoints.model_types.Model` can list its
+:py:class:`~datamint.api.endpoints.model_types.ModelVersion` objects, and each
+version exposes what it was trained for and how it performed:
+
+.. code-block:: python
+
+    model = api.models.get_by_name("my-model")
+
+    versions = model.get_versions()
+    latest = model.get_latest_version()          # highest version number
+    champion = model.get_latest_version(alias="champion")
+
+    print(latest.get_task_type())                 # e.g. "segmentation"
+    print(latest.get_supported_modes())            # e.g. ["auto", "interactive"]
+    print(latest.get_metrics())                    # e.g. {"val/dice": 0.87}
+
+``get_metrics()`` returns ``{}`` for versions with no training run behind
+them (for example, a model registered externally rather than trained through
+a Datamint :mod:`~datamint.lightning.trainers`), rather than raising.
+``Model.get_supported_modes()``/``get_metrics()`` are shortcuts that delegate
+to the latest version when you don't need a specific one.
+
 Deploy a registered model
 +++++++++++++++++++++++++
 
@@ -478,6 +533,9 @@ Use ``api.deploy.start()`` to deploy a model:
     # Wait for deployment to complete
     deploy_job = deploy_job.wait()
     print("Deployment complete:", deploy_job.status)
+
+    # Check whether a model has a deployed image
+    model.is_deployed()
 
 Working with Users
 ------------------

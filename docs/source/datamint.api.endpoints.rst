@@ -59,6 +59,11 @@ Models API
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: datamint.api.endpoints.model_types
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Deploy Model API
 ----------------
 
