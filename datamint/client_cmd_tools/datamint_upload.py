@@ -216,6 +216,10 @@ def walk_to_depth(path: str | Path,
         if _is_system_file(child):
             continue
 
+        if child.is_symlink() and not child.exists():
+            _USER_LOGGER.warning(f"Skipping broken symlink: {child}")
+            continue
+
         if child.is_dir():
             if depth != 0:
                 if exclude_pattern is not None and fnmatch.fnmatch(child.name, exclude_pattern):
