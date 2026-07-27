@@ -959,6 +959,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         form.add_field('annotation_worklist_id', worklist_id)
                     if source is not None:
                         form.add_field('source', source)
+                    if imported_from is not None:
+                        form.add_field('imported_from', imported_from)
+                    if author_email is not None:
+                        form.add_field('import_author', author_email)
                     form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
                     try:
@@ -994,6 +998,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 form.add_field('annotation_worklist_id', worklist_id)
             if source is not None:
                 form.add_field('source', source)
+            if imported_from is not None:
+                form.add_field('imported_from', imported_from)
+            if author_email is not None:
+                form.add_field('import_author', author_email)
             if name is not None:
                 form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
