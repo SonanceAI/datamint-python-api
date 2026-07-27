@@ -292,6 +292,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         else:
             source_filepath = os.path.abspath(os.path.expanduser(file_path))
             filename = os.path.basename(source_filepath)
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
 
         if session is not None and not isinstance(session, aiohttp.ClientSession):
             raise ValueError("session must be an aiohttp.ClientSession object.")
