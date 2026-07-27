@@ -283,7 +283,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 file_path=file_path,
                 name=name,
                 imported_from=imported_from,
-                author_email=author_email,
                 worklist_id=worklist_id,
                 model_id=model_id,
                 transpose_segmentation=transpose_segmentation,
@@ -602,7 +601,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                    file_path: str | Path | np.ndarray,
                                    name: dict[int, str] | None = None,
                                    imported_from: str | None = None,
-                                   author_email: str | None = None,
                                    worklist_id: str | None = None,
                                    model_name: str | None = None,
                                    transpose_segmentation: bool = False,
@@ -622,7 +620,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             name: Mapping of integer label values to segmentation names.
                 Example: {1: 'liver', 2: 'tumor'}
             imported_from: The imported from value.
-            author_email: The author email.
             worklist_id: The annotation worklist unique id.
             model_name: The AI model name.
             transpose_segmentation: Whether to transpose the segmentation before uploading.
@@ -678,7 +675,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             file_path=file_path,
             name=name,
             imported_from=imported_from,
-            author_email=author_email,
             worklist_id=worklist_id,
             model_id=model_id,
             transpose_segmentation=transpose_segmentation,
@@ -905,7 +901,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                 file_path: str | np.ndarray,
                                                 name: str | dict[int, str] | dict[tuple, str] | None,
                                                 imported_from: str | None = None,
-                                                author_email: str | None = None,
                                                 worklist_id: str | None = None,
                                                 model_id: str | None = None,
                                                 transpose_segmentation: bool = False,
@@ -920,7 +915,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             file_path: Path to segmentation file or numpy array.
             name: The name of the segmentation (string only for volumes).
             imported_from: The imported from value.
-            author_email: The author email.
             worklist_id: The annotation worklist unique id.
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation.
@@ -959,6 +953,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                         form.add_field('annotation_worklist_id', worklist_id)
                     if source is not None:
                         form.add_field('source', source)
+                    if imported_from is not None:
+                        form.add_field('imported_from', imported_from)
                     form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
                     try:
@@ -994,6 +990,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 form.add_field('annotation_worklist_id', worklist_id)
             if source is not None:
                 form.add_field('source', source)
+            if imported_from is not None:
+                form.add_field('imported_from', imported_from)
             if name is not None:
                 form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
 
