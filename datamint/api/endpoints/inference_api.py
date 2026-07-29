@@ -10,7 +10,12 @@ import warnings
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.inferencejob import InferenceJob
-from datamint.exceptions import JobTimeoutError, ItemNotFoundError
+from datamint.exceptions import (
+    JobTimeoutError,
+    ItemNotFoundError,
+    ValidationError,
+    ModelNotDeployedError,
+)
 from datamint.mlflow.flavors.model_parser import parse_model_reference
 
 if TYPE_CHECKING:
@@ -81,6 +86,27 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             payload["params"] = params
         return payload
 
+    def _submit_prediction(
+        self,
+        add_path: str,
+        payload: dict[str, Any],
+        *,
+        model_name: str,
+        model_version: int | None,
+        model_alias: str | None,
+    ) -> InferenceJob:
+        """POST a prediction/submission request and get the resulting job status. """
+        try:
+            response = self._make_request('POST', f'/{self.endpoint_base}{add_path}', json=payload)
+        except (ValidationError, ItemNotFoundError) as e:
+            if 'no deployed image found' in str(e).lower():
+                raise ModelNotDeployedError(
+                    model_name, model_version=model_version, model_alias=model_alias
+                ) from e
+            raise
+        data = response.json()
+        return self.get_status(data['job_id'])
+
     # ------------------------------------------------------------------
     # Generic inference
     # ------------------------------------------------------------------
@@ -128,9 +154,9 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         if file_paths is not None:
             payload["file_paths"] = file_paths
 
-        response = self._make_request('POST', f'/{self.endpoint_base}', json=payload)
-        data = response.json()
-        return self.get_status(data['job_id'])
+        return self._submit_prediction(
+            '', payload, model_name=model_name, model_version=model_version, model_alias=model_alias
+        )
 
     # ------------------------------------------------------------------
     # Status / cancel
@@ -316,9 +342,9 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results=save_results,
             params=params,
         )
-        response = self._make_request('POST', f'/{self.endpoint_base}/predict-image', json=payload)
-        data = response.json()
-        return self.get_status(data['job_id'])
+        return self._submit_prediction(
+            '/predict-image', payload, model_name=model_name, model_version=model_version, model_alias=model_alias
+        )
 
     def predict_frame(
         self,
@@ -357,9 +383,9 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             params=params,
         )
         payload["frame_index"] = frame_index
-        response = self._make_request('POST', f'/{self.endpoint_base}/predict-frame', json=payload)
-        data = response.json()
-        return self.get_status(data['job_id'])
+        return self._submit_prediction(
+            '/predict-frame', payload, model_name=model_name, model_version=model_version, model_alias=model_alias
+        )
 
     def predict_slice(
         self,
@@ -401,9 +427,9 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         )
         payload["slice_index"] = slice_index
         payload["axis"] = axis
-        response = self._make_request('POST', f'/{self.endpoint_base}/predict-slice', json=payload)
-        data = response.json()
-        return self.get_status(data['job_id'])
+        return self._submit_prediction(
+            '/predict-slice', payload, model_name=model_name, model_version=model_version, model_alias=model_alias
+        )
 
     def predict_volume(
         self,
@@ -439,8 +465,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results=save_results,
             params=params,
         )
-        response = self._make_request('POST', f'/{self.endpoint_base}/predict-volume', json=payload)
-        data = response.json()
-        return self.get_status(data['job_id'])
+        return self._submit_prediction(
+            '/predict-volume', payload, model_name=model_name, model_version=model_version, model_alias=model_alias
+        )
 
     predict = submit  # Alias for generic prediction endpoint
