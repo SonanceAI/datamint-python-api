@@ -36,10 +36,6 @@ class VideoDataset(MultiFrameDataset):
         print(frame_ds[0]['image'].shape)  # (C, H, W)
     """
 
-    def __repr__(self) -> str:
-        base = super().__repr__()
-        return f"VideoDataset\n{base}"
-
     def frame_by_frame(self) -> 'SlicedVideoDataset':
         """Create a 2D dataset iterating over individual video frames.
 

@@ -84,6 +84,20 @@ class NNUNetTrainer(BaseTrainer):
         self.channel_names = channel_names or {'0': 'CT'}
         self.num_processes_preprocessing = num_processes_preprocessing
 
+    def _repr_fields(self) -> list[tuple[str, str]]:
+        # nnUNet bypasses the Lightning pipeline entirely, so batch size,
+        # early stopping, and auto-deploy-adapter from BaseTrainer don't
+        # apply here (nnUNet manages batch size internally via its plans,
+        # has no early stopping, and always builds a deploy adapter).
+        return [
+            ("Project", self._project_name),
+            ("Model", f"nnU-Net ({self.configuration})"),
+            ("Fold", str(self.fold)),
+            ("Max epochs", str(self.max_epochs)),
+            ("Continue training", "yes" if self.continue_training else "no"),
+            ("MLflow experiment", self.experiment_name),
+        ]
+
     # ── BaseTrainer abstract methods bypassed by nnUNet ───────────────────────
 
     def _build_dataset(self, project: 'str | Project', **kwargs) -> VolumeDataset:

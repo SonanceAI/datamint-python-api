@@ -122,6 +122,12 @@ class UNetPPTrainer(SemanticSegmentation2DTrainer):
         self.encoder_name = encoder_name
 
     @override
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        return f"UNet++ ({self.encoder_name} encoder)"
+
+    @override
     def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2

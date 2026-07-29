@@ -77,6 +77,11 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         else:
             self.image_size = image_size
 
+    @override
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        image_size = f"{self.image_size[0]}×{self.image_size[1]}" if self.image_size else "auto (no resize)"
+        return [*super()._extra_repr_fields(), ("Image size", image_size)]
+
     def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset | SlicedVolumeDataset:
         default_params = dict(
             return_as_semantic_segmentation=True,

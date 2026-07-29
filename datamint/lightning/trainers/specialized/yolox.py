@@ -108,6 +108,18 @@ class YOLOXTrainer(DetectionTrainer):
         else:
             self.image_size = image_size
 
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        return f"YOLOX-{self.model_size}"
+
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        return [
+            *super()._extra_repr_fields(),
+            ("Image size", f"{self.image_size[0]}×{self.image_size[1]}"),
+            ("Conf / NMS threshold", f"{self.conf_thre} / {self.nms_thre}"),
+        ]
+
     # ------------------------------------------------------------------
     # Transforms
     # ------------------------------------------------------------------

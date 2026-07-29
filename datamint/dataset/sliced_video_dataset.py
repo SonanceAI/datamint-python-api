@@ -454,7 +454,3 @@ class SlicedVideoDataset(DatamintBaseDataset):
             'image': aug_img,
             'segmentations': aug_segmentations,
         }
-
-    def __repr__(self) -> str:
-        base = super().__repr__()
-        return f"SlicedVideoDataset\n{base}"

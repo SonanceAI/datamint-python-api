@@ -138,6 +138,13 @@ class TransUNetTrainer(SemanticSegmentation2DTrainer):
         self.pretrained = pretrained
 
     @override
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        pretrained_str = "pretrained" if self.pretrained else "random init"
+        return f"TransUNet ({self.variant}, {pretrained_str})"
+
+    @override
     def _train_transform(self) -> 'BaseCompose':
         import albumentations as A
         from albumentations.pytorch import ToTensorV2

@@ -20,6 +20,7 @@ from datamint.lightning.datamodule import DatamintDataModule
 from datamint.mlflow import set_project
 from datamint.mlflow.flavors.model import BaseDatamintModel
 from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
+from datamint._repr_utils import render_text_block, render_html_card
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
@@ -136,6 +137,38 @@ class BaseTrainer(ABC):
     @property
     def experiment_name(self) -> str:
         return self.mlflow_experiment_name or f"{self._project_name}_training"
+
+    def _model_description(self) -> str:
+        """Short human-readable model description for :meth:`__repr__`. Override per architecture."""
+        if self._user_model is not None:
+            model = self._user_model
+            cls = model if isinstance(model, type) else model.__class__
+            return f"Custom ({cls.__name__})"
+        return self.__class__.__name__.removesuffix("Trainer")
+
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        """Architecture-specific ``(label, value)`` lines inserted between Batch size and Early stopping patience."""
+        return []
+
+    def _repr_fields(self) -> list[tuple[str, str]]:
+        """Fields shown by :meth:`__repr__`/:meth:`_repr_html_`. Cheap and side-effect free: never resolves the dataset or builds the model."""
+        return [
+            ("Project", self._project_name),
+            ("Model", self._model_description()),
+            ("Max epochs", str(self.max_epochs)),
+            ("Batch size", str(self.batch_size)),
+            *self._extra_repr_fields(),
+            ("Early stopping patience", str(self.early_stopping_patience) if self.early_stopping_patience else "disabled"),
+            ("MLflow experiment", self.experiment_name),
+            ("Auto-deploy adapter", "enabled" if self.auto_deploy_adapter else "disabled"),
+        ]
+
+    def __repr__(self) -> str:
+        return render_text_block(self.__class__.__name__, self._repr_fields())
+
+    def _repr_html_(self) -> str:
+        """HTML representation for Jupyter Notebooks."""
+        return render_html_card(kind="Trainer", name=self.__class__.__name__, fields=self._repr_fields())
 
     def _with_project(self):
         set_project(self._project_name)

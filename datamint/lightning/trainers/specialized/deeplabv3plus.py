@@ -128,6 +128,16 @@ class DeepLabV3PlusTrainer(SemanticSegmentation2DTrainer):
         self.decoder_atrous_rates = decoder_atrous_rates
 
     @override
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        return f"DeepLabV3+ ({self.encoder_name} encoder)"
+
+    @override
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        return [*super()._extra_repr_fields(), ("Decoder atrous rates", str(self.decoder_atrous_rates))]
+
+    @override
     def _build_model(
         self,
         loss_fn: nn.Module,

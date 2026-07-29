@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 import numpy as np
 from datamint.entities.annotation_worklist import AnnotationWorklist
 from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint._repr_utils import render_text_block, render_html_card
 from .annotation_processor import AnnotationProcessor, MergeStrategy
 from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
 from datamint.entities.annotations import AnnotationType
@@ -1225,19 +1226,22 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             raise IndexError(f"Subset indices out of bounds for dataset of length {len(self)}.") from e
         return new_ds
 
-    def __repr__(self) -> str:
-        name = self.project.name if self.project else "<Custom>"
-        head = f"Dataset {name}"
-        body = [f"Number of datapoints: {len(self)}"]
-        if self.split_name is not None:
-            body.append(f"Split: {self.split_name}")
-        if self.split_source is not None:
-            body.append(f"Split source: {self.split_source}")
-        if self.split_as_of_timestamp is not None:
-            body.append(f"Split as of: {self.split_as_of_timestamp}")
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        """Hook for subclasses to insert extra ``(label, value)`` lines into the repr."""
+        return []
 
-        # if self.manager.root is not None:
-        #    body.append(f"Location: {self.manager.dataset_dir}")
+    def _repr_fields(self) -> list[tuple[str, str]]:
+        name = self.project.name if self.project else "<Custom>"
+        fields = [
+            ("Project", name),
+            ("Number of datapoints", str(len(self))),
+        ]
+        if self.split_name is not None:
+            fields.append(("Split", str(self.split_name)))
+        if self.split_source is not None:
+            fields.append(("Split source", str(self.split_source)))
+        if self.split_as_of_timestamp is not None:
+            fields.append(("Split as of", str(self.split_as_of_timestamp)))
 
         filters = [
             (self.include_annotators, "Including annotators"),
@@ -1249,13 +1253,19 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             (self.include_frame_label_names, "Including frame labels"),
             (self.exclude_frame_label_names, "Excluding frame labels"),
         ]
-
         for value, desc in filters:
             if value is not None:
-                body.append(f"{desc}: {value}")
+                fields.append((desc, str(value)))
 
-        lines = [head] + ["    " + line for line in body]
-        return "\n".join(lines)
+        fields.extend(self._extra_repr_fields())
+        return fields
+
+    def __repr__(self) -> str:
+        return render_text_block(self.__class__.__name__, self._repr_fields())
+
+    def _repr_html_(self) -> str:
+        """HTML representation for Jupyter Notebooks."""
+        return render_html_card(kind="Dataset", name=self.__class__.__name__, fields=self._repr_fields())
 
     def split(
         self,

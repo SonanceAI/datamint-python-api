@@ -125,11 +125,6 @@ class ImageDataset(VolumeDataset):
         result['image'] = aug_img
         return result
 
-    @override
-    def __repr__(self) -> str:
-        base = super(VolumeDataset, self).__repr__()
-        return f"ImageDataset\n{base}"
-
 
 def detection_collate_fn(batch: list[dict]) -> dict:
     """Collate a list of detection items into a batch.

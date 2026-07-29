@@ -584,6 +584,5 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             result['masks'] = aug_segmentations
         return result
 
-    def __repr__(self) -> str:
-        base = super().__repr__()
-        return f"SlicedVolumeDataset (axis={self._slice_axis})\n{base}"
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        return [*super()._extra_repr_fields(), ("Slice axis", str(self._slice_axis))]
