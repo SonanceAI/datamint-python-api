@@ -119,6 +119,47 @@ class ServerError(DatamintException):
 
 
 # ---------------------------------------------------------------------------
+# Model deployment / inference
+# ---------------------------------------------------------------------------
+
+class ModelNotDeployedError(DatamintException):
+    """Raised when trying to run inference on a model with no deployed image (HTTP 404)."""
+
+    def __init__(
+        self,
+        model_name: str,
+        model_version: int | None = None,
+        model_alias: str | None = None,
+    ):
+        self.model_name = model_name
+        self.model_version = model_version
+        self.model_alias = model_alias
+        super().__init__(str(self))
+
+    def __str__(self) -> str:
+        if self.model_version is not None:
+            ref = f"{self.model_name}:{self.model_version}"
+            deploy_kwarg = f"model_version={self.model_version}"
+        elif self.model_alias is not None:
+            ref = f"{self.model_name}:{self.model_alias}"
+            deploy_kwarg = f"model_alias='{self.model_alias}'"
+        else:
+            ref = f"{self.model_name}:champion"
+            deploy_kwarg = None
+
+        deploy_call = f"api.deploy_model.start('{self.model_name}'"
+        if deploy_kwarg:
+            deploy_call += f", {deploy_kwarg}"
+        deploy_call += ")"
+
+        return (
+            f"Model '{ref}' is not deployed, so it cannot run inference yet. "
+            f"Deploy it first with {deploy_call}, wait for the job to finish "
+            f"(api.deploy_model.wait(job)), then retry."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Async job timeouts
 # ---------------------------------------------------------------------------
 
