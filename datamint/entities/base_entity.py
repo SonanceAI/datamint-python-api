@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from datamint.types import CacheMode
+from datamint._repr_utils import render_text_block, render_html_card
 
 if TYPE_CHECKING:
     from datamint.api.entity_base_api import EntityBaseApi
@@ -20,68 +21,6 @@ MISSING_FIELD = 'MISSING_FIELD'  # Used when a field is sometimes missing for on
 
 # Track logged warnings to avoid duplicates
 _LOGGED_WARNINGS: set[tuple[str, str]] = set()
-
-# ---------------------------------------------------------------------------
-# Jinja2 HTML template for BaseEntity Jupyter repr
-# ---------------------------------------------------------------------------
-_ENTITY_HTML_TEMPLATE = """\
-<div style="max-width: 720px; margin: 10px 0; overflow: hidden; border-radius: 18px;
-           border: 1px solid var(--vscode-panel-border, #d0d7de);
-           background: var(--vscode-editor-background, #ffffff);
-           color: var(--vscode-foreground, #1f2328);
-           box-shadow: 0 10px 30px rgba(15, 23, 42, 0.10);">
-
-  {# ---- Header ---- #}
-  <div style="padding: 18px 20px;
-             border-bottom: 1px solid var(--vscode-panel-border, #d0d7de);
-             background: linear-gradient(135deg, rgba(59, 130, 246, 0.14), rgba(16, 185, 129, 0.08));">
-    <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-               color: var(--vscode-descriptionForeground, #57606a);">Entity</div>
-    <div style="display: flex; align-items: center; justify-content: space-between;
-               gap: 12px; flex-wrap: wrap; margin-top: 8px;">
-      <h4 style="margin: 0; font-size: 22px; font-weight: 700; color: inherit;">{{ entity_name }}</h4>
-    </div>
-  </div>
-
-  {# ---- Fields table ---- #}
-  {%- if fields %}
-  <div style="padding: 12px 20px 18px;">
-    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-      {%- for name, value in fields %}
-      <tr>
-        <th style="padding: 10px 12px 10px 0; width: 30%; text-align: left; vertical-align: top;
-                  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-                  color: var(--vscode-descriptionForeground, #57606a); white-space: nowrap;">{{ name }}</th>
-        <td style="padding: 10px 0; border-bottom: 1px solid var(--vscode-panel-border, #d0d7de);">
-          <span style="display: inline-block; padding: 2px 8px; border-radius: 999px;
-                      background: var(--vscode-textCodeBlock-background, #f6f8fa);
-                      color: var(--vscode-textPreformat-foreground, var(--vscode-foreground, #1f2328));
-                      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-                      font-size: 13px;"
-          >{{ value }}</span>
-        </td>
-      </tr>
-      {%- endfor %}
-    </table>
-  </div>
-  {%- else %}
-  <div style="padding: 18px 20px; font-size: 14px;
-             color: var(--vscode-descriptionForeground, #57606a);">No non-empty fields to display.</div>
-  {%- endif %}
-
-</div>
-"""
-
-_entity_template = None
-
-
-def _get_entity_template():
-    """Lazily compile and cache the Jinja2 entity template."""
-    global _entity_template
-    if _entity_template is None:
-        from jinja2 import Environment
-        _entity_template = Environment(autoescape=True).from_string(_ENTITY_HTML_TEMPLATE)
-    return _entity_template
 
 
 class BaseEntityModel(BaseModel):
@@ -128,25 +67,10 @@ class BaseEntityModel(BaseModel):
 
     def _repr_html_(self) -> str:
         """HTML representation for Jupyter Notebooks."""
-        entity_id = getattr(self, 'id', None)
-        fields = self._get_display_fields()
-
-        return _get_entity_template().render(
-            entity_name=self.__class__.__name__,
-            entity_id=str(entity_id) if entity_id else None,
-            fields=fields,
-        )
+        return render_html_card(kind='Entity', name=self.__class__.__name__, fields=self._get_display_fields())
 
     def __str__(self) -> str:
-        fields = self._get_display_fields()
-
-        header = self.__class__.__name__
-
-        if not fields:
-            return f"{header}\n  (no non-empty fields)"
-
-        lines = [header] + [f"  {name}: {value}" for name, value in fields]
-        return "\n".join(lines)
+        return render_text_block(self.__class__.__name__, self._get_display_fields())
 
     def __init__(self, **data):
         super().__init__(**data)

@@ -110,6 +110,16 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
         self.in_channels = in_channels
 
     @override
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        return f"UNETR++ (feature size {self.feature_size}, {self.num_heads} heads)"
+
+    @override
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        return [*super()._extra_repr_fields(), ("Depths", str(self.depths)), ("SW overlap", str(self.sw_overlap))]
+
+    @override
     def _build_model(
         self,
         loss_fn: nn.Module,

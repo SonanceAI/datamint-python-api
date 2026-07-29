@@ -57,6 +57,19 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
         else:
             self.image_size = image_size
 
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        return f"{self.encoder_name} encoder"
+
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        image_size = f"{self.image_size[0]}×{self.image_size[1]}" if self.image_size else "auto (original slice size)"
+        return [
+            *super()._extra_repr_fields(),
+            ("Slice axis", str(self.slice_axis)),
+            ("Image size", image_size),
+        ]
+
     # ── Template hooks ──────────────────────────────────────────
 
     def _build_dataset(self, project: 'str | Project', **kwargs: Any):

@@ -30,10 +30,6 @@ class VolumeDataset(MultiFrameDataset):
     Inherits multi-frame loading and augmentation from :class:`MultiFrameDataset`.
     """
 
-    def __repr__(self) -> str:
-        base = super().__repr__()
-        return f"VolumeDataset\n{base}"
-
     def slice(self, axis: str | int = 'axial') -> 'SlicedVolumeDataset':
         """Create a 2D dataset by slicing this volume along an axis.
 

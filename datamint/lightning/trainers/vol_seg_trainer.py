@@ -90,6 +90,10 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
         super().__init__(batch_size=batch_size, **kwargs)
         self.patch_crop_size = patch_crop_size
 
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        d, h, w = self.patch_crop_size
+        return [*super()._extra_repr_fields(), ("Patch crop size", f"{d}×{h}×{w}")]
+
     # ── Template hooks ───────────────────────────────────────────
 
     def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> VolumeDataset:

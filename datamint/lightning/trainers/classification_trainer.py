@@ -95,6 +95,16 @@ class ImageClassificationTrainer(ClassificationTrainer):
         else:
             self.image_size = image_size
 
+    def _model_description(self) -> str:
+        if self._user_model is not None:
+            return super()._model_description()
+        pretrained_str = "pretrained" if self.pretrained else "random init"
+        return f"{self.architecture} ({pretrained_str})"
+
+    def _extra_repr_fields(self) -> list[tuple[str, str]]:
+        image_size = f"{self.image_size[0]}×{self.image_size[1]}" if self.image_size else "auto (no resize)"
+        return [*super()._extra_repr_fields(), ("Image size", image_size)]
+
     # ── Template hooks ──────────────────────────────────────────
 
     def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset:
