@@ -519,9 +519,18 @@ def _get_files_from_path(path: str | Path,
         raise
 
 
-def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
-    parser = argparse.ArgumentParser(
+def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argparse.ArgumentParser:
+    """Build the argument parser.
+
+    When ``subparsers`` is given, the parser is registered as an ``upload`` subparser
+    (used by ``datamint``'s combined completion tree) instead of a standalone parser.
+    """
+    kwargs = dict(
         description='DatamintAPI command line tool for uploading DICOM files and other resources')
+    if subparsers is not None:
+        parser = subparsers.add_parser('upload', **kwargs)
+    else:
+        parser = argparse.ArgumentParser(**kwargs)
 
     # Add positional argument for path
     parser.add_argument('path', nargs='?', type=_is_valid_path_argparse, metavar="PATH",
@@ -591,6 +600,14 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
                         'By default, common non-medical file extensions are excluded unless --include-extensions is used.')
     parser.add_argument('--version', action='version', version=f'%(prog)s {datamint_version}')
     parser.add_argument('--verbose', action='store_true', help='Print debug messages', default=False)
+
+    return parser
+
+
+def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
+    parser = _build_parser()
+    import argcomplete
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # Handle path argument priority: positional takes precedence over --path flag

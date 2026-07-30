@@ -351,8 +351,13 @@ def _execute(args: argparse.Namespace, api: Api, console: Console, *, show_plan:
     return 0
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argparse.ArgumentParser:
+    """Build the argument parser.
+
+    When ``subparsers`` is given, the parser is registered as a ``train`` subparser
+    (used by ``datamint``'s combined completion tree) instead of a standalone parser.
+    """
+    kwargs = dict(
         description='Train a model on a Datamint project using a built-in one-line trainer.',
         epilog="""
 Examples:
@@ -367,6 +372,10 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    if subparsers is not None:
+        parser = subparsers.add_parser('train', **kwargs)
+    else:
+        parser = argparse.ArgumentParser(**kwargs)
     parser.add_argument('--project', type=str, help='Project name to train on.')
     parser.add_argument('--model', type=str, choices=sorted(MODEL_REGISTRY),
                         help='Model to train: ' + ', '.join(sorted(MODEL_REGISTRY)) +
@@ -387,6 +396,13 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
     parser.add_argument('--interactive', action='store_true', help='Guided interactive wizard.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print debug messages.')
 
+    return parser
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = _build_parser()
+    import argcomplete
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     if not args.interactive and not args.project:

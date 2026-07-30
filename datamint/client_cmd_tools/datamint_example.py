@@ -18,8 +18,13 @@ _USER_LOGGER = logging.getLogger('user_logger')
 _DATASETS = ('bccd', 'busi', 'synapse', 'fracatlas')
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argparse.ArgumentParser:
+    """Build the argument parser.
+
+    When ``subparsers`` is given, the parser is registered as an ``example`` subparser
+    (used by ``datamint``'s combined completion tree) instead of a standalone parser.
+    """
+    kwargs = dict(
         description='Populate a Datamint project with an example dataset.',
         epilog="""
 Examples:
@@ -32,11 +37,22 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    if subparsers is not None:
+        parser = subparsers.add_parser('example', **kwargs)
+    else:
+        parser = argparse.ArgumentParser(**kwargs)
     parser.add_argument('dataset', choices=_DATASETS, help='Which example dataset to populate.')
     parser.add_argument('--project', type=str, default=None,
                         help='Name of the project to create. Defaults to a dataset-specific name.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print debug messages.')
 
+    return parser
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = _build_parser()
+    import argcomplete
+    argcomplete.autocomplete(parser)
     return parser.parse_args()
 
 
