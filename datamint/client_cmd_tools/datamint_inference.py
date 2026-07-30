@@ -158,8 +158,13 @@ def _execute(args: argparse.Namespace, console: Console) -> int:
     return 0
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argparse.ArgumentParser:
+    """Build the argument parser.
+
+    When ``subparsers`` is given, the parser is registered as an ``inference`` subparser
+    (used by ``datamint``'s combined completion tree) instead of a standalone parser.
+    """
+    kwargs = dict(
         description='Run local inference with a registered Datamint model against a local file.',
         epilog="""
 Examples:
@@ -176,6 +181,10 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    if subparsers is not None:
+        parser = subparsers.add_parser('inference', **kwargs)
+    else:
+        parser = argparse.ArgumentParser(**kwargs)
     parser.add_argument('file', type=_is_valid_path_argparse, metavar='FILE',
                         help='Path to the local file to run inference on.')
     parser.add_argument('--model-name', type=str, required=True,
@@ -191,6 +200,13 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
                         '(see datamint.utils.uncertainty). Off by default.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print debug messages.')
 
+    return parser
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = _build_parser()
+    import argcomplete
+    argcomplete.autocomplete(parser)
     return parser.parse_args()
 
 

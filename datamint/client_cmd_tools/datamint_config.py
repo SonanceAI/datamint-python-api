@@ -720,6 +720,7 @@ def interactive_mode():
             console.print(" [accent](4)[/accent] Clear all configuration settings")
             console.print(" [accent](5)[/accent] Test connection")
             console.print(" [accent](6)[/accent] Manage/Show local data...")
+            console.print(" [accent](7)[/accent] Set up shell tab-completion")
             console.print(" [accent](q)[/accent] Exit")
             choice = Prompt.ask("Enter your choice", console=console).lower().strip()
 
@@ -735,6 +736,8 @@ def interactive_mode():
                 test_connection()
             elif choice == '6':
                 interactive_dataset_cleaning()
+            elif choice == '7':
+                install_shell_completion()
             elif choice in ('q', 'exit', 'quit'):
                 break
             else:
@@ -745,21 +748,13 @@ def interactive_mode():
     console.print("[success]👋 Goodbye![/success]")
 
 
-def main():
-    """Main entry point for the configuration tool."""
-    global console
-    load_cmdline_logging_config()
-    console_handlers = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)]
-    if console_handlers:
-        console = console_handlers[0].console
+def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argparse.ArgumentParser:
+    """Build the argument parser.
 
-    if is_legacy_cli_invocation('config'):
-        console.print(
-            "[warning]'datamint-config' is deprecated and will be removed in a future "
-            "release. Use 'datamint config' instead.[/warning]"
-        )
-
-    parser = argparse.ArgumentParser(
+    When ``subparsers`` is given, the parser is registered as a ``config`` subparser
+    (used by ``datamint``'s combined completion tree) instead of a standalone parser.
+    """
+    kwargs = dict(
         description='🔧 Datamint API Configuration Tool',
         epilog="""
 Examples:
@@ -775,11 +770,16 @@ Examples:
   datamint config --clean-local-data "Example Project"
                                            # Clean a legacy dataset folder
   datamint config --clean-all-local-data    # Clean all local data groups
-  
+  datamint config --install-completion      # Set up shell tab-completion
+
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    if subparsers is not None:
+        parser = subparsers.add_parser('config', **kwargs)
+    else:
+        parser = argparse.ArgumentParser(**kwargs)
     parser.add_argument('--api-key', type=str, help='API key to set')
     parser.add_argument('--default-url', '--url', type=str, help='Default URL to set')
     parser.add_argument('-i', '--interactive', action='store_true',
@@ -803,7 +803,101 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         action='store_true',
         help='Clean all local cache namespaces and legacy dataset folders',
     )
+    parser.add_argument(
+        '--install-completion',
+        dest='install_completion',
+        nargs='?',
+        const='auto',
+        choices=['auto', 'bash', 'fish'],
+        metavar='SHELL',
+        help='Set up shell tab-completion for the datamint CLI tools. '
+             'Auto-detects your shell from $SHELL if SHELL is omitted.',
+    )
 
+    return parser
+
+
+_COMPLETION_EXECUTABLES = [
+    'datamint', 'datamint-upload', 'datamint-config', 'datamint-train', 'datamint-inference',
+]
+
+
+def _detect_shell() -> str | None:
+    """Best-effort shell detection from the $SHELL environment variable."""
+    import os
+    shell_path = os.environ.get('SHELL', '')
+    name = Path(shell_path).name if shell_path else ''
+    return name if name in ('bash', 'fish', 'zsh') else None
+
+
+def _completion_target_path(shell: str) -> Path:
+    """Return the conventional per-user completion file path for the given shell."""
+    if shell == 'fish':
+        return Path.home() / '.config' / 'fish' / 'completions' / 'datamint.fish'
+    if shell == 'bash':
+        return Path.home() / '.local' / 'share' / 'bash-completion' / 'completions' / 'datamint'
+    raise ValueError(f"Unsupported shell for automatic install: {shell}")
+
+
+def install_shell_completion(shell: str | None = None) -> None:
+    """Write shell tab-completion hooks for the datamint CLI entry points. """
+    import argcomplete
+
+    if shell is None or shell == 'auto':
+        detected = _detect_shell()
+        if detected is None:
+            console.print(
+                "[error]❌ Could not auto-detect your shell from $SHELL. "
+                "Pass it explicitly, e.g. --install-completion bash or --install-completion fish.[/error]"
+            )
+            return
+        shell = detected
+
+    if shell == 'zsh':
+        console.print("[warning]⚠️  Add these lines to your ~/.zshrc:[/warning]")
+        console.print("  autoload -U bashcompinit")
+        console.print("  bashcompinit")
+        for executable in _COMPLETION_EXECUTABLES:
+            console.print(f'  eval "$(register-python-argcomplete {executable})"')
+        return
+
+    if shell not in ('bash', 'fish'):
+        console.print(
+            f"[warning]⚠️  Automatic installation isn't supported for '{shell}' yet. "
+            "Add this line to your shell config instead:[/warning]"
+        )
+        console.print('  eval "$(register-python-argcomplete datamint)"')
+        return
+
+    script = argcomplete.shellcode(_COMPLETION_EXECUTABLES, shell=shell)
+    target = _completion_target_path(shell)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(script)
+
+    console.print(f"[success]✅ Tab-completion installed at {target}[/success]")
+    console.print(
+        "[dim]Open a new terminal (or restart this one), then press Tab while typing a 'datamint' "
+        "command — it will suggest subcommands (config, upload, train, ...) and their flags.[/dim]"
+    )
+
+
+def main():
+    """Main entry point for the configuration tool."""
+    global console
+    load_cmdline_logging_config()
+    console_handlers = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)]
+    if console_handlers:
+        console = console_handlers[0].console
+
+    if is_legacy_cli_invocation('config'):
+        console.print(
+            "[warning]'datamint-config' is deprecated and will be removed in a future "
+            "release. Use 'datamint config' instead.[/warning]"
+        )
+
+    parser = _build_parser()
+    import argcomplete
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     config_updates: dict[str, str] = {}
@@ -834,9 +928,12 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
     if args.clean_all_local_data:
         clean_all_datasets()
 
+    if args.install_completion is not None:
+        install_shell_completion(None if args.install_completion == 'auto' else args.install_completion)
+
     no_arguments_provided = (args.api_key is None and args.default_url is None and
                            not args.list_local_data and not args.clean_local_data and
-                           not args.clean_all_local_data)
+                           not args.clean_all_local_data and args.install_completion is None)
 
     if no_arguments_provided or args.interactive:
         interactive_mode()

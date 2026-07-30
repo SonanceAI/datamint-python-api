@@ -3,6 +3,7 @@
 import argparse
 import importlib
 import importlib.metadata
+import os
 import sys
 
 _COMMANDS: dict[str, str] = {
@@ -12,6 +13,15 @@ _COMMANDS: dict[str, str] = {
     "train": "datamint.client_cmd_tools.datamint_train",
     "inference": "datamint.client_cmd_tools.datamint_inference",
     "example": "datamint.client_cmd_tools.datamint_example",
+}
+
+_COMMAND_HELP: dict[str, str] = {
+    "config": "Configure the API key, URL, and local cache",
+    "upload": "Upload DICOM files and other resources",
+    "init": "Generate starter scripts for a Datamint workflow",
+    "train": "Train a model on a Datamint project",
+    "inference": "Run local inference with a registered model",
+    "example": "Populate a project with an example dataset",
 }
 
 
@@ -42,7 +52,51 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _completing_command_hint() -> str | None:
+    """Best-effort extraction of the subcommand token from COMP_LINE. """
+    comp_line = os.environ.get("COMP_LINE", "")
+    tokens = comp_line.split()
+    if len(tokens) >= 2 and tokens[1] in _COMMANDS:
+        return tokens[1]
+    return None
+
+
+def _autocomplete() -> None:
+    """Build a combined parser tree and hand it to argcomplete. """
+    import argcomplete
+
+    parser = argparse.ArgumentParser(
+        prog="datamint",
+        description="Datamint command-line interface.",
+        epilog=f"Available commands: {', '.join(_COMMANDS)}.",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {_resolve_version()}")
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    target = _completing_command_hint()
+    for name, module_path in _COMMANDS.items():
+        if name != target:
+            subparsers.add_parser(name, help=_COMMAND_HELP[name])
+            continue
+        try:
+            module = importlib.import_module(module_path)
+        except ImportError:
+            subparsers.add_parser(name, help=_COMMAND_HELP[name])
+            continue
+        build_fn = getattr(module, "_build_parser", None)
+        if build_fn is not None:
+            build_fn(subparsers)
+        else:
+            subparsers.add_parser(name, help=_COMMAND_HELP[name])
+
+    argcomplete.autocomplete(parser)  
+
+
 def main() -> None:
+    if os.environ.get("_ARGCOMPLETE"):
+        _autocomplete()
+        return
+
     parser = _build_parser()
     argv = sys.argv[1:]
 
