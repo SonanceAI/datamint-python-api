@@ -248,12 +248,6 @@ class TestSplitByPatient:
         with pytest.raises(ValueError, match='cannot be combined'):
             ds.split(train=0.7, test=0.3, by_patient=True, use_project_splits=True)
 
-    def test_mutual_exclusion_with_server_splits(self):
-        "Test that when splitting by patient, if use_server_splits=True is also passed, a ValueError is raised indicating that the two options cannot be combined."
-        ds = _make_dataset(['A', 'B'])
-        with pytest.raises(ValueError, match='cannot be combined'):
-            ds.split(train=0.7, test=0.3, by_patient=True, use_server_splits=True)
-
     def test_requires_ratio_kwargs(self):
         "Test that when splitting by patient, if no ratio kwargs (train, val, test) are provided, a ValueError is raised indicating that at least one ratio must be specified."
         ds = _make_dataset(['A', 'B'])

@@ -685,7 +685,9 @@ class BaseApi:
         Args:
             bytes_array: Raw file content bytes
             mimetype: Optional MIME type of the content
-            file_path: deprecated
+            file_path: Path to the source file. Required when mimetype is a video type
+                (used to open the file with ``cv2.VideoCapture``) or a NIfTI type
+                (used to load the file with ``nibabel``).
 
         Returns:
             Converted content in appropriate format (pydicom.Dataset, PIL Image, cv2.VideoCapture, ...)

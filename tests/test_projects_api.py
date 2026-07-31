@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import httpx
-import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.projects_api import ProjectsApi
@@ -151,7 +150,7 @@ def test_projects_api_download_annotations_streams_export_to_disk(
     assert output_path.read_bytes() == export_bytes
 
 
-def test_projects_api_deprecated_parameter_aliases(
+def test_projects_api_create_and_annotator_endpoints(
     api_config: ApiConfig,
     api_ids,
     make_client,
@@ -185,25 +184,19 @@ def test_projects_api_deprecated_parameter_aliases(
     with make_client(handler) as client:
         projects_api = ProjectsApi(api_config, client=client)
 
-        with pytest.warns(DeprecationWarning, match="resources_ids"):
-            projects_api.create(
-                name="Legacy Project",
-                description="desc",
-                resources_ids=[api_ids.resource_id],
-                return_entity=False,
-            )
-        with pytest.warns(DeprecationWarning, match="resource_id"):
-            projects_api.get_annotation_statuses(api_ids.project_id, resource_id=api_ids.resource_id)
-        with pytest.warns(DeprecationWarning, match="annotator"):
-            projects_api.reset_annotator_status(
-                api_ids.resource_id, project=api_ids.project_id, annotator=api_ids.email,
-            )
-        with pytest.warns(DeprecationWarning, match="email"):
-            projects_api.get_annotator_status(email=api_ids.email, project=api_ids.project_id)
-        with pytest.warns(DeprecationWarning, match="email"):
-            projects_api.get_annotators_stats(project=api_ids.project_id, email=api_ids.email)
-        with pytest.warns(DeprecationWarning, match="annotator"):
-            projects_api.get_review_messages(project=api_ids.project_id, annotator=api_ids.email)
+        projects_api.create(
+            name="Legacy Project",
+            description="desc",
+            resource_ids=[api_ids.resource_id],
+            return_entity=False,
+        )
+        projects_api.get_annotation_statuses(api_ids.project_id, resource=api_ids.resource_id)
+        projects_api.reset_annotator_status(
+            api_ids.resource_id, project=api_ids.project_id, annotator_email=api_ids.email,
+        )
+        projects_api.get_annotator_status(annotator_email=api_ids.email, project=api_ids.project_id)
+        projects_api.get_annotators_stats(project=api_ids.project_id, annotator_email=api_ids.email)
+        projects_api.get_review_messages(project=api_ids.project_id, annotator_email=api_ids.email)
 
     assert json_body(requests[1])["resource_ids"] == [api_ids.resource_id]
     assert requests[2].url.params["resource_id"] == api_ids.resource_id

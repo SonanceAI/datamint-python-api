@@ -54,4 +54,3 @@ def test_use_project_splits_forwarded_to_dataset_split():
     dm._resolve_dataset_splits()
 
     assert mock_dataset.split.call_args.kwargs["use_project_splits"] is True
-    assert mock_dataset.split.call_args.kwargs["use_server_splits"] is None

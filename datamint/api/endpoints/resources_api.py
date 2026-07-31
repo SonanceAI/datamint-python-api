@@ -22,7 +22,6 @@ import os
 from tqdm.auto import tqdm
 import asyncio
 import aiohttp
-import warnings
 from pathlib import Path
 from PIL import Image
 import io
@@ -702,8 +701,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                          metadata: Sequence[str | dict | None] | None = None,
                          discard_dicom_reports: bool = True,
                          progress_bar: bool = False,
-                         *,
-                         ai_model: str | None = None,
                          ) -> Sequence[str | Exception]:
         """
         Upload multiple resources.
@@ -733,7 +730,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             model_name (Optional[str]): The name of the AI model to associate with uploaded segmentations.
                 Must match an existing deployed model name on the server.
             modality (Optional[str]): The modality of the resources.
-            ai_model (Optional[str]): (DEPRECATED) Use ``model_name`` instead.
             assemble_dicoms (bool): Whether to assemble the dicom files or not based on the SeriesInstanceUID and InstanceNumber attributes.
             metadata (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
                 Must have the same length as `files_path`.
@@ -746,12 +742,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         Returns:
             list[str | Exception]: A list of resource IDs or errors.
         """
-
-        if ai_model is not None:
-            warnings.warn("The 'ai_model' parameter is deprecated. "
-                          "Please use 'model_name' instead", DeprecationWarning)
-            if model_name is None:
-                model_name = ai_model
 
         self._validate_upload_params(on_error, files_path)
 

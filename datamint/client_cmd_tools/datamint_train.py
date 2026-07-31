@@ -23,7 +23,6 @@ from rich.table import Table
 from datamint import Api, configs
 from datamint.client_cmd_tools.datamint_upload import handle_api_key
 from datamint.exceptions import DatamintException
-from datamint.utils.env import is_legacy_cli_invocation
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
 
 if TYPE_CHECKING:
@@ -415,12 +414,6 @@ def main() -> None:
     global CONSOLE
     load_cmdline_logging_config()
     CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
-
-    if is_legacy_cli_invocation('train'):
-        CONSOLE.print(
-            "[warning]'datamint-train' is deprecated and will be removed in a future "
-            "release. Use 'datamint train' instead.[/warning]"
-        )
 
     args = _parse_args()
 

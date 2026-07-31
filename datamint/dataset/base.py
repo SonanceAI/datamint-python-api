@@ -1271,14 +1271,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self,
         *,
         seed: int | None = None,
-        use_server_splits: bool | None = None,
         use_project_splits: bool | None = None,
         as_of_timestamp: str | None = None,
         by_patient: bool = False,
         none_patient_id_strategy: Literal['individual', 'group', 'skip', 'error'] = 'individual',
         **splits: float,
     ) -> 'SplitResult':
-        
+
         """Split the dataset into multiple named subsets.
 
         The mode is selected automatically when no explicit split mode is
@@ -1288,15 +1287,14 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
           is used.
         - If no ratio kwargs are provided and the dataset was loaded from a
           project, project-scoped split assignments are used.
-        - Otherwise, server-side ``split:*`` tags on resources are used.
 
         Examples::
 
             # Local split
             parts = dataset.split(train=0.7, val=0.15, test=0.15, seed=42)
-            train_ds = parts['train']   
-            
-            # Patient-wise split 
+            train_ds = parts['train']
+
+            # Patient-wise split
             parts = dataset.split(train = 0.8, test = 0.2, by_patient=True, seed=42)
 
             # Project-scoped split — inferred for project-backed datasets
@@ -1310,8 +1308,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             by_patient: If ``True``, shuffle and assign whole patients to
                 splits rather than individual resources, preventing cross-patient
                 data leakage. Requires ratio kwards; mutually exclusive with
-                ``use_project_splits`` and ``use_server_splits``.
-            none_patient_id_strategy: Strategy for handling resources without patient IDs 
+                ``use_project_splits``.
+            none_patient_id_strategy: Strategy for handling resources without patient IDs
             when ``by_patient=True``. See :meth:`group_by_patient` for details.
             use_project_splits: If ``True``, read split assignments from the
                 project splits API. If ``None`` (default), project-backed
@@ -1320,10 +1318,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 splits against. When omitted for project-scoped splits, the
                 current UTC timestamp is captured and stored on the resolved
                 split datasets for later reuse.
-            use_server_splits: (DEPRECATED in favor of ``use_project_splits``)
             **splits: Named split ratios (e.g. ``train=0.7, test=0.3``).
                 Must sum to 1.0 (±0.01 tolerance). Must be empty when
-                *use_server_splits* or *use_project_splits* is ``True``.
+                *use_project_splits* is ``True``.
 
         Returns:
             Dictionary mapping split names to new dataset instances.
@@ -1333,11 +1330,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         """
 
         from .split_result import SplitResult
-        
+
         if by_patient:
-            if use_project_splits or use_server_splits:
+            if use_project_splits:
                 raise ValueError(
-                    "by_patient=True cannot be combined with use_project_splits or use_server_splits."
+                    "by_patient=True cannot be combined with use_project_splits."
                 )
 
             if not splits:
@@ -1347,7 +1344,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             return SplitResult(self._split_locally_by_patient(dict(splits), seed, none_patient_id_strategy))
 
         _auto_project = False
-        if use_project_splits is None and use_server_splits is None and not splits:
+        if use_project_splits is None and not splits:
             if getattr(self, 'project', None) is not None or as_of_timestamp is not None:
                 use_project_splits = True
                 _auto_project = True
@@ -1375,14 +1372,12 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 'Set use_project_splits=True or use a project-backed dataset with no ratio kwargs.'
             )
 
-        if use_server_splits is None:
-            use_server_splits = not splits  # True when no ratios given
-
-        if use_server_splits:
-            import warnings
-            warnings.warn("use_server_splits and splitting by resource tags are deprecated in favor of use_project_splits. "
-                          "Please migrate to project-scoped splits for better reproducibility and management.", DeprecationWarning)
-            return SplitResult(self._split_by_server_tags(splits))
+        if not splits:
+            raise ValueError(
+                'No ratio kwargs provided and no project-scoped splits available. '
+                'Provide ratio kwargs (e.g. train=0.7, test=0.3), or use a project-backed '
+                'dataset with use_project_splits=True.'
+            )
 
         return SplitResult(self._split_locally(splits, seed))
 
@@ -1428,40 +1423,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             ds.split_name = name
             ds.split_source = 'project_api'
             ds.split_as_of_timestamp = resolved_as_of_timestamp
-        return result
-
-    def _split_by_server_tags(
-        self,
-        splits: dict[str, float],
-    ) -> dict[str, 'DatamintBaseDataset']:
-        """Group resources by ``split:<name>`` tags."""
-        if splits:
-            raise ValueError(
-                "Ratio kwargs (e.g. train=0.7) must not be provided when "
-                "use_server_splits=True."
-            )
-
-        from collections import defaultdict
-        split_indices: dict[str, list[int]] = defaultdict(list)
-
-        for idx, resource in enumerate(self.resources):
-            tags = resource.tags or []
-            for tag in tags:
-                if tag.startswith("split:"):
-                    split_name = tag[len("split:"):]
-                    split_indices[split_name].append(idx)
-
-        if not split_indices:
-            raise ValueError(
-                "No resources have 'split:*' tags. Tag resources on the "
-                "server first or use local splitting (use_server_splits=False)."
-            )
-
-        result = {name: self.subset(indices) for name, indices in split_indices.items()}
-        for name, ds in result.items():
-            ds.split_name = name
-            ds.split_source = 'server_tags'
-            ds.split_as_of_timestamp = None
         return result
 
     def _split_locally(

@@ -14,13 +14,6 @@ like ``docker``, ``git``, and ``pip``:
     datamint config --help
 
 .. note::
-   Older versions used a separate hyphenated script per command (``datamint-config``,
-   ``datamint-upload``, ``datamint-init``, ``datamint-train``, ``datamint-inference``).
-   These still work for backward compatibility, but are deprecated — each prints a warning
-   telling you to switch to the ``datamint <command>`` form, and they will be removed in a
-   future release.
-
-.. note::
    If the ``datamint config`` command does not work, try:
 
    .. code-block:: bash

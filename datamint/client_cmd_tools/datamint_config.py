@@ -11,7 +11,6 @@ from rich.table import Table
 from typing_extensions import NotRequired
 
 from datamint import configs
-from datamint.utils.env import is_legacy_cli_invocation
 from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
 
 _LOGGER = logging.getLogger(__name__)
@@ -817,9 +816,7 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
     return parser
 
 
-_COMPLETION_EXECUTABLES = [
-    'datamint', 'datamint-upload', 'datamint-config', 'datamint-train', 'datamint-inference',
-]
+_COMPLETION_EXECUTABLES = ['datamint']
 
 
 def _detect_shell() -> str | None:
@@ -888,12 +885,6 @@ def main():
     console_handlers = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)]
     if console_handlers:
         console = console_handlers[0].console
-
-    if is_legacy_cli_invocation('config'):
-        console.print(
-            "[warning]'datamint-config' is deprecated and will be removed in a future "
-            "release. Use 'datamint config' instead.[/warning]"
-        )
 
     parser = _build_parser()
     import argcomplete

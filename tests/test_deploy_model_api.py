@@ -1,11 +1,10 @@
 import httpx
-import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.deploy_model_api import DeployModelApi
 
 
-def test_deploy_model_api_stream_status_job_id_deprecated_alias(
+def test_deploy_model_api_stream_status(
     api_config: ApiConfig,
     api_ids,
     make_client,
@@ -25,8 +24,7 @@ def test_deploy_model_api_stream_status_job_id_deprecated_alias(
     with make_client(handler) as client:
         deploy_api = DeployModelApi(api_config, client=client)
 
-        with pytest.warns(DeprecationWarning, match="job_id"):
-            events = list(deploy_api.stream_status(job_id=api_ids.resource_id))
+        events = list(deploy_api.stream_status(job=api_ids.resource_id))
 
     assert events == [{"status": "running"}]
     assert len(requests) == 1

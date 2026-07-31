@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import httpx
-import pytest
 
 from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.datasetsinfo_api import DatasetsInfoApi
@@ -82,7 +81,7 @@ def test_datasets_api_download_streams_export_to_disk(
     assert output_path.read_bytes() == archive_bytes
 
 
-def test_datasets_api_update_resources_project_id_deprecated_alias(
+def test_datasets_api_update_resources_project(
     api_config: ApiConfig,
     api_ids,
     make_client,
@@ -100,7 +99,6 @@ def test_datasets_api_update_resources_project_id_deprecated_alias(
     with make_client(handler) as client:
         datasets_api = DatasetsInfoApi(api_config, client=client)
 
-        with pytest.warns(DeprecationWarning, match="project_id"):
-            datasets_api.update_resources(api_ids.dataset_id, project_id=api_ids.project_id)
+        datasets_api.update_resources(api_ids.dataset_id, project=api_ids.project_id)
 
     assert json_body(requests[0])["project_id"] == api_ids.project_id
