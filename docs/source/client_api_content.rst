@@ -435,8 +435,6 @@ ratio kwargs:
 Each returned subset records ``split_name``, ``split_source``, and
 ``split_as_of_timestamp`` for reproducibility. Local ratio splits remain
 available with calls such as ``dataset.split(train=0.8, val=0.2, seed=42)``.
-Legacy ``split:*`` tag-based splitting is still supported for backwards
-compatibility, but it is deprecated in favor of project-scoped splits.
 
 Working with Channels
 ---------------------
@@ -488,7 +486,7 @@ Register and list models
     deployed_models = api.models.get_list(only_deployed=True)
 
 Models are also created automatically when you pass ``--ai-model`` to
-:doc:`command_line_tools` (``datamint-upload``) with a name that doesn't
+:doc:`command_line_tools` (``datamint upload``) with a name that doesn't
 exist yet.
 
 Inspect versions and metrics

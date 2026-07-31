@@ -6,7 +6,6 @@ import logging
 import time
 
 import httpx
-import warnings
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.inferencejob import InferenceJob
@@ -163,23 +162,15 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
     # ------------------------------------------------------------------
 
     def get_status(self,
-                  job: str | InferenceJob | None = None,
-                  *,
-                  job_id: str | None = None) -> InferenceJob:
+                  job: str | InferenceJob | None = None) -> InferenceJob:
         """Get the current status of an inference job.
 
         Args:
             job: The job ID string or ``InferenceJob`` instance.
-            job_id: (DEPRECATED) Use ``job`` instead.
 
         Returns:
             An ``InferenceJob`` populated with the latest status.
         """
-        if job_id is not None:
-            warnings.warn("The 'job_id' parameter is deprecated. "
-                          "Please use 'job' instead", DeprecationWarning)
-            if job is None:
-                job = job_id
         if job is None:
             raise TypeError("get_status() missing required argument: 'job'")
         job_id_str = self._entid(job)
@@ -192,9 +183,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         return self.get_status(entity_id)
 
     def stream_status(self,
-                      job: str | InferenceJob | None = None,
-                      *,
-                      job_id: str | None = None) -> Generator[dict[str, Any], None, None]:
+                      job: str | InferenceJob | None = None) -> Generator[dict[str, Any], None, None]:
         """Stream status updates for an inference job via Server-Sent Events.
 
         Yields dictionaries parsed from SSE ``data:`` lines until the
@@ -202,16 +191,10 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
 
         Args:
             job: The job ID string or ``InferenceJob`` instance.
-            job_id: (DEPRECATED) Use ``job`` instead.
 
         Yields:
             Parsed JSON dictionaries for each SSE event.
         """
-        if job_id is not None:
-            warnings.warn("The 'job_id' parameter is deprecated. "
-                          "Please use 'job' instead", DeprecationWarning)
-            if job is None:
-                job = job_id
         if job is None:
             raise TypeError("stream_status() missing required argument: 'job'")
         job_id_str = self._entid(job)

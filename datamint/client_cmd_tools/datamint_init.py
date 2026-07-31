@@ -5,7 +5,6 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 from rich.rule import Rule
 
-from datamint.utils.env import is_legacy_cli_invocation
 
 console = Console()
 
@@ -1509,12 +1508,6 @@ def _print_header() -> None:
 
 
 def main() -> None:
-    if is_legacy_cli_invocation('init'):
-        console.print(
-            "[yellow]'datamint-init' is deprecated and will be removed in a future "
-            "release. Use 'datamint init' instead.[/yellow]"
-        )
-
     _print_header()
 
     try:

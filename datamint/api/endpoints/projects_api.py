@@ -1,7 +1,6 @@
 from typing import Literal, TYPE_CHECKING, overload
 from collections.abc import Sequence
 from pathlib import Path
-import warnings
 
 from ..entity_base_api import ApiConfig, CRUDEntityApi
 from datamint.entities.project import Project
@@ -59,7 +58,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               resources_ids: list[str] | None = None,
                return_entity: Literal[True] = True,
                exists_ok: bool = False
                ) -> Project: ...
@@ -73,7 +71,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               resources_ids: list[str] | None = None,
                return_entity: Literal[False],
                exists_ok: bool = False
                ) -> str: ...
@@ -86,7 +83,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
                two_up_display: bool = False,
                segmentation_spec: Literal['single_label', 'multi_label'] = 'single_label',
                *,
-               resources_ids: list[str] | None = None,
                return_entity: bool = True,
                exists_ok: bool = False
                ) -> str | Project:
@@ -102,17 +98,10 @@ class ProjectsApi(CRUDEntityApi[Project]):
             exists_ok: If ``True``, do not raise an error when a project with the same
                 name already exists. Instead, the existing project is returned when
                 possible.
-            resources_ids: (DEPRECATED) Use ``resource_ids`` instead.
 
         Returns:
             The id of the created project.
         """
-        if resources_ids is not None:
-            warnings.warn("The 'resources_ids' parameter is deprecated. "
-                          "Please use 'resource_ids' instead", DeprecationWarning)
-            if resource_ids is None:
-                resource_ids = resources_ids
-
         proj = self.get_by_name(name, include_archived=True)
         if proj is not None:
             if exists_ok:
@@ -384,9 +373,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                 project: str | Project | None = None,
                                 status: str | None = None,
                                 user_id: str | None = None,
-                                resource: str | Resource | None = None,
-                                *,
-                                resource_id: str | None = None) -> list[dict]:
+                                resource: str | Resource | None = None) -> list[dict]:
         """Get per-resource annotation statuses for a project.
 
         Args:
@@ -395,17 +382,10 @@ class ProjectsApi(CRUDEntityApi[Project]):
             status: Optional status filter.
             user_id: Optional user ID filter.
             resource: Optional resource unique id, or Resource instance, filter.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of annotation status dicts.
         """
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-
         project = self._resolve_project_or_default(project)
         params = {k: v for k, v in {'status': status, 'user_id': user_id,
                                     'resource_id': self._entid(resource) if resource is not None else None
@@ -505,9 +485,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
     def reset_annotator_status(self,
                                resource: str | Resource,
                                annotator_email: str | None = None,
-                               project: str | Project | None = None,
-                               *,
-                               annotator: str | None = None) -> None:
+                               project: str | Project | None = None) -> None:
         """Reset annotation status for a specific annotator on a resource.
 
         Args:
@@ -515,13 +493,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
             annotator_email: The annotator's email address.
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
         """
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
         if annotator_email is None:
             raise TypeError("reset_annotator_status() missing required argument: 'annotator_email'")
 
@@ -588,26 +560,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_annotators_stats(self,
                              project: str | Project | None = None,
-                             annotator_email: str | None = None,
-                             *,
-                             email: str | None = None) -> list[dict]:
+                             annotator_email: str | None = None) -> list[dict]:
         """Get per-annotator completion statistics for a project.
 
         Args:
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
             annotator_email: Optional annotator email to filter results.
-            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of per-annotator stat dicts.
         """
-        if email is not None:
-            warnings.warn("The 'email' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = email
-
         project = self._resolve_project_or_default(project)
         params = {'email': annotator_email} if annotator_email is not None else None
         response = self._make_entity_request('GET', project, add_path='annotators-statistic',
@@ -644,25 +607,17 @@ class ProjectsApi(CRUDEntityApi[Project]):
 
     def get_annotator_status(self,
                              annotator_email: str | None = None,
-                             project: str | Project | None = None,
-                             *,
-                             email: str | None = None) -> dict:
+                             project: str | Project | None = None) -> dict:
         """Get a specific annotator's progress status in a project.
 
         Args:
             annotator_email: The annotator's email address.
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
-            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             Annotator status dict.
         """
-        if email is not None:
-            warnings.warn("The 'email' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = email
         if annotator_email is None:
             raise TypeError("get_annotator_status() missing required argument: 'annotator_email'")
 
@@ -679,10 +634,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
                             project: str | Project | None = None,
                             annotator_email: str | None = None,
                             resource: str | Resource | None = None,
-                            statuses: list[str] | None = None,
-                            *,
-                            annotator: str | None = None,
-                            resource_id: str | None = None) -> list[dict]:
+                            statuses: list[str] | None = None) -> list[dict]:
         """Get review feedback messages for a project.
 
         Args:
@@ -691,23 +643,10 @@ class ProjectsApi(CRUDEntityApi[Project]):
             annotator_email: Optional annotator email filter.
             resource: Optional resource unique id, or Resource instance, filter.
             statuses: Optional list of status strings to filter by.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of review message dicts.
         """
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-
         project = self._resolve_project_or_default(project)
         params: dict = {}
         if annotator_email is not None:

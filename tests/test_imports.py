@@ -32,14 +32,6 @@ class TestImports:
         except ImportError as e:
             pytest.fail(f"Failed to import Dataset: {e}")
 
-        # Test importing DatamintDataset directly
-        try:
-            from datamint.dataset.dataset import DatamintDataset
-            assert DatamintDataset is not None
-            _LOGGER.info("Successfully imported DatamintDataset")
-        except ImportError as e:
-            pytest.fail(f"Failed to import DatamintDataset: {e}")
-
     def test_api_imports(self) -> None:
         """Test importing API handler modules."""
         # Test direct import of APIHandler

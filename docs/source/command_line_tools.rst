@@ -14,13 +14,6 @@ like ``docker``, ``git``, and ``pip``:
     datamint config --help
 
 .. note::
-   Older versions used a separate hyphenated script per command (``datamint-config``,
-   ``datamint-upload``, ``datamint-init``, ``datamint-train``, ``datamint-inference``).
-   These still work for backward compatibility, but are deprecated — each prints a warning
-   telling you to switch to the ``datamint <command>`` form, and they will be removed in a
-   future release.
-
-.. note::
    If the ``datamint config`` command does not work, try:
 
    .. code-block:: bash
@@ -244,8 +237,6 @@ See all available options by running ``datamint upload --help``:
   --retain-pii          Do not anonymize DICOMs
   --retain-attribute RETAIN_ATTRIBUTE
                         Retain the value of a single attribute code specified as hexidecimal integers. Example: (0x0008, 0x0050) or just (0008, 0050)
-  -l LABEL, --label LABEL
-                        Deprecated. Use --tag instead.
   --tag TAG             A tag name to be applied to all files
   --publish             Publish the uploaded resources, giving them the status "published" instead of "inbox"
   --mungfilename MUNGFILENAME

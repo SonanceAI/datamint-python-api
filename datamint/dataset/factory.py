@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import warnings
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -28,8 +27,6 @@ def _classify_resource(resource: 'Resource') -> str:
 
 
 def build_dataset(project: str | Project | None = None,
-                  *,
-                  project_name: str | None = None,
                   **kwargs: Any) -> 'DatamintBaseDataset':
     """Auto-detect and return the appropriate dataset class for a project.
 
@@ -42,7 +39,6 @@ def build_dataset(project: str | Project | None = None,
 
     Args:
         project: Name, ID, or ``Project`` instance of the Datamint project.
-        project_name: (DEPRECATED) Use ``project`` instead.
         **kwargs: Forwarded to the dataset constructor (transforms, filters, etc.).
 
     Returns:
@@ -58,11 +54,6 @@ def build_dataset(project: str | Project | None = None,
 
         ds = build_dataset('MyProject', include_unannotated=False)
     """
-    if project_name is not None:
-        warnings.warn("The 'project_name' parameter is deprecated. "
-                      "Please use 'project' instead", DeprecationWarning)
-        if project is None:
-            project = project_name
     if project is None:
         raise TypeError("build_dataset() missing required argument: 'project'")
 

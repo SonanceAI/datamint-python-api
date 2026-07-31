@@ -109,7 +109,7 @@ class BaseEntityModel(BaseModel):
             raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
         if not hasattr(self, attr_name):
             return True
-        return getattr(self, attr_name) == MISSING_FIELD  # deprecated
+        return getattr(self, attr_name) == MISSING_FIELD
 
     def has_missing_attrs(self) -> bool:
         """Check if the entity has any attributes that are MISSING_FIELD.

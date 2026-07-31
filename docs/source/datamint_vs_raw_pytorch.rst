@@ -31,8 +31,8 @@ Workflow comparison at a glance
        | must track split manually to 
        | ensure reproducibility with seeds.
      - | :py:meth:`~datamint.dataset.base.DatamintBaseDataset.split` resolves
-       | project-scoped splits (or falls back to legacy ``split:*`` tags) and
-       | returns a snapshot timestamp you can replay later.
+       | project-scoped splits and returns a snapshot timestamp you can
+       | replay later.
    * - | 🔌 **DataModule wiring**
      - | Implement ``lightning.pytorch.core.LightningDataModule`` with
        | ``prepare_data``, ``setup``, ``train_dataloader``, ``val_dataloader``,

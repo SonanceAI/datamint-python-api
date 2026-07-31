@@ -14,7 +14,6 @@ from collections import defaultdict
 from datamint import __version__ as datamint_version
 from datamint import configs
 from datamint.utils.logging_utils import load_cmdline_logging_config, ConsoleWrapperHandler
-from datamint.utils.env import is_legacy_cli_invocation
 from rich.console import Console
 import yaml
 from collections.abc import Iterable
@@ -555,7 +554,6 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
                         default=[],
                         help='Retain the value of a single attribute code specified as hexidecimal integers. \
                             Example: (0x0008, 0x0050) or just (0008, 0050)')
-    parser.add_argument('-l', '--label', type=str, action='append', help='Deprecated. Use --tag instead.')
     parser.add_argument('--tag', type=str, action='append', help='A tag name to be applied to all files')
     parser.add_argument('--publish', action='store_true',
                         help='Publish the uploaded resources, giving them the status "published" instead of "inbox"')
@@ -690,10 +688,6 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
             sys.exit(1)
         os.environ[configs.ENV_VARS[configs.APIKEY_KEY]] = api_key
 
-        if args.tag is not None and args.label is not None:
-            raise ValueError("Cannot use both --tag and --label. Use --tag instead. --label is deprecated.")
-        args.tag = args.tag if args.tag is not None else args.label
-
         return args, file_path, segmentation_files, metadata_files
 
     except Exception as e:
@@ -792,12 +786,6 @@ def main():
     global CONSOLE
     load_cmdline_logging_config()
     CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
-
-    if is_legacy_cli_invocation('upload'):
-        CONSOLE.print(
-            "[warning]'datamint-upload' is deprecated and will be removed in a future "
-            "release. Use 'datamint upload' instead.[/warning]"
-        )
 
     try:
         args, files_path, segfiles, metadata_files = _parse_args()

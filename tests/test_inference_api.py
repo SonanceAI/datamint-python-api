@@ -48,7 +48,7 @@ def test_predict_image_unrelated_404_is_not_translated(
             inference_api.predict_image("my_model", resource_id="11111111-1111-1111-1111-111111111111")
 
 
-def test_inference_api_get_status_and_stream_status_job_id_deprecated_alias(
+def test_inference_api_get_status_and_stream_status(
     api_config: ApiConfig,
     api_ids,
     make_client,
@@ -73,10 +73,8 @@ def test_inference_api_get_status_and_stream_status_job_id_deprecated_alias(
     with make_client(handler) as client:
         inference_api = InferenceApi(api_config, client=client)
 
-        with pytest.warns(DeprecationWarning, match="job_id"):
-            job = inference_api.get_status(job_id=api_ids.resource_id)
-        with pytest.warns(DeprecationWarning, match="job_id"):
-            events = list(inference_api.stream_status(job_id=api_ids.resource_id))
+        job = inference_api.get_status(job=api_ids.resource_id)
+        events = list(inference_api.stream_status(job=api_ids.resource_id))
 
     assert job.id == api_ids.resource_id
     assert events == [{"status": "completed"}]

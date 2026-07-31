@@ -7,7 +7,6 @@ import asyncio
 import json
 import logging
 import os
-import warnings
 
 import aiohttp
 import httpx
@@ -117,9 +116,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         load_ai_segmentations: bool | None = None,
         limit: int | None = None,
         group_by_resource: bool = False,
-        *,
-        date_from: date | None = None,
-        date_to: date | None = None,
         **kwargs: Any,
     ) -> Sequence[Annotation] | Sequence[Sequence[Annotation]]:
         """
@@ -139,8 +135,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             limit: Maximum number of annotations to return.
             group_by_resource: If True, return results grouped by resource.
                 For instance, the first index of the returned list will contain all annotations for the first resource.
-            date_from: (DEPRECATED) Use ``from_date`` instead.
-            date_to: (DEPRECATED) Use ``to_date`` instead.
 
         Returns:
             Sequence[Annotation] | Sequence[Sequence[Annotation]]: List of annotations, or list of lists if grouped by resource.
@@ -174,17 +168,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             for ann in annotations:
                 resource_annotations_map[ann.resource_id].append(ann)
             return [resource_annotations_map[rid] for rid in resource_ids]
-
-        if date_from is not None:
-            warnings.warn("The 'date_from' parameter is deprecated. "
-                          "Please use 'from_date' instead", DeprecationWarning)
-            if from_date is None:
-                from_date = date_from
-        if date_to is not None:
-            warnings.warn("The 'date_to' parameter is deprecated. "
-                          "Please use 'to_date' instead", DeprecationWarning)
-            if to_date is None:
-                to_date = date_to
 
         # Build search payload according to POST /annotations/search schema
         payload = {
@@ -605,8 +588,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                    model_name: str | None = None,
                                    transpose_segmentation: bool = False,
                                    source: str | None = 'imported',
-                                   *,
-                                   ai_model_name: str | None = None,
                                    ) -> list[str]:
         """
         Upload a 3D volume segmentation to a resource.
@@ -623,7 +604,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             model_name: The AI model name.
             transpose_segmentation: Whether to transpose the segmentation before uploading.
-            ai_model_name: (DEPRECATED) Use ``model_name`` instead.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
 
@@ -652,12 +632,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 api.annotations.upload_volume_segmentation(resource, vol, {1: 'liver'})
         """
         import nest_asyncio
-
-        if ai_model_name is not None:
-            warnings.warn("The 'ai_model_name' parameter is deprecated. "
-                          "Please use 'model_name' instead", DeprecationWarning)
-            if model_name is None:
-                model_name = ai_model_name
 
         if isinstance(file_path, Path):
             file_path = str(file_path)
@@ -694,8 +668,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              transpose_segmentation: bool = False,
                              model_name: str | None = None,
                              source: str | None = 'imported',
-                             *,
-                             ai_model_name: str | None = None,
                              ) -> list[str]:
         """
         Upload frame-by-frame segmentations to a resource.
@@ -727,7 +699,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_name: Optional AI model name to associate with the segmentation.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
-            ai_model_name: (DEPRECATED) Use ``model_name`` instead.
 
         Returns:
             List of segmentation unique ids.
@@ -755,12 +726,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 api.annotations.upload_segmentations(resource, seg_data, rgb_names)
         """
         import nest_asyncio
-
-        if ai_model_name is not None:
-            warnings.warn("The 'ai_model_name' parameter is deprecated. "
-                          "Please use 'model_name' instead", DeprecationWarning)
-            if model_name is None:
-                model_name = ai_model_name
 
         if isinstance(file_path, Path):
             file_path = str(file_path)
@@ -1321,7 +1286,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             frame_index: int | None = None,
                             slice_plane: ViewPlane | None = None,
                             metadata: pydicom.Dataset | Nifti1Image | None = None,
-                            dicom_metadata: pydicom.Dataset | None = None,
                             coords_system: CoordinateSystem = 'pixel',
                             worklist_id: str | None = None,
                             imported_from: str | None = None,
@@ -1341,8 +1305,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             resource: The resource unique id or Resource instance.
             identifier: The annotation identifier, also as known as the annotation's label.
             frame_index: The frame index of the annotation.
-            dicom_metadata: (DEPRECATED) The DICOM metadata of the image. If provided, the coordinates will be converted to the
-                correct coordinates automatically using the DICOM metadata.
             coords_system: The coordinate system of the points. Can be 'pixel', or 'patient'.
                 If 'pixel', the points are in pixel coordinates. If 'patient', the points are in patient coordinates (see DICOM patient coordinates).
             project: The project unique id or name.
@@ -1372,13 +1334,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             coords_system,
             metadata,
         )
-
-        if dicom_metadata is not None:
-            import warnings
-            warnings.warn("The 'dicom_metadata' parameter is deprecated. "
-                          "Please use 'metadata' parameter instead", DeprecationWarning)
-            if resolved_metadata is None:
-                resolved_metadata = dicom_metadata
 
         annotation = LineAnnotation.from_points(
             point1,
@@ -1625,9 +1580,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     def patch(self,
               annotation: str | Annotation,
               identifier: str | None = None,
-              project: 'str | Project | None' = None,
-              *,
-              project_id: str | None = None) -> None:
+              project: 'str | Project | None' = None) -> None:
         """
         Partially update an annotation's metadata.
 
@@ -1635,18 +1588,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             annotation: The annotation unique id or Annotation instance.
             identifier: Optional new identifier/label for the annotation.
             project: Optional project ID or Project instance to associate with the annotation.
-            project_id: (DEPRECATED) Use ``project`` instead.
 
         Raises:
             ServerError: If the update fails.
         """
         annotation_id = self._entid(annotation)
-
-        if project_id is not None:
-            warnings.warn("The 'project_id' parameter is deprecated. "
-                          "Please use 'project' instead", DeprecationWarning)
-            if project is None:
-                project = project_id
 
         payload = {'identifier': identifier,
                   'project_id': self._entid(project) if project is not None else None}

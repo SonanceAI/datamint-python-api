@@ -58,12 +58,8 @@ class DatamintDataModule(L.LightningDataModule):
         split_as_of_timestamp: Historical timestamp forwarded to
             :meth:`DatamintBaseDataset.split` when reusing project-scoped
             split assignments.
-        use_server_splits: (DEPRECATED in favor of ``use_project_splits``) If
-            *True*, use server-side ``split:*`` tags instead of local random
-            splitting.
         use_project_splits: If *True*, read split assignments from the
-            project splits API instead of local random splitting. Preferred
-            over ``use_server_splits``.
+            project splits API instead of local random splitting.
         train_transform: Albumentations transform applied **only** to the
             training split (e.g. augmentations).  Calls
             :meth:`~datamint.dataset.base.DatamintBaseDataset.set_transform`
@@ -108,7 +104,6 @@ class DatamintDataModule(L.LightningDataModule):
         split: dict[str, float] | bool | None = True,
         split_seed: int | None = None,
         split_as_of_timestamp: str | None = None,
-        use_server_splits: bool | None = None,
         use_project_splits: bool | None = None,
         train_transform: Callable | None = None,
         eval_transform: Callable | None = None,
@@ -138,7 +133,6 @@ class DatamintDataModule(L.LightningDataModule):
             self._split_cfg = split
         self._split_seed = split_seed
         self._split_as_of_timestamp = split_as_of_timestamp
-        self._use_server_splits = use_server_splits
         self._use_project_splits = use_project_splits
         self._train_transform = train_transform
         self._eval_transform = eval_transform
@@ -172,7 +166,6 @@ class DatamintDataModule(L.LightningDataModule):
 
         parts = self.dataset.split(
             seed=self._split_seed,
-            use_server_splits=self._use_server_splits,
             use_project_splits=self._use_project_splits,
             as_of_timestamp=self._split_as_of_timestamp,
             **(self._split_cfg or {}),

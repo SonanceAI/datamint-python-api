@@ -5,7 +5,6 @@ from ..entity_base_api import ApiConfig, DeletableEntityApi
 from datamint.entities.datasetinfo import DatasetInfo
 import httpx
 from tqdm.auto import tqdm
-import warnings
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -46,9 +45,7 @@ class DatasetsInfoApi(DeletableEntityApi[DatasetInfo]):
                          dataset: str | DatasetInfo,
                          resource_ids_to_add: list[str] | None = None,
                          resource_ids_to_delete: list[str] | None = None,
-                         project: 'str | Project | None' = None,
-                         *,
-                         project_id: str | None = None) -> None:
+                         project: 'str | Project | None' = None) -> None:
         """Add or remove resources from a dataset.
 
         Args:
@@ -56,14 +53,7 @@ class DatasetsInfoApi(DeletableEntityApi[DatasetInfo]):
             resource_ids_to_add: List of resource IDs to add.
             resource_ids_to_delete: List of resource IDs to remove.
             project: Optional project ID or Project instance context.
-            project_id: (DEPRECATED) Use ``project`` instead.
         """
-        if project_id is not None:
-            warnings.warn("The 'project_id' parameter is deprecated. "
-                          "Please use 'project' instead", DeprecationWarning)
-            if project is None:
-                project = project_id
-
         payload: dict = {'all_files_selected': False}
         if resource_ids_to_add is not None:
             payload['resource_ids_to_add'] = resource_ids_to_add

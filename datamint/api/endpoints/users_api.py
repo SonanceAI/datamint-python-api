@@ -3,7 +3,6 @@ from typing import Literal, TYPE_CHECKING, cast, overload
 from ..entity_base_api import CreatableEntityApi, ApiConfig
 from datamint.entities import User
 import httpx
-import warnings
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -99,8 +98,6 @@ class UsersApi(CreatableEntityApi[User]):
                project: 'str | Project | None' = None,
                project_roles: list[str] | None = None,
                annotation_worklist_id: str | None = None,
-               *,
-               project_id: str | None = None,
                ) -> dict:
         """Send an invitation email to a new user.
 
@@ -112,17 +109,10 @@ class UsersApi(CreatableEntityApi[User]):
             project: Optional project ID or Project instance to add the invitee to.
             project_roles: Roles to assign in the given project.
             annotation_worklist_id: Optional annotation worklist to associate.
-            project_id: (DEPRECATED) Use ``project`` instead.
 
         Returns:
             The server response as a dict.
         """
-        if project_id is not None:
-            warnings.warn("The 'project_id' parameter is deprecated. "
-                          "Please use 'project' instead", DeprecationWarning)
-            if project is None:
-                project = project_id
-
         payload: dict = {'email': email}
         if firstname is not None:
             payload['firstname'] = firstname
@@ -170,24 +160,15 @@ class UsersApi(CreatableEntityApi[User]):
         self._make_entity_request('DELETE', email)
 
     def get_invitations(self,
-                        project: 'str | Project | None' = None,
-                        *,
-                        project_id: str | None = None) -> list[dict]:
+                        project: 'str | Project | None' = None) -> list[dict]:
         """List pending user invitations.
 
         Args:
             project: Optional project ID or Project instance to filter invitations.
-            project_id: (DEPRECATED) Use ``project`` instead.
 
         Returns:
             List of invitation dicts.
         """
-        if project_id is not None:
-            warnings.warn("The 'project_id' parameter is deprecated. "
-                          "Please use 'project' instead", DeprecationWarning)
-            if project is None:
-                project = project_id
-
         params: dict = {}
         if project is not None:
             params['project_id'] = self._entid(project)

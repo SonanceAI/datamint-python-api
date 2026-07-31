@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 from datamint.entities.annotation_worklist import AnnotationWorklist
 from typing_extensions import override
 import logging
-import warnings
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -33,7 +32,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                project: 'str | Project | None' = None,
                return_url: str | None = None,
                *,
-               project_id: str | None = None,
                return_entity: Literal[True] = True,
                exists_ok: bool = False
                ) -> AnnotationWorklist: ...
@@ -53,7 +51,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                project: 'str | Project | None' = None,
                return_url: str | None = None,
                *,
-               project_id: str | None = None,
                return_entity: Literal[False],
                exists_ok: bool = False
                ) -> str: ...
@@ -73,7 +70,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                project: 'str | Project | None' = None,
                return_url: str | None = None,
                *,
-               project_id: str | None = None,
                return_entity: bool = True,
                exists_ok: bool = False,
                ) -> str | AnnotationWorklist:
@@ -101,17 +97,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             editable_ai_annotations: Optional list of AI annotation identifiers to allow editing.
             project: Optional project ID or Project instance to associate with this worklist.
             return_url: Optional URL to redirect after annotation.
-            project_id: (DEPRECATED) Use ``project`` instead.
 
         Returns:
             The ID of the created annotation set.
         """
-        if project_id is not None:
-            warnings.warn("The 'project_id' parameter is deprecated. "
-                          "Please use 'project' instead", DeprecationWarning)
-            if project is None:
-                project = project_id
-
         payload: dict = {'name': name, 'resource_ids': resource_ids}
         if description is not None:
             payload['description'] = description
@@ -139,9 +128,7 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                                   worklist_id: 'str | AnnotationWorklist | None' = None,
                                   definitions: list[dict] | None = None,
                                   segmentation_value_type: str = 'single_label',
-                                  renames: list[str] | None = None,
-                                  *,
-                                  annotation_worklist: 'str | AnnotationWorklist | None' = None) -> None:
+                                  renames: list[str] | None = None) -> None:
         """Replace the segmentation-group definitions for an annotation worklist.
 
         Args:
@@ -151,13 +138,7 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             segmentation_value_type: ``'single_label'`` (default) or
                 ``'multi_label'``.
             renames: Optional rename pairs (old→new identifier strings).
-            annotation_worklist: (DEPRECATED) Use ``worklist_id`` instead.
         """
-        if annotation_worklist is not None:
-            warnings.warn("The 'annotation_worklist' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_worklist
         if worklist_id is None:
             raise TypeError("update_segmentation_group() missing required argument: 'worklist_id'")
         if definitions is None:
@@ -176,20 +157,12 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                                   json=payload)
 
     def get_segmentation_group(self,
-                               worklist_id: str | None = None,
-                               *,
-                               annotation_set: str | None = None) -> dict:
+                               worklist_id: str | None = None) -> dict:
         """Get the segmentation group for a given worklist ID.
 
         Args:
             worklist_id: The annotation worklist ID.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("get_segmentation_group() missing required argument: 'worklist_id'")
 
@@ -226,21 +199,13 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         self,
         worklist_id: str | None = None,
         identifier: str | None = None,
-        *,
-        annotation_set: str | None = None,
     ) -> None:
         """Delete a specific segmentation group from a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
             identifier: The segmentation group identifier to delete.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("delete_segmentation_group() missing required argument: 'worklist_id'")
         if identifier is None:
@@ -253,31 +218,16 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         self,
         worklist_id: str | None = None,
         annotator_email: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        email: str | None = None,
     ) -> dict:
         """Get a specific annotator's progress status within a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
             annotator_email: The annotator's email address.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             Dict with annotator status information.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if email is not None:
-            warnings.warn("The 'email' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = email
         if worklist_id is None:
             raise TypeError("get_annotator_status() missing required argument: 'worklist_id'")
         if annotator_email is None:
@@ -292,10 +242,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         resource: 'str | Resource | None' = None,
         all: bool = True,
         annotator_email: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
-        annotator: str | None = None,
     ) -> list[dict]:
         """Get all segmentations for a resource within a worklist.
 
@@ -304,28 +250,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             resource: The resource unique id or a Resource instance.
             all: Whether to get all segmentations.
             annotator_email: Optional annotator email filter.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of segmentation objects.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
         if worklist_id is None:
             raise TypeError("get_segmentations() missing required argument: 'worklist_id'")
         if resource is None:
@@ -345,10 +273,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         resource: 'str | Resource | None' = None,
         all: bool = True,
         annotator_email: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
-        annotator: str | None = None,
     ) -> list[dict]:
         """Get all annotations (non-segmentation types) for a resource within a worklist.
 
@@ -357,28 +281,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             resource: The resource unique id or a Resource instance.
             all: Whether to get all annotations.
             annotator_email: Optional annotator email filter.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of annotation objects.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
         if worklist_id is None:
             raise TypeError("get_annotations() missing required argument: 'worklist_id'")
         if resource is None:
@@ -396,31 +302,16 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         self,
         worklist_id: str | None = None,
         resource: 'str | Resource | None' = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
     ) -> list[dict]:
         """Get AI-generated segmentations for a resource within a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
             resource: The resource unique id or a Resource instance.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of AI segmentation objects.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
         if worklist_id is None:
             raise TypeError("get_ai_segmentations() missing required argument: 'worklist_id'")
         if resource is None:
@@ -436,9 +327,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         resource: 'str | Resource | None' = None,
         payload: str | None = None,
         images: list[Any] | None = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
     ) -> dict:
         """Upload one or more resource segmentations.
 
@@ -460,22 +348,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             resource: The resource unique id or a Resource instance.
             payload: A JSON string containing an array of segmentation items.
             images: Optional list of file-like objects or file paths to upload.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             Response dict with created annotation info.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
         if worklist_id is None:
             raise TypeError("upload_annotations() missing required argument: 'worklist_id'")
         if resource is None:
@@ -515,10 +391,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         annotator_email: str | None = None,
         message: str | None = None,
         path: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
-        annotator: str | None = None,
     ) -> list[dict]:
         """Update the annotation status for a resource within a worklist.
 
@@ -529,28 +401,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             annotator_email: Optional annotator email.
             message: Optional message.
             path: Optional path.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of objects with updated status information.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
         if worklist_id is None:
             raise TypeError("update_annotation_status() missing required argument: 'worklist_id'")
         if resource is None:
@@ -575,8 +429,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         status: Literal['active', 'frozen'] | None = None,
         expertise_level: Literal['learner', 'trained', 'expert'] | None = None,
         return_url: str | None = None,
-        *,
-        annotation_set: str | None = None,
     ) -> dict:
         """Set or update an annotator's status and expertise level in a worklist.
 
@@ -586,16 +438,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             status: Annotator status (active or frozen).
             expertise_level: Expertise level (learner, trained, or expert).
             return_url: Optional return URL.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
 
         Returns:
             Response dict with created annotator info.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("set_annotator() missing required argument: 'worklist_id'")
         if user_id is None:
@@ -619,21 +465,13 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         self,
         worklist_id: str | None = None,
         user_id: str | None = None,
-        *,
-        annotation_set: str | None = None,
     ) -> None:
         """Remove an annotator from a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
             user_id: The user's UUID.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("remove_annotator() missing required argument: 'worklist_id'")
         if user_id is None:
@@ -647,10 +485,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         worklist_id: str | None = None,
         resource_ids_to_add: list[str] | None = None,
         resource_ids_to_delete: list[str] | None = None,
-        *,
-        annotation_set: str | None = None,
-        resources_to_add: list[str] | None = None,
-        resources_to_delete: list[str] | None = None,
     ) -> dict:
         """Add or remove resources from a worklist.
 
@@ -658,28 +492,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             worklist_id: The annotation worklist ID.
             resource_ids_to_add: Optional list of resource IDs to add.
             resource_ids_to_delete: Optional list of resource IDs to delete.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resources_to_add: (DEPRECATED) Use ``resource_ids_to_add`` instead.
-            resources_to_delete: (DEPRECATED) Use ``resource_ids_to_delete`` instead.
 
         Returns:
             Response dict with updated worklist info.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resources_to_add is not None:
-            warnings.warn("The 'resources_to_add' parameter is deprecated. "
-                          "Please use 'resource_ids_to_add' instead", DeprecationWarning)
-            if resource_ids_to_add is None:
-                resource_ids_to_add = resources_to_add
-        if resources_to_delete is not None:
-            warnings.warn("The 'resources_to_delete' parameter is deprecated. "
-                          "Please use 'resource_ids_to_delete' instead", DeprecationWarning)
-            if resource_ids_to_delete is None:
-                resource_ids_to_delete = resources_to_delete
         if worklist_id is None:
             raise TypeError("update_resources() missing required argument: 'worklist_id'")
 
@@ -697,9 +513,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         status: str | None = None,
         user_id: str | None = None,
         resource: 'str | Resource | None' = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
     ) -> list[dict]:
         """Get annotation statuses for a worklist.
 
@@ -709,22 +522,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                 ``closed``, ``approved``, ``revision_request``.
             user_id: Optional user ID filter.
             resource: Optional resource unique id, or Resource instance, filter.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
 
         Returns:
             List of annotation status dicts.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
         if worklist_id is None:
             raise TypeError("get_annotation_statuses() missing required argument: 'worklist_id'")
 
@@ -744,10 +545,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         worklist_id: str | None = None,
         resource: 'str | Resource | None' = None,
         annotator_email: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        resource_id: str | None = None,
-        annotator: str | None = None,
     ) -> None:
         """Reset one annotator's resource status and delete related annotations.
 
@@ -755,25 +552,7 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             worklist_id: The annotation worklist ID.
             resource: The resource unique id or a Resource instance.
             annotator_email: The annotator's email address.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            resource_id: (DEPRECATED) Use ``resource`` instead.
-            annotator: (DEPRECATED) Use ``annotator_email`` instead.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if resource_id is not None:
-            warnings.warn("The 'resource_id' parameter is deprecated. "
-                          "Please use 'resource' instead", DeprecationWarning)
-            if resource is None:
-                resource = resource_id
-        if annotator is not None:
-            warnings.warn("The 'annotator' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = annotator
         if worklist_id is None:
             raise TypeError("reset_annotator_status() missing required argument: 'worklist_id'")
         if resource is None:
@@ -789,31 +568,16 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         self,
         worklist_id: str | None = None,
         annotator_email: str | None = None,
-        *,
-        annotation_set: str | None = None,
-        email: str | None = None,
     ) -> list[dict]:
         """Get annotator statistics for a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
             annotator_email: Optional annotator email filter.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
-            email: (DEPRECATED) Use ``annotator_email`` instead.
 
         Returns:
             List of per-annotator stat dicts.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
-        if email is not None:
-            warnings.warn("The 'email' parameter is deprecated. "
-                          "Please use 'annotator_email' instead", DeprecationWarning)
-            if annotator_email is None:
-                annotator_email = email
         if worklist_id is None:
             raise TypeError("get_annotators_statistics() missing required argument: 'worklist_id'")
 
@@ -827,23 +591,15 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
     def get_annotations_statistics(
         self,
         worklist_id: str | None = None,
-        *,
-        annotation_set: str | None = None,
     ) -> list[dict]:
         """Get annotation statistics for a worklist.
 
         Args:
             worklist_id: The annotation worklist ID.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
 
         Returns:
             List of annotation stat objects.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("get_annotations_statistics() missing required argument: 'worklist_id'")
 
@@ -858,8 +614,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         annotators: list[str] | None = None,
         annotations: list[str] | None = None,
         format: str = 'csv',
-        *,
-        annotation_set: str | None = None,
     ) -> bytes:
         """Download annotations as a streamed file.
 
@@ -872,16 +626,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             annotations: Optional list of annotation identifiers. Accepts either a repeated/array
                 input or a comma-separated string.
             format: Export format. Allowed values: ``csv`` (default), ``excel``.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
 
         Returns:
             The raw bytes of the downloaded file.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("download_annotations() missing required argument: 'worklist_id'")
 
@@ -904,8 +652,6 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
         worklist_id: str | None = None,
         file: Any = None,
         replace_existing: bool = True,
-        *,
-        annotation_set: str | None = None,
     ) -> dict:
         """Upload a segmentation group definition file to an annotation set.
 
@@ -914,16 +660,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             file: The file to upload. Must have one of these extensions:
                 ``.yaml``, ``.yml``, ``.csv``, ``.json``. Maximum size: 10 MB.
             replace_existing: Whether to replace existing segmentation data.
-            annotation_set: (DEPRECATED) Use ``worklist_id`` instead.
 
         Returns:
             Response dict with created segmentation group info.
         """
-        if annotation_set is not None:
-            warnings.warn("The 'annotation_set' parameter is deprecated. "
-                          "Please use 'worklist_id' instead", DeprecationWarning)
-            if worklist_id is None:
-                worklist_id = annotation_set
         if worklist_id is None:
             raise TypeError("upload_segmentation_group() missing required argument: 'worklist_id'")
         if file is None:
