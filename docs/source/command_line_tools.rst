@@ -237,8 +237,6 @@ See all available options by running ``datamint upload --help``:
   --retain-pii          Do not anonymize DICOMs
   --retain-attribute RETAIN_ATTRIBUTE
                         Retain the value of a single attribute code specified as hexidecimal integers. Example: (0x0008, 0x0050) or just (0008, 0050)
-  -l LABEL, --label LABEL
-                        Deprecated. Use --tag instead.
   --tag TAG             A tag name to be applied to all files
   --publish             Publish the uploaded resources, giving them the status "published" instead of "inbox"
   --mungfilename MUNGFILENAME
