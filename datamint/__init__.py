@@ -4,6 +4,9 @@ Datamint API package alias.
 
 import importlib.metadata
 from typing import TYPE_CHECKING
+from .utils.logging_utils import setup_file_logging_if_enabled
+
+setup_file_logging_if_enabled()
 if TYPE_CHECKING:
     from .api.client import Api
     # New modular datasets

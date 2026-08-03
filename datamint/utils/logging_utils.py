@@ -10,8 +10,12 @@ from rich.logging import RichHandler
 from rich.traceback import Traceback
 import yaml
 import importlib
+import datetime
 
 _LOGGER = logging.getLogger(__name__)
+
+_FILE_HANDLER_MARKER = '_datamint_file_handler'
+_FALSY_ENV_VALUES = {'0', 'false', 'no'}
 
 
 class ConditionalRichHandler(RichHandler):
@@ -58,6 +62,59 @@ def load_cmdline_logging_config():
         print(f"Warning: Error loading logging configuration file: {e}")
         _LOGGER.exception(e)
         logging.basicConfig(level=logging.INFO)
+
+    # dictConfig replaces the handlers of the loggers it configures, so the file
+    # handler must be (re)attached after it runs.
+    setup_file_logging_if_enabled()
+
+
+def _file_logging_enabled() -> bool:
+    value = os.environ.get('DATAMINT_LOG_FILE')
+    if value is None:
+        return True
+    return value.strip().lower() not in _FALSY_ENV_VALUES
+
+
+def _has_file_handler(logger: logging.Logger) -> bool:
+    return any(getattr(handler, _FILE_HANDLER_MARKER, False) for handler in logger.handlers)
+
+
+def setup_file_logging_if_enabled():
+    """
+    Attaches a per-run file handler to the 'datamint' and 'user_logger' loggers,
+    writing to ./.log/, unless DATAMINT_LOG_FILE is explicitly disabled.
+    """
+    try:
+        if not _file_logging_enabled():
+            return
+
+        datamint_logger = logging.getLogger('datamint')
+        user_logger = logging.getLogger('user_logger')
+
+        if _has_file_handler(datamint_logger) or _has_file_handler(user_logger):
+            return
+
+        log_dir = os.path.join(os.getcwd(), '.log')
+        os.makedirs(log_dir, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"datamint_{timestamp}_{os.getpid()}.log"
+        filepath = os.path.join(log_dir, filename)
+
+        handler = logging.FileHandler(filepath)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s - %(levelname)s - %(filename)s:%(funcName)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        ))
+        setattr(handler, _FILE_HANDLER_MARKER, True)
+
+        for logger in (datamint_logger, user_logger):
+            logger.addHandler(handler)
+            if logger.getEffectiveLevel() > logging.INFO:
+                logger.setLevel(logging.INFO)
+    except Exception as e:
+        print(f"Warning: Could not set up file logging: {e}")
 
 
 LEVELS_MAPPING = {

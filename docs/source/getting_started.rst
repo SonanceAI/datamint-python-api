@@ -49,6 +49,18 @@ Don't have your own data yet? ``datamint init`` can populate the project with a 
 public example dataset instead — see :ref:`command_line_tools` for details, or run
 ``datamint example --help`` directly.
 
+Logging to a file
+===================
+
+Every ``datamint`` command (and the SDK itself, when imported in your own scripts)
+writes an INFO-level log to a file under ``./.log/`` in the current working
+directory, one file per run, named ``datamint_<timestamp>_<pid>.log``. This is meant
+as a support/debug artifact you can attach when reporting an issue, it captures
+warnings, errors, and full tracebacks regardless of how verbose the console output is.
+
+This is on by default. To turn it off, set the ``DATAMINT_LOG_FILE`` environment
+variable to ``0``, ``false``, or ``no``:
+
 Your first API call
 ===================
 
