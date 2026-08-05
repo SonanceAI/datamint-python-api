@@ -514,6 +514,34 @@ a Datamint :mod:`~datamint.lightning.trainers`), rather than raising.
 ``Model.get_supported_modes()``/``get_metrics()`` are shortcuts that delegate
 to the latest version when you don't need a specific one.
 
+Model registry (MLflow) operations
++++++++++++++++++++++++++++++++++
+
+``api.models`` wraps the underlying MLflow model registry client directly, so
+these calls map one-to-one onto MLflow's own registry API:
+
++---------------------------------------------+-------------------------------------------+
+| Method                                      | MLflow equivalent                         |
++=============================================+===========================================+
+| ``api.models.create(...)``                  | ``MlflowClient.create_registered_model``  |
++---------------------------------------------+-------------------------------------------+
+| ``api.models.get_by_name(...)``             | ``MlflowClient.get_registered_model``     |
++---------------------------------------------+-------------------------------------------+
+| ``api.models.get_list(...)``                | ``MlflowClient.search_registered_models`` |
++---------------------------------------------+-------------------------------------------+
+| ``api.models.delete_model_version(...)``    | ``MlflowClient.delete_model_version``     |
++---------------------------------------------+-------------------------------------------+
+| ``api.models.delete_registered_model(...)`` | ``MlflowClient.delete_registered_model``  |
++---------------------------------------------+-------------------------------------------+
+
+.. code-block:: python
+
+    # Delete a single version
+    api.models.delete_model_version("my-model", version=1)
+
+    # Delete a registered model and all of its remaining versions
+    api.models.delete_registered_model("my-model")
+
 Deploy a registered model
 +++++++++++++++++++++++++
 

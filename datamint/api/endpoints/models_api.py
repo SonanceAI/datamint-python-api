@@ -85,3 +85,20 @@ class ModelsApi(BaseApi):
                 return self.get_by_name(name)
             raise
         return Model(_raw=raw_model, _api=self)
+
+    def delete_model_version(self, name: str, version: str | int) -> None:
+        """Delete a single model version.
+
+        Args:
+            name: Name of the registered model.
+            version: Version number to delete.
+        """
+        self._mlflow_client.delete_model_version(name, str(version))
+
+    def delete_registered_model(self, name: str) -> None:
+        """Delete a registered model and all of its versions.
+
+        Args:
+            name: Name of the registered model to delete.
+        """
+        self._mlflow_client.delete_registered_model(name)
