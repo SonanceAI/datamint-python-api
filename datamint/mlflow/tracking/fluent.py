@@ -92,3 +92,13 @@ def set_project(project: 'Project | str'):
     os.environ[EnvVars.DATAMINT_PROJECT_ID.value] = project_id
 
     return project
+
+
+def _reset_active_project():
+    """Clear the active project, restoring the pre-``set_project()`` state. """
+    global _ACTIVE_PROJECT_ID
+
+    with _PROJECT_LOCK:
+        _ACTIVE_PROJECT_ID = None
+
+    os.environ.pop(EnvVars.DATAMINT_PROJECT_ID.value, None)
