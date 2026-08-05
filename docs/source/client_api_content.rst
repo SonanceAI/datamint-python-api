@@ -515,7 +515,7 @@ a Datamint :mod:`~datamint.lightning.trainers`), rather than raising.
 to the latest version when you don't need a specific one.
 
 Model registry (MLflow) operations
-+++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++
 
 ``api.models`` wraps the underlying MLflow model registry client directly, so
 these calls map one-to-one onto MLflow's own registry API:
@@ -541,6 +541,47 @@ these calls map one-to-one onto MLflow's own registry API:
 
     # Delete a registered model and all of its remaining versions
     api.models.delete_registered_model("my-model")
+
+Clone a model to another project
+++++++++++++++++++++++++++++++++
+
+Models live in the MLflow registry of whichever project is active (see
+:func:`datamint.mlflow.set_project`), so using a model trained in one project
+against another normally means manually reloading and re-logging it.
+``api.models.clone_model()`` does that for you:
+
+.. code-block:: python
+
+    from datamint.mlflow import set_project
+
+    set_project("Project A")  # clone_model() resolves the source here
+
+    cloned = api.models.clone_model(
+        "my-model",
+        target_project="Project B",
+        version=3,                        # or alias="champion"
+        target_model_name="my-model-v2",  # optional, defaults to the source name
+    )
+
+Only models logged with the ``datamint`` MLflow flavor are supported, since
+that's what carries the task type, supported modes, and annotation specs the
+clone copies over. If the source model's class depends on custom code (not an
+installed package), pass ``code_paths`` the same way you would to
+``log_model()`` -- otherwise the clone registers successfully but fails to
+load later, since its class gets pickled by reference to code the new
+artifact never bundled:
+
+.. code-block:: python
+
+    api.models.clone_model(
+        "my-model",
+        target_project="Project B",
+        version=3,
+        code_paths=["my_adapter.py"],
+    )
+
+The project that was active before the call is always restored afterward,
+even if cloning fails partway through.
 
 Deploy a registered model
 +++++++++++++++++++++++++
