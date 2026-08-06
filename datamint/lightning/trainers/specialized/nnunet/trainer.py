@@ -3,18 +3,20 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import filelock
 import mlflow
 import yaml
 from rich import print as rprint
 
-from datamint.lightning.trainers.base_trainer import BaseTrainer
 from datamint.dataset.volume_dataset import VolumeDataset
-from datamint.lightning.trainers.specialized.nnunet.data_export import DatamintToNNUNetExporter
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.annotations.types import AnnotationType
+from datamint.lightning.trainers.base_trainer import BaseTrainer
+from datamint.lightning.trainers.specialized.nnunet.data_export import (
+    DatamintToNNUNetExporter,
+)
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -54,7 +56,7 @@ class NNUNetTrainer(BaseTrainer):
     def __init__(
         self,
         dataset=None,
-        project: 'str | Project | None' = None,
+        project: str | Project | None = None,
         *,
         configuration: str = '3d_fullres',
         fold: int | str = 0,
@@ -100,7 +102,7 @@ class NNUNetTrainer(BaseTrainer):
 
     # ── BaseTrainer abstract methods bypassed by nnUNet ───────────────────────
 
-    def _build_dataset(self, project: 'str | Project', **kwargs) -> VolumeDataset:
+    def _build_dataset(self, project: str | Project, **kwargs) -> VolumeDataset:
         return VolumeDataset(project=project, **kwargs)
 
     def _build_annotation_specs(self) -> list[AnnotationSpec]:
@@ -239,18 +241,20 @@ class NNUNetTrainer(BaseTrainer):
         plans_file = preprocessed_dataset_dir / 'nnUNetPlans.json'
 
         if fp_file.exists() and plans_file.exists():
-            rprint(f"[green]✓[/green] Fingerprinting and planning already done for dataset — skipping.")
+            rprint("[green]✓[/green] Fingerprinting and planning already done for dataset — skipping.")
             return
 
         from nnunetv2.experiment_planning.dataset_fingerprint.fingerprint_extractor import (
             DatasetFingerprintExtractor,
         )
-        from nnunetv2.experiment_planning.experiment_planners.default_experiment_planner import ExperimentPlanner
+        from nnunetv2.experiment_planning.experiment_planners.default_experiment_planner import (
+            ExperimentPlanner,
+        )
 
-        rprint(f"[bold]→[/bold] Running dataset fingerprinting for dataset…")
+        rprint("[bold]→[/bold] Running dataset fingerprinting for dataset…")
         DatasetFingerprintExtractor(dataset_id, num_processes=8).run()
 
-        rprint(f"[bold]→[/bold] Running experiment planning for dataset…")
+        rprint("[bold]→[/bold] Running experiment planning for dataset…")
         ExperimentPlanner(dataset_id, gpu_memory_target_in_gb=8.0).plan_experiment()
 
         if not fp_file.exists():
@@ -324,6 +328,7 @@ class NNUNetTrainer(BaseTrainer):
             call ``run_training()``.
         """
         import json as _json
+
         from datamint.lightning.trainers.specialized.nnunet._nnunet_trainer_bridge import (
             _DatamintNNUNetTrainer,
         )
@@ -389,7 +394,7 @@ class NNUNetTrainer(BaseTrainer):
         rprint(f"[green]✓[/green] Predictions written to {pred_dir}")
         return pred_dir
 
-    def _import_predictions(self, dataset_id: int, pred_dir: 'Path | None') -> None:
+    def _import_predictions(self, dataset_id: int, pred_dir: Path | None) -> None:
         """Upload nnUNet test predictions to Datamint as volume annotations.
 
         Reads the per-class label map from ``dataset.json`` and delegates
@@ -405,6 +410,7 @@ class NNUNetTrainer(BaseTrainer):
             return
 
         import json as _json
+
         from datamint.lightning.trainers.specialized.nnunet.data_import import (
             NNUNetToDatamintImporter,
         )
@@ -516,6 +522,7 @@ class NNUNetTrainer(BaseTrainer):
         """
         import json as _json
         import shutil
+
         import datamint.mlflow.flavors.datamint_flavor as _datamint_flavor
         from datamint.lightning.trainers.specialized.nnunet.inference_model import (
             NNUNetInferenceModel,

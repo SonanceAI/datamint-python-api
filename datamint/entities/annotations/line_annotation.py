@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from medimgkit import ViewPlane
 from typing import Any
 
-from nibabel.nifti1 import Nifti1Image
 import pydicom
+from medimgkit import ViewPlane
+from nibabel.nifti1 import Nifti1Image
 from pydantic import field_validator
 
 from .base_geometry import BaseGeometryAnnotation
@@ -37,7 +37,7 @@ class LineAnnotation(BaseGeometryAnnotation):
         metadata: pydicom.Dataset | Nifti1Image | None = None,
         coords_system: CoordinateSystem = 'pixel',
         **kwargs: Any,
-    ) -> 'LineAnnotation':
+    ) -> LineAnnotation:
         geometry = LineGeometry.from_coordinates(
             point1,
             point2,

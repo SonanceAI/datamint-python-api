@@ -2,9 +2,8 @@ import sys
 from pathlib import Path
 
 from rich.console import Console
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm, Prompt
 from rich.rule import Rule
-
 
 console = Console()
 

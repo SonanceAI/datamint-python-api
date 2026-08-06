@@ -2,14 +2,19 @@
 Test the NNUNetToDatamintImporter class for importing nnUNet predictions into Datamint.
 """
 import pytest
+
 pytest.importorskip("nnunetv2", minversion="2.4")
 import json
-import numpy as np
-import nibabel as nib
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock
-from datamint.lightning.trainers.specialized.nnunet.data_import import NNUNetToDatamintImporter
+
+import nibabel as nib
+import numpy as np
+import pytest
+
+from datamint.lightning.trainers.specialized.nnunet.data_import import (
+    NNUNetToDatamintImporter,
+)
 
 
 def _write_pred(path: Path, shape=(64, 64, 32)):

@@ -1,7 +1,7 @@
-from .smp_module import SMPSegmentationModule
-from .unetpp import UNetPPModule
 from .deeplabv3plus import DeepLabV3PlusModule
+from .smp_module import SMPSegmentationModule
 from .transunet import TransUNetModule
+from .unetpp import UNetPPModule
 from .unetrpp import UNETRPPModule
 
-__all__ = ["SMPSegmentationModule", "UNetPPModule", "DeepLabV3PlusModule", "TransUNetModule", "UNETRPPModule"]
+__all__ = ["DeepLabV3PlusModule", "SMPSegmentationModule", "TransUNetModule", "UNETRPPModule", "UNetPPModule"]

@@ -7,9 +7,10 @@ boxes, Cohen's/Fleiss' kappa for category/label annotations.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
 import pandas as pd

@@ -1,13 +1,14 @@
+import colorsys
+import logging
+from collections.abc import Sequence
+
 import matplotlib.pyplot as plt
 import numpy as np
-from torchvision.transforms import functional as F
-from torch import Tensor
-import torchvision.utils
 import torch
-import colorsys
-from collections.abc import Sequence
+import torchvision.utils
 from matplotlib.axes import Axes
-import logging
+from torch import Tensor
+from torchvision.transforms import functional as F
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,9 +42,9 @@ def show(imgs: Sequence[Tensor | np.ndarray] | Tensor | np.ndarray,
 
     if ax is None:
         if figsize is not None:
-            fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
+            _fig, axs = plt.subplots(ncols=len(imgs), squeeze=False, figsize=figsize)
         else:
-            fig, axs = plt.subplots(ncols=len(imgs), squeeze=False)
+            _fig, axs = plt.subplots(ncols=len(imgs), squeeze=False)
         axs = axs[0]
     else:
         if isinstance(ax, Axes):

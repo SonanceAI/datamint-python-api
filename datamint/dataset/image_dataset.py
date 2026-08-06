@@ -6,11 +6,11 @@ single-frame DICOM, PNG, JPEG, etc.
 """
 import logging
 from typing import Any
-from typing_extensions import override
+
+import numpy as np
 import torch
 from torch import Tensor
-import numpy as np
-import albumentations
+from typing_extensions import override
 
 from .base import DatamintDatasetException
 from .volume_dataset import VolumeDataset

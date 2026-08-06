@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-
 from functools import partial
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.annotations.types import AnnotationType
+
 from .base_trainer import BaseTrainer
 
 

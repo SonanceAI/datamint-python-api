@@ -1,6 +1,7 @@
-from nibabel.nifti1 import Nifti1Header, Nifti1Image
 from collections.abc import Mapping
+
 import numpy as np
+from nibabel.nifti1 import Nifti1Header, Nifti1Image
 
 
 def _get_metadata_value(metadata: Mapping[str, object], *keys: str) -> object | None:
@@ -123,7 +124,7 @@ def _build_nifti_header_from_metadata(metadata: Mapping[str, object],
 def metadata_to_nifti_obj(metadata: Mapping[str, object],
                           dataobj: np.ndarray | None = None,
                           *,
-                          fill_value: int | float = 0) -> Nifti1Image:
+                          fill_value: float = 0) -> Nifti1Image:
     """Construct a ``Nifti1Image`` from a metadata mapping and optional data.
 
     nibabel provides the building blocks for this via ``Nifti1Header`` and

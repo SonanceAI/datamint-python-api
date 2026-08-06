@@ -1,8 +1,7 @@
 import torch
-from torchmetrics.classification import Recall, Precision, F1Score, Specificity
-from torchmetrics.wrappers.abstract import WrapperMetric
 import torchmetrics
 from torch import Tensor
+from torchmetrics.wrappers.abstract import WrapperMetric
 
 
 class SegmentationToClassificationWrapper(WrapperMetric):
@@ -78,7 +77,7 @@ class CombinedLoss(torch.nn.Module):
 
     def __init__(self, *losses: torch.nn.Module | tuple[torch.nn.Module, float]):
         super().__init__()
-        parsed = [(l[0], l[1]) if isinstance(l, tuple) else (l, 1.0) for l in losses]
+        parsed = [(loss[0], loss[1]) if isinstance(loss, tuple) else (loss, 1.0) for loss in losses]
         self.losses, self.weights = zip(*parsed)
 
     def forward(self, preds: Tensor, target: Tensor) -> Tensor:

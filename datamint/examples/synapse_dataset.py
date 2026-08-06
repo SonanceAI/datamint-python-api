@@ -1,7 +1,7 @@
 import logging
 
-import numpy as np
 import nibabel as nib
+import numpy as np
 from tqdm.auto import tqdm
 
 from datamint import Api

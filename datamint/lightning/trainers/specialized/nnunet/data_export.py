@@ -4,6 +4,7 @@ import json
 import logging
 import warnings
 from pathlib import Path
+
 import nibabel as nib
 import numpy as np
 
@@ -69,7 +70,7 @@ class DatamintToNNUNetExporter:
     def _merge_segmentations(
         self,
         segs,
-        name_to_idx: 'dict[str, int] | None' = None,
+        name_to_idx: dict[str, int] | None = None,
     ) -> np.ndarray:
         """Merge N segmentation masks into one int32 label map.
 

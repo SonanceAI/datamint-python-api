@@ -4,18 +4,20 @@ This module provides caching functionality for resource data (images, segmentati
 with automatic validation against server versions to ensure data freshness.
 """
 
+import gzip
 import hashlib
 import json
 import logging
 import pickle
-import gzip
-import numpy as np
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TypeVar, Generic
-from pydantic import BaseModel
+from typing import Any, Generic, TypeVar
+
+import numpy as np
 from cachetools import LRUCache
+from pydantic import BaseModel
+
 # import appdirs
 import datamint.configs
 
@@ -125,7 +127,7 @@ class CacheManager(Generic[T]):
         if self._memory_cache is None:
             return
         keys_to_remove = []
-        for eid, dkey, vhash in self._memory_cache.keys():
+        for eid, dkey, vhash in self._memory_cache:
             if eid != entity_id:
                 continue
             if data_key is not None and dkey != data_key:
@@ -259,7 +261,7 @@ class CacheManager(Generic[T]):
         if mem_data is not None:
             return mem_data
 
-        cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
+        cached_metadata, _data_path = self._get_validated_metadata(entity_id, data_key, version_info)
 
         if cached_metadata is None:
             return None
@@ -288,7 +290,7 @@ class CacheManager(Generic[T]):
         Returns:
             Path to cached data if valid, None if cache miss or invalid
         """
-        cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
+        _cached_metadata, data_path = self._get_validated_metadata(entity_id, data_key, version_info)
         return data_path
 
     def get_expected_path(self, entity_id: str, data_key: str) -> Path:

@@ -1,12 +1,6 @@
-from mlflow.store.model_registry.rest_store import RestStore
-from datamint.mlflow.store_utils import _inject_project_id_into_body
-from datamint.mlflow.tracking.fluent import get_active_project_id
-from mlflow.exceptions import MlflowException
-from mlflow.utils.proto_json_utils import message_to_json
-from typing_extensions import override
-from mlflow.entities.model_registry import ModelVersion, RegisteredModel
 from functools import partial
 
+from mlflow.entities.model_registry import ModelVersion, RegisteredModel
 from mlflow.protos.model_registry_pb2 import (
     CreateModelVersion,
     CreateRegisteredModel,
@@ -20,7 +14,6 @@ from mlflow.protos.model_registry_pb2 import (
     GetModelVersionByAlias,
     GetModelVersionDownloadUri,
     GetRegisteredModel,
-    ModelRegistryService,
     RenameRegisteredModel,
     SearchModelVersions,
     SearchRegisteredModels,
@@ -31,6 +24,12 @@ from mlflow.protos.model_registry_pb2 import (
     UpdateModelVersion,
     UpdateRegisteredModel,
 )
+from mlflow.store.model_registry.rest_store import RestStore
+from mlflow.utils.proto_json_utils import message_to_json
+from typing_extensions import override
+
+from datamint.mlflow.store_utils import _inject_project_id_into_body
+from datamint.mlflow.tracking.fluent import get_active_project_id
 
 
 class DatamintModelRegistryStore(RestStore):
@@ -44,8 +43,9 @@ class DatamintModelRegistryStore(RestStore):
 
     def __init__(self, store_uri: str, artifact_uri=None, force_valid=True):
         # Ensure MLflow environment is configured when store is initialized
-        from datamint.mlflow.env_utils import setup_mlflow_environment
         from mlflow.utils.credentials import get_default_host_creds
+
+        from datamint.mlflow.env_utils import setup_mlflow_environment
 
         setup_mlflow_environment()
 

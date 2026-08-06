@@ -11,7 +11,10 @@ from rich.table import Table
 from typing_extensions import NotRequired
 
 from datamint import configs
-from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
+from datamint.utils.logging_utils import (
+    ConsoleWrapperHandler,
+    load_cmdline_logging_config,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -49,7 +52,7 @@ def configure_default_url():
         return
 
     # Basic URL validation
-    if not (url.startswith('http://') or url.startswith('https://')):
+    if not (url.startswith(('http://', 'https://'))):
         console.print("[warning]⚠️  URL should start with http:// or https://[/warning]")
         return
 
@@ -118,7 +121,7 @@ def test_connection():
         from datamint import Api
         console.print("[accent]🔄 Testing connection...[/accent]")
         Api(check_connection=True)
-        console.print(f"[success]✅ Connection successful![/success]")
+        console.print("[success]✅ Connection successful![/success]")
     except ImportError:
         console.print("[error]❌ Full API not available. Install with: pip install datamint[/error]")
     except Exception as e:
@@ -753,9 +756,9 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
     When ``subparsers`` is given, the parser is registered as a ``config`` subparser
     (used by ``datamint``'s combined completion tree) instead of a standalone parser.
     """
-    kwargs = dict(
-        description='🔧 Datamint API Configuration Tool',
-        epilog="""
+    kwargs = {
+        'description': '🔧 Datamint API Configuration Tool',
+        'epilog': """
 Examples:
   datamint config                           # Interactive mode
   datamint config --api-key YOUR_KEY        # Set API key
@@ -773,8 +776,8 @@ Examples:
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+        'formatter_class': argparse.RawDescriptionHelpFormatter
+    }
     if subparsers is not None:
         parser = subparsers.add_parser('config', **kwargs)
     else:

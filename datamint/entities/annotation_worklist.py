@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 
-from .base_entity import BaseEntity, MISSING_FIELD
+from .base_entity import MISSING_FIELD, BaseEntity
 
 _LOGGER = logging.getLogger(__name__)
 

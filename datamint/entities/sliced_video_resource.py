@@ -5,13 +5,16 @@ Analogous to :class:`~datamint.entities.sliced_resource.SlicedVolumeResource` bu
 data — videos always slice along the frame (temporal) axis.
 """
 from __future__ import annotations
+
 import gzip
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from medimgkit.readers import read_array_normalized
-from datamint.entities.cache_manager import CacheManager
 import numpy as np
+from medimgkit.readers import read_array_normalized
+
+from datamint.entities.cache_manager import CacheManager
+
 from .sliced_resource_base import SlicedResourceBase
 
 if TYPE_CHECKING:

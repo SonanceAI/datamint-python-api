@@ -1,8 +1,9 @@
-import yaml
-import os
 import logging
-from platformdirs import PlatformDirs
+import os
 from typing import Any
+
+import yaml
+from platformdirs import PlatformDirs
 
 APIURL_KEY = 'default_api_url'
 APIKEY_KEY = 'api_key'
@@ -59,11 +60,10 @@ def set_values(values: dict[str, Any]):
 
 def get_value(key: str,
               include_envvars: bool = True):
-    if include_envvars:
-        if key in ENV_VARS:
-            env_var = os.getenv(ENV_VARS[key])
-            if env_var is not None:
-                return env_var
+    if include_envvars and key in ENV_VARS:
+        env_var = os.getenv(ENV_VARS[key])
+        if env_var is not None:
+            return env_var
 
     config = read_config()
     return config.get(key)

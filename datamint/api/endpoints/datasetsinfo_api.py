@@ -1,10 +1,12 @@
-from typing import Literal, TYPE_CHECKING
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
-from ..entity_base_api import ApiConfig, DeletableEntityApi
-from datamint.entities.datasetinfo import DatasetInfo
 import httpx
 from tqdm.auto import tqdm
+
+from datamint.entities.datasetinfo import DatasetInfo
+
+from ..entity_base_api import ApiConfig, DeletableEntityApi
 
 if TYPE_CHECKING:
     from datamint.entities import Project

@@ -7,13 +7,13 @@ where N is the number of frames/slices.
 """
 import logging
 from typing import Any
+
+import albumentations
+import numpy as np
+import torch
+from medimgkit.readers import read_array_normalized
 from typing_extensions import override
 
-import torch
-import numpy as np
-import albumentations
-
-from medimgkit.readers import read_array_normalized
 from .base import DatamintBaseDataset
 
 _LOGGER = logging.getLogger(__name__)

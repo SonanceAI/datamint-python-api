@@ -1,7 +1,13 @@
 from .base import DatamintLightningModule
-from .segmentation_module import SegmentationModule
-from .segmentation_modules import SMPSegmentationModule, UNetPPModule, DeepLabV3PlusModule, TransUNetModule, UNETRPPModule
 from .classification_module import ClassificationModule
 from .detection_modules import YOLOXModule
+from .segmentation_module import SegmentationModule
+from .segmentation_modules import (
+    DeepLabV3PlusModule,
+    SMPSegmentationModule,
+    TransUNetModule,
+    UNetPPModule,
+    UNETRPPModule,
+)
 
-__all__ = ["DatamintLightningModule", "SegmentationModule", "SMPSegmentationModule", "UNetPPModule", "DeepLabV3PlusModule", "TransUNetModule", "UNETRPPModule", "ClassificationModule", "YOLOXModule"]
+__all__ = ["ClassificationModule", "DatamintLightningModule", "DeepLabV3PlusModule", "SMPSegmentationModule", "SegmentationModule", "TransUNetModule", "UNETRPPModule", "UNetPPModule", "YOLOXModule"]

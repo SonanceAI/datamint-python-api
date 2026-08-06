@@ -1,1 +1,1 @@
-from .datamint_artifacts_repo import DatamintArtifactsRepository
+from .datamint_artifacts_repo import DatamintArtifactsRepository as DatamintArtifactsRepository

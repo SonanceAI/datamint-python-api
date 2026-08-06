@@ -10,7 +10,9 @@ Requirements:
     - Enough disk space for nnUNet preprocessing (~2–5 GB for a small dataset)
 """
 import random
+
 import pytest
+
 pytest.importorskip("nnunetv2", minversion="2.4")
 from pathlib import Path
 
@@ -20,9 +22,10 @@ WORK_DIR = Path.home() / '.cache' / 'datamint' / 'nnunet_integration_test'
 
 @pytest.mark.integration
 def test_full_nnunet_pipeline():
+    import mlflow
+
     from datamint import Api
     from datamint.lightning import NNUNetTrainer
-    import mlflow
 
     api = Api()
 

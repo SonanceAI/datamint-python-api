@@ -1,16 +1,24 @@
-from typing import Literal, TYPE_CHECKING, overload
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal, overload
 
-from ..entity_base_api import ApiConfig, CRUDEntityApi
+import httpx
+
 from datamint.entities.project import Project
 from datamint.entities.project_resource_split import ProjectResourceSplit
-import httpx
 from datamint.entities.resource import Resource
-from datamint.exceptions import DefaultProjectNotSetError, EntityAlreadyExistsError, ItemNotFoundError
+from datamint.exceptions import (
+    DefaultProjectNotSetError,
+    EntityAlreadyExistsError,
+    ItemNotFoundError,
+)
+
+from ..entity_base_api import ApiConfig, CRUDEntityApi
+
 if TYPE_CHECKING:
-    from . import AnnotationWorklistApi, ResourcesApi
     from datamint.entities.annotation_worklist import AnnotationWorklist
+
+    from . import AnnotationWorklistApi, ResourcesApi
 
 
 class ProjectsApi(CRUDEntityApi[Project]):
@@ -548,11 +556,10 @@ class ProjectsApi(CRUDEntityApi[Project]):
                                          params=params) as response:
             total_size = int(response.headers.get('content-length', 0)) or None
             with tqdm(total=total_size, unit='B', unit_scale=True,
-                      disable=not progress_bar) as pbar:
-                with open(output_path, 'wb') as f:
-                    for chunk in response.iter_bytes(8192):
-                        pbar.update(len(chunk))
-                        f.write(chunk)
+                      disable=not progress_bar) as pbar, open(output_path, 'wb') as f:
+                for chunk in response.iter_bytes(8192):
+                    pbar.update(len(chunk))
+                    f.write(chunk)
 
     # ------------------------------------------------------------------
     # Statistics

@@ -1,11 +1,13 @@
-import requests
 import io
-from datamint import Api
 import logging
-from PIL import Image
+
 import numpy as np
-from datamint.entities import Project, Resource
+import requests
+from PIL import Image
 from pydicom.data import get_testdata_file
+
+from datamint import Api
+from datamint.entities import Project, Resource
 
 _LOGGER = logging.getLogger(__name__)
 

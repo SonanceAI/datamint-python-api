@@ -1,13 +1,12 @@
 """Tests for DetectionTrainer abstract base."""
-import pytest
 from unittest.mock import MagicMock, patch
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from datamint.lightning.trainers.detection_trainer import DetectionTrainer
 from datamint.dataset.image_dataset import ImageDataset, detection_collate_fn
 from datamint.lightning.datamodule import DatamintDataModule
+from datamint.lightning.trainers.detection_trainer import DetectionTrainer
 
 
 class _ConcreteDetectionTrainer(DetectionTrainer):

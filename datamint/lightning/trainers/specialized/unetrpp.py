@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import lightning as L
 from torch import nn
@@ -14,7 +14,9 @@ from ..vol_seg_trainer import VolumeSegmentationTrainer
 if TYPE_CHECKING:
     from datamint.dataset.base import DatamintBaseDataset
     from datamint.entities import Project
-    from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
+    from datamint.lightning.trainers.lightning_modules.base import (
+        DatamintLightningModule,
+    )
 
 
 class UNETRPPTrainer(VolumeSegmentationTrainer):
@@ -62,8 +64,8 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
 
     def __init__(
         self,
-        dataset: 'DatamintBaseDataset | None' = None,
-        project: 'str | Project | None' = None,
+        dataset: DatamintBaseDataset | None = None,
+        project: str | Project | None = None,
         *,
         patch_crop_size: tuple[int, int, int] = (128, 128, 128),
         feature_size: int = 16,
@@ -124,7 +126,7 @@ class UNETRPPTrainer(VolumeSegmentationTrainer):
         self,
         loss_fn: nn.Module,
         metrics: dict[str, Callable],
-    ) -> 'DatamintLightningModule':
+    ) -> DatamintLightningModule:
         num_classes = len(self.dataset.seglabel_list)
         if num_classes == 0:
             raise ValueError(

@@ -3,12 +3,12 @@ Utility functions for automatically configuring MLflow environment variables
 based on Datamint configuration.
 """
 
-import os
 import logging
-from urllib.parse import urlparse
-from datamint import configs
+import os
 import sys
+from urllib.parse import urlparse
 
+from datamint import configs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ def setup_mlflow_environment(overwrite: bool = False,
     if 'lightning.pytorch.loggers' in sys.modules:
         # import lightning.pytorch.loggers
         # importlib.reload(lightning.pytorch.loggers)
-        from lightning.pytorch.loggers import MLFlowLogger 
+        from lightning.pytorch.loggers import MLFlowLogger
 
         # 1. Convert the immutable defaults tuple to a mutable list
         current_defaults = list(MLFlowLogger.__init__.__defaults__)

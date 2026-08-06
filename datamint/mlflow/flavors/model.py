@@ -1,24 +1,30 @@
+import logging
 from abc import ABC
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
-import logging
 from typing import Any, ClassVar, TypeAlias
 
+import torch
+from medimgkit import ViewPlane
 from mlflow.environment_variables import MLFLOW_DEFAULT_PREDICTION_DEVICE
 from mlflow.pyfunc import PyFuncModel
 from mlflow.pyfunc.model import PythonModel, PythonModelContext
-from medimgkit import ViewPlane
-import torch
 from typing_extensions import override
 
-from datamint.entities.annotations import Annotation, ImageSegmentation, ImageClassification
+from datamint.entities.annotations import (
+    Annotation,
+    ImageClassification,
+    ImageSegmentation,
+)
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.resource import BaseResource
 from datamint.entities.resources.volume_resource import VolumeResource
 from datamint.entities.sliced_resource import SlicedVolumeResource
 from datamint.entities.sliced_video_resource import SlicedVideoResource
-from datamint.mlflow.flavors.model_loader import LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR
+from datamint.mlflow.flavors.model_loader import (
+    LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR,
+)
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
 from datamint.mlflow.flavors.prediction_router import PredictionRouter, bridge_mode
 from datamint.mlflow.flavors.task_type import TaskType

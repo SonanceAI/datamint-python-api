@@ -1,15 +1,22 @@
-from typing import Any
+import logging
+from typing import Any, ClassVar
 
-from .base_api import ApiConfig, BaseApi
-from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
-                        ChannelsApi, UsersApi, DatasetsInfoApi,
-                        AnnotationWorklistApi, DeployModelApi,
-                        InferenceApi
-                        )
-from .endpoints.models_api import ModelsApi
 import datamint.configs
 from datamint.exceptions import AuthenticationError, NetworkError
-import logging
+
+from .base_api import ApiConfig, BaseApi
+from .endpoints import (
+    AnnotationsApi,
+    AnnotationWorklistApi,
+    ChannelsApi,
+    DatasetsInfoApi,
+    DeployModelApi,
+    InferenceApi,
+    ProjectsApi,
+    ResourcesApi,
+    UsersApi,
+)
+from .endpoints.models_api import ModelsApi
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,7 +26,7 @@ class Api:
     DEFAULT_SERVER_URL = 'https://api.datamint.io'
     DATAMINT_API_VENV_NAME = datamint.configs.ENV_VARS[datamint.configs.APIKEY_KEY]
 
-    _API_MAP: dict[str, type[BaseApi]] = {
+    _API_MAP: ClassVar[dict[str, type[BaseApi]]] = {
         'projects': ProjectsApi,
         'resources': ResourcesApi,
         'annotations': AnnotationsApi,
@@ -37,7 +44,7 @@ class Api:
     # (e.g. one per DataLoader worker or dataset auto-refresh) once a given
     # configuration is known to work. A changed value simply misses the cache,
     # forcing a fresh check.
-    _verified_connections: set[tuple[str, str | None, bool | str]] = set()
+    _verified_connections: ClassVar[set[tuple[str, str | None, bool | str]]] = set()
 
     def __init__(self,
                  server_url: str | None = None,
@@ -67,7 +74,7 @@ class Api:
         if api_key is None:
             api_key = datamint.configs.get_value(datamint.configs.APIKEY_KEY)
             if api_key is None:
-                msg = f"API key not provided! Use the environment variable " + \
+                msg = "API key not provided! Use the environment variable " + \
                     f"{Api.DATAMINT_API_VENV_NAME} or pass it as an argument."
                 raise AuthenticationError(msg)
         self.config = ApiConfig(
@@ -121,7 +128,6 @@ class Api:
                 endpoint.close()
             except Exception as e:
                 _LOGGER.warning(f"Error closing endpoint {endpoint}: {e}")
-                pass
 
         # Close shared httpx clients owned by this Api
         for client in (self._client, self._highclient, self._mlclient):

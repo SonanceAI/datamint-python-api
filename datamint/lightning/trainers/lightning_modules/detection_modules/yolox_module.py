@@ -8,6 +8,7 @@ import torch
 from torch import Tensor
 
 from datamint.mlflow.flavors.task_type import TaskType
+
 from ..base import DatamintLightningModule
 
 _LOGGER = logging.getLogger(__name__)
@@ -212,6 +213,7 @@ class YOLOXModule(DatamintLightningModule):
         import numpy as np
         from albumentations.pytorch import ToTensorV2
         from yolox.utils import postprocess as yolox_postprocess
+
         from datamint.entities.annotations import BoxAnnotation
 
         self.eval()

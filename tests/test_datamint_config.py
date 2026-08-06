@@ -88,7 +88,6 @@ class TestDatamintConfig:
         initial_modules = set(sys.modules.keys())
 
         # Import the config module
-        from datamint.client_cmd_tools.datamint_config import main
 
         # Check new modules that were imported
         new_modules = set(sys.modules.keys()) - initial_modules
@@ -128,7 +127,6 @@ class TestDatamintConfig:
         import time
         
         start_time = time.time()
-        from datamint.client_cmd_tools.datamint_config import main
         end_time = time.time()
         
         startup_time = end_time - start_time
@@ -149,7 +147,6 @@ class TestDatamintConfig:
         mock_get.return_value = None
         
         # Test setting and getting a value
-        test_key = 'test_config_key'
         test_value = 'test_config_value'
         
         with patch('sys.argv', ['datamint-config', '--api-key', test_value]):
@@ -161,7 +158,7 @@ class TestDatamintConfig:
     def test_environment_variable_integration(self) -> None:
         """Test config integration with environment variables."""
         import os
-        from datamint import configs
+
         
         # Test environment variable fallback
         test_key = 'DATAMINT_TEST_VAR'

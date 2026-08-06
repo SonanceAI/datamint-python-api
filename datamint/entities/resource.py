@@ -1,31 +1,34 @@
 """Resource entity module for DataMint API."""
 
-from collections.abc import Sequence
-from abc import ABC, abstractmethod
-from datetime import datetime
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
-from typing_extensions import override
 import urllib.parse
 import urllib.request
 import webbrowser
+from abc import ABC, abstractmethod
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, overload
 
-from pydantic import PrivateAttr
+from medimgkit.nifti_utils import NIFTI_MIMES
+from pydantic import Field, PrivateAttr
+from typing_extensions import override
 
-from .base_entity import BaseEntity, MISSING_FIELD
-from .cache_manager import CacheManager
 from datamint.api.base_api import BaseApi
 from datamint.types import CacheMode
-from medimgkit.nifti_utils import NIFTI_MIMES
+
+from .base_entity import MISSING_FIELD, BaseEntity
+from .cache_manager import CacheManager
 
 if TYPE_CHECKING:
-    from datamint.api.endpoints.resources_api import ResourcesApi
-    from medimgkit import ViewPlane
-    from .annotations.annotation import Annotation
-    from .annotations import AnnotationType
-    from datamint.types import ImagingData
     import numpy as np
+    from medimgkit import ViewPlane
+
+    from datamint.api.endpoints.resources_api import ResourcesApi
+    from datamint.types import ImagingData
+
+    from .annotations import AnnotationType
+    from .annotations.annotation import Annotation
     from .sliced_resource import SlicedVolumeResource
     from .sliced_video_resource import SlicedVideoResource
 
@@ -114,7 +117,6 @@ class BaseResource(BaseEntity, ABC):
         Returns:
             File data (format depends on auto_convert and file type)
         """
-        pass
 
     @property
     def size_mb(self) -> float:
@@ -138,7 +140,7 @@ class BaseResource(BaseEntity, ABC):
         """Check if the resource is a single-frame image."""
         if not self.mimetype:
             return False
-        return self.mimetype.startswith('image/') and not self.mimetype == 'image/nifti'
+        return self.mimetype.startswith('image/') and self.mimetype != 'image/nifti'
 
     def is_dicom(self) -> bool:
         """Check if the resource is a DICOM file.
@@ -233,7 +235,7 @@ class Resource(BaseResource):
     published: bool
     deleted: bool
     upload_mechanism: str | None = None
-    metadata: dict[str, Any] = {}
+    metadata: dict[str, Any] = Field(default_factory=dict)
     source_filepath: str | None = None
     # projects: list[dict[str, Any]] | None = None
     published_on: str | None = None
@@ -326,13 +328,7 @@ class Resource(BaseResource):
             for prefix in cls.mimetype_prefixes
         ):
             return True
-        if filename_norm and any(
-            filename_norm.endswith(suffix.casefold())
-            for suffix in cls.filename_suffixes
-        ):
-            return True
-
-        return False
+        return bool(filename_norm and any(filename_norm.endswith(suffix.casefold()) for suffix in cls.filename_suffixes))
 
     @classmethod
     def _infer_specialized_resource_class(cls, **kwargs) -> type['Resource']:
@@ -750,7 +746,7 @@ class LocalResource(BaseResource):
             raw_data: Raw bytes of the file data
             convert_to_bytes: If True and local_filepath is provided, read file into raw_data
         """
-        from medimgkit.format_detection import guess_type, DEFAULT_MIME_TYPE
+        from medimgkit.format_detection import DEFAULT_MIME_TYPE, guess_type
         from medimgkit.modality_detector import detect_modality
 
         if raw_data is None and local_filepath is None:
@@ -920,7 +916,7 @@ class LocalResource(BaseResource):
 
         if auto_convert:
             try:
-                mimetype, ext = BaseApi._determine_mimetype(img_data, self.mimetype)
+                mimetype, _ext = BaseApi._determine_mimetype(img_data, self.mimetype)
                 img_data = BaseApi.convert_format(img_data,
                                                   mimetype=mimetype,
                                                   file_path=local_filepath)

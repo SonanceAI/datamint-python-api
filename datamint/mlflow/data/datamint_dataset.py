@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
-from collections.abc import Sequence
 import logging
+from collections.abc import Sequence
+from typing import Any
 
 from mlflow.data.dataset import Dataset
 from mlflow.data.dataset_source import DatasetSource
-from datamint.entities.resource import Resource
 
+from datamint.entities.resource import Resource
 
 _LOGGER = logging.getLogger(__name__)
 

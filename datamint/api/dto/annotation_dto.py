@@ -14,7 +14,8 @@ Classes:
     CreateAnnotationDto: Main DTO for creating annotation requests.
 """
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 from datamint.entities.annotations import AnnotationType
 
 if TYPE_CHECKING:
@@ -50,7 +51,7 @@ class CreateAnnotationDto:
         self.units = units
         self.model_id = model_id
         if model_id is not None:
-            if is_model == False:
+            if is_model is False:
                 raise ValueError("model_id==False while self.model_id is provided.")
             if not isinstance(model_id, str):
                 raise ValueError("model_id must be a string if provided.")

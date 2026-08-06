@@ -1,5 +1,5 @@
 from .modelcheckpoint import (
-    MLFlowModelCheckpoint,
-    MLFlowPyTorchModelCheckpoint,
-    MLFlowDatamintModelCheckpoint,
+    MLFlowDatamintModelCheckpoint as MLFlowDatamintModelCheckpoint,
+    MLFlowModelCheckpoint as MLFlowModelCheckpoint,
+    MLFlowPyTorchModelCheckpoint as MLFlowPyTorchModelCheckpoint,
 )
