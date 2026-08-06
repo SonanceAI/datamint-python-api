@@ -1,21 +1,27 @@
 """DataMint entities package."""
 
 from .annotations.annotation import Annotation
-from .base_entity import BaseEntity, BaseEntityModel
-from .channel import Channel, ChannelResourceData
-from .project import Project
-from .resource import Resource
-from .user import User  # new export
-from .datasetinfo import DatasetInfo
-from .cache_manager import CacheManager
-from .inferencejob import InferenceJob
 from .annotations.annotation_spec import AnnotationSpec
+from .base_entity import BaseEntity, BaseEntityModel
+from .cache_manager import CacheManager
+from .channel import Channel, ChannelResourceData
+from .datasetinfo import DatasetInfo
+from .inferencejob import InferenceJob
+from .project import Project
 from .project_resource_split import ProjectResourceSplit
-from .resource import LocalResource
-from .resources import DICOMResource, ImageResource, NiftiResource, VideoResource, VolumeResource
+from .resource import LocalResource, Resource
+from .resources import (
+    DICOMResource,
+    ImageResource,
+    NiftiResource,
+    VideoResource,
+    VolumeResource,
+)
+from .user import User  # new export
 
 __all__ = [
     'Annotation',
+    'AnnotationSpec',
     'BaseEntity',
     'BaseEntityModel',
     'CacheManager',
@@ -30,8 +36,7 @@ __all__ = [
     'Project',
     'ProjectResourceSplit',
     'Resource',
-    'VideoResource',
-    'VolumeResource',
     'User',
-    'AnnotationSpec'
+    'VideoResource',
+    'VolumeResource'
 ]

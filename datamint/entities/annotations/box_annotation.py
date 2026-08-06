@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pydicom
-from pydantic import field_validator
 from nibabel.nifti1 import Nifti1Image
+from pydantic import field_validator
 
 from .base_geometry import BaseGeometryAnnotation
 from .geometry import BoxGeometry, CoordinateSystem
@@ -37,7 +36,7 @@ class BoxAnnotation(BaseGeometryAnnotation):
         metadata: pydicom.Dataset | Nifti1Image | None = None,
         coords_system: CoordinateSystem = 'pixel',
         **kwargs: Any,
-    ) -> 'BoxAnnotation':
+    ) -> BoxAnnotation:
         geometry = BoxGeometry.from_coordinates(
             point1,
             point2,

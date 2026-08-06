@@ -2,18 +2,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Any
 
+import albumentations as A
 import lightning as L
-from torch import Tensor
 import torch
+from mlflow.entities import Metric
+from mlflow.pyfunc.model import PythonModelContext
+from mlflow.tracking import MlflowClient
+from torch import Tensor
 
 from datamint.mlflow.flavors.model import BaseDatamintModel, ModelSettings
-from mlflow.pyfunc.model import PythonModelContext
-import time
-from mlflow.entities import Metric
-from mlflow.tracking import MlflowClient
-import albumentations as A
 
 if TYPE_CHECKING:
     from datamint.mlflow.data import DatamintMLflowDataset
@@ -144,6 +144,7 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
             return
 
         import mlflow
+
         from datamint.mlflow.models import _get_MLFlowLogger
 
         logger = _get_MLFlowLogger(self.trainer)

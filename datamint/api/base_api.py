@@ -1,26 +1,28 @@
-import logging
-from typing import TYPE_CHECKING
-from collections.abc import Generator, AsyncGenerator
-import httpx
-from dataclasses import dataclass
-from datamint.exceptions import (
-    ItemNotFoundError,
-    AuthenticationError,
-    PermissionDeniedError,
-    ValidationError,
-    NetworkError,
-    ServerError,
-)
-import aiohttp
-import json
-from PIL import Image
-import cv2
-from io import BytesIO
-import gzip
-import contextlib
 import asyncio
-from datamint.utils.env import ensure_asyncio_loop
+import contextlib
+import gzip
+import json
+import logging
 import os
+from collections.abc import AsyncGenerator, Generator
+from dataclasses import dataclass
+from io import BytesIO
+from typing import TYPE_CHECKING
+
+import aiohttp
+import cv2
+import httpx
+from PIL import Image
+
+from datamint.exceptions import (
+    AuthenticationError,
+    ItemNotFoundError,
+    NetworkError,
+    PermissionDeniedError,
+    ServerError,
+    ValidationError,
+)
+from datamint.utils.env import ensure_asyncio_loop
 
 if TYPE_CHECKING:
     from datamint.api.client import Api
@@ -86,9 +88,10 @@ class BaseApi:
         self._pid = os.getpid()  # Track PID to detect DataLoader worker forks
         self.client = client or BaseApi._create_client(config)
         self.semaphore = asyncio.Semaphore(_ASYNC_REQUEST_LIMIT)
-        self._api_instance: 'Api | None' = None  # Injected by Api class
+        self._api_instance: Api | None = None  # Injected by Api class
         self._aiohttp_connector: aiohttp.TCPConnector | None = None
         self._aiohttp_session: aiohttp.ClientSession | None = None
+        self._pending_close_task: asyncio.Task | None = None
         ensure_asyncio_loop()
 
     @staticmethod
@@ -160,6 +163,7 @@ class BaseApi:
             Configured TCPConnector for aiohttp sessions.
         """
         import ssl
+
         import certifi
 
         limit = _ASYNC_REQUEST_LIMIT
@@ -215,10 +219,10 @@ class BaseApi:
             # If we're in an environment where the loop is running and not patched,
             # fall back to scheduling the close.
             try:
-                loop.create_task(self._aiohttp_session.close())
+                self._pending_close_task = loop.create_task(self._aiohttp_session.close())
+                self._pending_close_task.add_done_callback(lambda _: setattr(self, '_pending_close_task', None))
             except Exception as e:
                 logger.info(f"Unable to schedule aiohttp session close: {e}")
-                pass
         finally:
             self._aiohttp_session = None
             self._aiohttp_connector = None
@@ -305,6 +309,7 @@ class BaseApi:
             # Invalidate any inherited aiohttp session as well.
             self._aiohttp_session = None
             self._aiohttp_connector = None
+            self._pending_close_task = None
 
     def _make_request(self, method: str, endpoint: str, **kwargs) -> httpx.Response:
         """Make HTTP request with error handling and retries.
@@ -699,12 +704,12 @@ class BaseApi:
             >>> dicom = BaseApi.convert_format(dicom_bytes)
 
         """
-        import pydicom
         import nibabel as nib
+        import pydicom
         from medimgkit.format_detection import GZIP_MIME_TYPES
 
         if mimetype is None:
-            mimetype, ext = BaseApi._determine_mimetype(bytes_array)
+            mimetype, _ext = BaseApi._determine_mimetype(bytes_array)
             if mimetype is None:
                 raise ValueError("Could not determine mimetype from content.")
         content_io = BytesIO(bytes_array)
@@ -725,12 +730,12 @@ class BaseApi:
                 ndata = nib.Nifti1Image.from_stream(content_io)
                 ndata.get_fdata()  # force loading before IO is closed
                 return ndata
-            except Exception as e:
+            except Exception:
                 if file_path is not None:
                     ndata = nib.load(file_path)
                     ndata.get_fdata()  # force loading before IO is closed
                     return ndata
-                raise e
+                raise
         elif mimetype in GZIP_MIME_TYPES:
             # let's hope it's a .nii.gz
             with gzip.open(content_io, 'rb') as f:
@@ -754,7 +759,11 @@ class BaseApi:
         Returns:
             Tuple of (inferred_mimetype, file_extension)
         """
-        from medimgkit.format_detection import DEFAULT_MIME_TYPE, guess_typez, guess_extension
+        from medimgkit.format_detection import (
+            DEFAULT_MIME_TYPE,
+            guess_extension,
+            guess_typez,
+        )
         # Determine mimetype from file content
         mimetype_list, ext = guess_typez(content, use_magic=True)
         mimetype = mimetype_list[-1]

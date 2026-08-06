@@ -1,12 +1,14 @@
 """Tests for YOLOXTrainer."""
-import pytest
 from unittest.mock import MagicMock, patch
 
 import albumentations as A
+import pytest
 
-from datamint.lightning.trainers.specialized.yolox import YOLOXTrainer
 from datamint.dataset.image_dataset import ImageDataset
-from datamint.lightning.trainers.lightning_modules.detection_modules.yolox_module import YOLOXModule
+from datamint.lightning.trainers.lightning_modules.detection_modules.yolox_module import (
+    YOLOXModule,
+)
+from datamint.lightning.trainers.specialized.yolox import YOLOXTrainer
 
 
 @pytest.fixture()

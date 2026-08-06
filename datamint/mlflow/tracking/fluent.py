@@ -1,11 +1,12 @@
-from typing import TYPE_CHECKING
-import threading
 import logging
+import os
+import threading
+from typing import TYPE_CHECKING
+
 from datamint import Api
 from datamint.exceptions import ItemNotFoundError
-import os
-from datamint.mlflow.env_vars import EnvVars
 from datamint.mlflow.env_utils import ensure_mlflow_configured
+from datamint.mlflow.env_vars import EnvVars
 
 if TYPE_CHECKING:
     from datamint.entities.project import Project

@@ -1,7 +1,8 @@
 """EfficientNetV2 image classification trainer."""
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
 from typing_extensions import override
 
 from ..classification_trainer import ImageClassificationTrainer
@@ -39,7 +40,7 @@ class EfficientNetV2Trainer(ImageClassificationTrainer):
         super().__init__(architecture=architecture, image_size=image_size, **kwargs)
 
     @override
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 

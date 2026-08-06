@@ -7,9 +7,10 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from mlflow.models import ModelSignature
-    from datamint.mlflow.flavors.model import BaseDatamintModel
+
     from datamint.dataset.base import DatamintBaseDataset
     from datamint.entities.resource import BaseResource
+    from datamint.mlflow.flavors.model import BaseDatamintModel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def _check_inference(
                                               f'got: {", ".join(sorted(wrong))}', 'error'))
             else:
                 issues.append(ValidationIssue('task_type_consistency', True,
-                                              f'annotation types consistent with task_type'))
+                                              'annotation types consistent with task_type'))
 
     return issues, signature
 

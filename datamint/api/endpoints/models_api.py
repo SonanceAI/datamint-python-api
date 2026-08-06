@@ -7,6 +7,7 @@ import mlflow.exceptions
 import mlflow.tracking
 
 from datamint.exceptions import ItemNotFoundError
+
 from ..entity_base_api import ApiConfig, BaseApi
 from .deploy_model_api import DeployModelApi
 from .model_types import Model, ModelVersion
@@ -32,7 +33,6 @@ class ModelsApi(BaseApi):
 
     @property
     def _mlflow_client(self) -> mlflow.tracking.MlflowClient:
-        import datamint.mlflow 
         return mlflow.tracking.MlflowClient()
 
     def get_list(self,
@@ -178,7 +178,11 @@ class ModelsApi(BaseApi):
        
         from datamint.mlflow.flavors import datamint_flavor
         from datamint.mlflow.flavors.datamint_flavor import FLAVOR_NAME
-        from datamint.mlflow.tracking.fluent import _reset_active_project, get_active_project_id, set_project
+        from datamint.mlflow.tracking.fluent import (
+            _reset_active_project,
+            get_active_project_id,
+            set_project,
+        )
 
         source_version = self._resolve_version(model, version, alias)
 

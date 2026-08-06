@@ -1,7 +1,7 @@
 """YOLOXTrainer — one-liner detection trainer backed by YOLOX."""
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import lightning as L
 from torch import nn
@@ -11,9 +11,12 @@ from ..lightning_modules.detection_modules import YOLOXModule
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+
     from datamint.dataset.base import DatamintBaseDataset
     from datamint.entities import Project
-    from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
+    from datamint.lightning.trainers.lightning_modules.base import (
+        DatamintLightningModule,
+    )
 
 
 class YOLOXTrainer(DetectionTrainer):
@@ -58,8 +61,8 @@ class YOLOXTrainer(DetectionTrainer):
 
     def __init__(
         self,
-        dataset: 'DatamintBaseDataset | None' = None,
-        project: 'str | Project | None' = None,
+        dataset: DatamintBaseDataset | None = None,
+        project: str | Project | None = None,
         *,
         model_size: str = 's',
         conf_thre: float = 0.25,
@@ -69,8 +72,8 @@ class YOLOXTrainer(DetectionTrainer):
         loss_fn: nn.Module | None = None,
         batch_size: int = 8,
         num_workers: int = 4,
-        train_transform: 'BaseCompose | None' = None,
-        eval_transform: 'BaseCompose | None' = None,
+        train_transform: BaseCompose | None = None,
+        eval_transform: BaseCompose | None = None,
         split_as_of_timestamp: str | None = None,
         max_epochs: int = 50,
         early_stopping_patience: int | None = 10,
@@ -124,7 +127,7 @@ class YOLOXTrainer(DetectionTrainer):
     # Transforms
     # ------------------------------------------------------------------
 
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -143,7 +146,7 @@ class YOLOXTrainer(DetectionTrainer):
             ToTensorV2(),
         ], bbox_params=bbox_params)
 
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -168,7 +171,7 @@ class YOLOXTrainer(DetectionTrainer):
         self,
         loss_fn: nn.Module | None,
         metrics: dict,
-    ) -> 'DatamintLightningModule':
+    ) -> DatamintLightningModule:
         num_classes = len(self.dataset.box_class_map)
         if num_classes == 0:
             raise ValueError(

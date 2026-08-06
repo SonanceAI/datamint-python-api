@@ -1,16 +1,16 @@
-from rich.theme import Theme
-from logging import Logger, DEBUG, INFO, WARNING, ERROR, CRITICAL
-from rich.console import Console
-import platform
-import os
+import datetime
+import importlib
 import logging
 import logging.config
-from rich.console import ConsoleRenderable
-from rich.logging import RichHandler
-from rich.traceback import Traceback
+import os
+import platform
+from logging import CRITICAL, DEBUG, ERROR, INFO, WARNING
+
 import yaml
-import importlib
-import datetime
+from rich.console import Console, ConsoleRenderable
+from rich.logging import RichHandler
+from rich.theme import Theme
+from rich.traceback import Traceback
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def load_cmdline_logging_config():
             # try loading the developer's logging config
             with open('logging_dev.yaml', 'r') as f:
                 config = yaml.safe_load(f)
-        except:
+        except Exception:
             with importlib.resources.open_text('datamint', 'logging.yaml') as f:
                 config = yaml.safe_load(f.read())
 

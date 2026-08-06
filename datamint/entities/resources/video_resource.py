@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, ClassVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from ..resource import Resource
 
@@ -64,5 +64,5 @@ class VideoResource(Resource):
 
         return frame_count
 
-    def iter_frames(self) -> list['SlicedVideoResource']:
+    def iter_frames(self) -> list[SlicedVideoResource]:
         return super().iter_frames()

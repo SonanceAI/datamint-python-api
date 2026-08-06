@@ -1,13 +1,10 @@
 """
 Test module for upload functionality validation.
 """
-import pytest
-import tempfile
-import os
-import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
 import logging
+import os
+import tempfile
+from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
 

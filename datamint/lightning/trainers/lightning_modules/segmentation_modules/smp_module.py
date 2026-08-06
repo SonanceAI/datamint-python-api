@@ -1,8 +1,6 @@
 """Base segmentation module for ``segmentation_models_pytorch`` architectures."""
 from __future__ import annotations
 
-from typing import Any
-
 from ..segmentation_module import SegmentationModule
 
 
@@ -14,4 +12,3 @@ class SMPSegmentationModule(SegmentationModule):
     concrete SMP model.
 
     """
-    pass

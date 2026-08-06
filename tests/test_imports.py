@@ -2,8 +2,9 @@
 Test module to verify that all important datamint modules can be imported successfully.
 This helps catch import issues early and ensures the package structure is correct.
 """
-import pytest
 import logging
+
+import pytest
 
 # Set up logging to capture any import warnings
 logging.basicConfig(level=logging.WARNING)

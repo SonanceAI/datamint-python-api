@@ -2,21 +2,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from functools import partial
+from typing import TYPE_CHECKING, Any
 
 import lightning as L
 from torch import nn
 
 from datamint.dataset import ImageDataset
-from functools import partial
-
 from datamint.entities.annotations.annotation_spec import CategoryAnnotationSpec
 from datamint.entities.annotations.types import AnnotationType
-from .lightning_modules import ClassificationModule
+
 from .base_trainer import BaseTrainer
+from .lightning_modules import ClassificationModule
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+
     from datamint.entities import Project
 
 
@@ -107,13 +108,13 @@ class ImageClassificationTrainer(ClassificationTrainer):
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset:
-        default_params = dict(
-            return_segmentations=False,
-            include_unannotated=False,
-            image_categories_merge_strategy='mode',
-            allow_external_annotations=True,
-        )
+    def _build_dataset(self, project: str | Project, **kwargs: Any) -> ImageDataset:
+        default_params = {
+            'return_segmentations': False,
+            'include_unannotated': False,
+            'image_categories_merge_strategy': 'mode',
+            'allow_external_annotations': True,
+        }
         dataset_params = {**default_params, **kwargs}
         return ImageDataset(
             project=project,
@@ -142,7 +143,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
             return A.NoOp()
         return A.Resize(*self.image_size)
 
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -155,7 +156,7 @@ class ImageClassificationTrainer(ClassificationTrainer):
             ToTensorV2(),
         ])
 
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 

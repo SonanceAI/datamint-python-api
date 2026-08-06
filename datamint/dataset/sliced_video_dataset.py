@@ -5,20 +5,22 @@ Provides a way to iterate over individual 2D frames from video data,
 enabling training of 2D models on temporal medical imaging data.
 """
 from __future__ import annotations
+
 import hashlib
 import logging
-from typing import Any, TYPE_CHECKING
-from typing_extensions import override
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
+import albumentations
 import numpy as np
 import torch
 from torch import Tensor
-import albumentations
+from typing_extensions import override
 
-from .base import DatamintBaseDataset
-from .annotation_processor import AnnotationProcessor
 from datamint.entities.cache_manager import CacheManager
+
+from .annotation_processor import AnnotationProcessor
+from .base import DatamintBaseDataset
 
 if TYPE_CHECKING:
     from datamint.entities import Annotation
@@ -145,9 +147,9 @@ class SlicedVideoDataset(DatamintBaseDataset):
     def _expand_resources(
         self,
         resources: Sequence,
-        resource_annotations: Sequence[Sequence['Annotation']],
+        resource_annotations: Sequence[Sequence[Annotation]],
         frame_cache: CacheManager,
-    ) -> tuple[list['SlicedVideoResource'], list[Sequence['Annotation']]]:
+    ) -> tuple[list[SlicedVideoResource], list[Sequence[Annotation]]]:
         """Expand video resources into per-frame proxy resources.
 
         Args:
@@ -173,8 +175,8 @@ class SlicedVideoDataset(DatamintBaseDataset):
 
     def _load_frame_segmentations(
         self,
-        annotations: Sequence['Annotation'],
-        resource: 'SlicedVideoResource',
+        annotations: Sequence[Annotation],
+        resource: SlicedVideoResource,
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, list]]:
         """Load segmentations for a specific video frame, with caching.
 
@@ -195,9 +197,9 @@ class SlicedVideoDataset(DatamintBaseDataset):
         image_seg_anns = [a for a in seg_anns if a.scope == 'image']
         frame_seg_anns = [a for a in seg_anns if a.scope == 'frame']
 
-        uniq_authors = set(
+        uniq_authors = {
             self.annotation_processor.get_author(a) for a in seg_anns
-        )
+        }
         segmentations: dict[str, list[np.ndarray]] = {a: [] for a in uniq_authors}
         seg_labels: dict[str, list[int]] = {a: [] for a in uniq_authors}
         seg_metainfos: dict[str, list] = {a: [] for a in uniq_authors}
@@ -241,8 +243,8 @@ class SlicedVideoDataset(DatamintBaseDataset):
 
     def _fetch_frame_seg_annotation(
         self,
-        ann: 'Annotation',
-        resource: 'SlicedVideoResource',
+        ann: Annotation,
+        resource: SlicedVideoResource,
     ) -> np.ndarray:
         """Load an image-scoped segmentation and extract the frame, with caching.
 
@@ -275,8 +277,8 @@ class SlicedVideoDataset(DatamintBaseDataset):
 
     def _fetch_frame_seg_group(
         self,
-        fr_anns: list['Annotation'],
-        resource: 'SlicedVideoResource',
+        fr_anns: list[Annotation],
+        resource: SlicedVideoResource,
     ) -> np.ndarray | None:
         """Collate frame-level segmentation annotations and extract the frame.
 

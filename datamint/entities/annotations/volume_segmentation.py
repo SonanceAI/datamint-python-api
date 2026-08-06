@@ -4,11 +4,13 @@ This module defines the VolumeSegmentation class for representing 3D segmentatio
 annotations in medical imaging volumes.
 """
 
-from .base_segmentation import BaseSegmentationAnnotation
-from .types import AnnotationType
+import logging
+
 import numpy as np
 from nibabel.nifti1 import Nifti1Image
-import logging
+
+from .base_segmentation import BaseSegmentationAnnotation
+from .types import AnnotationType
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,9 +94,8 @@ class VolumeSegmentation(BaseSegmentationAnnotation):
             ...     class_map={1: 'tumor'}, # or just ``class_map='tumor'``
             ... )
         """
-        if not kwargs.get('identifier'):
-            if isinstance(class_map, str):
-                kwargs['identifier'] = class_map
+        if not kwargs.get('identifier') and isinstance(class_map, str):
+            kwargs['identifier'] = class_map
 
         # Step 1: Convert Nifti1Image to numpy if needed
         if isinstance(segmentation, Nifti1Image):

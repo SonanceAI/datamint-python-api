@@ -1,19 +1,21 @@
 """LightningModule wrapper for image classification tasks."""
 from __future__ import annotations
 
-from collections.abc import Callable
 import inspect
-from typing import Any
 import warnings
+from collections.abc import Callable
+from typing import Any
 
 import albumentations as A
+import numpy as np
 import torch
+from albumentations.pytorch import ToTensorV2
 from torch import Tensor, nn
 from torchmetrics import MetricCollection
-import numpy as np
-from albumentations.pytorch import ToTensorV2
+
 from datamint.entities.annotations import ImageClassification
 from datamint.mlflow.flavors.task_type import TaskType
+
 from .base import DatamintLightningModule
 
 

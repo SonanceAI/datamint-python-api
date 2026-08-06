@@ -16,7 +16,7 @@ class ChainedSequence(Sequence[T]):
     methods like __iter__, __contains__, __reversed__, count(), and index().
     """
 
-    __slots__ = ('_sequences', '_cumulative_lengths')
+    __slots__ = ('_cumulative_lengths', '_sequences')
 
     def __init__(self, *sequences: Sequence[T]) -> None:
         self._sequences = sequences

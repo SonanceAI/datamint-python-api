@@ -2,13 +2,18 @@
 Testing the DatamintToNNUNetExporter class to ensure it correctly writes dataset.json, preserves voxel spacing, merges segmentations, and creates the expected directory structure for nnUNet.
 """
 import pytest
+
 pytest.importorskip("nnunetv2", minversion="2.4")
 import json
-import numpy as np
-import nibabel as nib
-import pytest
 from unittest.mock import MagicMock
-from datamint.lightning.trainers.specialized.nnunet.data_export import DatamintToNNUNetExporter
+
+import nibabel as nib
+import numpy as np
+import pytest
+
+from datamint.lightning.trainers.specialized.nnunet.data_export import (
+    DatamintToNNUNetExporter,
+)
 
 
 def _make_nifti(shape=(64, 64, 32), zooms=(1.5, 1.5, 2.0)) -> nib.Nifti1Image:
@@ -63,11 +68,15 @@ def test_export_image_preserves_voxel_spacing(tmp_path):
 
 def test_merge_segmentations_highest_class_wins(tmp_path):
     shape = (32, 32, 16)
-    liver = np.zeros(shape, dtype=np.int32); liver[5:15, 5:15, 2:8] = 1
-    tumor = np.zeros(shape, dtype=np.int32); tumor[10:20, 10:20, 4:10] = 2
+    liver = np.zeros(shape, dtype=np.int32)
+    liver[5:15, 5:15, 2:8] = 1
+    tumor = np.zeros(shape, dtype=np.int32)
+    tumor[10:20, 10:20, 4:10] = 2
 
-    liver_seg = MagicMock(); liver_seg.fetch_file_data.return_value = liver
-    tumor_seg = MagicMock(); tumor_seg.fetch_file_data.return_value = tumor
+    liver_seg = MagicMock()
+    liver_seg.fetch_file_data.return_value = liver
+    tumor_seg = MagicMock()
+    tumor_seg.fetch_file_data.return_value = tumor
 
     exp = DatamintToNNUNetExporter(tmp_path, dataset_id=1, dataset_name='CTLiver')
     merged = exp._merge_segmentations([liver_seg, tumor_seg])
@@ -78,8 +87,10 @@ def test_merge_segmentations_highest_class_wins(tmp_path):
 
 def test_merge_segmentations_warns_on_overlap(tmp_path):
     shape = (32, 32, 16)
-    seg1 = MagicMock(); seg1.fetch_file_data.return_value = np.ones(shape, dtype=np.int32)
-    seg2 = MagicMock(); seg2.fetch_file_data.return_value = np.ones(shape, dtype=np.int32) * 2
+    seg1 = MagicMock()
+    seg1.fetch_file_data.return_value = np.ones(shape, dtype=np.int32)
+    seg2 = MagicMock()
+    seg2.fetch_file_data.return_value = np.ones(shape, dtype=np.int32) * 2
 
     exp = DatamintToNNUNetExporter(tmp_path, dataset_id=1, dataset_name='CTLiver')
     with pytest.warns(UserWarning, match='overlap'):

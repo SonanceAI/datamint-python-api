@@ -3,14 +3,20 @@ Test nnU-Net prediction pipeline using NNUNetInferenceModel. This includes loadi
 We also check that temporary directories are cleaned up after prediction.
 """
 import pytest
+
 pytest.importorskip("nnunetv2", minversion="2.4")
 
 import sys
-import numpy as np
-import nibabel as nib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datamint.lightning.trainers.specialized.nnunet.inference_model import NNUNetInferenceModel
+
+import nibabel as nib
+import numpy as np
+
+from datamint.lightning.trainers.specialized.nnunet.inference_model import (
+    NNUNetInferenceModel,
+)
+
 
 # Fake nnunetv2 submodules so patch() can resolve them
 def _mock_nnunetv2():

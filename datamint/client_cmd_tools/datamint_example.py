@@ -24,9 +24,9 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
     When ``subparsers`` is given, the parser is registered as an ``example`` subparser
     (used by ``datamint``'s combined completion tree) instead of a standalone parser.
     """
-    kwargs = dict(
-        description='Populate a Datamint project with an example dataset.',
-        epilog="""
+    kwargs = {
+        'description': 'Populate a Datamint project with an example dataset.',
+        'epilog': """
 Examples:
   datamint example bccd                         # Blood cell detection (BCCD)
   datamint example busi --project MyBusiProject  # Breast ultrasound segmentation (BUSI)
@@ -35,8 +35,8 @@ Examples:
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+        'formatter_class': argparse.RawDescriptionHelpFormatter,
+    }
     if subparsers is not None:
         parser = subparsers.add_parser('example', **kwargs)
     else:

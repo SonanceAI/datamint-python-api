@@ -1,12 +1,11 @@
 import logging
 import sys
-from html import escape
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from datamint._repr_utils import render_html_card, render_text_block
 from datamint.types import CacheMode
-from datamint._repr_utils import render_text_block, render_html_card
 
 if TYPE_CHECKING:
     from datamint.api.entity_base_api import EntityBaseApi
@@ -74,8 +73,8 @@ class BaseEntityModel(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        for field_name in self.__pydantic_fields__.keys():
-            if hasattr(self, field_name) and type(getattr(self, field_name)) == str and getattr(self, field_name) == MISSING_FIELD:
+        for field_name in self.__pydantic_fields__:
+            if hasattr(self, field_name) and isinstance(getattr(self, field_name), str) and getattr(self, field_name) == MISSING_FIELD:
                 delattr(self, field_name)
 
     def asdict(self) -> dict[str, Any]:
@@ -93,7 +92,7 @@ class BaseEntityModel(BaseModel):
             class_name = self.__class__.__name__
 
             have_to_log = False
-            for key in self.__pydantic_extra__.keys():
+            for key in self.__pydantic_extra__:
                 warning_key = (class_name, key)
 
                 if warning_key not in _LOGGED_WARNINGS:
@@ -105,7 +104,7 @@ class BaseEntityModel(BaseModel):
 
     def is_attr_missing(self, attr_name: str) -> bool:
         """Check if a value is the MISSING_FIELD sentinel."""
-        if attr_name not in self.__pydantic_fields__.keys():
+        if attr_name not in self.__pydantic_fields__:
             raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
         if not hasattr(self, attr_name):
             return True
@@ -117,7 +116,7 @@ class BaseEntityModel(BaseModel):
         Returns:
             True if any attribute is MISSING_FIELD, False otherwise
         """
-        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__.keys())
+        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__)
 
 
 class BaseEntity(BaseEntityModel):
@@ -166,7 +165,7 @@ class BaseEntity(BaseEntityModel):
         Args:
             attr_name: Name of the attribute to check and ensure
         """
-        if attr_name not in self.__pydantic_fields__.keys():
+        if attr_name not in self.__pydantic_fields__:
             raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
 
         if self.is_attr_missing(attr_name):

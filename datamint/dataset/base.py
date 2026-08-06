@@ -6,26 +6,32 @@ filtering, while delegating data management to DatamintProjectManager.
 """
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator, Sequence
 from datetime import datetime, timezone
-from typing import Any, TYPE_CHECKING, Literal, cast
-from collections.abc import Sequence, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+import numpy as np
 import torch
 from torch import Tensor
-from torch.utils.data import DataLoader, ConcatDataset
-import numpy as np
-from datamint.entities.annotation_worklist import AnnotationWorklist
-from datamint.exceptions import DatamintException, ItemNotFoundError
-from datamint._repr_utils import render_text_block, render_html_card
-from .annotation_processor import AnnotationProcessor, MergeStrategy
-from datamint.entities.annotations.annotation_spec import AnnotationSpec, CategoryAnnotationSpec
-from datamint.entities.annotations import AnnotationType
+from torch.utils.data import ConcatDataset, DataLoader
 
+from datamint._repr_utils import render_html_card, render_text_block
+from datamint.entities.annotation_worklist import AnnotationWorklist
+from datamint.entities.annotations import AnnotationType
+from datamint.entities.annotations.annotation_spec import (
+    AnnotationSpec,
+    CategoryAnnotationSpec,
+)
+from datamint.exceptions import DatamintException, ItemNotFoundError
+
+from .annotation_processor import AnnotationProcessor, MergeStrategy
 
 if TYPE_CHECKING:
-    from datamint.entities import Resource, Project, Annotation
     from albumentations import BaseCompose
+
+    from datamint.entities import Annotation, Project, Resource
     from datamint.mlflow.data import DatamintMLflowDataset
+
     from .split_result import SplitResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +39,6 @@ _LOGGER = logging.getLogger(__name__)
 
 class DatamintDatasetException(DatamintException):
     """Exception raised for dataset errors."""
-    pass
 
 
 class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
@@ -663,8 +668,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Scans resource annotations for identifiers not present in the project's
         annotations_specs and adds them to the corresponding label/segmentation mappings.
         """
-        inferred_frame_lsets, inferred_frame_lcodes = self._infer_labels_set(framed=True)
-        inferred_image_lsets, inferred_image_lcodes = self._infer_labels_set(framed=False)
+        inferred_frame_lsets, _inferred_frame_lcodes = self._infer_labels_set(framed=True)
+        inferred_image_lsets, _inferred_image_lcodes = self._infer_labels_set(framed=False)
         inferred_seglabel_list, _ = self._infer_segmentation_group()
 
         # Augment frame labels
@@ -722,7 +727,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         - 'metainfo': dict
         - 'annotations': list[Annotation]
         """
-        pass
 
     def get_resource(self, index: int) -> 'Resource':
         """Get the Resource object for a given index."""
@@ -760,12 +764,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 return self._should_include_image_label(ann.identifier)
             else:  # frame-level
                 return self._should_include_frame_label(ann.identifier)
-        elif ann.is_category():
-            if not self.allow_external_annotations:
-                lsets = self.image_lsets if ann.frame_index is None else self.frame_lsets
-                valid_identifiers = {ident for ident, _ in lsets.get('multiclass', [])}
-                if ann.identifier not in valid_identifiers:
-                    return False
+        elif ann.is_category() and not self.allow_external_annotations:
+            lsets = self.image_lsets if ann.frame_index is None else self.frame_lsets
+            valid_identifiers = {ident for ident, _ in lsets.get('multiclass', [])}
+            if ann.identifier not in valid_identifiers:
+                return False
 
         return True
 
@@ -1123,7 +1126,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         Returns:
             Dict with ``'image'`` key plus the same target keys, all transformed.
         """
-        pass
 
     def __len__(self) -> int:
         """Dataset length."""
@@ -1482,11 +1484,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             
             if pid is None:
                 if none_patient_id_strategy == 'error':
-                    raise ValueError((
+                    raise ValueError(
                         f"Resource at index {idx} (id={getattr(resource, 'id', '?')!r}) has no patient_id."
                         "Set none_patient_id_strategy='individual' to treat each as its own patient, "
                         "'group' to group all together, or 'skip' to exclude them."
-                    ))
+                    )
                 elif none_patient_id_strategy == 'skip':
                     continue
                 elif none_patient_id_strategy == 'individual':
@@ -1550,7 +1552,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         patient_indices = self._group_resources_indices_by_patient(none_patient_id_strategy)
         patients_ids = list(patient_indices.keys())
         
-        import random 
+        import random
         rng = random.Random(seed)
         rng.shuffle(patients_ids)
         

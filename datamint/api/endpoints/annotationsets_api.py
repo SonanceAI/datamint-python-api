@@ -1,8 +1,11 @@
-from ..entity_base_api import CreatableEntityApi, UpdatableEntityApi
-from typing import TYPE_CHECKING, Any, Literal, overload
-from datamint.entities.annotation_worklist import AnnotationWorklist
-from typing_extensions import override
 import logging
+from typing import TYPE_CHECKING, Any, Literal, overload
+
+from typing_extensions import override
+
+from datamint.entities.annotation_worklist import AnnotationWorklist
+
+from ..entity_base_api import CreatableEntityApi, UpdatableEntityApi
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -367,11 +370,11 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                 for i, img in enumerate(images):
                     if hasattr(img, 'read'):
                         filename = getattr(img, 'name', f'image_{i}')
-                        files[f'images'] = (filename, img)
+                        files['images'] = (filename, img)
                     else:
                         f = open(img, 'rb')
                         opened_files.append(f)
-                        files[f'images'] = (img, f)
+                        files['images'] = (img, f)
                 return self._make_entity_request('POST', worklist_id,
                                                  f'resources/{resource_id_str}/segmentations',
                                                  files=files, data={'payload': payload}).json()

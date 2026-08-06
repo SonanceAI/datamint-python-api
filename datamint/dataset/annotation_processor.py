@@ -10,16 +10,15 @@ The class hierarchy ensures that the base class contains only generic logic that
 for any dataset type, while specialized logic is in subclasses.
 """
 import logging
-from typing import Literal, TYPE_CHECKING
-from collections.abc import Iterable, Sequence
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import torch
+from medimgkit.readers import read_array_normalized
 from torch import Tensor
 from typing_extensions import overload
-
-from medimgkit.readers import read_array_normalized
 
 if TYPE_CHECKING:
     from datamint.entities.annotations.annotation import Annotation
@@ -266,7 +265,7 @@ class AnnotationProcessor:
         """
 
         seg_annotations = [ann for ann in annotations if ann.annotation_type == 'segmentation']
-        uniq_authors = set(ann.created_by or ann.created_by_model or "unknown" for ann in seg_annotations)
+        uniq_authors = {ann.created_by or ann.created_by_model or "unknown" for ann in seg_annotations}
         segmentations: dict[str, list[np.ndarray]] = {a: []
                                                       for a in uniq_authors}  # tensors of shape (D, H, W)
         seg_labels: dict[str, list[int]] = {a: [] for a in uniq_authors}  # list of size=#num_instances
@@ -337,21 +336,21 @@ class AnnotationProcessor:
 
     def _merge_union(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Union merge: pixel is labeled if ANY annotator labeled it."""
-        new_segmentations = torch.zeros_like(list(segmentations.values())[0])
+        new_segmentations = torch.zeros_like(next(iter(segmentations.values())))
         for seg in segmentations.values():
             new_segmentations += seg
         return new_segmentations.bool().to(torch.uint8)
 
     def _merge_intersection(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Intersection merge: pixel is labeled if ALL annotators labeled it."""
-        new_segmentations = torch.ones_like(list(segmentations.values())[0])
+        new_segmentations = torch.ones_like(next(iter(segmentations.values())))
         for seg in segmentations.values():
             new_segmentations *= seg
         return new_segmentations.bool().to(torch.uint8)
 
     def _merge_mode(self, segmentations: dict[str, Tensor]) -> Tensor:
         """Mode merge: pixel is labeled if majority of annotators labeled it."""
-        new_segmentations = torch.zeros_like(list(segmentations.values())[0])
+        new_segmentations = torch.zeros_like(next(iter(segmentations.values())))
         for seg in segmentations.values():
             new_segmentations += seg
         new_segmentations = new_segmentations >= len(segmentations) / 2

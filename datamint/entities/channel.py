@@ -1,5 +1,6 @@
-from pydantic import ConfigDict, BaseModel
-from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
 from datamint.entities.base_entity import BaseEntity
 
 

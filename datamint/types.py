@@ -1,10 +1,10 @@
-from typing import Literal, TypeAlias, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Literal, TypeAlias, Union
 
 if TYPE_CHECKING:
-    import pydicom.dataset
-    from PIL import Image
     import cv2
+    import pydicom.dataset
     from nibabel.filebasedimages import FileBasedImage as nib_FileBasedImage
+    from PIL import Image
 
 # Type alias for imaging formats
 ImagingData: TypeAlias = (

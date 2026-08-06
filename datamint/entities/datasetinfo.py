@@ -1,15 +1,13 @@
 """Dataset entity module for DataMint API."""
 
 import logging
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING
+
 from pydantic import PrivateAttr
 
-from .base_entity import BaseEntity, MISSING_FIELD
+from .base_entity import BaseEntity
 
 if TYPE_CHECKING:
-    from datamint.api.client import Api
-    from .resource import Resource
-    from .project import Project
     from datamint.api.endpoints.datasetsinfo_api import DatasetsInfoApi
 
 logger = logging.getLogger(__name__)

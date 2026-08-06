@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import ClassVar, TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from ..resource import Resource
 
 if TYPE_CHECKING:
-    from medimgkit import ViewPlane
     import numpy as np
+    from medimgkit import ViewPlane
+
     from ..sliced_resource import SlicedVolumeResource
 
 
@@ -27,11 +28,11 @@ class VolumeResource(Resource):
             raise ValueError(f"Cannot determine frame count for volume resource {self.filename!r}")
         return frame_count
 
-    def get_slice_resource(self, axis: 'ViewPlane', index: int) -> 'SlicedVolumeResource':
+    def get_slice_resource(self, axis: ViewPlane, index: int) -> SlicedVolumeResource:
         return super().get_slice_resource(axis, index)
 
-    def get_slice(self, axis: 'ViewPlane', index: int) -> 'np.ndarray':
+    def get_slice(self, axis: ViewPlane, index: int) -> np.ndarray:
         return super().get_slice(axis, index)
 
-    def iter_slices(self, axis: 'ViewPlane') -> list['SlicedVolumeResource']:
+    def iter_slices(self, axis: ViewPlane) -> list[SlicedVolumeResource]:
         return super().iter_slices(axis)

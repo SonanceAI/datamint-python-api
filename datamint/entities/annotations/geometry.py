@@ -1,11 +1,13 @@
 from __future__ import annotations
-from typing import Any, ClassVar, Literal, TypeAlias
+
 import logging
-from nibabel.nifti1 import Nifti1Image
+from typing import Any, ClassVar, Literal, TypeAlias
+
 import numpy as np
-from medimgkit.dicom_utils import get_slice_orientation
 import pydicom
 from medimgkit import ViewPlane, dicom_utils, nifti_utils
+from medimgkit.dicom_utils import get_slice_orientation
+from nibabel.nifti1 import Nifti1Image
 from pydantic import BaseModel, ConfigDict, field_validator
 
 CoordinateSystem: TypeAlias = Literal['pixel', 'patient']
@@ -137,7 +139,7 @@ class _TwoPointGeometry(Geometry):
         slice_plane: ViewPlane | None = None,
         frame_index: int | None = None,
         metadata: pydicom.Dataset | Nifti1Image | None = None,
-    ) -> '_TwoPointGeometry':
+    ) -> _TwoPointGeometry:
         if coords_system == 'pixel':
             return cls._from_pixel_coordinates(
                 point1,
@@ -236,7 +238,7 @@ class _TwoPointGeometry(Geometry):
         frame_index: int | None = None,
         slice_plane: ViewPlane | None = None,
         metadata: pydicom.Dataset | Nifti1Image | None = None,
-    ) -> '_TwoPointGeometry':
+    ) -> _TwoPointGeometry:
         point1 = _normalize_point(point1)
         point2 = _normalize_point(point2)
 
@@ -308,7 +310,7 @@ class BoxGeometry(Geometry):
         slice_plane: ViewPlane | None = None,
         frame_index: int | None = None,
         metadata: pydicom.Dataset | Nifti1Image | None = None,
-    ) -> 'BoxGeometry':
+    ) -> BoxGeometry:
         if coords_system == 'pixel':
             return cls._from_pixel_coordinates(
                 point1,
@@ -392,7 +394,7 @@ class BoxGeometry(Geometry):
         frame_index: int | None = None,
         slice_plane: ViewPlane | None = None,
         metadata: pydicom.Dataset | Nifti1Image | None = None,
-    ) -> 'BoxGeometry':
+    ) -> BoxGeometry:
         normalized_point1 = _normalize_point(point1)
         normalized_point2 = _normalize_point(point2)
 

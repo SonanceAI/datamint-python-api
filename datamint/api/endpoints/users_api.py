@@ -1,8 +1,10 @@
-from typing import Literal, TYPE_CHECKING, cast, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 
-from ..entity_base_api import CreatableEntityApi, ApiConfig
-from datamint.entities import User
 import httpx
+
+from datamint.entities import User
+
+from ..entity_base_api import ApiConfig, CreatableEntityApi
 
 if TYPE_CHECKING:
     from datamint.entities import Project
@@ -70,13 +72,13 @@ class UsersApi(CreatableEntityApi[User]):
             The created user entity or identifier, depending on
             ``return_entity``. The identifier is the user's email address.
         """
-        data = dict(
-            email=email,
-            password=password,
-            firstname=firstname,
-            lastname=lastname,
-            roles=roles
-        )
+        data = {
+            'email': email,
+            'password': password,
+            'firstname': firstname,
+            'lastname': lastname,
+            'roles': roles
+        }
         return cast(str | User | None, self._create(data, return_entity=return_entity, exists_ok=exists_ok))
 
     def get_by_id(self, entity_id: str) -> User:

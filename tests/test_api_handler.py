@@ -1,14 +1,16 @@
-import pytest
+from typing import IO
 from unittest.mock import patch
+
+import httpx
+import numpy as np
+import pydicom
+import pytest
+import respx
+from aiohttp import FormData
+from pydicom.data import get_testdata_files
+
 from datamint.api.client import Api
 from datamint.exceptions import DatamintException
-import respx
-import pydicom
-from pydicom.data import get_testdata_files
-from aiohttp import FormData
-from typing import IO
-import numpy as np
-import httpx
 
 # pytest tests --log-cli-level=INFO
 
@@ -138,11 +140,11 @@ class TestAPIHandler:
     @respx.mock
     @patch('os.getenv')
     def test_api_handler_init(self, mock_getenv, get_projects_sample: dict):
-        api_handler = Api(check_connection=False)
+        Api(check_connection=False)
 
         ### Test wrong url ###
         with pytest.raises(DatamintException):
-            api_handler = Api(server_url='wrong', check_connection=True)
+            Api(server_url='wrong', check_connection=True)
 
     @respx.mock
     def test_check_connection_is_cached_and_resets_on_config_change(self, get_projects_sample: dict):

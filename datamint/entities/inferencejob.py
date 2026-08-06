@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
-from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from datamint.entities.base_entity import BaseEntity, MISSING_FIELD
 from datamint.entities.annotations import annotation_from_dict
+from datamint.entities.base_entity import MISSING_FIELD, BaseEntity
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.inference_api import InferenceApi
@@ -186,7 +186,7 @@ class InferenceJob(BaseEntity):
         return self.status.lower() in {'completed', 'failed', 'cancelled', 'error'}
     
     @property
-    def predictions(self) -> 'list[list[Annotation]] | None':
+    def predictions(self) -> list[list[Annotation]] | None:
         """
         Returns a list of annotations resulting from this inference job, if available.
 

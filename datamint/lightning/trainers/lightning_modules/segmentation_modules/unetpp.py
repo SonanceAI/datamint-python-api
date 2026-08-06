@@ -1,13 +1,13 @@
 """UNet++ segmentation module."""
 from __future__ import annotations
-from typing import Any
-from typing_extensions import override
-from collections.abc import Callable
 
-from torch import Tensor, nn
+from collections.abc import Callable
+from typing import Any
 
 import albumentations as A
 import segmentation_models_pytorch as smp
+from torch import Tensor, nn
+from typing_extensions import override
 
 from .smp_module import SMPSegmentationModule
 
@@ -25,7 +25,7 @@ class UNetPPModule(SMPSegmentationModule):
         in_channels: int,
         num_classes: int,
         loss_fn: nn.Module | None = None,
-        metrics_factories: dict[str, Callable[[], Any]] = {},
+        metrics_factories: dict[str, Callable[[], Any]] | None = None,
         class_names: list[str] | None = None,
         image_size: tuple[int, int] | None = None,
         lr: float = 1e-4,
@@ -33,6 +33,8 @@ class UNetPPModule(SMPSegmentationModule):
         encoder_weights: str | None = 'imagenet',
         transform: A.BasicTransform | A.BaseCompose | None = None,
     ) -> None:
+        if metrics_factories is None:
+            metrics_factories = {}
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.encoder_name = encoder_name

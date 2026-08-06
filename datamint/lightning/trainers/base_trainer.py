@@ -7,23 +7,24 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from functools import cached_property
 from collections.abc import Callable, Mapping
-from typing import Any, TYPE_CHECKING, cast
+from functools import cached_property
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import lightning as L
-from torch import nn
 import mlflow
+from torch import nn
 
+from datamint._repr_utils import render_html_card, render_text_block
 from datamint.dataset.base import DatamintBaseDataset
 from datamint.lightning.datamodule import DatamintDataModule
+from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
 from datamint.mlflow import set_project
 from datamint.mlflow.flavors.model import BaseDatamintModel
-from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
-from datamint._repr_utils import render_text_block, render_html_card
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+
     from datamint.entities import Project
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,15 +76,15 @@ class BaseTrainer(ABC):
     def __init__(
         self,
         dataset: DatamintBaseDataset | None = None,
-        project: 'str | Project | None' = None,
+        project: str | Project | None = None,
         *,
         dataset_kwargs: dict[str, Any] | None = None,
         model: L.LightningModule | type[L.LightningModule] | None = None,
         loss_fn: nn.Module | None = None,
         batch_size: int = 16,
         num_workers: int = 4,
-        train_transform: 'BaseCompose | None' = None,
-        eval_transform: 'BaseCompose | None' = None,
+        train_transform: BaseCompose | None = None,
+        eval_transform: BaseCompose | None = None,
         split_as_of_timestamp: str | None = None,
         max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
@@ -195,12 +196,12 @@ class BaseTrainer(ABC):
         callbacks = self._build_default_callbacks(register_model=register_model) + list(self._build_callbacks())
         logger = self._build_logger(run_id=run_id)
 
-        trainer_params: dict[str, Any] = dict(
-            max_epochs=self.max_epochs,
-            logger=logger,
-            callbacks=callbacks,
-            accelerator='auto',
-        )
+        trainer_params: dict[str, Any] = {
+            "max_epochs": self.max_epochs,
+            "logger": logger,
+            "callbacks": callbacks,
+            "accelerator": 'auto',
+        }
         trainer_params.update(self.trainer_kwargs)
         if override_params is not None:
             trainer_params.update(override_params)
@@ -290,7 +291,7 @@ class BaseTrainer(ABC):
 
             return self._lightning_trainer.test(self.model, datamodule=self.datamodule)
 
-    def _upload_test_predictions(self, predict_model: 'BaseDatamintModel | None' = None) -> None:
+    def _upload_test_predictions(self, predict_model: BaseDatamintModel | None = None) -> None:
         """Run inference on the test split and upload predictions as annotations."""
         if predict_model is None:
             _LOGGER.debug("No deployable model available; skipping test prediction upload.")
@@ -333,7 +334,7 @@ class BaseTrainer(ABC):
     @abstractmethod
     def _build_dataset(
         self,
-        project: 'str | Project',
+        project: str | Project,
         **kwargs: Any
     ) -> DatamintBaseDataset:
         """Build the appropriate dataset for this task."""
@@ -357,7 +358,7 @@ class BaseTrainer(ABC):
 
         try:
             eval_tf = self._user_eval_transform or self._eval_transform()
-            setattr(model, 'transform', eval_tf)
+            model.transform = eval_tf
         except NotImplementedError:
             pass
 
@@ -372,12 +373,12 @@ class BaseTrainer(ABC):
         raise NotImplementedError("Subclasses must implement _build_model() when no user model is provided.")
 
     @abstractmethod
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         """Return the training augmentation pipeline."""
         ...
 
     @abstractmethod
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         """Return the eval/test transform pipeline."""
         ...
 
@@ -430,8 +431,8 @@ class BaseTrainer(ABC):
     def _build_datamodule(
         self,
         dataset: DatamintBaseDataset,
-        train_transform: 'BaseCompose',
-        eval_transform: 'BaseCompose',
+        train_transform: BaseCompose,
+        eval_transform: BaseCompose,
     ) -> DatamintDataModule:
         return DatamintDataModule(
             dataset,
@@ -444,8 +445,12 @@ class BaseTrainer(ABC):
         )
 
     def _build_default_callbacks(self, *, register_model: bool = True) -> list:
-        from datamint.mlflow.lightning.callbacks import MLFlowPyTorchModelCheckpoint, MLFlowDatamintModelCheckpoint
         from mlflow.pyfunc.model import PythonModel
+
+        from datamint.mlflow.lightning.callbacks import (
+            MLFlowDatamintModelCheckpoint,
+            MLFlowPyTorchModelCheckpoint,
+        )
 
         has_val = self.datamodule.has_val_split
         if has_val:
@@ -463,14 +468,14 @@ class BaseTrainer(ABC):
         _LOGGER.debug("Using %s for model checkpointing with monitor='%s' mode='%s'",
                       checkpoint_cls.__name__, metric_name, mode)
 
-        checkpoint_kwargs: dict[str, Any] = dict(
-            monitor=metric_name,
-            mode=mode,
-            save_top_k=1,
-            model_name=model_name,
-            register_model_on='test',
-            log_model_metrics=True,
-        )
+        checkpoint_kwargs: dict[str, Any] = {
+            "monitor": metric_name,
+            "mode": mode,
+            "save_top_k": 1,
+            "model_name": model_name,
+            "register_model_on": 'test',
+            "log_model_metrics": True,
+        }
         if checkpoint_cls is MLFlowDatamintModelCheckpoint:
             checkpoint_kwargs['annotation_specs'] = self._build_annotation_specs()
 
@@ -509,14 +514,14 @@ class BaseTrainer(ABC):
         dataset = self.datamodule.get_mlflow_dataset_split('test')
         if dataset is None:
             dataset = self.datamodule.get_mlflow_dataset()
-        setattr(mlflow_logger, '_mlflow_dataset', dataset)
+        mlflow_logger._mlflow_dataset = dataset
         return mlflow_logger
 
 
 class _LogDatasetSplitsCallback(L.Callback):
     """Lightning callback to retrieve resolved dataset splits from the datamodule after setup()."""
 
-    LIGHTNING_STAGE_TO_DATAMINT_SPLIT = {
+    LIGHTNING_STAGE_TO_DATAMINT_SPLIT: ClassVar[dict[str, str]] = {
         'fit': 'train',
         'validate': 'val',
         'test': 'test',
@@ -526,7 +531,7 @@ class _LogDatasetSplitsCallback(L.Callback):
         super().__init__()
         self.dttrainer = dttrainer
 
-    def setup(self, trainer: "L.Trainer", pl_module: "L.LightningModule", stage: str) -> None:
+    def setup(self, trainer: L.Trainer, pl_module: L.LightningModule, stage: str) -> None:
 
         split = self.LIGHTNING_STAGE_TO_DATAMINT_SPLIT.get(stage)
         if split is None:

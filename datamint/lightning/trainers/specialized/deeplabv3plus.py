@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import lightning as L
 from torch import nn
@@ -10,10 +10,13 @@ from ..seg2d_trainer import SemanticSegmentation2DTrainer
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+    from medimgkit import ViewPlane
+
     from datamint.dataset.base import DatamintBaseDataset
     from datamint.entities import Project
-    from medimgkit import ViewPlane
-    from datamint.lightning.trainers.lightning_modules.base import DatamintLightningModule
+    from datamint.lightning.trainers.lightning_modules.base import (
+        DatamintLightningModule,
+    )
 
 
 class DeepLabV3PlusTrainer(SemanticSegmentation2DTrainer):

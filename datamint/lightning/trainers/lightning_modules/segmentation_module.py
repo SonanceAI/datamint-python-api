@@ -1,21 +1,21 @@
 """LightningModule wrapper for segmentation tasks."""
 from __future__ import annotations
 
+import inspect
+import warnings
 from abc import abstractmethod
 from collections.abc import Callable
 from typing import Any
-import inspect
-import warnings
 
+import albumentations as A
 import torch
+from albumentations.pytorch import ToTensorV2
 from torch import Tensor, nn
 from torchmetrics import MetricCollection
 
 from datamint.mlflow.flavors.task_type import TaskType
+
 from .base import DatamintLightningModule
-from datamint.mlflow.flavors.prediction_router import prediction_mode
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
 
 
 class SegmentationModule(DatamintLightningModule):
@@ -39,12 +39,14 @@ class SegmentationModule(DatamintLightningModule):
     def __init__(
         self,
         loss_fn: nn.Module | None = None,
-        metrics_factories: dict[str, Callable[[], Any]] = {},
+        metrics_factories: dict[str, Callable[[], Any]] | None = None,
         class_names: list[str] | None = None,
         # image_size: tuple[int, int],
         transform: A.BasicTransform | A.BaseCompose | None = None,
         lr: float = 1e-4,
     ) -> None:
+        if metrics_factories is None:
+            metrics_factories = {}
         super().__init__(transform=transform)
         self.save_hyperparameters(ignore=['loss_fn', 'metrics_factories', 'transform'])
         self.class_names = class_names
@@ -193,6 +195,7 @@ class SegmentationModule(DatamintLightningModule):
         """
         import cv2
         import numpy as np
+
         from datamint.entities.annotations import ImageSegmentation
         from datamint.utils.uncertainty import segmentation_uncertainty
 

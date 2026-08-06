@@ -1,6 +1,5 @@
 class DatamintException(Exception):
     """Base class for all Datamint exceptions."""
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -9,12 +8,10 @@ class DatamintException(Exception):
 
 class AuthenticationError(DatamintException):
     """Raised when the API key is missing or rejected (HTTP 401)."""
-    pass
 
 
 class PermissionDeniedError(DatamintException):
     """Raised when the authenticated user lacks permission for the requested operation (HTTP 403)."""
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +86,6 @@ class DefaultProjectNotSetError(DatamintException):
 
 class ValidationError(DatamintException):
     """Raised when the server rejects a request due to invalid input (HTTP 400/422)."""
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +94,6 @@ class ValidationError(DatamintException):
 
 class NetworkError(DatamintException):
     """Raised on connection failures, SSL errors, or other transport-level problems."""
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -169,4 +164,3 @@ class JobTimeoutError(DatamintException, TimeoutError):
     Subclasses both DatamintException and the built-in TimeoutError so callers
     catching either one will handle it correctly.
     """
-    pass

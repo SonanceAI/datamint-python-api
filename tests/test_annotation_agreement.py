@@ -1,7 +1,11 @@
 import numpy as np
 import pytest
 
-from datamint.entities.annotations import BoxAnnotation, ImageClassification, ImageSegmentation
+from datamint.entities.annotations import (
+    BoxAnnotation,
+    ImageClassification,
+    ImageSegmentation,
+)
 from datamint.utils.annotation_agreement import (
     cohen_kappa,
     compute_agreement,

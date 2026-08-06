@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, TYPE_CHECKING
-
-from torch import nn
+from typing import TYPE_CHECKING, Any
 
 from datamint.dataset.image_dataset import ImageDataset, detection_collate_fn
-from datamint.lightning.datamodule import DatamintDataModule
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.annotations.types import AnnotationType
+from datamint.lightning.datamodule import DatamintDataModule
+
 from .base_trainer import BaseTrainer
 
 if TYPE_CHECKING:
@@ -32,7 +31,7 @@ class DetectionTrainer(BaseTrainer):
 
     def _build_dataset(
         self,
-        project: 'str | Project',
+        project: str | Project,
         **kwargs: Any,
     ) -> ImageDataset:
         return ImageDataset(project=project, return_boxes=True, **kwargs)

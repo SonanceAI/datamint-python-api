@@ -10,7 +10,7 @@ class NumericAnnotation(Annotation):
     def __init__(
         self,
         name: str | None = None,
-        value: int | float | None = None,
+        value: float | None = None,
         units: str | None = None,
         confiability: float = 1.0,
         **kwargs: Any,

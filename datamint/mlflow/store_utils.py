@@ -1,6 +1,8 @@
-from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
-from mlflow.exceptions import MlflowException
 import json
+
+from mlflow.exceptions import MlflowException
+from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE
+
 
 def _resolve_project_id(project_id: str | None) -> str:
     """

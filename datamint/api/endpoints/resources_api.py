@@ -1,33 +1,35 @@
-from typing import TypeAlias, Literal, IO, overload
-from collections.abc import Callable, Sequence
-from ..base_api import ApiConfig, BaseApi
-from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
-from datamint.entities import Project, Resource
-from datamint.entities.annotations.annotation import Annotation
-from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
-from datamint.entities.annotations import AnnotationType
-from datamint.utils.collection_utils import ChainedSequence
-import httpx
-from datetime import date
+import asyncio
+import io
 import json
 import logging
-import pydicom
-from pydicom import config as pydicom_config
-from medimgkit.dicom_utils import anonymize_dicom, to_bytesio, is_dicom, is_dicom_report
-from medimgkit import dicom_utils, standardize_mimetype
-from medimgkit.io_utils import is_io_object, peek
-from medimgkit.format_detection import guess_typez, guess_extension, DEFAULT_MIME_TYPE
-from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME, NIFTI_MIMES
 import os
-from tqdm.auto import tqdm
-import asyncio
-import aiohttp
-from pathlib import Path
-from PIL import Image
-import io
-from datamint.types import ImagingData
 from collections import defaultdict
+from collections.abc import Callable, Sequence
+from datetime import date
+from pathlib import Path
+from typing import IO, Literal, TypeAlias, overload
 
+import aiohttp
+import httpx
+import pydicom
+from medimgkit import dicom_utils, standardize_mimetype
+from medimgkit.dicom_utils import anonymize_dicom, is_dicom, is_dicom_report, to_bytesio
+from medimgkit.format_detection import DEFAULT_MIME_TYPE, guess_extension, guess_typez
+from medimgkit.io_utils import is_io_object
+from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME, NIFTI_MIMES
+from PIL import Image
+from pydicom import config as pydicom_config
+from tqdm.auto import tqdm
+
+from datamint.entities import Project, Resource
+from datamint.entities.annotations import AnnotationType
+from datamint.entities.annotations.annotation import Annotation
+from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
+from datamint.types import ImagingData
+from datamint.utils.collection_utils import ChainedSequence
+
+from ..base_api import ApiConfig, BaseApi
+from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -64,7 +66,7 @@ class _ProgressFileIO(io.IOBase):
 
 
 def _open_io(file_path: str | Path | IO, mode: str = 'rb') -> IO:
-    if isinstance(file_path, str) or isinstance(file_path, Path):
+    if isinstance(file_path, (str, Path)):
         return open(file_path, 'rb')
     return file_path
 
@@ -277,7 +279,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                             mimetype: str | None = None,
                                             anonymize: bool = False,
                                             anonymize_retain_codes: Sequence[tuple] = [],
-                                            tags: list[str] = [],
+                                            tags: list[str] | None = None,
                                             mung_filename: Sequence[int] | Literal['all'] | None = None,
                                             channel: str | None = None,
                                             session=None,
@@ -285,6 +287,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                             publish: bool = False,
                                             metadata_file: str | dict | None = None,
                                             ) -> str:
+        if tags is None:
+            tags = []
         if is_io_object(file_path):
             source_filepath = os.path.abspath(os.path.expanduser(file_path.name))
             filename = os.path.basename(source_filepath)
@@ -328,7 +332,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         mimetype = standardize_mimetype(mimetype)
 
-        if is_a_dicom_file == True or is_dicom(file_path):
+        if is_a_dicom_file or is_dicom(file_path):
             if tags is None:
                 tags = []
             else:
@@ -414,7 +418,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             form.add_field('bypass_inbox', 'true' if publish else 'false')
             if tags is not None and len(tags) > 0:
                 # comma separated list of tags
-                form.add_field('tags', ','.join([l.strip() for l in tags]))
+                form.add_field('tags', ','.join([tag.strip() for tag in tags]))
 
             # Add JSON metadata if provided
             if metadata_content is not None:
@@ -545,7 +549,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             tasks = [__upload_single_resource(files_path, i, segfiles, metadata_file)
                      for i, segfiles, metadata_file in zip(range(len(files_path)), segmentation_files, metadata_files)]
         except ValueError:
-            msg = f"Error preparing upload tasks. Try `assemble_dicom=False`."
+            msg = "Error preparing upload tasks. Try `assemble_dicom=False`."
             _LOGGER.error(msg)
             _USER_LOGGER.error(msg)
             raise
@@ -565,8 +569,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if on_error not in ['raise', 'skip']:
             raise ValueError("on_error must be either 'raise' or 'skip'")
         if (
-            isinstance(files_path, IO)
-            or isinstance(files_path, pydicom.Dataset)
+            isinstance(files_path, (IO, pydicom.Dataset))
             or (isinstance(files_path, str) and not os.path.isdir(files_path))
         ):
             raise ValueError(
@@ -680,7 +683,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         except Exception as e:
             _LOGGER.error(f"Error adding resources to project: {e}")
             if on_error == 'raise':
-                raise e
+                raise
 
     def upload_resources(self,
                          files_path: Sequence[str | IO | pydicom.Dataset],
@@ -973,7 +976,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         except ItemNotFoundError as e:
             e.set_params('resource', {'resource_id': resource_id})
-            raise e
+            raise
 
     def download_multiple_resources(self,
                                     resources: Sequence[str] | Sequence[Resource],
@@ -1128,7 +1131,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     except ValueError as e:
                         _LOGGER.warning(f"Could not convert file to a known format: {e}")
                         resource_file = response.content
-                    except NotImplementedError as e:
+                    except NotImplementedError:
                         _LOGGER.warning(f"Conversion not implemented yet for {mimetype} and save_path=None." +
                                         " Returning a bytes array. If you want the conversion for this mimetype, provide a save_path.")
                         resource_file = response.content
@@ -1136,7 +1139,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 resource_file = response.content
         except ItemNotFoundError as e:
             e.set_params('resource', {'resource_id': self._entid(resource)})
-            raise e
+            raise
 
         if save_path is not None:
             if add_extension and mimetype is not None:
@@ -1239,7 +1242,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     status_code=response.status_code)
         except ItemNotFoundError as e:
             e.set_params('resource', {'resource_id': self._entid(resource)})
-            raise e
+            raise
 
     def publish_resources(self,
                           resources: str | Resource | Sequence[str | Resource]) -> None:
@@ -1356,7 +1359,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         if len(resources_ids) == 0:
             return
         batch_size = 200
-        for i in range(0, ceil(len(resources_ids)/batch_size)):
+        for i in range(ceil(len(resources_ids)/batch_size)):
             batch_ids = resources_ids[i*batch_size:(i+1)*batch_size]
             self._make_request('DELETE',
                                f'{self.endpoint_base}',

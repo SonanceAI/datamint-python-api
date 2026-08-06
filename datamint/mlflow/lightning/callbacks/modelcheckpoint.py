@@ -1,31 +1,34 @@
-from collections.abc import Mapping
-from lightning.pytorch.callbacks import ModelCheckpoint
-from pathlib import Path
-from weakref import proxy
-from mlflow.store.artifact.artifact_repository_registry import get_artifact_repository
-from typing import Literal, Any, TYPE_CHECKING
-from typing_extensions import override
+import copy
+import hashlib
 import inspect
-from torch import nn
+import json
+import logging
+from collections.abc import Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+from weakref import proxy
+
 import lightning.pytorch as L
-from datamint.mlflow.models import log_model_metadata, _get_MLFlowLogger
-from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
-from datamint.mlflow.env_utils import ensure_mlflow_configured
-import mlflow.models
-import mlflow.exceptions
-import mlflow.pytorch
 import mlflow.data.dataset
 import mlflow.entities.dataset
-import copy
-import logging
-import json
-import hashlib
-from concurrent.futures import ThreadPoolExecutor, Future
+import mlflow.exceptions
+import mlflow.models
+import mlflow.pytorch
+from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import MLFlowLogger
+from mlflow.store.artifact.artifact_repository_registry import get_artifact_repository
+from torch import nn
+from typing_extensions import override
+
+from datamint.mlflow.env_utils import ensure_mlflow_configured
+from datamint.mlflow.models import _get_MLFlowLogger, log_model_metadata
+from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
 
 if TYPE_CHECKING:
-    from datamint.mlflow.flavors.model import BaseDatamintModel
     from mlflow.models.model import ModelInfo
+
+    from datamint.mlflow.flavors.model import BaseDatamintModel
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -138,7 +141,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
         if hasattr(model, 'set_mlflow_model_id'):
             model.set_mlflow_model_id(self._last_model_id)
         elif hasattr(model, 'mlflow_model_id'):
-            setattr(model, 'mlflow_model_id', self._last_model_id)
+            model.mlflow_model_id = self._last_model_id
 
     def _prepare_loggable_model(self, model: nn.Module) -> nn.Module:
         """Prepare a model for MLflow logging, potentially creating a CPU copy.
@@ -389,7 +392,6 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
 
         Override in subclasses to customize signature inference.
         """
-        pass
 
     def on_fit_start(self, trainer: L.Trainer, pl_module: L.LightningModule) -> None:
         super().on_fit_start(trainer, pl_module)
@@ -452,7 +454,7 @@ class _BaseMLFlowModelCheckpoint(ModelCheckpoint):
             _LOGGER.warning("MLFlowLogger has no run_id. Cannot restore model URI.")
             return
         if logger.run_id not in str(trainer.ckpt_path):
-            _LOGGER.warning(f"Run ID mismatch between checkpoint path and MLFlowLogger." +
+            _LOGGER.warning("Run ID mismatch between checkpoint path and MLFlowLogger." +
                             " Check `run_id` parameter in MLFlowLogger.")
             return
         model_name = Path(trainer.ckpt_path).stem[:256]

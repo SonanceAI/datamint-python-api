@@ -1,10 +1,7 @@
 """3-D semantic segmentation trainer (slice-based)."""
 from __future__ import annotations
 
-from typing import Any, TYPE_CHECKING
-
-import lightning as L
-from torch import nn
+from typing import TYPE_CHECKING, Any
 
 from datamint.dataset import VolumeDataset
 
@@ -12,6 +9,7 @@ from .segmentation_trainer import SegmentationTrainer
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+
     from datamint.entities import Project
 
 class SemanticSegmentation3DTrainer(SegmentationTrainer):
@@ -72,13 +70,13 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
 
     # ── Template hooks ──────────────────────────────────────────
 
-    def _build_dataset(self, project: 'str | Project', **kwargs: Any):
-        default_params = dict(
-            return_as_semantic_segmentation=True,
-            semantic_seg_merge_strategy='union',
-            allow_external_annotations=True,
-            include_unannotated=False,
-        )
+    def _build_dataset(self, project: str | Project, **kwargs: Any):
+        default_params = {
+            'return_as_semantic_segmentation': True,
+            'semantic_seg_merge_strategy': 'union',
+            'allow_external_annotations': True,
+            'include_unannotated': False,
+        }
         dataset_params = {**default_params, **kwargs}
 
         vol_ds = VolumeDataset(
@@ -95,7 +93,7 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
             return A.NoOp()
         return A.Resize(*self.image_size)
 
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 
@@ -107,7 +105,7 @@ class SemanticSegmentation3DTrainer(SegmentationTrainer):
             ToTensorV2(),
         ])
 
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         import albumentations as A
         from albumentations.pytorch import ToTensorV2
 

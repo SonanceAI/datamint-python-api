@@ -256,7 +256,7 @@ class DatamintDataModule(L.LightningDataModule):
             collate_fn=self.collate_fn if self.collate_fn is not None else self.dataset.get_collate_fn(),
         )
 
-    def get_mlflow_dataset_split(self, split: str) -> 'DatamintMLflowDataset | None':
+    def get_mlflow_dataset_split(self, split: str) -> DatamintMLflowDataset | None:
         """Return a :class:`~datamint.mlflow.data.DatamintMLflowDataset` for the given split.
 
         Delegates to the corresponding split dataset's
@@ -300,7 +300,7 @@ class DatamintDataModule(L.LightningDataModule):
         val = parts.get("val")
         return val is not None and len(val) > 0
 
-    def get_dataset_split(self, split: str) -> 'DatamintBaseDataset | None':
+    def get_dataset_split(self, split: str) -> DatamintBaseDataset | None:
         """Return the Datamint dataset for the given split. Falls back to the full dataset when the requested split is not available."""
         split_ds_map = {
             'train': self._train_dataset,
