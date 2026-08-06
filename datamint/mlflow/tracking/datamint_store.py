@@ -3,8 +3,10 @@ from mlflow.exceptions import MlflowException
 from mlflow.utils.proto_json_utils import message_to_json
 from functools import partial
 from typing_extensions import override
-from datamint.mlflow.store_utils import _resolve_project_id, _inject_project_id_into_body
+from datamint.mlflow.store_utils import resolve_project_id, _inject_project_id_into_body
+import logging
 
+_LOGGER = logging.getLogger(__name__)
 
 class DatamintStore(RestStore):
     """
@@ -33,7 +35,7 @@ class DatamintStore(RestStore):
         if self.invalid:
             return super().create_experiment(name, artifact_location, tags)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = resolve_project_id(project_id)
         tag_protos = [tag.to_proto() for tag in tags] if tags else []
         req_body = message_to_json(
             CreateExperiment(name=name, artifact_location=artifact_location, tags=tag_protos)
@@ -53,7 +55,7 @@ class DatamintStore(RestStore):
         if self.invalid:
             return super().get_experiment_by_name(experiment_name)
 
-        resolved_project_id = _resolve_project_id(project_id)
+        resolved_project_id = resolve_project_id(project_id)
         try:
             req_body = message_to_json(GetExperimentByName(experiment_name=experiment_name))
             req_body = _inject_project_id_into_body(req_body, resolved_project_id)
