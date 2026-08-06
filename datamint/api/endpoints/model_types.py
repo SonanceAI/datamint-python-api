@@ -6,6 +6,7 @@ import mlflow.models
 from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion
 from mlflow.entities.model_registry import RegisteredModel as MlflowRegisteredModel
 
+from datamint._repr_utils import render_html_card, render_text_block
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.mlflow.flavors.datamint_flavor import FLAVOR_NAME
 from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
@@ -20,6 +21,33 @@ class ModelVersion:
 
     _raw: MlflowModelVersion
     _api: 'ModelsApi'
+
+    def _get_display_fields(self) -> list[tuple[str, str]]:
+        """Collect non-empty fields for display purposes."""
+        fields = [
+            ("name", self.name),
+            ("version", self.version),
+        ]
+        if self.run_id is not None:
+            fields.append(("run_id", self.run_id))
+        if self.current_stage is not None:
+            fields.append(("current_stage", self.current_stage))
+        if self.aliases:
+            fields.append(("aliases", ", ".join(self.aliases)))
+        fields.append(("creation_timestamp", str(self.creation_timestamp)))
+        return fields
+
+    def __str__(self) -> str:
+        """Plain-text representation for ``print(...)``."""
+        return render_text_block("ModelVersion", self._get_display_fields())
+
+    def __repr__(self) -> str:
+        """Compact repr used by lists and the REPL."""
+        return f"ModelVersion(name={self.name!r}, version={self.version!r})"
+
+    def _repr_html_(self) -> str:
+        """HTML card representation for Jupyter notebooks."""
+        return render_html_card(kind="Entity", name=self.__class__.__name__, fields=self._get_display_fields())
 
     @property
     def name(self) -> str:
@@ -97,6 +125,29 @@ class Model:
     _raw: MlflowRegisteredModel
     _api: 'ModelsApi'
 
+    def _get_display_fields(self) -> list[tuple[str, str]]:
+        """Collect non-empty fields for display purposes."""
+        fields = [
+            ("name", self.name),
+        ]
+        if self.description is not None and self.description:
+            fields.append(("description", self.description))
+        fields.append(("creation_timestamp", str(self.creation_timestamp)))
+        fields.append(("last_updated_timestamp", str(self.last_updated_timestamp)))
+        return fields
+
+    def __str__(self) -> str:
+        """Plain-text representation for ``print(...)``."""
+        return render_text_block("Model", self._get_display_fields())
+
+    def __repr__(self) -> str:
+        """Compact repr used by lists and the REPL."""
+        return f"Model(name={self.name!r})"
+
+    def _repr_html_(self) -> str:
+        """HTML card representation for Jupyter notebooks."""
+        return render_html_card(kind="Entity", name=self.__class__.__name__, fields=self._get_display_fields())
+
     @property
     def name(self) -> str:
         return self._raw.name
@@ -141,3 +192,5 @@ class Model:
 
     def is_deployed(self) -> bool:
         return self._api._deploy_api.image_exists(self.name)
+
+
