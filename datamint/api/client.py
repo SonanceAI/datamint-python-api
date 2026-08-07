@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeVar
 
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (ProjectsApi, ResourcesApi, AnnotationsApi,
@@ -12,7 +12,6 @@ from datamint.exceptions import AuthenticationError, NetworkError
 import logging
 
 _LOGGER = logging.getLogger(__name__)
-
 
 class Api:
     """Main API client that provides access to all endpoint handlers."""
@@ -193,6 +192,11 @@ class Api:
 
     @property
     def annotationsets(self) -> AnnotationWorklistApi:
+        """Alias for annotationworklists endpoint."""
+        return self.annotationworklists
+
+    @property
+    def worklist(self) -> AnnotationWorklistApi:
         """Alias for annotationworklists endpoint."""
         return self.annotationworklists
 

@@ -190,7 +190,5 @@ class Model:
         version = version or self.get_latest_version()
         return version.get_metrics() if version else {}
 
-    def is_deployed(self) -> bool:
-        return self._api._deploy_api.image_exists(self.name)
-
-
+    def is_deployed(self, tag: str = 'latest') -> bool:
+        return self._api._deploy_api.image_exists(self.name, tag=tag)

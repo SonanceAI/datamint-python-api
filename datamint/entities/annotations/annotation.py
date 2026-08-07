@@ -172,6 +172,7 @@ class Annotation(AnnotationBase):
     user_info: dict | None = None
     values: list | None = MISSING_FIELD
     file: str | None = None
+    source: str | None = None
 
     _api: 'AnnotationsApi' = PrivateAttr()
 

@@ -1083,6 +1083,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                     resource: str | Resource,
                                     identifier: str,
                                     value: str,
+                                    worklist_id: str | None = None,
+                                    author_email: str | None = None,
                                     imported_from: str | None = None,
                                     model_id: str | None = None,
                                     source: str | None = 'imported',
@@ -1094,6 +1096,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             resource: The resource unique id or Resource instance.
             identifier: The annotation identifier/label.
             value: The classification value.
+            worklist_id: The annotation worklist unique id.
+            author_email: The email to consider as the author of the annotation.
+                If None, use the customer of the api key.
             imported_from: The imported from source value.
             model_id: The model unique id.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
@@ -1105,6 +1110,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         annotation = ImageClassification(
             name=identifier,
             value=value,
+            worklist_id=worklist_id,
+            author_email=author_email,
             imported_from=imported_from,
             model_id=model_id,
             source=source,
@@ -1120,6 +1127,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                   identifier: str,
                                   value: int | float,
                                   units: str | None = None,
+                                  worklist_id: str | None = None,
+                                  author_email: str | None = None,
                                   imported_from: str | None = None,
                                   model_id: str | None = None,
                                   source: str | None = 'imported',
@@ -1133,6 +1142,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             value: The numeric value. ``int`` maps to :attr:`AnnotationType.INTEGER`,
                 ``float`` maps to :attr:`AnnotationType.FLOAT`.
             units: Optional unit label for the value (e.g. 'years', 'mm').
+            worklist_id: The annotation worklist unique id.
+            author_email: The email to consider as the author of the annotation.
+                If None, use the customer of the api key.
             imported_from: The imported from source value.
             model_id: The model unique id.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
@@ -1145,6 +1157,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             name=identifier,
             value=value,
             units=units,
+            worklist_id=worklist_id,
+            author_email=author_email,
             imported_from=imported_from,
             model_id=model_id,
             source=source,

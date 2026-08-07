@@ -181,7 +181,7 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
         response = self._make_request('DELETE', f'/{self.endpoint_base}/image/{model_name}', params=params)
         return response.json()
 
-    def image_exists(self, model_name: str, tag: str = "champion") -> bool:
+    def image_exists(self, model_name: str, tag: str = "latest") -> bool:
         """Check if a model image exists."""
         params = {'tag': tag}
         response = self._make_request('GET', f'/{self.endpoint_base}/image/{model_name}/exists', params=params)

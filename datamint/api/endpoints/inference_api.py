@@ -8,6 +8,7 @@ import time
 import httpx
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
+from ..dto import SaveResultsOptions
 from datamint.entities.inferencejob import InferenceJob
 from datamint.exceptions import (
     JobTimeoutError,
@@ -59,6 +60,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         resource_id: str | None = None,
         file_path: str | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the payload keys shared by every inference request."""
@@ -81,6 +83,15 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             payload["file_path"] = file_path
         if save_results:
             payload["save_results"] = save_results
+        if save_results_options is not None:
+            options = (
+                save_results_options
+                if isinstance(save_results_options, SaveResultsOptions)
+                else SaveResultsOptions(**save_results_options)
+            )
+            options_dict = options.to_dict()
+            if options_dict:
+                payload["save_results_options"] = options_dict
         if params:
             payload["params"] = params
         return payload
@@ -121,6 +132,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         file_paths: list[str] | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit an inference job for background processing.
@@ -134,6 +146,9 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path: Local file path.
             file_paths: List of local file paths.
             save_results: Whether to save results to the API.
+            save_results_options: Optional configuration for how results are saved.
+                Pass a dict or ``SaveResultsOptions`` instance with keys:
+                ``worklist_id``, ``annotation_source``, ``imported_from``, ``author_email``.
             params: Additional parameters forwarded to the model.
 
         Returns:
@@ -146,6 +161,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id=resource_id,
             file_path=file_path,
             save_results=save_results,
+            save_results_options=save_results_options,
             params=params,
         )
         # if resource_ids is not None:
@@ -300,6 +316,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         resource_id: str | None = None,
         file_path: str | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit an image prediction job.
@@ -311,6 +328,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id: Resource ID from DataMint API.
             file_path: Local file path.
             save_results: Whether to save results.
+            save_results_options: Optional configuration for how results are saved.
+                Pass a dict or ``SaveResultsOptions`` instance.
             params: Additional parameters.
 
         Returns:
@@ -323,6 +342,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id=resource_id,
             file_path=file_path,
             save_results=save_results,
+            save_results_options=save_results_options,
             params=params,
         )
         return self._submit_prediction(
@@ -339,6 +359,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         resource_id: str | None = None,
         file_path: str | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a frame-specific prediction job (for video resources).
@@ -351,6 +372,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id: Resource ID from DataMint API.
             file_path: Local file path.
             save_results: Whether to save results.
+            save_results_options: Optional configuration for how results are saved.
+                Pass a dict or ``SaveResultsOptions`` instance.
             params: Additional parameters.
 
         Returns:
@@ -363,6 +386,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id=resource_id,
             file_path=file_path,
             save_results=save_results,
+            save_results_options=save_results_options,
             params=params,
         )
         payload["frame_index"] = frame_index
@@ -381,6 +405,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         resource_id: str | None = None,
         file_path: str | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a slice-specific prediction job for 3D volumes.
@@ -394,6 +419,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id: Resource ID from DataMint API.
             file_path: Local file path.
             save_results: Whether to save results.
+            save_results_options: Optional configuration for how results are saved.
+                Pass a dict or ``SaveResultsOptions`` instance.
             params: Additional parameters.
 
         Returns:
@@ -406,6 +433,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id=resource_id,
             file_path=file_path,
             save_results=save_results,
+            save_results_options=save_results_options,
             params=params,
         )
         payload["slice_index"] = slice_index
@@ -423,6 +451,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         resource_id: str | None = None,
         file_path: str | None = None,
         save_results: bool = False,
+        save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a volume prediction job.
@@ -434,6 +463,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id: Resource ID from DataMint API.
             file_path: Local file path.
             save_results: Whether to save results.
+            save_results_options: Optional configuration for how results are saved.
+                Pass a dict or ``SaveResultsOptions`` instance.
             params: Additional parameters.
 
         Returns:
@@ -446,6 +477,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             resource_id=resource_id,
             file_path=file_path,
             save_results=save_results,
+            save_results_options=save_results_options,
             params=params,
         )
         return self._submit_prediction(
