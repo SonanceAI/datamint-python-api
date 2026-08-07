@@ -11,8 +11,8 @@ import logging
 import numpy as np
 from PIL import Image
 
-from .types import AnnotationType
 from .base_segmentation import BaseSegmentationAnnotation
+from .types import AnnotationType
 
 _LOGGER = logging.getLogger(__name__)
 

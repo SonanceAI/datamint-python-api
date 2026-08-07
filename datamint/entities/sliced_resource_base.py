@@ -1,7 +1,9 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Any
+
 import logging
 from functools import cached_property
+from typing import TYPE_CHECKING, Any
+
 from medimgkit.readers import read_array_normalized
 
 if TYPE_CHECKING:

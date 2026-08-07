@@ -8,7 +8,6 @@ import pytest
 
 from datamint.api.base_api import ApiConfig
 
-
 TEST_URL = "https://test-url.com"
 
 

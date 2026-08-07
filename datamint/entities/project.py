@@ -1,19 +1,18 @@
 """Project entity module for DataMint API."""
 import logging
-from typing import Literal, TYPE_CHECKING
-from collections.abc import Sequence
-
-from .base_entity import BaseEntity, MISSING_FIELD
-from typing import Any
 import webbrowser
-from pydantic import PrivateAttr, Field, BaseModel
-from functools import cached_property
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Literal
+
+from pydantic import BaseModel, Field, PrivateAttr
+
+from .base_entity import MISSING_FIELD, BaseEntity
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.projects_api import ProjectsApi
-    from .resource import Resource
-    from datamint.entities.annotations.annotation_spec import AnnotationSpec
     from datamint.entities.annotation_worklist import AnnotationWorklist
+
+    from .resource import Resource
 
 logger = logging.getLogger(__name__)
 

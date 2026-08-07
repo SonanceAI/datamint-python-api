@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from .volume_resource import VolumeResource
 from medimgkit.nifti_utils import NIFTI_MIMES
+
+from .volume_resource import VolumeResource
 
 
 class NiftiResource(VolumeResource):

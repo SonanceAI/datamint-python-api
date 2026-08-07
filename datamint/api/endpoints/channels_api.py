@@ -7,9 +7,12 @@ batch processing or organization purposes.
 """
 
 import logging
+
 import httpx
-from ..entity_base_api import EntityBaseApi
+
 from datamint.entities.channel import Channel
+
+from ..entity_base_api import EntityBaseApi
 
 logger = logging.getLogger(__name__)
 

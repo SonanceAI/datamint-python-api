@@ -1,3 +1,3 @@
-from .datamint_dataset import DatamintMLflowDataset, DatamintDatasetSource
+from .datamint_dataset import DatamintDatasetSource, DatamintMLflowDataset
 
-__all__ = ["DatamintMLflowDataset", "DatamintDatasetSource"]
+__all__ = ["DatamintDatasetSource", "DatamintMLflowDataset"]

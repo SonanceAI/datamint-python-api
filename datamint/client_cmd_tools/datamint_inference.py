@@ -14,9 +14,15 @@ from typing import Any
 from rich.console import Console
 from rich.table import Table
 
-from datamint.client_cmd_tools.datamint_upload import _is_valid_path_argparse, handle_api_key
+from datamint.client_cmd_tools.datamint_upload import (
+    _is_valid_path_argparse,
+    handle_api_key,
+)
 from datamint.exceptions import DatamintException, ItemNotFoundError
-from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
+from datamint.utils.logging_utils import (
+    ConsoleWrapperHandler,
+    load_cmdline_logging_config,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
@@ -88,9 +94,9 @@ def _print_predictions(console: Console, predictions: list) -> None:
 def _save_overlay(console: Console, resource: Any, predictions: list, output_path: str) -> None:
     import matplotlib
     matplotlib.use('Agg')
-    import matplotlib.patches as patches
     import matplotlib.pyplot as plt
     import numpy as np
+    from matplotlib import patches
 
     img_np = np.array(resource.fetch_file_data(auto_convert=True))
     if img_np.ndim == 3 and img_np.shape[0] in (1, 3) and img_np.shape[0] != img_np.shape[-1]:
@@ -163,9 +169,9 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
     When ``subparsers`` is given, the parser is registered as an ``inference`` subparser
     (used by ``datamint``'s combined completion tree) instead of a standalone parser.
     """
-    kwargs = dict(
-        description='Run local inference with a registered Datamint model against a local file.',
-        epilog="""
+    kwargs = {
+        'description': 'Run local inference with a registered Datamint model against a local file.',
+        'epilog': """
 Examples:
   datamint inference file.png --model-name MyModel
                                            # Predict using the model registered as 'MyModel'
@@ -178,8 +184,8 @@ Examples:
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+        'formatter_class': argparse.RawDescriptionHelpFormatter,
+    }
     if subparsers is not None:
         parser = subparsers.add_parser('inference', **kwargs)
     else:
@@ -212,7 +218,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     global CONSOLE
     load_cmdline_logging_config()
-    CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+    CONSOLE = next(h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)).console
 
     args = _parse_args()
 

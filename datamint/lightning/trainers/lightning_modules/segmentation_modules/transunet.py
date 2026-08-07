@@ -11,9 +11,8 @@ from typing import Any
 
 import albumentations as A
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch import Tensor
+from torch import Tensor, nn
 from typing_extensions import override
 
 from ..segmentation_module import SegmentationModule
@@ -79,7 +78,7 @@ class _TransUNetModel(nn.Module):
         pretrained: bool = True,
     ) -> None:
         super().__init__()
-        import timm  
+        import timm
 
         cfg = _VARIANT_CONFIGS[variant]
         hidden_dim: int = cfg['hidden_dim']
@@ -105,7 +104,7 @@ class _TransUNetModel(nn.Module):
         self._norm = vit.norm                        # final LayerNorm
 
         # CUP decoder: 4 blocks, first 2 fuse CNN skip features.
-        decoder_in_ch = [hidden_dim] + dec_ch[:-1]
+        decoder_in_ch = [hidden_dim, *dec_ch[:-1]]
         self._decoder = nn.ModuleList([
             _DecoderBlock(in_ch, out_ch, s_ch)
             for in_ch, out_ch, s_ch in zip(decoder_in_ch, dec_ch, skip_ch)
@@ -183,7 +182,7 @@ class TransUNetModule(SegmentationModule):
         in_channels: int,
         num_classes: int,
         loss_fn: nn.Module | None = None,
-        metrics_factories: dict[str, Callable[[], Any]] = {},
+        metrics_factories: dict[str, Callable[[], Any]] | None = None,
         class_names: list[str] | None = None,
         image_size: tuple[int, int] | None = None,
         lr: float = 1e-4,
@@ -191,6 +190,8 @@ class TransUNetModule(SegmentationModule):
         pretrained: bool = True,
         transform: A.BasicTransform | A.BaseCompose | None = None,
     ) -> None:
+        if metrics_factories is None:
+            metrics_factories = {}
         if variant not in _VARIANT_CONFIGS:
             raise ValueError(f"Unknown variant {variant!r}. Choose from {list(_VARIANT_CONFIGS)}")
 

@@ -1,9 +1,11 @@
 # Monkey patch mlflow.tracking._tracking_service.utils.get_tracking_uri
-import mlflow.tracking._tracking_service.utils as mlflow_utils
-from functools import wraps
 import logging
-from .env_utils import setup_mlflow_environment, ensure_mlflow_configured
+from functools import wraps
 from typing import TYPE_CHECKING
+
+import mlflow.tracking._tracking_service.utils as mlflow_utils
+
+from .env_utils import ensure_mlflow_configured, setup_mlflow_environment
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,11 +50,11 @@ def _configure_mlflow_loggers():
     if _ALREADY_CONFIGURED_LOGGING:
         return
 
+    import logging.config
+    import os
+
     from mlflow.environment_variables import MLFLOW_LOGGING_LEVEL
     from mlflow.utils.logging_utils import SuppressLogFilter
-    import logging.config
-    import rich.logging
-    import os
 
     if 'MLFLOW_SCORING_SERVER_REQUEST_TIMEOUT' not in os.environ:
         # probably not running in mlflow server, so no need to configure our mlflow loggers
@@ -114,4 +116,4 @@ else:
     )
 
 
-__all__ = ['set_project', 'setup_mlflow_environment', 'ensure_mlflow_configured', 'BaseDatamintModel', 'DatamintModel']
+__all__ = ['BaseDatamintModel', 'DatamintModel', 'ensure_mlflow_configured', 'set_project', 'setup_mlflow_environment']

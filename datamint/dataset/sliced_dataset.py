@@ -5,25 +5,28 @@ Provides a way to iterate over individual 2D slices from 3D volume data,
 enabling training of 2D models on volumetric medical imaging data.
 """
 from __future__ import annotations
+
 import hashlib
-from typing import Any, TYPE_CHECKING, cast
-from typing_extensions import override
+import logging
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
+
+import albumentations
 import numpy as np
 import torch
 from torch import Tensor
-import albumentations
-
-from .base import DatamintBaseDataset
-from .annotation_processor import AnnotationProcessor
-
-import logging
+from typing_extensions import override
 
 from datamint.entities.cache_manager import CacheManager
+
+from .annotation_processor import AnnotationProcessor
+from .base import DatamintBaseDataset
+
 if TYPE_CHECKING:
+    from medimgkit import ViewPlane
+
     from datamint.entities import Annotation, Resource
     from datamint.entities.sliced_resource import SlicedVolumeResource
-    from medimgkit import ViewPlane
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -143,8 +146,8 @@ class SlicedVolumeDataset(DatamintBaseDataset):
     def from_dataset(
         cls,
         parent_dataset: DatamintBaseDataset,
-        slice_axis: 'ViewPlane | int' = 'axial',
-    ) -> 'SlicedVolumeDataset':
+        slice_axis: ViewPlane | int = 'axial',
+    ) -> SlicedVolumeDataset:
         """Create a SlicedVolumeDataset from an existing dataset without additional server calls.
 
         Copies all configuration, label mappings, and already-loaded resources
@@ -168,7 +171,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         )
 
     @staticmethod
-    def _validate_slice_axis(slice_axis: 'ViewPlane | int') -> 'ViewPlane':
+    def _validate_slice_axis(slice_axis: ViewPlane | int) -> ViewPlane:
         if isinstance(slice_axis, str):
             valid_slice_axis = ['axial', 'coronal', 'sagittal']
             if slice_axis not in valid_slice_axis:
@@ -186,10 +189,10 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
     def _expand_resources(
         self,
-        resources: Sequence['Resource'],
-        resource_annotations: Sequence[Sequence['Annotation']],
+        resources: Sequence[Resource],
+        resource_annotations: Sequence[Sequence[Annotation]],
         volume_cache: CacheManager,
-    ) -> tuple[list[SlicedVolumeResource], list[Sequence['Annotation']]]:
+    ) -> tuple[list[SlicedVolumeResource], list[Sequence[Annotation]]]:
         """Expand volume resources into per-slice proxy resources.
 
         Args:
@@ -203,7 +206,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         from datamint.entities.sliced_resource import SlicedVolumeResource
 
         sliced_resources: list[SlicedVolumeResource] = []
-        sliced_annotations: list[Sequence['Annotation']] = []
+        sliced_annotations: list[Sequence[Annotation]] = []
 
         requires_download = any(not r.is_cached() for r in resources)
         iterator = enumerate(resources)
@@ -242,7 +245,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
     def _load_sliced_segmentations(
         self,
-        annotations: Sequence['Annotation'],
+        annotations: Sequence[Annotation],
         resource: SlicedVolumeResource,
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, list]]:
         """Load segmentations already sliced for a specific 2D slice, with caching.
@@ -270,9 +273,9 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         image_seg_anns = [a for a in seg_anns if a.scope == 'image']
         frame_seg_anns = [a for a in seg_anns if a.scope == 'frame']
 
-        uniq_authors = set(
+        uniq_authors = {
             self.annotation_processor.get_author(a) for a in seg_anns
-        )
+        }
         segmentations: dict[str, list[np.ndarray]] = {a: [] for a in uniq_authors}
         seg_labels: dict[str, list[int]] = {a: [] for a in uniq_authors}
         seg_metainfos: dict[str, list] = {a: [] for a in uniq_authors}
@@ -362,7 +365,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
     def _fetch_sliced_frame_seg_group(
         self,
-        fr_anns: list['Annotation'],
+        fr_anns: list[Annotation],
         resource: SlicedVolumeResource,
         seg_slice_axis: int,
     ) -> np.ndarray | None:

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import importlib.metadata as _importlib_metadata
 import json
 import logging
-import mlflow
 from pathlib import Path
 
-import importlib.metadata as _importlib_metadata
+import mlflow
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,8 +31,7 @@ if not ((2, 4, 0) <= _ver < (3, 0, 0)):
     )
 # ──────────────────────────────────────────────────────────────────────────────
 
-from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer 
-
+from nnunetv2.training.nnUNetTrainer.nnUNetTrainer import nnUNetTrainer
 
 # Keys logged by nnUNet that are not useful as MLflow metrics.
 _SKIP_METRIC_KEYS = frozenset({'epoch_start_timestamps', 'epoch_end_timestamps'})

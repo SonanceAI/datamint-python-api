@@ -14,7 +14,7 @@ import argparse
 import logging
 import os
 import sys
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 from rich.prompt import Confirm, Prompt
@@ -23,7 +23,10 @@ from rich.table import Table
 from datamint import Api, configs
 from datamint.client_cmd_tools.datamint_upload import handle_api_key
 from datamint.exceptions import DatamintException
-from datamint.utils.logging_utils import ConsoleWrapperHandler, load_cmdline_logging_config
+from datamint.utils.logging_utils import (
+    ConsoleWrapperHandler,
+    load_cmdline_logging_config,
+)
 
 if TYPE_CHECKING:
     from datamint.dataset.base import DatamintBaseDataset
@@ -78,13 +81,17 @@ class DatamintTrainCliError(Exception):
     """Expected, user-facing CLI error (bad input, ambiguous project, etc.)."""
 
 
-def _detect(console: Console, project_name: str) -> tuple['DatamintBaseDataset', str, list[str]]:
+def _detect(console: Console, project_name: str) -> tuple[DatamintBaseDataset, str, list[str]]:
     """Auto-detect data format and candidate task(s) for a project.
 
     Returns (dataset, format, tasks_present) where format is '2d' or '3d' and
     tasks_present is the list of task names whose annotations were found (usually one).
     """
-    from datamint.dataset import ImageDataset, VideoDataset, VolumeDataset, build_dataset
+    from datamint.dataset import (
+        ImageDataset,
+        VideoDataset,
+        build_dataset,
+    )
 
     with console.status("[accent]Detecting task and data format...[/accent]"):
         try:
@@ -190,8 +197,8 @@ def _build_trainer_kwargs(args: argparse.Namespace, alias: str) -> dict[str, Any
 
 
 def _print_plan(console: Console,
-                project: 'Project',
-                dataset: 'DatamintBaseDataset',
+                project: Project,
+                dataset: DatamintBaseDataset,
                 fmt: str,
                 task: str,
                 model_alias: str,
@@ -238,7 +245,7 @@ def _print_results(console: Console, trainer, results: dict[str, Any]) -> None:
     console.print(f"MLflow experiment: [key]{trainer.experiment_name}[/key]")
 
 
-def _resolve_project(api: Api, name: str) -> 'Project':
+def _resolve_project(api: Api, name: str) -> Project:
     project = api.projects.get_by_name(name)
     if project is not None:
         return project
@@ -356,9 +363,9 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
     When ``subparsers`` is given, the parser is registered as a ``train`` subparser
     (used by ``datamint``'s combined completion tree) instead of a standalone parser.
     """
-    kwargs = dict(
-        description='Train a model on a Datamint project using a built-in one-line trainer.',
-        epilog="""
+    kwargs = {
+        'description': 'Train a model on a Datamint project using a built-in one-line trainer.',
+        'epilog': """
 Examples:
   datamint train --project MyProject --model yolox --max-epochs 20
                                            # Train a specific model
@@ -369,8 +376,8 @@ Examples:
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html#training-a-model
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+        'formatter_class': argparse.RawDescriptionHelpFormatter,
+    }
     if subparsers is not None:
         parser = subparsers.add_parser('train', **kwargs)
     else:
@@ -413,7 +420,7 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     global CONSOLE
     load_cmdline_logging_config()
-    CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+    CONSOLE = next(h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)).console
 
     args = _parse_args()
 

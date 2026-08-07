@@ -1,20 +1,23 @@
 import logging
-from pathlib import Path
-import mlflow
-from mlflow.models import Model, ModelInputExample, ModelSignature
-import datamint
-import datamint.mlflow.flavors
-from mlflow import pyfunc
-from .model import BaseDatamintModel, DatamintModel, _DatamintModelWrapper
-from .task_type import TaskType
-from datamint.entities.annotations.annotation_spec import AnnotationSpec
+import tempfile
 from collections.abc import Sequence
 from dataclasses import asdict
-from packaging.requirements import Requirement
+from pathlib import Path
 from typing import Any
+
+import mlflow
 import torch
-import tempfile
+from mlflow import pyfunc
+from mlflow.models import Model, ModelInputExample, ModelSignature
 from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
+from packaging.requirements import Requirement
+
+import datamint
+import datamint.mlflow.flavors
+from datamint.entities.annotations.annotation_spec import AnnotationSpec
+
+from .model import BaseDatamintModel, DatamintModel, _DatamintModelWrapper
+from .task_type import TaskType
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +33,18 @@ def _process_input_example(input_example: ModelInputExample | None) -> tuple[Mod
     if input_example is None:
         import datetime
 
-        input_resource = dict(
-            id='model_id',
-            storage='DicomResource',
-            filename='file.dcm',
-            location='private/location',
-            mimetype='application/dicom',
-            size=14724562,
-            status='inbox',
-            created_at=datetime.datetime.now().isoformat(),
-            created_by='user@mail.com',
-            modality='CT'
-        )
+        input_resource = {
+            'id': 'model_id',
+            'storage': 'DicomResource',
+            'filename': 'file.dcm',
+            'location': 'private/location',
+            'mimetype': 'application/dicom',
+            'size': 14724562,
+            'status': 'inbox',
+            'created_at': datetime.datetime.now().isoformat(),
+            'created_by': 'user@mail.com',
+            'modality': 'CT'
+        }
         return [input_resource], datamint_params
     if not isinstance(input_example, tuple):
         return (input_example, datamint_params)
@@ -90,9 +93,9 @@ def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path]:
     resolve to system paths outside the project root, causing poetry-core to
     crash with a ValueError.  Building from a clean copy avoids this.
     """
-    import sys
-    import subprocess
     import shutil
+    import subprocess
+    import sys
     import tempfile as _tmp
 
     _IGNORE = shutil.ignore_patterns(
@@ -295,7 +298,7 @@ def save_model(datamint_model: BaseDatamintModel,
     # DatamintLightningModule is an nn.Module itself, so its CUDA weights are
     # embedded directly in the cloudpickle. Move to CPU before serialization
     # so the pickle is device-agnostic and loads on CPU-only containers.
-    import torch.nn as nn
+    from torch import nn
     _underlying = datamint_model.another_model if isinstance(datamint_model, _DatamintModelWrapper) else datamint_model
     if isinstance(_underlying, nn.Module):
         _underlying.cpu()

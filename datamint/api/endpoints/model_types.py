@@ -12,6 +12,8 @@ from datamint.mlflow.flavors.datamint_flavor import FLAVOR_NAME
 from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
 
 if TYPE_CHECKING:
+    from datamint.entities.project import Project
+
     from .models_api import ModelsApi
 
 
@@ -192,3 +194,7 @@ class Model:
 
     def is_deployed(self, tag: str = 'latest') -> bool:
         return self._api._deploy_api.image_exists(self.name, tag=tag)
+
+    def get_projects(self) -> list['Project']:
+        """Projects this model is associated with."""
+        return self._api.get_projects(self.name)

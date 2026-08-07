@@ -2,12 +2,12 @@
 Test that MLflow environment is properly configured regardless of import order.
 """
 
-import pytest
-from unittest.mock import patch
-import sys
 import os
+import sys
 from itertools import permutations
+from unittest.mock import patch
 
+import pytest
 
 # Test configuration values
 TEST_API_URL = "http://localhost:3001"
@@ -113,7 +113,7 @@ def test_mlflow_uri_patching_all_import_orders(import_order, mock_datamint_confi
     # Execute imports in the specified order
     namespace = {}
     for idx in import_order:
-        name, import_stmt = IMPORT_STATEMENTS[idx]
+        _name, import_stmt = IMPORT_STATEMENTS[idx]
         exec(import_stmt, namespace)
     
     # Get MLFlowLogger from namespace (it should have been imported)

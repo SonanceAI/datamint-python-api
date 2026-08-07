@@ -1,24 +1,27 @@
-from datamint.exceptions import DatamintException, ItemNotFoundError
 import argparse
-from datamint import Api
-import os
-from humanize import naturalsize
-import logging
-from pathlib import Path
-import sys
-from medimgkit.dicom_utils import is_dicom, detect_dicomdir, parse_dicomdir_files
 import fnmatch
-from typing import Any
-from collections.abc import Generator
+import logging
+import os
+import sys
 from collections import defaultdict
-from datamint import __version__ as datamint_version
-from datamint import configs
-from datamint.utils.logging_utils import load_cmdline_logging_config, ConsoleWrapperHandler
-from rich.console import Console
-import yaml
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
+from pathlib import Path
+from typing import Any
+
 import pandas as pd
 import pydicom.errors
+import yaml
+from humanize import naturalsize
+from medimgkit.dicom_utils import detect_dicomdir, is_dicom, parse_dicomdir_files
+from rich.console import Console
+
+from datamint import Api, configs
+from datamint import __version__ as datamint_version
+from datamint.exceptions import DatamintException, ItemNotFoundError
+from datamint.utils.logging_utils import (
+    ConsoleWrapperHandler,
+    load_cmdline_logging_config,
+)
 
 # Create two loggings: one for the user and one for the developer
 _LOGGER = logging.getLogger(__name__)
@@ -132,7 +135,7 @@ def _is_valid_path_argparse(x):
     argparse type that checks if the path exists
     """
     if not os.path.exists(x):
-        raise argparse.ArgumentTypeError("{0} does not exist".format(x))
+        raise argparse.ArgumentTypeError(f"{x} does not exist")
     return x
 
 
@@ -203,8 +206,7 @@ def walk_to_depth(path: str | Path,
             _USER_LOGGER.info(f"Found DICOMDIR file at {path}. Using it as authoritative source for file listing.")
             dicom_files = parse_dicomdir_files(dicomdir_path)
             # Yield all DICOM files from DICOMDIR and return early
-            for dicom_file in dicom_files:
-                yield dicom_file
+            yield from dicom_files
             return
         except Exception as e:
             _USER_LOGGER.warning(f"Failed to parse DICOMDIR at {path}: {e}. Falling back to directory scan.")
@@ -524,8 +526,8 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
     When ``subparsers`` is given, the parser is registered as an ``upload`` subparser
     (used by ``datamint``'s combined completion tree) instead of a standalone parser.
     """
-    kwargs = dict(
-        description='DatamintAPI command line tool for uploading DICOM files and other resources')
+    kwargs = {
+        'description': 'DatamintAPI command line tool for uploading DICOM files and other resources'}
     if subparsers is not None:
         parser = subparsers.add_parser('upload', **kwargs)
     else:
@@ -693,7 +695,7 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
     except Exception as e:
         if args.verbose:
             _LOGGER.exception(e)
-        raise e
+        raise
 
 
 def print_input_summary(files_path: list[str],
@@ -724,7 +726,7 @@ def print_input_summary(files_path: list[str],
             _USER_LOGGER.info("\t(...)")
         _USER_LOGGER.info(f"\t{distinguishing_paths[files_path[-1]]}")
     _USER_LOGGER.info(f"Total size of the upload: {naturalsize(total_size)}")
-    _USER_LOGGER.info(f"Number of files per extension:")
+    _USER_LOGGER.info("Number of files per extension:")
     for ext, count in ext_counts:
         if ext == '':
             ext = 'no extension'
@@ -736,7 +738,7 @@ def print_input_summary(files_path: list[str],
 
     if segfiles is not None:
         num_segfiles = sum([1 if seg is not None else 0 for seg in segfiles])
-        msg = f"Number of images with an associated segmentation: " +\
+        msg = "Number of images with an associated segmentation: " +\
             f"{num_segfiles} ({num_segfiles / total_files:.0%})"
         if num_segfiles == 0:
             _USER_LOGGER.warning(msg)
@@ -745,7 +747,7 @@ def print_input_summary(files_path: list[str],
         # count number of segmentations files with names
         if args.segmentation_names is not None and num_segfiles > 0:
             segnames_count = sum([1 if 'names' in seg else 0 for seg in segfiles if seg is not None])
-            msg = f"Number of segmentations with associated name: " + \
+            msg = "Number of segmentations with associated name: " + \
                 f"{segnames_count} ({segnames_count / num_segfiles:.0%})"
             if segnames_count == 0:
                 _USER_LOGGER.warning(msg)
@@ -767,25 +769,25 @@ def print_results_summary(files_path: list[str],
     # Get distinguishing paths for better error reporting
     distinguishing_paths = _get_minimal_distinguishing_paths(files_path)
 
-    _USER_LOGGER.info(f"\nUpload summary:")
+    _USER_LOGGER.info("\nUpload summary:")
     _USER_LOGGER.info(f"\tTotal files: {len(files_path)}")
     _USER_LOGGER.info(f"\tSuccessful uploads: {len(files_path) - len(failure_files)}")
     if len(failure_files) > 0:
         _USER_LOGGER.warning(f"\tFailed uploads: {len(failure_files)}")
         _USER_LOGGER.warning(f"\tFailed files: {[distinguishing_paths[f] for f in failure_files]}")
-        _USER_LOGGER.warning(f"\nFailures:")
+        _USER_LOGGER.warning("\nFailures:")
         for f, r in zip(files_path, results):
             if isinstance(r, Exception):
                 _USER_LOGGER.warning(f"\t{distinguishing_paths[f]}: {r}")
     else:
-        CONSOLE.print(f'✅ All uploads successful!', style='success')
+        CONSOLE.print('✅ All uploads successful!', style='success')
     return len(failure_files)
 
 
 def main():
     global CONSOLE
     load_cmdline_logging_config()
-    CONSOLE = [h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)][0].console
+    CONSOLE = next(h for h in _USER_LOGGER.handlers if isinstance(h, ConsoleWrapperHandler)).console
 
     try:
         args, files_path, segfiles, metadata_files = _parse_args()
@@ -824,7 +826,7 @@ def main():
                                                      files_path=files_path,
                                                      tags=args.tag,
                                                      on_error='skip',
-                                                     anonymize=args.retain_pii == False and has_a_dicom_file,
+                                                     anonymize=not args.retain_pii and has_a_dicom_file,
                                                      anonymize_retain_codes=args.retain_attribute,
                                                      mung_filename=args.mungfilename,
                                                      publish=args.publish,

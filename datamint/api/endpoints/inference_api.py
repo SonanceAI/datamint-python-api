@@ -1,9 +1,9 @@
 """API handler for model inference endpoints (MLflow DataMint server)."""
-from typing import Any, Literal, TYPE_CHECKING
-from collections.abc import Callable, Generator
 import json
 import logging
 import time
+from collections.abc import Callable, Generator
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
@@ -11,12 +11,14 @@ from ..entity_base_api import EntityBaseApi, ApiConfig
 from ..dto import SaveResultsOptions
 from datamint.entities.inferencejob import InferenceJob
 from datamint.exceptions import (
-    JobTimeoutError,
     ItemNotFoundError,
-    ValidationError,
+    JobTimeoutError,
     ModelNotDeployedError,
+    ValidationError,
 )
 from datamint.mlflow.flavors.model_parser import parse_model_reference
+
+from ..entity_base_api import ApiConfig, EntityBaseApi
 
 if TYPE_CHECKING:
     from .projects_api import ProjectsApi

@@ -13,16 +13,14 @@ import random
 from collections.abc import Callable
 from typing import Any
 
+import albumentations as A
+import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from torch import Tensor
+from torch import Tensor, nn
 from typing_extensions import override
 
-import albumentations as A
-
 from ..segmentation_module import SegmentationModule
-
 
 # ---------------------------------------------------------------------------
 # Internal building blocks — not exported
@@ -394,7 +392,7 @@ class _UNETRPPModel(nn.Module):
         Source: https://github.com/Amshaker/unetr_plus_plus/blob/main/unetr_pp/network_architecture/synapse/unetr_pp_synapse.py
         
         """
-        B, N, C = x.shape
+        B, _N, C = x.shape
         D, H, W = self.feat_size
         return x.reshape(B, D, H, W, C).permute(0, 4, 1, 2, 3).contiguous()
 
@@ -452,7 +450,7 @@ class UNETRPPModule(SegmentationModule):
         num_classes: int,
         img_size: tuple[int, int, int],
         loss_fn: nn.Module | None = None,
-        metrics_factories: dict[str, Callable[[], Any]] = {},
+        metrics_factories: dict[str, Callable[[], Any]] | None = None,
         class_names: list[str] | None = None,
         lr: float = 1e-4,
         feature_size: int = 16,
@@ -463,6 +461,8 @@ class UNETRPPModule(SegmentationModule):
         transform: A.BasicTransform | A.BaseCompose | None = None,
     ) -> None:
         
+        if metrics_factories is None:
+            metrics_factories = {}
         self.in_channels = in_channels
         self.num_classes = num_classes
         self.feature_size = feature_size
@@ -522,7 +522,7 @@ class UNETRPPModule(SegmentationModule):
         )
 
     @staticmethod
-    def _to_float_tensor(x: 'Tensor | np.ndarray') -> Tensor:
+    def _to_float_tensor(x: Tensor | np.ndarray) -> Tensor:
         """Convert numpy arrays to float tensors.
 
         ToTensorV2 in albumentations only converts the 'image' key, not the
@@ -586,7 +586,7 @@ class UNETRPPModule(SegmentationModule):
         """
         device = next(self.parameters()).device
         volume = volume.float().to(device)
-        B, C, D0, H0, W0 = volume.shape
+        B, _C, D0, H0, W0 = volume.shape
         pd, ph, pw = self.patch_crop_size
 
         pad_d, pad_h, pad_w = max(0, pd - D0), max(0, ph - H0), max(0, pw - W0)
@@ -661,8 +661,9 @@ class UNETRPPModule(SegmentationModule):
         import numpy as np
         from albumentations.pytorch import ToTensorV2
         from medimgkit.readers import read_array_normalized
+
         from datamint.entities.annotations import VolumeSegmentation
-        from datamint.utils.uncertainty import segmentation_uncertainty, pool_top_k
+        from datamint.utils.uncertainty import pool_top_k, segmentation_uncertainty
 
         transform = self.transform or A.Compose([A.Normalize(), ToTensorV2()])
         device = self.inference_device

@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TYPE_CHECKING, cast
-from typing_extensions import override
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-import lightning as L
 import albumentations as A
+import lightning as L
 from albumentations.pytorch import ToTensorV2
+from typing_extensions import override
 
 from datamint.dataset import ImageDataset, SlicedVolumeDataset
 from datamint.utils.nifti_utils import metadata_to_nifti_obj
@@ -16,9 +16,9 @@ from .segmentation_trainer import SegmentationTrainer
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+    from medimgkit import ViewPlane
     from nibabel.spatialimages import SpatialImage
     from pydicom import Dataset as DicomDataset
-    from medimgkit import ViewPlane
 
     from datamint.entities import Project, Resource
 
@@ -61,7 +61,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         self,
         *,
         image_size: int | tuple[int, int] | None = None,
-        slice_axis: 'ViewPlane | int | None' = None,
+        slice_axis: ViewPlane | int | None = None,
         model: L.LightningModule | type[L.LightningModule] | None = None,
         in_channels: int = 3,
         trainer_kwargs: dict[str, Any] | None = None,
@@ -71,7 +71,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
                          trainer_kwargs=trainer_kwargs,
                          **kwargs)
         self.in_channels = in_channels
-        self.slice_axis: 'ViewPlane | int | None' = slice_axis
+        self.slice_axis: ViewPlane | int | None = slice_axis
         if isinstance(image_size, int):
             self.image_size = (image_size, image_size)
         else:
@@ -82,13 +82,13 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         image_size = f"{self.image_size[0]}×{self.image_size[1]}" if self.image_size else "auto (no resize)"
         return [*super()._extra_repr_fields(), ("Image size", image_size)]
 
-    def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> ImageDataset | SlicedVolumeDataset:
-        default_params = dict(
-            return_as_semantic_segmentation=True,
-            semantic_seg_merge_strategy='union',
-            allow_external_annotations=True,
-            include_unannotated=False,
-        )
+    def _build_dataset(self, project: str | Project, **kwargs: Any) -> ImageDataset | SlicedVolumeDataset:
+        default_params = {
+            'return_as_semantic_segmentation': True,
+            'semantic_seg_merge_strategy': 'union',
+            'allow_external_annotations': True,
+            'include_unannotated': False,
+        }
         dataset_params = {**default_params, **kwargs}
         dataset = ImageDataset(
             project=project,
@@ -120,7 +120,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         _LOGGER.info("Project contains 2D images; using ImageDataset.")
         return dataset
 
-    def _classify_resource(self, resource: 'Resource') -> str:
+    def _classify_resource(self, resource: Resource) -> str:
         if resource.is_video():
             return 'video'
 
@@ -137,13 +137,13 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         return getattr(resource, 'kind', 'unknown')
 
     @staticmethod
-    def _get_resource_depth(resource: 'Resource') -> int | None:
+    def _get_resource_depth(resource: Resource) -> int | None:
         try:
             return resource.get_depth()
         except Exception:
             return None
 
-    def _infer_slice_axis(self, resources: Sequence['Resource']) -> SliceAxisName:
+    def _infer_slice_axis(self, resources: Sequence[Resource]) -> SliceAxisName:
         for resource in resources:
             if self._classify_resource(resource) != 'volume':
                 continue
@@ -154,7 +154,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
 
         return 'axial'
 
-    def _infer_slice_axis_from_resource(self, resource: 'Resource') -> SliceAxisName | None:
+    def _infer_slice_axis_from_resource(self, resource: Resource) -> SliceAxisName | None:
         if resource.is_nifti():
             nifti_image = self._nifti_image_from_metadata(resource)
             if nifti_image is not None:
@@ -176,7 +176,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         return None
 
     @staticmethod
-    def _nifti_image_from_metadata(resource: 'Resource') -> 'SpatialImage | None':
+    def _nifti_image_from_metadata(resource: Resource) -> SpatialImage | None:
         metadata = getattr(resource, 'metadata', None)
         if not isinstance(metadata, dict):
             return None
@@ -186,7 +186,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         except Exception:
             return None
 
-    def _infer_slice_axis_from_nifti(self, nifti_image: 'SpatialImage') -> SliceAxisName | None:
+    def _infer_slice_axis_from_nifti(self, nifti_image: SpatialImage) -> SliceAxisName | None:
         from medimgkit import nifti_utils
 
         plane_sizes = {
@@ -201,7 +201,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         }
         return self._choose_slice_axis(plane_sizes, plane_spacings)
 
-    def _infer_slice_axis_from_dicom(self, dataset: 'DicomDataset') -> SliceAxisName | None:
+    def _infer_slice_axis_from_dicom(self, dataset: DicomDataset) -> SliceAxisName | None:
         from medimgkit import dicom_utils
 
         pixel_spacing = self._coerce_spacing_pair(getattr(dataset, 'PixelSpacing', None))
@@ -280,7 +280,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
             return A.Resize(*self.image_size)
 
     @override
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         return A.Compose([
             self._build_resize_transform(),
             A.ToRGB(),
@@ -292,7 +292,7 @@ class SemanticSegmentation2DTrainer(SegmentationTrainer):
         ])
 
     @override
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         return A.Compose([
             self._build_resize_transform(),
             A.ToRGB(),

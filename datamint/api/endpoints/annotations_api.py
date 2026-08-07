@@ -1,20 +1,20 @@
-from typing import Any, BinaryIO, IO, Literal, overload, TYPE_CHECKING
-from collections.abc import Generator, Sequence
-from datetime import date
-from io import BytesIO
-from pathlib import Path
 import asyncio
 import json
 import logging
 import os
+from collections.abc import Generator, Sequence
+from datetime import date
+from io import BytesIO
+from pathlib import Path
+from typing import IO, TYPE_CHECKING, Any, BinaryIO, Literal, overload
 
 import aiohttp
 import httpx
 import numpy as np
 import pydicom
+from medimgkit import ViewPlane
 from medimgkit.format_detection import guess_type
 from medimgkit.nifti_utils import DEFAULT_NIFTI_MIME
-from medimgkit import ViewPlane
 from nibabel.loadsave import load as nib_load
 from nibabel.nifti1 import Nifti1Image
 from PIL import Image
@@ -38,9 +38,10 @@ from datamint.utils.nifti_utils import metadata_to_nifti_obj
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
 
 if TYPE_CHECKING:
-    from .resources_api import ResourcesApi
-    from .models_api import ModelsApi
     from datamint.entities import Project
+
+    from .models_api import ModelsApi
+    from .resources_api import ResourcesApi
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -250,7 +251,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             List of annotation IDs created.
         """
         if upload_volume == 'auto':
-            if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+            if isinstance(file_path, str) and (file_path.endswith(('.nii', '.nii.gz'))):
                 upload_volume = True
             else:
                 upload_volume = False
@@ -392,7 +393,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     annotations.append(ann)
 
                 # Validate unique identifiers
-                if len(annotations) != len(set([a.identifier for a in annotations])):
+                if len(annotations) != len({a.identifier for a in annotations}):
                     raise ValueError(
                         "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
                     )
@@ -733,7 +734,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
-        if isinstance(file_path, str) and (file_path.endswith('.nii') or file_path.endswith('.nii.gz')):
+        if isinstance(file_path, str) and (file_path.endswith(('.nii', '.nii.gz'))):
             raise ValueError(
                 "NIfTI files are volume segmentations. Use `upload_volume_segmentation` instead."
             )
@@ -895,7 +896,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(name, str):
             raise NotImplementedError("`name=string` is not supported yet for volume segmentation.")
         if isinstance(name, dict):
-            if any(isinstance(k, tuple) for k in name.keys()):
+            if any(isinstance(k, tuple) for k in name):
                 raise NotImplementedError(
                     "For volume segmentations, `name` must be a dictionary with integer keys only.")
             if 'default' in name:
@@ -905,7 +906,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         # Prepare file for upload
         if isinstance(file_path, str):
-            if file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
+            if file_path.endswith(('.nii', '.nii.gz')):
                 # Upload NIfTI file directly
                 _LOGGER.debug('uploading segmentation as a volume')
                 with open(file_path, 'rb') as f:
@@ -998,7 +999,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             nframes = normalized_imgs.shape[3]
             fios = AnnotationsApi._numpy_to_bytesio_png(normalized_imgs)
 
-        elif file_path.endswith('.nii') or file_path.endswith('.nii.gz'):
+        elif file_path.endswith(('.nii', '.nii.gz')):
             loaded_image: Any = nib_load(file_path)
             segs_imgs = loaded_image.get_fdata()
             if segs_imgs.ndim != 3 and segs_imgs.ndim != 2:
@@ -1125,7 +1126,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     def create_numeric_annotation(self,
                                   resource: str | Resource,
                                   identifier: str,
-                                  value: int | float,
+                                  value: float,
                                   units: str | None = None,
                                   worklist_id: str | None = None,
                                   author_email: str | None = None,
@@ -1511,7 +1512,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             try:
                 resource_id = self.get_by_id(annotation_id).resource_id
             except Exception as e:
-                error_msg = f"Failed to get resource_id for annotation {annotation_id}: {str(e)}"
+                error_msg = f"Failed to get resource_id for annotation {annotation_id}: {e!s}"
                 _LOGGER.error(error_msg)
                 if progress_bar:
                     progress_bar.update(1)
@@ -1528,7 +1529,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 progress_bar.update(1)
             return {'success': True, 'annotation_id': annotation_id}
         except Exception as e:
-            error_msg = f"Failed to download annotation {annotation_id}: {str(e)}"
+            error_msg = f"Failed to download annotation {annotation_id}: {e!s}"
             _LOGGER.error(error_msg)
             if progress_bar:
                 progress_bar.update(1)

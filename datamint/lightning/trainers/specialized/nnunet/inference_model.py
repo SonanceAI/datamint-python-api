@@ -66,8 +66,8 @@ class NNUNetInferenceModel(BaseDatamintModel):
         """
         super().load_context(context)
         os.environ.setdefault('nnUNet_extTrainer', str(Path(__file__).parent))
-        import torch
         import nnunetv2.inference.predict_from_raw_data as _pred_mod
+        import torch
 
         bundle_path = context.artifacts['nnunet_bundle']
         predictor = _pred_mod.nnUNetPredictor(device=torch.device(self.inference_device))

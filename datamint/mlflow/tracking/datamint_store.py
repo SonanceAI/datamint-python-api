@@ -1,7 +1,8 @@
-from mlflow.store.tracking.rest_store import RestStore
-from mlflow.exceptions import MlflowException
-from mlflow.utils.proto_json_utils import message_to_json
 from functools import partial
+
+from mlflow.exceptions import MlflowException
+from mlflow.store.tracking.rest_store import RestStore
+from mlflow.utils.proto_json_utils import message_to_json
 from typing_extensions import override
 from datamint.mlflow.store_utils import resolve_project_id, _inject_project_id_into_body
 import logging
@@ -16,8 +17,9 @@ class DatamintStore(RestStore):
 
     def __init__(self, store_uri: str, artifact_uri=None, force_valid=True):
         # Ensure MLflow environment is configured when store is initialized
-        from datamint.mlflow.env_utils import setup_mlflow_environment
         from mlflow.utils.credentials import get_default_host_creds
+
+        from datamint.mlflow.env_utils import setup_mlflow_environment
         setup_mlflow_environment()
 
         if store_uri.startswith('datamint://') or 'datamint.io' in store_uri or force_valid:
@@ -48,9 +50,9 @@ class DatamintStore(RestStore):
 
     @override
     def get_experiment_by_name(self, experiment_name, project_id: str | None = None):
-        from mlflow.protos.service_pb2 import GetExperimentByName
         from mlflow.entities import Experiment
         from mlflow.protos import databricks_pb2
+        from mlflow.protos.service_pb2 import GetExperimentByName
 
         if self.invalid:
             return super().get_experiment_by_name(experiment_name)

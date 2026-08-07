@@ -1,15 +1,16 @@
 """API handler for model deployment endpoints."""
-from typing import Any, Literal
-from collections.abc import Callable, Generator
 import json
 import logging
 import time
+from collections.abc import Callable, Generator
+from typing import Any
 
 import httpx
 
-from datamint.exceptions import ResourceNotFoundError, JobTimeoutError
-from ..entity_base_api import EntityBaseApi, ApiConfig
 from datamint.entities.deployjob import DeployJob
+from datamint.exceptions import JobTimeoutError, ResourceNotFoundError
+
+from ..entity_base_api import ApiConfig, EntityBaseApi
 
 logger = logging.getLogger(__name__)
 

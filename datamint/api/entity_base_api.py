@@ -1,14 +1,17 @@
-from typing import Any, Literal, TypeVar, Generic, overload
-from collections.abc import Sequence, AsyncGenerator
+import asyncio
+import contextlib
 import logging
+import re
+from collections.abc import AsyncGenerator, Sequence
+from typing import Any, Generic, Literal, TypeVar, overload
+
+import aiohttp
 import httpx
+
 from datamint.entities.base_entity import BaseEntity
 from datamint.exceptions import ItemNotFoundError, ServerError
-import aiohttp
-import asyncio
+
 from .base_api import ApiConfig, BaseApi
-import contextlib
-import re
 
 _UUID_PATTERN = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
@@ -368,7 +371,7 @@ class CreatableEntityApi(EntityBaseApi[T]):
             if return_entity:
                 try:
                     return self._init_entity_obj(**respdata)
-                except:
+                except Exception:
                     logger.debug("Failed to init entity obj on create response. Falling back to get_by_id.")
                     return self.get_by_id(respdata.get('id'))
             return respdata.get('id')
@@ -425,4 +428,3 @@ class UpdatableEntityApi(EntityBaseApi[T]):
 
 class CRUDEntityApi(CreatableEntityApi[T], UpdatableEntityApi[T], DeletableEntityApi[T]):
     """Full CRUD API handler for entities supporting create, read, update, delete operations."""
-    pass

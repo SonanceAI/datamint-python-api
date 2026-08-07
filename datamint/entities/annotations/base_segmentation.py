@@ -14,12 +14,13 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, overload
 
 import numpy as np
+from nibabel.nifti1 import Nifti1Image
 from PIL import Image
-from pydantic import BeforeValidator, PlainSerializer, Field
+from pydantic import BeforeValidator, Field, PlainSerializer
+
+from datamint.types import CacheMode, ImagingData
 
 from .annotation import Annotation
-from datamint.types import CacheMode, ImagingData
-from nibabel.nifti1 import Nifti1Image
 
 _LOGGER = logging.getLogger(__name__)
 

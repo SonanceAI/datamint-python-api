@@ -3,24 +3,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import Any, TYPE_CHECKING
-
-import torch
-import torch.nn.functional as F
-from torch import nn
+from typing import TYPE_CHECKING, Any
 
 import albumentations as A
+import torch
+import torch.nn.functional as F
 from albumentations.pytorch import ToTensorV2
+from torch import nn
 
 from datamint.dataset import VolumeDataset
-from datamint.lightning.datamodule import DatamintDataModule
-
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.entities.annotations.types import AnnotationType
+from datamint.lightning.datamodule import DatamintDataModule
+
 from .segmentation_trainer import SegmentationTrainer
 
 if TYPE_CHECKING:
     from albumentations import BaseCompose
+
     from datamint.dataset.base import DatamintBaseDataset
     from datamint.entities import Project
 
@@ -96,13 +96,13 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
 
     # ── Template hooks ───────────────────────────────────────────
 
-    def _build_dataset(self, project: 'str | Project', **kwargs: Any) -> VolumeDataset:
-        default_params: dict[str, Any] = dict(
-            return_as_semantic_segmentation=True,
-            semantic_seg_merge_strategy='union',
-            allow_external_annotations=True,
-            include_unannotated=False,
-        )
+    def _build_dataset(self, project: str | Project, **kwargs: Any) -> VolumeDataset:
+        default_params: dict[str, Any] = {
+            'return_as_semantic_segmentation': True,
+            'semantic_seg_merge_strategy': 'union',
+            'allow_external_annotations': True,
+            'include_unannotated': False,
+        }
         return VolumeDataset(project=project, **{**default_params, **kwargs})
 
     def _loss(self) -> nn.Module:
@@ -117,7 +117,7 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
             'dice': partial(GeneralizedDiceScore,  num_classes=num_classes, input_format='one-hot'),
         }
 
-    def _train_transform(self) -> 'BaseCompose':
+    def _train_transform(self) -> BaseCompose:
         """Intensity-only transforms (no crop).
 
         Spatial crop is done inside the Lightning module's ``training_step``
@@ -129,7 +129,7 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
             ToTensorV2(),
         ])
 
-    def _eval_transform(self) -> 'BaseCompose':
+    def _eval_transform(self) -> BaseCompose:
         """Normalise only — no crop.
 
         Full volumes are passed to the Lightning module's sliding-window
@@ -142,9 +142,9 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
 
     def _build_datamodule(
         self,
-        dataset: 'DatamintBaseDataset',
-        train_transform: 'BaseCompose',
-        eval_transform: 'BaseCompose',
+        dataset: DatamintBaseDataset,
+        train_transform: BaseCompose,
+        eval_transform: BaseCompose,
     ) -> DatamintDataModule:
         """Use ``eval_batch_size=1`` for val/test.
 

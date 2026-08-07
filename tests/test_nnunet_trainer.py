@@ -3,11 +3,15 @@ Test nnU-Net training pipeline using NNUNetTrainer. We mock the dataset building
 called in the correct order during fit(). We also test the dataset ID assignment logic and that the expected files are written during fingerprinting/planning.
 """
 import os
+import re
 import sys
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 import datamint.lightning.trainers.specialized.nnunet.trainer as _trainer_mod
 from datamint.lightning.trainers.specialized.nnunet.trainer import NNUNetTrainer
+
 
 # Fake nnunetv2 submodules so patch() can resolve them when the trainer imports them.
 def _mock_nnunetv2():
@@ -111,7 +115,7 @@ def test_fingerprint_raises_if_json_not_written(trainer):
                '.fingerprint_extractor.DatasetFingerprintExtractor') as MockFP, \
          patch('nnunetv2.experiment_planning.experiment_planners.default_experiment_planner.ExperimentPlanner'):
         MockFP.return_value.run.return_value = None
-        with pytest.raises(RuntimeError, match='dataset_fingerprint.json'):
+        with pytest.raises(RuntimeError, match=re.escape('dataset_fingerprint.json')):
             trainer._run_fingerprint_and_plan(dataset_id=1)
 
 

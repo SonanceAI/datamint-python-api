@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
+
 from .prediction_modes import PredictionMode
 
 _LOGGER = logging.getLogger(__name__)
@@ -69,11 +70,11 @@ class PredictionRouter:
     """
 
     _RESERVED_PARAMS = frozenset({"mode", "confidence_threshold"})
-    _DELEGATED_MODE_MAP = {
+    _DELEGATED_MODE_MAP: ClassVar[dict[PredictionMode, PredictionMode]] = {
         PredictionMode.IMAGE: PredictionMode.SLICE,
     }
     # prerequisite → bridge modes that become available when prerequisite is registered
-    _BRIDGE_MODE_PREREQS: dict[PredictionMode, PredictionMode] = {
+    _BRIDGE_MODE_PREREQS: ClassVar[dict[PredictionMode, PredictionMode]] = {
         PredictionMode.VOLUME: PredictionMode.SLICE,
         PredictionMode.FRAME: PredictionMode.IMAGE,
         PredictionMode.ALL_FRAMES: PredictionMode.IMAGE,

@@ -4,13 +4,23 @@ Datamint API package alias.
 
 import importlib.metadata
 from typing import TYPE_CHECKING
+
+from .utils.logging_utils import setup_file_logging_if_enabled
+
+setup_file_logging_if_enabled()
 if TYPE_CHECKING:
-    from .api.client import Api
+    from .api.client import Api as Api
+
     # New modular datasets
-    from .dataset.image_dataset import ImageDataset
-    from .dataset.volume_dataset import VolumeDataset
-    from .mlflow.flavors.validation import validate_model, ValidationReport, ValidationIssue, ModelValidationError
-    from .default_project import select_project
+    from .dataset.image_dataset import ImageDataset as ImageDataset
+    from .dataset.volume_dataset import VolumeDataset as VolumeDataset
+    from .default_project import select_project as select_project
+    from .mlflow.flavors.validation import (
+        ModelValidationError as ModelValidationError,
+        ValidationIssue as ValidationIssue,
+        ValidationReport as ValidationReport,
+        validate_model as validate_model,
+    )
 
 else:
     import lazy_loader as lazy

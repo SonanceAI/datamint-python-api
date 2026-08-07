@@ -5,20 +5,21 @@ This module defines the Annotation model used to represent annotation
 records returned by the DataMint API.
 """
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from pydantic import ConfigDict, Field, PrivateAttr, field_validator
 
 from datamint.types import CacheMode, ImagingData
 
-from ..base_entity import BaseEntity, MISSING_FIELD
+from ..base_entity import MISSING_FIELD, BaseEntity
 from ..cache_manager import CacheManager
 from .types import AnnotationType
 
 if TYPE_CHECKING:
     from datamint.api.endpoints.annotations_api import AnnotationsApi
+
     from ..resource import Resource
 
 
@@ -179,7 +180,7 @@ class Annotation(AnnotationBase):
     def __init__(self, **data):
         """Initialize the annotation entity."""
         super().__init__(**data)
-        self._resource: 'Resource | None' = None
+        self._resource: Resource | None = None
 
     @property
     def _cache(self) -> CacheManager[bytes]:
@@ -324,7 +325,7 @@ class Annotation(AnnotationBase):
                 raise ValueError(f"Segmentation annotations must have an associated file. {data}")
 
         # Create instance with only valid fields
-        valid_fields = {f for f in cls.model_fields.keys()}
+        valid_fields = {f for f in cls.model_fields}
         filtered_data = {k: v for k, v in converted_data.items() if k in valid_fields}
 
         return cls(**filtered_data)

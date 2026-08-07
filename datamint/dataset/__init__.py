@@ -11,29 +11,28 @@ Use `build_dataset()` for automatic type detection, or instantiate directly.
 
 # New modular architecture
 from .base import DatamintBaseDataset, DatamintDatasetException
+from .factory import build_dataset
+from .image_dataset import ImageDataset, detection_collate_fn
 from .multiframe_dataset import MultiFrameDataset
-from .image_dataset import ImageDataset
-from .volume_dataset import VolumeDataset
-from .video_dataset import VideoDataset
 from .sliced_dataset import SlicedVolumeDataset
 from .sliced_video_dataset import SlicedVideoDataset
-from .image_dataset import detection_collate_fn
-from .factory import build_dataset
 from .split_result import SplitResult
+from .video_dataset import VideoDataset
+from .volume_dataset import VolumeDataset
 
 __all__ = [
     # Core
     'DatamintBaseDataset',
     'DatamintDatasetException',
-    'MultiFrameDataset',
     # Specialized datasets
     'ImageDataset',
-    'VolumeDataset',
-    'VideoDataset',
-    'SlicedVolumeDataset',
+    'MultiFrameDataset',
     'SlicedVideoDataset',
-    'detection_collate_fn',
+    'SlicedVolumeDataset',
+    'SplitResult',
+    'VideoDataset',
+    'VolumeDataset',
     # Factory
     'build_dataset',
-    'SplitResult',
+    'detection_collate_fn',
 ]

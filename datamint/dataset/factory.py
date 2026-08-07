@@ -4,14 +4,15 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from datamint.entities.resource import Resource
     from datamint.entities import Project
+    from datamint.entities.resource import Resource
+
     from .base import DatamintBaseDataset
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def _classify_resource(resource: 'Resource') -> str:
+def _classify_resource(resource: Resource) -> str:
     if resource.is_video():
         return 'video'
     if resource.is_volume():
@@ -27,7 +28,7 @@ def _classify_resource(resource: 'Resource') -> str:
 
 
 def build_dataset(project: str | Project | None = None,
-                  **kwargs: Any) -> 'DatamintBaseDataset':
+                  **kwargs: Any) -> DatamintBaseDataset:
     """Auto-detect and return the appropriate dataset class for a project.
 
     Fetches a small sample of resources from the project to determine the
@@ -59,9 +60,10 @@ def build_dataset(project: str | Project | None = None,
 
     from datamint import Api
     from datamint.entities import Project as ProjectCls
+
     from .image_dataset import ImageDataset
-    from .volume_dataset import VolumeDataset
     from .video_dataset import VideoDataset
+    from .volume_dataset import VolumeDataset
 
     _KIND_TO_CLS = {
         'image': ImageDataset,

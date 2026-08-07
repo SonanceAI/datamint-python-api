@@ -3,22 +3,27 @@ Datamint MLflow custom flavor for wrapping PyTorch models with preprocessing.
 """
 
 from .datamint_flavor import (
-    save_model,
-    log_model,
-    load_model,
     _load_pyfunc,
+    load_model,
+    log_model,
+    save_model,
 )
 from .task_type import TaskType
-from .validation import validate_model, ValidationReport, ValidationIssue, ModelValidationError
+from .validation import (
+    ModelValidationError,
+    ValidationIssue,
+    ValidationReport,
+    validate_model,
+)
 
 __all__ = [
-    "save_model",
-    "log_model",
-    "load_model",
-    "_load_pyfunc",
-    "TaskType",
-    "validate_model",
-    "ValidationReport",
-    "ValidationIssue",
     "ModelValidationError",
+    "TaskType",
+    "ValidationIssue",
+    "ValidationReport",
+    "_load_pyfunc",
+    "load_model",
+    "log_model",
+    "save_model",
+    "validate_model",
 ]

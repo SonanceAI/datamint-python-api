@@ -1,12 +1,12 @@
-from .image_classification import ImageClassification
-from .image_segmentation import ImageSegmentation
 from .annotation import Annotation, _normalize_annotation_data
 from .box_annotation import BoxAnnotation
 from .geometry import BoxGeometry, CoordinateSystem, Geometry, LineGeometry
+from .image_classification import ImageClassification
+from .image_segmentation import ImageSegmentation
 from .line_annotation import LineAnnotation
 from .numeric_annotation import NumericAnnotation
-from .volume_segmentation import VolumeSegmentation
 from .types import AnnotationType
+from .volume_segmentation import VolumeSegmentation
 
 
 def annotation_from_dict(data: dict) -> Annotation:
@@ -58,17 +58,17 @@ def annotation_from_dict(data: dict) -> Annotation:
 
 
 __all__ = [
+    "Annotation",
+    "AnnotationType",
     "BoxAnnotation",
     "BoxGeometry",
-    "ImageClassification",
-    "ImageSegmentation",
-    "Annotation",
     "CoordinateSystem",
     "Geometry",
+    "ImageClassification",
+    "ImageSegmentation",
     "LineAnnotation",
     "LineGeometry",
     "NumericAnnotation",
     "VolumeSegmentation",
-    "AnnotationType",
     "annotation_from_dict",
 ]

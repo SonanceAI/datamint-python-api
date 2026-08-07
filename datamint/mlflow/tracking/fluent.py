@@ -1,11 +1,12 @@
-from typing import TYPE_CHECKING
-import threading
 import logging
+import os
+import threading
+from typing import TYPE_CHECKING
+
 from datamint import Api
 from datamint.exceptions import ItemNotFoundError
-import os
-from datamint.mlflow.env_vars import EnvVars
 from datamint.mlflow.env_utils import ensure_mlflow_configured
+from datamint.mlflow.env_vars import EnvVars
 
 if TYPE_CHECKING:
     from datamint.entities.project import Project
@@ -92,3 +93,13 @@ def set_project(project: 'Project | str'):
     os.environ[EnvVars.DATAMINT_PROJECT_ID.value] = project_id
 
     return project
+
+
+def _reset_active_project():
+    """Clear the active project, restoring the pre-``set_project()`` state. """
+    global _ACTIVE_PROJECT_ID
+
+    with _PROJECT_LOCK:
+        _ACTIVE_PROJECT_ID = None
+
+    os.environ.pop(EnvVars.DATAMINT_PROJECT_ID.value, None)

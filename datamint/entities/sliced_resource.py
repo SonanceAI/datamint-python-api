@@ -1,12 +1,16 @@
 from __future__ import annotations
+
 import gzip
 import logging
-from typing import Any, TYPE_CHECKING
 from functools import cached_property
-from medimgkit.readers import read_array_normalized
-from medimgkit import dicom_utils, nifti_utils, ViewPlane
-from datamint.entities.cache_manager import CacheManager
+from typing import TYPE_CHECKING, Any
+
 import numpy as np
+from medimgkit import ViewPlane, dicom_utils, nifti_utils
+from medimgkit.readers import read_array_normalized
+
+from datamint.entities.cache_manager import CacheManager
+
 from .sliced_resource_base import SlicedResourceBase
 
 if TYPE_CHECKING:
