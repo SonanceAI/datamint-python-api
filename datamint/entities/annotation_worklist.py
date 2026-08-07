@@ -19,7 +19,6 @@ class _WorklistAnnotatorInfo(BaseModel):
 class AnnotationWorklist(BaseEntity):
 
     def __init__(self, **kwargs):
-        _LOGGER.info(f"Creating AnnotationWorklist with kwargs: {kwargs}")
         super().__init__(**kwargs)
 
     def __eq__(self, other: object) -> bool:
