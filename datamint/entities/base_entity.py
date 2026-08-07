@@ -78,6 +78,53 @@ class BaseEntityModel(BaseModel):
             if hasattr(self, field_name) and type(getattr(self, field_name)) == str and getattr(self, field_name) == MISSING_FIELD:
                 delattr(self, field_name)
 
+    def __getattr__(self, name: str) -> Any:
+        """Intercept access to missing fields and trigger automatic refresh.
+
+        When a field has the MISSING_FIELD sentinel value, it is deleted in __init__.
+        This method catches subsequent attribute access attempts and automatically
+        refreshes the entity from the server to populate all missing fields.
+
+        Private attributes (e.g. ``_api``) are forwarded to Pydantic's own
+        ``__getattr__`` so we don't break Pydantic's private-attribute handling,
+        which we override by defining this method.
+        """
+        # Delegate private attributes to Pydantic's handler (manages __pydantic_private__).
+        # Defining our own __getattr__ overrides Pydantic's, so we must forward these.
+        if name.startswith('_'):
+            try:
+                return super().__getattr__(name)
+            except AttributeError:
+                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        # Check if this is a declared Pydantic field that was deleted (MISSING_FIELD)
+        try:
+            pydantic_fields = object.__getattribute__(self, '__pydantic_fields__')
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        if name not in pydantic_fields:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        # This is a declared field that was deleted (MISSING_FIELD sentinel).
+        # Try to refresh from the server using _api stored in __pydantic_private__.
+        try:
+            private_state = object.__getattribute__(self, '__pydantic_private__') or {}
+            api_ref = private_state.get('_api')
+            if api_ref is not None:
+                _LOGGER.debug(
+                    "Lazy-loading missing field '%s' on %s (id=%s) via automatic refresh",
+                    name, type(self).__name__, getattr(self, 'id', '<unknown>')
+                )
+                self._refresh()
+                # After refresh, the field should be populated
+                return object.__getattribute__(self, name)
+        except Exception:
+            # If refresh fails for any reason, fall through to standard error
+            pass
+
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
     def asdict(self) -> dict[str, Any]:
         """Convert the entity to a dictionary, including unknown fields."""
         d = self.model_dump(warnings='none')
