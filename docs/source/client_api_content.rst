@@ -514,6 +514,14 @@ a Datamint :mod:`~datamint.lightning.trainers`), rather than raising.
 ``Model.get_supported_modes()``/``get_metrics()`` are shortcuts that delegate
 to the latest version when you don't need a specific one.
 
+Find which projects a model belongs to
+++++++++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    model = api.models.get_by_name("my-model")
+    projects = model.get_projects()          # list[Project]
+
 Model registry (MLflow) operations
 ++++++++++++++++++++++++++++++++++
 

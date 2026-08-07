@@ -15,6 +15,8 @@ from .model_types import Model, ModelVersion
 if TYPE_CHECKING:
     from datamint.entities.project import Project
 
+    from .projects_api import ProjectsApi
+
 
 class ModelsApi(BaseApi):
     """API handler for the model registry.
@@ -27,13 +29,22 @@ class ModelsApi(BaseApi):
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None,
-                 deploy_api: DeployModelApi | None = None) -> None:
+                 deploy_api: DeployModelApi | None = None,
+                 projects_api: 'ProjectsApi | None' = None) -> None:
         super().__init__(config, client)
         self._deploy_api = deploy_api or DeployModelApi(config, client=client)
+        self._projects_api = projects_api
 
     @property
     def _mlflow_client(self) -> mlflow.tracking.MlflowClient:
         return mlflow.tracking.MlflowClient()
+
+    @property
+    def projects_api(self) -> 'ProjectsApi':
+        if self._projects_api is None:
+            from .projects_api import ProjectsApi
+            self._projects_api = ProjectsApi(self.config, client=self.client)
+        return self._projects_api
 
     def get_list(self,
                 only_deployed: bool = False,
@@ -75,6 +86,20 @@ class ModelsApi(BaseApi):
                 return None
             raise
         return Model(_raw=raw_model, _api=self)
+
+    def get_projects(self, model_name: str, customer_id: str | None = None) -> list['Project']:
+        """Get all projects a registered model is associated with.
+
+        Args:
+            model_name: Name of the registered model.
+            customer_id: Optional customer ID to scope the lookup.
+        """
+        payload = {'model_name': model_name}
+        if customer_id is not None:
+            payload['customer_id'] = customer_id
+        response = self._make_request('POST', 'datamint/api/v1/model-info/get-project', json=payload)
+        project_ids = response.json().get('project_ids', [])
+        return [self.projects_api.get_by_id(pid) for pid in project_ids]
 
     def create(self, name: str, description: str | None = None, exists_ok: bool = True) -> Model:
         """Create a new registered model.

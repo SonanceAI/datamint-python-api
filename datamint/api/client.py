@@ -158,6 +158,7 @@ class Api:
                 kwargs['projects_api'] = self.projects
             elif name == 'models':
                 kwargs['deploy_api'] = self.deploy
+                kwargs['projects_api'] = self.projects
             endpoint = api_class(self.config, client=client, **kwargs)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self
@@ -191,7 +192,8 @@ class Api:
 
     @property
     def models(self) -> ModelsApi:
-        return self._get_endpoint('models')
+        """Access the model registry endpoints (mlflow-adjacent host)."""
+        return self._get_endpoint('models', is_mlflow=True)
 
     @property
     def annotationworklists(self) -> AnnotationWorklistApi:
