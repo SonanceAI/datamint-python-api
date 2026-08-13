@@ -77,53 +77,6 @@ class BaseEntityModel(BaseModel):
             if hasattr(self, field_name) and isinstance(getattr(self, field_name), str) and getattr(self, field_name) == MISSING_FIELD:
                 delattr(self, field_name)
 
-    def __getattr__(self, name: str) -> Any:
-        """Intercept access to missing fields and trigger automatic refresh.
-
-        When a field has the MISSING_FIELD sentinel value, it is deleted in __init__.
-        This method catches subsequent attribute access attempts and automatically
-        refreshes the entity from the server to populate all missing fields.
-
-        Private attributes (e.g. ``_api``) are forwarded to Pydantic's own
-        ``__getattr__`` so we don't break Pydantic's private-attribute handling,
-        which we override by defining this method.
-        """
-        # Delegate private attributes to Pydantic's handler (manages __pydantic_private__).
-        # Defining our own __getattr__ overrides Pydantic's, so we must forward these.
-        if name.startswith('_'):
-            try:
-                return super().__getattr__(name)
-            except AttributeError:
-                raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
-        # Check if this is a declared Pydantic field that was deleted (MISSING_FIELD)
-        try:
-            pydantic_fields = object.__getattribute__(self, '__pydantic_fields__')
-        except AttributeError:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
-        if name not in pydantic_fields:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
-        # This is a declared field that was deleted (MISSING_FIELD sentinel).
-        # Try to refresh from the server using _api stored in __pydantic_private__.
-        try:
-            private_state = object.__getattribute__(self, '__pydantic_private__') or {}
-            api_ref = private_state.get('_api')
-            if api_ref is not None:
-                _LOGGER.debug(
-                    "Lazy-loading missing field '%s' on %s (id=%s) via automatic refresh",
-                    name, type(self).__name__, getattr(self, 'id', '<unknown>')
-                )
-                self._refresh()
-                # After refresh, the field should be populated
-                return object.__getattribute__(self, name)
-        except Exception:
-            # If refresh fails for any reason, fall through to standard error
-            pass
-
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-
     def asdict(self) -> dict[str, Any]:
         """Convert the entity to a dictionary, including unknown fields."""
         d = self.model_dump(warnings='none')
@@ -148,22 +101,6 @@ class BaseEntityModel(BaseModel):
 
             if have_to_log:
                 _LOGGER.warning(f"Unknown fields {list(self.__pydantic_extra__.keys())} found in {class_name}")
-
-    def is_attr_missing(self, attr_name: str) -> bool:
-        """Check if a value is the MISSING_FIELD sentinel."""
-        if attr_name not in self.__pydantic_fields__:
-            raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
-        if not hasattr(self, attr_name):
-            return True
-        return getattr(self, attr_name) == MISSING_FIELD
-
-    def has_missing_attrs(self) -> bool:
-        """Check if the entity has any attributes that are MISSING_FIELD.
-
-        Returns:
-            True if any attribute is MISSING_FIELD, False otherwise
-        """
-        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__)
 
 
 class BaseEntity(BaseEntityModel):
@@ -195,8 +132,8 @@ class BaseEntity(BaseEntityModel):
         # nested Pydantic models are preserved as model instances rather than
         # being converted to plain dicts (as model_dump() would do).
         for field_name in updated_ent.__pydantic_fields__:
-            if hasattr(updated_ent, field_name): # FIXME: might be always true
-                setattr(self, field_name, getattr(updated_ent, field_name))
+            if updated_ent._raw_hasattr(field_name):
+                setattr(self, field_name, updated_ent._getraw_attr(field_name))
 
         # Also propagate any extra (unknown) fields
         if updated_ent.__pydantic_extra__:
@@ -205,6 +142,65 @@ class BaseEntity(BaseEntityModel):
                     setattr(self, field_name, field_value)
 
         return self
+
+    def _getraw_attr(self, name: str) -> Any:
+        """Get the raw attribute value without triggering automatic refresh."""
+        return object.__getattribute__(self, name)  # Pydantic has this implemented
+
+    def _raw_hasattr(self, name: str) -> bool:
+        try:
+            v = self._getraw_attr(name)
+            if v is MISSING_FIELD:
+                return False
+            return True
+        except AttributeError:
+            return False
+
+    def __getattr__(self, name: str) -> Any:
+        """Intercept access to missing fields and trigger automatic refresh.
+
+        When a field has the MISSING_FIELD sentinel value, it is deleted in __init__.
+        This method catches subsequent attribute access attempts and automatically
+        refreshes the entity from the server to populate all missing fields.
+
+        """
+        # Delegate private attributes to Pydantic's handler (manages __pydantic_private__).
+        # Defining our own __getattr__ overrides Pydantic's, so we must forward these.
+        if name.startswith('_'):
+            try:
+                return super().__getattr__(name)  # pydantic implements __getattr__
+            except AttributeError:
+                try:
+                    return object.__getattribute__(self, name)
+                except AttributeError:
+                    raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        # Check if this is a declared Pydantic field that was deleted (MISSING_FIELD)
+        try:
+            pydantic_fields = object.__getattribute__(self, '__pydantic_fields__')
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        if name not in pydantic_fields:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+        # This is a declared field that was deleted (MISSING_FIELD sentinel).
+        # Try to refresh from the server using _api stored in __pydantic_private__.
+        try:
+            private_state = object.__getattribute__(self, '__pydantic_private__') or {}
+            api_ref = private_state.get('_api')
+            if api_ref is not None:
+                _LOGGER.debug("Refreshing %s from server since %s is missing",
+                              type(self).__name__, name)
+                self._refresh()
+                # After refresh, the field should be populated. If not, raise AttributeError
+                if self._raw_hasattr(name):
+                    return self._getraw_attr(name)
+        except Exception as e:
+            # If refresh fails for any reason, fall through to standard error
+            raise
+
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def _ensure_attr(self, attr_name: str) -> None:
         """Ensure that a given attribute is not MISSING_FIELD, refreshing if necessary.
@@ -279,7 +275,7 @@ class BaseEntity(BaseEntityModel):
         # Try to get from cache
         img_data = None
         should_load_from_cache, should_save_to_cache = self._resolve_cache_mode(use_cache)
-        
+
         if should_load_from_cache:
             img_data = cache_manager.get(self.id, data_key, version_info)
 
@@ -287,11 +283,10 @@ class BaseEntity(BaseEntityModel):
             # Cache miss - fetch from server
             if should_save_to_cache and save_path:
                 # Download directly to save_path, register location in cache metadata
-                _LOGGER.debug("Downloading to save_path: %s", save_path)
                 Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-                
+
                 img_data = download_callback(save_path)
-                
+
                 # Register save_path in cache metadata (no file duplication)
                 cache_manager.register_file_location(
                     self.id, data_key, save_path, version_info
@@ -300,9 +295,9 @@ class BaseEntity(BaseEntityModel):
                 # No save_path - download to cache directory
                 cache_path = cache_manager.get_expected_path(self.id, data_key)
                 _LOGGER.debug("Downloading to cache: %s", cache_path)
-                
+
                 img_data = download_callback(str(cache_path))
-                
+
                 # Register in cache metadata
                 cache_manager.set(self.id, data_key, img_data, version_info)
             else:
@@ -322,3 +317,19 @@ class BaseEntity(BaseEntityModel):
                 f.write(img_data)
 
         return img_data
+
+    def is_attr_missing(self, attr_name: str) -> bool:
+        """Check if a value is the MISSING_FIELD sentinel."""
+        if attr_name not in self.__pydantic_fields__:
+            raise AttributeError(f"Attribute '{attr_name}' not found in entity of type '{self.__class__.__name__}'")
+        if not self._raw_hasattr(attr_name):
+            return True
+        return getattr(self, attr_name) == MISSING_FIELD
+
+    def has_missing_attrs(self) -> bool:
+        """Check if the entity has any attributes that are MISSING_FIELD.
+
+        Returns:
+            True if any attribute is MISSING_FIELD, False otherwise
+        """
+        return any(self.is_attr_missing(attr_name) for attr_name in self.__pydantic_fields__)

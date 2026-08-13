@@ -45,7 +45,6 @@ class Project(BaseEntity):
         closed_resources_count: Number of resources marked as closed/completed
         resources_to_annotate_count: Number of resources still needing annotation
         annotators: List of annotators assigned to this project
-        pinned_metrics: Metric names pinned for display for this project
     """
     id: str
     name: str
@@ -55,18 +54,9 @@ class Project(BaseEntity):
     archived: bool
     resource_count: int
     description: str | None
-    registered_model: Any | None = Field(default=MISSING_FIELD)
-    ai_model_id: str | None = Field(default=MISSING_FIELD)
-    closed_resources_count: int = Field(default=MISSING_FIELD)
-    resources_to_annotate_count: int = Field(default=MISSING_FIELD)
+    archived: bool
     most_recent_experiment: str | None = Field(default=MISSING_FIELD)
     annotators: list[_ProjectAnnotatorInfo] = Field(default=MISSING_FIELD)
-    archived_on: str | None = Field(default=MISSING_FIELD)
-    archived_by: str | None = Field(default=MISSING_FIELD)
-    is_active_learning: bool = Field(default=MISSING_FIELD)
-    two_up_display: bool = Field(default=MISSING_FIELD)
-    require_review: bool = Field(default=MISSING_FIELD)
-    pinned_metrics: list[str] | None = Field(default=MISSING_FIELD)
 
     _api: 'ProjectsApi' = PrivateAttr()
 
