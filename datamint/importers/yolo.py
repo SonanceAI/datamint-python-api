@@ -1,16 +1,14 @@
-import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Sequence
 
 import yaml
 from PIL import Image
-from tqdm.auto import tqdm
 
 from datamint import Api
 from datamint.entities import Project
 
-_LOGGER = logging.getLogger(__name__)
+from . import _common
 
 _DEFAULT_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp')
 
@@ -36,6 +34,7 @@ class YOLOParseResult:
     samples: list[YOLOSample]
     class_names: list[str]
     missing_images: list[str]
+    unsupported_annotations: int
 
     @property
     def num_images(self) -> int:
@@ -71,7 +70,7 @@ def _load_names_from_yaml(path: Path) -> dict[int, str]:
 class YOLOImporter:
     """Parse a YOLO-format (images + normalized-bbox label .txt files) dataset and
     upload it to a Datamint project.
-    
+
     """
 
     def __init__(self,
@@ -110,8 +109,9 @@ class YOLOImporter:
         Cached after the first call; pass ``force=True`` to reparse.
 
         Raises:
-            ValueError: If class names can't be resolved, or a label line
-                references an unknown class index.
+            ValueError: If class names can't be resolved, a label line
+                references an unknown class index, or a normalized coordinate
+                is outside the expected ``[0, 1]`` range.
         """
         if self._result is not None and not force:
             return self._result
@@ -121,6 +121,7 @@ class YOLOImporter:
         samples: list[YOLOSample] = []
         missing_images: list[str] = []
         used_class_names: set[str] = set()
+        unsupported_annotations = 0
 
         for txt_path in sorted(self.labels_dir.glob('*.txt')):
             if txt_path.name in ('classes.txt',):
@@ -140,7 +141,8 @@ class YOLOImporter:
                     if not parts:
                         continue
                     if len(parts) != 5:
-                        # unsupported line shape skip
+                        # segmentation/OBB/keypoint variants have a different field count -- not supported
+                        unsupported_annotations += 1
                         continue
 
                     class_id = int(parts[0])
@@ -148,6 +150,11 @@ class YOLOImporter:
                         raise ValueError(f"Label '{txt_path}' references unknown class_id {class_id}.")
 
                     cx, cy, w, h = (float(v) for v in parts[1:])
+                    for coord_name, value in (('x_center', cx), ('y_center', cy), ('width', w), ('height', h)):
+                        if not (0.0 <= value <= 1.0):
+                            raise ValueError(f"Label '{txt_path}' has out-of-range normalized "
+                                            f"{coord_name}={value!r} (expected 0<=v<=1).")
+
                     cx, w = cx * img_w, w * img_w
                     cy, h = cy * img_h, h * img_h
 
@@ -167,12 +174,13 @@ class YOLOImporter:
             samples=samples,
             class_names=sorted(used_class_names),
             missing_images=missing_images,
+            unsupported_annotations=unsupported_annotations,
         )
         return self._result
 
     def import_to_project(self,
-                          api: Api,
                           project: Project | str,
+                          api: Api | None = None,
                           *,
                           tags: Sequence[str] | None = None,
                           imported_from: str = 'yolo-import',
@@ -181,53 +189,16 @@ class YOLOImporter:
         """Upload the parsed images and box annotations to a Datamint project.
 
         Calls :meth:`parse` first (reusing the cached result if already called).
+        ``api`` defaults to a new :class:`~datamint.api.client.Api` instance if not given.
         """
         result = self.parse()
-        if result.missing_images:
-            _LOGGER.warning(f'{len(result.missing_images)} label file(s) in {self.labels_dir} had no matching '
-                            f'image under {self.images_dir} and will be skipped.')
-
-        uploaded = api.resources.upload_resources(
-            [str(s.image_path) for s in result.samples],
+        return _common.import_boxes_to_project(
+            result, project, api,
+            box_points=lambda b: ((b.x1, b.y1), (b.x2, b.y2)),
+            source_label=str(self.labels_dir),
             tags=tags,
-            publish_to=project,
+            imported_from=imported_from,
             on_error=on_error,
             progress_bar=progress_bar,
-        )
-
-        resource_ids: list[str] = []
-        errors: list[tuple[str, Exception]] = []
-        n_boxes_uploaded = 0
-
-        iterator = zip(result.samples, uploaded)
-        if progress_bar:
-            iterator = tqdm(iterator, total=len(result.samples), desc='Uploading annotations')
-
-        for sample, resource_id in iterator:
-            if isinstance(resource_id, Exception):
-                errors.append((sample.file_name, resource_id))
-                continue
-            resource_ids.append(resource_id)
-
-            for box in sample.boxes:
-                try:
-                    api.annotations.add_box_annotation(
-                        point1=(box.x1, box.y1),
-                        point2=(box.x2, box.y2),
-                        resource=resource_id,
-                        identifier=box.label,
-                        imported_from=imported_from,
-                    )
-                    n_boxes_uploaded += 1
-                except Exception as e:
-                    if on_error == 'raise':
-                        raise
-                    errors.append((sample.file_name, e))
-
-        return YOLOImportResult(
-            project=project,
-            resource_ids=resource_ids,
-            n_images_uploaded=len(resource_ids),
-            n_boxes_uploaded=n_boxes_uploaded,
-            errors=errors,
+            result_cls=YOLOImportResult,
         )

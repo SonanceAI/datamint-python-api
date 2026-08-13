@@ -1,15 +1,12 @@
-import logging
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Sequence
 
-from tqdm.auto import tqdm
-
 from datamint import Api
 from datamint.entities import Project
 
-_LOGGER = logging.getLogger(__name__)
+from . import _common
 
 
 @dataclass
@@ -34,6 +31,7 @@ class PascalVOCParseResult:
     samples: list[PascalVOCSample]
     class_names: list[str]
     missing_images: list[str]
+    unsupported_annotations: int
 
     @property
     def num_images(self) -> int:
@@ -65,7 +63,7 @@ class PascalVOCImporter:
         self._result: PascalVOCParseResult | None = None
 
     def parse(self, force: bool = False) -> PascalVOCParseResult:
-        """Read and validate the Pascal VOC XML annotation files. 
+        """Read and validate the Pascal VOC XML annotation files.
 
         Cached after the first call; pass ``force=True`` to reparse.
 
@@ -82,6 +80,7 @@ class PascalVOCImporter:
         samples: list[PascalVOCSample] = []
         missing_images: list[str] = []
         used_class_names: set[str] = set()
+        unsupported_annotations = 0
 
         for xml_path in sorted(self.annotations_dir.glob('*.xml')):
             root = ET.parse(xml_path).getroot()
@@ -99,7 +98,11 @@ class PascalVOCImporter:
             for obj in root.findall('object'):
                 label = obj.findtext('name', default='').strip()
                 bb = obj.find('bndbox')
-                if not label or bb is None:
+                if bb is None:
+                    # e.g. a <polygon> segmentation object instead of <bndbox> -- not supported
+                    unsupported_annotations += 1
+                    continue
+                if not label:
                     # incomplete object entry skip it
                     continue
 
@@ -120,12 +123,13 @@ class PascalVOCImporter:
             samples=samples,
             class_names=sorted(used_class_names),
             missing_images=missing_images,
+            unsupported_annotations=unsupported_annotations,
         )
         return self._result
 
     def import_to_project(self,
-                          api: Api,
                           project: Project | str,
+                          api: Api | None = None,
                           *,
                           tags: Sequence[str] | None = None,
                           imported_from: str = 'pascal-voc-import',
@@ -134,53 +138,16 @@ class PascalVOCImporter:
         """Upload the parsed images and box annotations to a Datamint project.
 
         Calls :meth:`parse` first (reusing the cached result if already called).
+        ``api`` defaults to a new :class:`~datamint.api.client.Api` instance if not given.
         """
         result = self.parse()
-        if result.missing_images:
-            _LOGGER.warning(f'{len(result.missing_images)} image(s) referenced in '
-                            f'{self.annotations_dir} were not found under {self.images_dir} and will be skipped.')
-
-        uploaded = api.resources.upload_resources(
-            [str(s.image_path) for s in result.samples],
+        return _common.import_boxes_to_project(
+            result, project, api,
+            box_points=lambda b: ((b.x1, b.y1), (b.x2, b.y2)),
+            source_label=str(self.annotations_dir),
             tags=tags,
-            publish_to=project,
+            imported_from=imported_from,
             on_error=on_error,
             progress_bar=progress_bar,
-        )
-
-        resource_ids: list[str] = []
-        errors: list[tuple[str, Exception]] = []
-        n_boxes_uploaded = 0
-
-        iterator = zip(result.samples, uploaded)
-        if progress_bar:
-            iterator = tqdm(iterator, total=len(result.samples), desc='Uploading annotations')
-
-        for sample, resource_id in iterator:
-            if isinstance(resource_id, Exception):
-                errors.append((sample.file_name, resource_id))
-                continue
-            resource_ids.append(resource_id)
-
-            for box in sample.boxes:
-                try:
-                    api.annotations.add_box_annotation(
-                        point1=(box.x1, box.y1),
-                        point2=(box.x2, box.y2),
-                        resource=resource_id,
-                        identifier=box.label,
-                        imported_from=imported_from,
-                    )
-                    n_boxes_uploaded += 1
-                except Exception as e:
-                    if on_error == 'raise':
-                        raise
-                    errors.append((sample.file_name, e))
-
-        return PascalVOCImportResult(
-            project=project,
-            resource_ids=resource_ids,
-            n_images_uploaded=len(resource_ids),
-            n_boxes_uploaded=n_boxes_uploaded,
-            errors=errors,
+            result_cls=PascalVOCImportResult,
         )

@@ -479,26 +479,27 @@ a project in one call.
       - ``COCOImporter(annotations_file, images_dir=None)``
     * - :py:class:`~datamint.importers.pascal_voc.PascalVOCImporter`
       - Pascal VOC XML (one ``.xml`` per image, ``<bndbox>`` elements)
-      - ``PascalVOCImporter(annotations_dir, images_dir)`` 
+      - ``PascalVOCImporter(annotations_dir, images_dir)``
     * - :py:class:`~datamint.importers.yolo.YOLOImporter`
       - YOLO ``.txt`` labels (normalized ``class x_center y_center width height``)
-      - ``YOLOImporter(images_dir, labels_dir, class_names=None, data_yaml=None)`
+      - ``YOLOImporter(images_dir, labels_dir, class_names=None, data_yaml=None)``
 
-Only bounding boxes are imported; polygon/segmentation annotations in these
-formats are not supported yet.
+Only bounding boxes are imported. If a dataset contains polygon/segmentation
+annotations (or, for YOLO, OBB/keypoint label lines), ``parse()`` counts them
+and ``import_to_project()`` logs a warning naming how many were skipped,
+rather than failing or silently dropping them.
 
 Every importer follows the same two-step shape: :py:meth:`~datamint.importers.coco.COCOImporter.parse`
 reads and validates the dataset with no network calls (useful to preview
 image/box counts and class names before uploading anything), and
 :py:meth:`~datamint.importers.coco.COCOImporter.import_to_project` reuses that
-parsed result to upload the images and their box annotations:
+parsed result to upload the images and their box annotations. ``api`` is
+optional and defaults to a new :py:class:`~datamint.api.client.Api` instance
+if you don't already have one:
 
 .. code-block:: python
 
-    from datamint import Api, COCOImporter
-
-    api = Api()
-    project = api.projects.get_by_name("My Project")
+    from datamint import COCOImporter
 
     importer = COCOImporter("dataset/train/_annotations.coco.json")
 
@@ -507,7 +508,7 @@ parsed result to upload the images and their box annotations:
     print(preview.num_images, preview.num_boxes, preview.class_names)
 
     # Uploads images + box annotations, reusing the parsed result above
-    result = importer.import_to_project(api, project, tags=["coco-import"])
+    result = importer.import_to_project("My Project", tags=["coco-import"])
     print(result.n_images_uploaded, result.n_boxes_uploaded, result.errors)
 
 See also the tutorial notebook: `05_import_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/05_import_dataset.ipynb>`_
