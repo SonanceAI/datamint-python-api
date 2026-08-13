@@ -15,7 +15,7 @@ Folders are numbered in the recommended learning order.
 |---|---|---|
 | [01_getting_started](01_getting_started/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Upload data and explore a project |
 | [02_annotations](02_annotations/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Upload and work with annotations |
-| [03_datasets](03_datasets/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Build PyTorch datasets, splits, and volume loading |
+| [03_datasets](03_datasets/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Build PyTorch datasets, splits, volume loading, and importing external dataset formats |
 | [04_experiment_tracking](04_experiment_tracking/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Log metrics and artifacts, and manage the model registry, with MLflow |
 | [05_deployment](05_deployment/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Deploy registered and external models |
 | [06_end_to_end](06_end_to_end/) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Full pipelines from data to deployed model |
@@ -35,6 +35,7 @@ Folders are numbered in the recommended learning order.
 2. [`02_patient_wise_splits`](03_datasets/02_patient_wise_splits.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Avoid data leakage with patient-level splitting
 3. [`03_build_dataset`](03_datasets/03_build_dataset.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Auto-detect dataset type with `build_dataset`
 4. [`04_volume_dataset`](03_datasets/04_volume_dataset.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Load 3D volumes, slice into 2D, apply albumentations
+5. [`05_import_dataset`](03_datasets/05_import_dataset.ipynb) ![Intermediate](https://img.shields.io/badge/level-beginner-brightgreen) — Import an already-labeled dataset (COCO, Pascal VOC, or YOLO) into a project
 
 ### 04 — Experiment Tracking
 1. [`01_mlflow_manual_logging`](04_experiment_tracking/01_mlflow_manual_logging.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Log metrics, parameters, and models manually with MLflow

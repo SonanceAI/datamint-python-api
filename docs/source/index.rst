@@ -318,6 +318,7 @@ Community & Support
    datamint.apihandler
    datamint.api.base_classes
    datamint.dataset
+   datamint.importers
    datamint.entities
    datamint.lightning_api
    datamint.mlflow_api
