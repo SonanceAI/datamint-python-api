@@ -173,6 +173,16 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                                          worklist_id,
                                          'segmentation-group').json()
 
+    def get_list(self, limit: int | None = None, **kwargs) -> list[AnnotationWorklist]:
+        """Not supported: there is no server endpoint to list worklists across all projects.
+
+        Use :meth:`get_by_project` instead.
+        """
+        raise NotImplementedError(
+            "AnnotationWorklistApi.get_list()/get_all() is not supported. Use "
+            "get_by_project(project) to list the worklists for a specific project."
+        )
+
     def get_by_project(self, project: 'str | Project') -> list[AnnotationWorklist]:
         """Get the worklist IDs associated with a project.
 
