@@ -23,6 +23,7 @@ Datasets
 * `02_patient_wise_splits.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/02_patient_wise_splits.ipynb>`_: Split datasets by patient to avoid data leakage between train and test sets.
 * `03_build_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/03_build_dataset.ipynb>`_: Build and configure a PyTorch dataset from a Datamint project.
 * `04_volume_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/04_volume_dataset.ipynb>`_: Work with 3D volume datasets (NIfTI, DICOM series).
+* `05_import_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/05_import_dataset.ipynb>`_: Import an already-labeled dataset (COCO, Pascal VOC, or YOLO format) into a project in one call.
 
 Experiment Tracking
 -------------------

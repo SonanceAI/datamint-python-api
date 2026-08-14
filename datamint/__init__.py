@@ -15,6 +15,9 @@ if TYPE_CHECKING:
     from .dataset.image_dataset import ImageDataset as ImageDataset
     from .dataset.volume_dataset import VolumeDataset as VolumeDataset
     from .default_project import select_project as select_project
+    from .importers.coco import COCOImporter as COCOImporter
+    from .importers.pascal_voc import PascalVOCImporter as PascalVOCImporter
+    from .importers.yolo import YOLOImporter as YOLOImporter
     from .mlflow.flavors.validation import (
         ModelValidationError as ModelValidationError,
         ValidationIssue as ValidationIssue,
@@ -27,7 +30,7 @@ else:
 
     __getattr__, __dir__, __all__ = lazy.attach(
         __name__,
-        submodules=['dataset', "examples"],
+        submodules=['dataset', "examples", "importers"],
         submod_attrs={
             "api.client": ["Api"],
             # New modular dataset classes
@@ -36,6 +39,9 @@ else:
             "mlflow.flavors.validation": ["validate_model", "ValidationReport",
                                           "ValidationIssue", "ModelValidationError"],
             "default_project": ["select_project"],
+            "importers.coco": ["COCOImporter"],
+            "importers.pascal_voc": ["PascalVOCImporter"],
+            "importers.yolo": ["YOLOImporter"],
         },
     )
 
