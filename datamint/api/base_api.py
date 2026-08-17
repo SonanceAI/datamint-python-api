@@ -593,6 +593,7 @@ class BaseApi:
                                       endpoint: str,
                                       return_field: str | None = None,
                                       limit: int | None = None,
+                                      max_page_size: int | None = None,
                                       **kwargs
                                       ) -> Generator[tuple[httpx.Response, list | dict | str], None, None]:
         """Make paginated HTTP requests, yielding each page of results.
@@ -602,6 +603,8 @@ class BaseApi:
             endpoint: API endpoint path
             return_field: Optional field name to extract from each item in the response
             limit: Optional maximum number of items to retrieve
+            max_page_size: Optional cap on the per-request page size, for endpoints
+                whose server route enforces a lower limit than the client default.
             **kwargs: Additional arguments for the request (e.g., params, json)
 
         Yields:
@@ -609,6 +612,7 @@ class BaseApi:
         """
         offset = 0
         total_fetched = 0
+        page_size = min(_PAGE_LIMIT, max_page_size) if max_page_size is not None else _PAGE_LIMIT
 
         use_json_pagination = method.upper() == 'POST' and 'json' in kwargs and isinstance(kwargs['json'], dict)
 
@@ -621,10 +625,10 @@ class BaseApi:
             if limit is not None and total_fetched >= limit:
                 break
 
-            page_limit = _PAGE_LIMIT
+            page_limit = page_size
             if limit is not None:
                 remaining = limit - total_fetched
-                page_limit = min(_PAGE_LIMIT, remaining)
+                page_limit = min(page_size, remaining)
 
             if use_json_pagination:
                 kwargs['json']['offset'] = str(offset)
@@ -649,7 +653,7 @@ class BaseApi:
             yield response, items_to_yield
             total_fetched += len(items_to_yield)
 
-            if len(items) < _PAGE_LIMIT:
+            if len(items) < page_size:
                 break
 
             offset += len(items)

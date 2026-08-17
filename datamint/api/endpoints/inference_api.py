@@ -36,6 +36,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
     (image, frame, slice, volume).
     """
 
+    _max_page_size = 500  # server enforces `le=500` on the list route's `limit` query param
+
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None,
