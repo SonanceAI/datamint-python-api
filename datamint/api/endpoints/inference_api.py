@@ -36,6 +36,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
     (image, frame, slice, volume).
     """
 
+    _max_page_size = 500  # server enforces `le=500` on the list route's `limit` query param
+
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None,
@@ -53,6 +55,12 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         if 'job_id' in data:
             data['id'] = data.pop('job_id')
         return self._init_entity_obj(**data)
+
+    def _init_entity_obj(self, **kwargs) -> InferenceJob:
+        """Rename the server's 'job_id' to 'id' before constructing the entity."""
+        if 'job_id' in kwargs and 'id' not in kwargs:
+            kwargs['id'] = kwargs.pop('job_id')
+        return super()._init_entity_obj(**kwargs)
 
     def _build_common_payload(
         self,

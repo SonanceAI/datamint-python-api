@@ -139,6 +139,10 @@ class EntityBaseApi(BaseApi, Generic[T]):
                 raise ItemNotFoundError(self.endpoint_base, {'id': entity_id}) from e
             raise
 
+    #: Optional cap on the per-request page size, for endpoints whose server
+    #: route enforces a lower limit than the client default.
+    _max_page_size: int | None = None
+
     def get_list(self, limit: int | None = None,
                  **kwargs) -> Sequence[T]:
         """Get entities with optional filtering.
@@ -159,6 +163,7 @@ class EntityBaseApi(BaseApi, Generic[T]):
         items_gen = self._make_request_with_pagination('GET', f'/{self.endpoint_base}',
                                                        return_field=self.endpoint_base,
                                                        limit=limit,
+                                                       max_page_size=self._max_page_size,
                                                        **new_kwargs)
 
         all_items = []
