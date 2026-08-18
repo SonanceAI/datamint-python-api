@@ -182,6 +182,10 @@ class BaseEntity(BaseEntityModel):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
         if name not in pydantic_fields:
+            # Not a declared field - fall back to pydantic's extra fields (extra='allow')
+            pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            if pydantic_extra is not None and name in pydantic_extra:
+                return pydantic_extra[name]
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
         # This is a declared field that was deleted (MISSING_FIELD sentinel).
