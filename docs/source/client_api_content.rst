@@ -568,6 +568,8 @@ a Datamint :mod:`~datamint.lightning.trainers`), rather than raising.
 ``Model.get_supported_modes()``/``get_metrics()`` are shortcuts that delegate
 to the latest version when you don't need a specific one.
 
+``latest.load_model()`` loads the model itself, ready for local inference.
+
 Find which projects a model belongs to
 ++++++++++++++++++++++++++++++++++++++
 
