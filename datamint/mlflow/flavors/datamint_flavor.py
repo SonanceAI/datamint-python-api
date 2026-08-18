@@ -16,8 +16,51 @@ import datamint
 import datamint.mlflow.flavors
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 
-from .model import BaseDatamintModel, DatamintModel, _DatamintModelWrapper
+from .model import (
+    BaseDatamintModel,
+    DatamintModel,
+    _DatamintModelWrapper,
+)
 from .task_type import TaskType
+
+# ---------------------------------------------------------------------------
+# Load-side CPU fallback for models pickled with CUDA tensors.
+#
+# When a model was trained on a GPU machine and saved via cloudpickle, the
+# embedded tensor storages carry ``cuda:<device>`` locations.  On a CPU-only
+# host, torch's unpickler raises ``RuntimeError: Attempting to deserialize
+# object on a CUDA device but torch.cuda.is_available() is False`` *before*
+# :meth:`BaseDatamintModel.load_context` ever runs.
+#
+# We register a deserializer via the public ``torch.serialization.register_package``
+# API (priority 15, ahead of torch's built-in cuda handler at priority 20).
+# torch always materializes storages on CPU first and only moves them to their
+# tagged device afterwards, so returning the storage unchanged for CUDA-tagged
+# entries simply skips that move. This makes every previously-saved model
+# loadable on CPU hosts without requiring a re-save.
+# ---------------------------------------------------------------------------
+
+
+def _register_cpu_load_fallback() -> None:
+    import torch.serialization as _torch_serialization
+
+    def _tagger(storage):  # never tag at save time; keep torch's default behavior
+        return None
+
+    def _deserialize(storage, location: str):
+        if not torch.cuda.is_available() and isinstance(location, str) and location.startswith("cuda"):
+            logger.warning(
+                "Model storage tagged '%s' kept on CPU because CUDA is unavailable.", location
+            )
+            return storage  # already on CPU; skip the .to(cuda) step
+        return None  # defer to torch's built-in handlers
+
+    _torch_serialization.register_package(15, _tagger, _deserialize)
+
+
+if not torch.cuda.is_available():
+    _register_cpu_load_fallback()
+
 
 logger = logging.getLogger(__name__)
 
@@ -302,6 +345,10 @@ def save_model(datamint_model: BaseDatamintModel,
     _underlying = datamint_model.another_model if isinstance(datamint_model, _DatamintModelWrapper) else datamint_model
     if isinstance(_underlying, nn.Module):
         _underlying.cpu()
+
+    # Also ensure any torch modules held as attributes (e.g. inside LinkedModelLoader)
+    # are moved to CPU so the pickle is device-agnostic and loads on CPU-only containers.
+    datamint_model.to_cpu_for_save()
 
     logger.debug(f'Saving PyFunc model for model {datamint_model.__class__.__name__}...')
     try:

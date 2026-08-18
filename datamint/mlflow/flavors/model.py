@@ -36,6 +36,39 @@ PredictionResult: TypeAlias = list[list[Annotation]]
 PredictionImageResult: TypeAlias = Sequence[Sequence[ImageSegmentation | ImageClassification]]
 
 
+def _move_torch_modules_to_device(obj: Any, device: str, _seen: set[int] | None = None) -> None:
+    """Recursively move every :class:`torch.nn.Module` reachable from *obj* to *device*.
+
+    Traverses object ``__dict__``s as well as ``list``/``tuple``/``set``/``dict``
+    containers so that modules held as attributes — directly or nested inside
+    objects such as :class:`~datamint.mlflow.flavors.model_loader.LinkedModelLoader`
+    — are all relocated.  Calling :meth:`torch.nn.Module.to` on a module already
+    moves all of its parameters, buffers and submodules, so those are not
+    traversed further.  The walk is idempotent and cycle-safe.
+    """
+    if _seen is None:
+        _seen = set()
+    obj_id = id(obj)
+    if obj_id in _seen:
+        return
+    _seen.add(obj_id)
+
+    if isinstance(obj, torch.nn.Module):
+        obj.to(device)
+        return
+
+    d = getattr(obj, "__dict__", None)
+    if isinstance(d, dict):
+        for value in d.values():
+            _move_torch_modules_to_device(value, device, _seen)
+    elif isinstance(obj, (list, tuple, set, frozenset)):
+        for value in obj:
+            _move_torch_modules_to_device(value, device, _seen)
+    elif isinstance(obj, dict):
+        for value in obj.values():
+            _move_torch_modules_to_device(value, device, _seen)
+
+
 @dataclass
 class ModelSettings:
     """
@@ -181,6 +214,18 @@ class BaseDatamintModel(PythonModel, ABC):
         for attr_value in vars(self).values():
             if isinstance(attr_value, torch.nn.Module):
                 attr_value.to(device)
+
+    def to_cpu_for_save(self) -> None:
+        """Move all reachable torch modules to CPU before pickling.
+
+        This is a safety net for :func:`datamint.mlflow.flavors.datamint_flavor.save_model` —
+        it ensures that any ``torch.nn.Module`` held as an attribute (e.g. inside
+        :class:`~datamint.mlflow.flavors.model_loader.LinkedModelLoader`) is relocated to CPU
+        so the resulting pickle is device-agnostic and loads on CPU-only containers.
+
+        Safe to call multiple times; idempotent.
+        """
+        _move_torch_modules_to_device(self, "cpu")
 
     def load_context(self, context: PythonModelContext) -> None:
         """Detect the inference device and move any attached torch modules to it.

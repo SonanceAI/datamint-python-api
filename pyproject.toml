@@ -79,7 +79,7 @@ aioresponses = "^0.7.0"
 respx = ">=0.22.0"
 ruff = "^0.16.1"
 
-# Extra dependencies for docs
+# Extra dependencies
 [tool.poetry.extras]
 docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "sphinx-rtd-dark-mode", "setuptools"]
 dev = ["pytest", "pytest-cov", "responses", "aioresponses", "respx", "ruff"]
