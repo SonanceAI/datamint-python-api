@@ -13,6 +13,7 @@ from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
 
 if TYPE_CHECKING:
     from datamint.entities.project import Project
+    from datamint.mlflow.flavors.model import DatamintModel
 
     from .models_api import ModelsApi
 
@@ -118,6 +119,11 @@ class ModelVersion:
 
     def is_deployed(self) -> bool:
         return self._api._deploy_api.image_exists(self.name)
+
+    def load_model(self, device: str | None = None) -> 'DatamintModel':
+        """Load this model version via the ``datamint`` MLflow flavor."""
+        from datamint.mlflow.flavors import load_model
+        return load_model(f"models:/{self.name}/{self.version}", device=device)
 
 
 @dataclass
