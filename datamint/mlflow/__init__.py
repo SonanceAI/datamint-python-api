@@ -1,5 +1,6 @@
 # Monkey patch mlflow.tracking._tracking_service.utils.get_tracking_uri
 import logging
+import os
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,8 @@ import mlflow.tracking._tracking_service.utils as mlflow_utils
 from .env_utils import ensure_mlflow_configured, setup_mlflow_environment
 
 _LOGGER = logging.getLogger(__name__)
+
+os.environ.setdefault('MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR', 'false')
 
 # Store reference to original function
 _original_get_tracking_uri = mlflow_utils.get_tracking_uri
