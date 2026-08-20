@@ -461,21 +461,22 @@ class BaseApi:
                                              url: str):
         response_json = None
         try:
-            response.raise_for_status()
+            if not response.ok:
+                try:
+                    response_json = await response.json()
+                except Exception as e2:
+                    logger.debug("Failed to parse JSON from error response: %s", e2)
+                response.raise_for_status()
         except aiohttp.ClientConnectionError as e:
             raise NetworkError(str(e)) from e
-        except aiohttp.ClientError as e:
+        except aiohttp.ClientResponseError as e:
             error_msg = str(getattr(e, 'message', e))
             status_code = BaseApi.get_status_code(e)
             # Only read the body on error to get detailed message; do NOT read on success
             # as that would exhaust the stream before callers can iterate over it.
-            try:
-                response_json = await response.json()
-            except Exception:
-                logger.debug("Failed to parse JSON from error response")
+
             if response_json:
                 error_msg = f"{error_msg} | {response_json}"
-
             logger.error(f"HTTP error {status_code} for {url}: {error_msg}")
             if status_code == 401:
                 raise AuthenticationError(error_msg) from e
