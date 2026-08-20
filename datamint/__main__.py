@@ -13,6 +13,7 @@ _COMMANDS: dict[str, str] = {
     "train": "datamint.client_cmd_tools.datamint_train",
     "inference": "datamint.client_cmd_tools.datamint_inference",
     "example": "datamint.client_cmd_tools.datamint_example",
+    "import": "datamint.client_cmd_tools.datamint_import",
 }
 
 _COMMAND_HELP: dict[str, str] = {
@@ -22,6 +23,7 @@ _COMMAND_HELP: dict[str, str] = {
     "train": "Train a model on a Datamint project",
     "inference": "Run local inference with a registered model",
     "example": "Populate a project with an example dataset",
+    "import": "Import a labeled dataset (COCO, Pascal VOC, or YOLO)",
 }
 
 
