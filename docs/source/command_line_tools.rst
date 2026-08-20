@@ -26,10 +26,11 @@ You should see this in the first line:
 
     usage: datamint config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
 
-There are six command-line tools available:
+There are seven command-line tools available:
 
 - ``datamint config``: To configure the Datamint API key and URL.
 - ``datamint upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
+- ``datamint import``: To import an already-labeled dataset (COCO, Pascal VOC, or YOLO) into a Datamint project.
 - ``datamint init``: To scaffold a ready-to-run project (upload, train, and deploy scripts).
 - ``datamint example``: To populate a project with a ready-made example dataset, no data of your own required.
 - ``datamint train``: To train a model on a Datamint project using a built-in one-line trainer.
@@ -266,6 +267,35 @@ See all available options by running ``datamint upload --help``:
                         Disable the default excluded extensions list. By default, common non-medical file extensions are excluded unless --include-extensions is used.
   --version             show program's version number and exit
   --verbose             Print debug messages
+
+Importing an already-labeled dataset
+--------------------------------------
+
+If you already have a labeled dataset in COCO, Pascal VOC, or YOLO format, ``datamint import``
+uploads the images and their bounding-box annotations to a Datamint project in one call, instead
+of uploading resources and annotations separately.
+
+By default, the format and the file/folder layout (annotations file, images directory, etc.) are
+auto-detected from the given path. You'll be shown what was detected and asked to confirm before
+anything is uploaded:
+
+.. code-block:: bash
+
+    datamint import ./my_dataset --project MyProject
+
+If detection guesses wrong, or the layout can't be found automatically, tell it the format explicitly
+with ``--format`` and supply the paths auto-detection couldn't infer (``--annotations-file``,
+``--annotations-dir``, ``--images-dir``, ``--labels-dir``, etc.):
+
+.. code-block:: bash
+
+    datamint import ./my_dataset --project MyProject --format yolo \
+        --images-dir ./my_dataset/images --labels-dir ./my_dataset/labels
+
+Use ``--dry-run`` to parse and print a summary (image/box/class counts) without creating the
+project or uploading anything, and ``--yes`` to skip the auto-detected-format confirmation prompt.
+
+See all available options by running ``datamint import --help``.
 
 Populating a project with example data
 ---------------------------------------
