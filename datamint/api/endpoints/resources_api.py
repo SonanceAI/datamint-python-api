@@ -21,7 +21,7 @@ from PIL import Image
 from pydicom import config as pydicom_config
 from tqdm.auto import tqdm
 
-from datamint.entities import Project, Resource
+from datamint.entities import Channel, Project, Resource
 from datamint.entities.annotations import AnnotationType
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
@@ -1399,6 +1399,33 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         for _, items in items_gen:
             all_items.extend(items)
         return [self._init_entity_obj(**item) for item in all_items]
+
+    def list_channels(self,
+                      limit: int | None = None,
+                      **kwargs) -> list[Channel]:
+        """List upload channels.
+
+        A channel is a grouping over resources (set via ``upload_channel``
+        at upload time).
+
+        Args:
+            limit: Maximum number of channels to return.
+            **kwargs: Additional query parameters forwarded to the endpoint
+                (e.g. ``project_name``).
+
+        Returns:
+            List of Channel instances.
+        """
+        params = {k: v for k, v in kwargs.items() if v is not None}
+        items_gen = self._make_request_with_pagination('GET',
+                                                       f'/{self.endpoint_base}/channels',
+                                                       return_field='channels',
+                                                       limit=limit,
+                                                       params=params or None)
+        all_items = []
+        for _, items in items_gen:
+            all_items.extend(items)
+        return [Channel(**item) for item in all_items]
 
     def rank_resources(self,
                        resources: Sequence[Resource],
