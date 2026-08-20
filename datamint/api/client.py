@@ -8,7 +8,6 @@ from .base_api import ApiConfig, BaseApi
 from .endpoints import (
     AnnotationsApi,
     AnnotationWorklistApi,
-    ChannelsApi,
     DatasetsInfoApi,
     DeployModelApi,
     InferenceApi,
@@ -29,7 +28,6 @@ class Api:
         'projects': ProjectsApi,
         'resources': ResourcesApi,
         'annotations': AnnotationsApi,
-        'channels': ChannelsApi,
         'users': UsersApi,
         'datasets': DatasetsInfoApi,
         'models': ModelsApi,
@@ -175,10 +173,6 @@ class Api:
     @property
     def annotations(self) -> AnnotationsApi:
         return self._get_endpoint('annotations')
-
-    @property
-    def channels(self) -> ChannelsApi:
-        return self._get_endpoint('channels')
 
     @property
     def users(self) -> UsersApi:

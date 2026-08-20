@@ -27,14 +27,6 @@ Annotations API
    :undoc-members:
    :show-inheritance:
 
-Channels API
-------------
-
-.. automodule:: datamint.api.endpoints.channels_api
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Users API
 ---------
 

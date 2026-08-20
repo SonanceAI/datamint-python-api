@@ -1,12 +1,10 @@
 
 from pydantic import BaseModel, ConfigDict
 
-from datamint.entities.base_entity import BaseEntity
-
 
 class ChannelResourceData(BaseModel):
     """Represents resource data within a channel.
-    
+
     Attributes:
         created_by: Email of the user who created the resource.
         customer_id: UUID of the customer.
@@ -23,12 +21,12 @@ class ChannelResourceData(BaseModel):
     resource_mimetype: str
 
 
-class Channel(BaseEntity):
+class Channel(BaseModel):
     """Represents a channel containing multiple resources.
-    
+
     A channel is a collection of resources grouped together,
     typically for batch processing or organization purposes.
-    
+
     Attributes:
         channel_name: Name identifier for the channel.
         resource_data: List of resources contained in this channel.
@@ -36,7 +34,9 @@ class Channel(BaseEntity):
         created_at: Timestamp when the channel was created.
         updated_at: Timestamp when the channel was last updated.
     """
-    channel_name: str
+    model_config = ConfigDict(extra='allow')
+
+    channel_name: str | None = None
     resource_data: list[ChannelResourceData]
     deleted: bool = False
     created_at: str | None = None

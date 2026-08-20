@@ -25,7 +25,6 @@ from datamint.entities.annotations.annotation import AnnotationBase
 from datamint.entities.annotations.base_geometry import BaseGeometryAnnotation
 from datamint.entities.annotations.base_segmentation import BaseSegmentationAnnotation
 from datamint.entities.base_entity import BaseEntity, BaseEntityModel
-from datamint.entities.channel import Channel, ChannelResourceData
 from datamint.entities.datasetinfo import DatasetInfo
 from datamint.entities.deployjob import DeployJob
 from datamint.entities.inferencejob import InferenceJob
@@ -138,22 +137,6 @@ def _make_box_annotation() -> BoxAnnotation:
             points=((1, 2, 0), (5, 2, 0), (1, 6, 0), (5, 6, 0)),
             coordinate_system='pixel',
         ),
-    )
-
-
-def _make_channel() -> Channel:
-    return Channel(
-        id='channel-1',
-        channel_name='uploads',
-        resource_data=[
-            ChannelResourceData(
-                created_by='tester@datamint.io',
-                customer_id='customer-1',
-                resource_id='resource-1',
-                resource_file_name='scan.png',
-                resource_mimetype='image/png',
-            )
-        ],
     )
 
 
@@ -336,7 +319,6 @@ def _make_sliced_video_resource() -> SlicedVideoResource:
 _ENTITY_FACTORIES: dict[type[object], Factory] = {
     Annotation: _make_annotation,
     BoxAnnotation: _make_box_annotation,
-    Channel: _make_channel,
     DatasetInfo: _make_dataset_info,
     DICOMResource: _make_dicom_resource,
     DeployJob: _make_deploy_job,

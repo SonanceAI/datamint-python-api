@@ -20,8 +20,6 @@ The |ApiClass| class provides access to different endpoint handlers:
 +------------------------+--------------------------------------------------+
 | ``api.projects``       | Organize resources into projects                 |
 +------------------------+--------------------------------------------------+
-| ``api.channels``       | Group resources by category                        |
-+------------------------+--------------------------------------------------+
 | ``api.models``         | Register and manage ML models                    |
 +------------------------+--------------------------------------------------+
 | ``api.deploy``         | Deploy models                                      |
@@ -439,23 +437,15 @@ available with calls such as ``dataset.split(train=0.8, val=0.2, seed=42)``.
 Working with Channels
 ---------------------
 
-Organize resources with channels
-++++++++++++++++++++++++++++++++
+A channel is a grouping over resources, set via ``upload_channel`` at
+upload time (see ``datamint upload --channel``),
 
 .. code-block:: python
 
-    # List all channels
-    channels = api.channels.get_list()
+    channels = api.resources.list_channels(project_name="MyProject")
 
-    # Create a new channel
-    api.channels.create(name="CT Scans", description="CT scan images")
-
-    # List channels with resources
     for channel in channels:
-        print(channel.name, channel.resource_count)
-
-    # Delete a channel
-    api.channels.delete(channel)
+        print(channel.channel_name, len(channel.get_resource_ids()))
 
 See also the tutorial notebooks: `upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/upload_data.ipynb>`_
 
