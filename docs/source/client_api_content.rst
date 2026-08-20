@@ -437,11 +437,12 @@ available with calls such as ``dataset.split(train=0.8, val=0.2, seed=42)``.
 Working with Channels
 ---------------------
 
-A channel is a grouping over resources, set via ``upload_channel`` at
-upload time (see ``datamint upload --channel``),
+A channel is just a grouping over resources, set via ``upload_channel`` at
+upload time (see ``datamint upload --channel``).
 
 .. code-block:: python
 
+    # List channels (optionally scoped to a project)
     channels = api.resources.list_channels(project_name="MyProject")
 
     for channel in channels:
