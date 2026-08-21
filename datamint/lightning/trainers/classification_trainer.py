@@ -10,7 +10,7 @@ from torch import nn
 
 from datamint.dataset import ImageDataset
 from datamint.entities.annotations.annotation_spec import CategoryAnnotationSpec
-from datamint.entities.annotations.types import AnnotationType
+from datamint.mlflow.flavors.annotation_specs import build_classification_annotation_specs
 
 from .base_trainer import BaseTrainer
 from .lightning_modules import ClassificationModule
@@ -47,19 +47,7 @@ class ClassificationTrainer(BaseTrainer):
         return 'val/accuracy', 'max'
 
     def _build_annotation_specs(self) -> list[CategoryAnnotationSpec]:
-        groups: dict[str, list[str]] = {}
-        for identifier, value in self.dataset.image_categories_set:
-            groups.setdefault(identifier, []).append(value)
-        return [
-            CategoryAnnotationSpec(
-                type=AnnotationType.CATEGORY,
-                scope='image',
-                identifier=ident,
-                required=True,
-                values=sorted(vals),
-            )
-            for ident, vals in groups.items()
-        ]
+        return build_classification_annotation_specs(self.dataset)
 
 
 class ImageClassificationTrainer(ClassificationTrainer):

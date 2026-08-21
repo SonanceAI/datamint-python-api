@@ -13,8 +13,8 @@ from torch import nn
 
 from datamint.dataset import VolumeDataset
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
-from datamint.entities.annotations.types import AnnotationType
 from datamint.lightning.datamodule import DatamintDataModule
+from datamint.mlflow.flavors.annotation_specs import build_segmentation_annotation_specs
 
 from .segmentation_trainer import SegmentationTrainer
 
@@ -166,7 +166,4 @@ class VolumeSegmentationTrainer(SegmentationTrainer):
         )
 
     def _build_annotation_specs(self) -> list[AnnotationSpec]:
-        return [
-            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='volume', identifier=name, required=False)
-            for name in self.dataset.seglabel_list
-        ]
+        return build_segmentation_annotation_specs(self.dataset, scope='volume')

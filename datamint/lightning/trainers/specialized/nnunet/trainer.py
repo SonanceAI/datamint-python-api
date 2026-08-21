@@ -12,8 +12,8 @@ from rich import print as rprint
 
 from datamint.dataset.volume_dataset import VolumeDataset
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
-from datamint.entities.annotations.types import AnnotationType
 from datamint.lightning.trainers.base_trainer import BaseTrainer
+from datamint.mlflow.flavors.annotation_specs import build_segmentation_annotation_specs
 from datamint.lightning.trainers.specialized.nnunet.data_export import (
     DatamintToNNUNetExporter,
 )
@@ -113,10 +113,7 @@ class NNUNetTrainer(BaseTrainer):
             allow_external_annotations=True,
             include_unannotated=False,
         )
-        return [
-            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='volume', identifier=name, required=False)
-            for name in ds.seglabel_list
-        ]
+        return build_segmentation_annotation_specs(ds, scope='volume')
 
     def _build_model(self, *args, **kwargs):
         raise NotImplementedError(

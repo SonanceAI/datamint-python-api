@@ -534,6 +534,45 @@ Models are also created automatically when you pass ``--ai-model`` to
 :doc:`command_line_tools` (``datamint upload``) with a name that doesn't
 exist yet.
 
+Log a model manually
++++++++++++++++++++++
+
+Models trained through a Datamint :mod:`~datamint.lightning.trainers` are
+logged automatically, annotation specs included. If you trained a model
+yourself (outside a trainer) and want to register it, ``api.models.log_model()``
+opens its own MLflow run and does the registration for you:
+
+.. code-block:: python
+
+    model = api.models.log_model(
+        my_trained_model,
+        project="my-project",
+        model_name="my-model",
+    )
+
+To also attach annotation specs (what the model predicts, which
+segmentation labels, box classes, or categories) without building
+``AnnotationSpec`` objects by hand, pass the dataset you trained on. Specs are
+derived from its actual labels, dispatching on ``my_trained_model.task_type``:
+
+.. code-block:: python
+
+    from datamint.dataset import ImageDataset
+
+    dataset = ImageDataset(project="my-project", return_boxes=True)
+
+    model = api.models.log_model(
+        my_trained_model,
+        project="my-project",
+        model_name="my-model",
+        dataset=dataset,
+    )
+
+Passing ``annotation_specs`` explicitly always takes precedence over anything
+derived from ``dataset``. Omitting ``dataset`` altogether logs the model with
+no annotation specs, same as calling
+:func:`~datamint.mlflow.flavors.datamint_flavor.log_model` directly.
+
 Inspect versions and metrics
 ++++++++++++++++++++++++++++
 
