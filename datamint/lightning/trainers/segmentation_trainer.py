@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
-from datamint.entities.annotations.types import AnnotationType
+from datamint.mlflow.flavors.annotation_specs import build_segmentation_annotation_specs
 
 from .base_trainer import BaseTrainer
 
@@ -61,7 +61,4 @@ class SegmentationTrainer(BaseTrainer):
         return 'val/iou', 'max'
 
     def _build_annotation_specs(self) -> list[AnnotationSpec]:
-        return [
-            AnnotationSpec(type=AnnotationType.SEGMENTATION, scope='image', identifier=name, required=False)
-            for name in self.dataset.seglabel_list
-        ]
+        return build_segmentation_annotation_specs(self.dataset, scope='image')

@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from datamint.dataset.image_dataset import ImageDataset, detection_collate_fn
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
-from datamint.entities.annotations.types import AnnotationType
 from datamint.lightning.datamodule import DatamintDataModule
+from datamint.mlflow.flavors.annotation_specs import build_detection_annotation_specs
 
 from .base_trainer import BaseTrainer
 
@@ -67,7 +67,4 @@ class DetectionTrainer(BaseTrainer):
         return 'val/map', 'max'
 
     def _build_annotation_specs(self) -> list[AnnotationSpec]:
-        return [
-            AnnotationSpec(type=AnnotationType.SQUARE, scope='image', identifier=name, required=False)
-            for name in self.dataset.box_labels_set
-        ]
+        return build_detection_annotation_specs(self.dataset)

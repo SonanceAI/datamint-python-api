@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from typing_extensions import override
 
+from datamint.mlflow.flavors.task_type import TaskType
+
 from ..segmentation_module import SegmentationModule
 
 # ---------------------------------------------------------------------------
@@ -417,6 +419,7 @@ class _UNETRPPModel(nn.Module):
 # ---------------------------------------------------------------------------
 
 class UNETRPPModule(SegmentationModule):
+    task_type = TaskType.VOLUME_SEGMENTATION
     """Segmentation module wrapping UNETR++ for 3-D volumetric inputs.
 
     Differences from 2-D modules:
