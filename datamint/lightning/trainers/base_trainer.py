@@ -9,12 +9,15 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from functools import cached_property
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import lightning as L
 import mlflow
+from lightning.pytorch.trainer.states import TrainerStatus
 from torch import nn
 
+import datamint.configs
 from datamint._repr_utils import render_html_card, render_text_block
 from datamint.dataset.base import DatamintBaseDataset
 from datamint.lightning.datamodule import DatamintDataModule
@@ -71,6 +74,9 @@ class BaseTrainer(ABC):
             adapter after training.
         trainer_kwargs: Extra keyword arguments forwarded to
             :class:`lightning.Trainer`.
+        resume_from: Resume a previously paused run. Either the MLflow
+            ``run_id`` of the paused run or a full path to
+            a checkpoint file.
     """
 
     def __init__(
@@ -92,6 +98,7 @@ class BaseTrainer(ABC):
         model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
+        resume_from: str | None = None,
         **kwargs: Any,
     ) -> None:
         if dataset is None and project is None:
@@ -116,6 +123,7 @@ class BaseTrainer(ABC):
         self.auto_deploy_adapter = auto_deploy_adapter
         self.trainer_kwargs = trainer_kwargs or {}
         self.trainer_kwargs.update(kwargs)
+        self.resume_from = resume_from
 
         # Populated during fit()
         self._lightning_trainer: L.Trainer | None = None
@@ -185,6 +193,32 @@ class BaseTrainer(ABC):
         _ = self.datamodule
         _ = self.model
 
+    def _checkpoint_dir(self, run_id: str) -> Path:
+        """Local directory holding the resumable ``last.ckpt`` for *run_id*."""
+        if datamint.configs.DATAMINT_DATA_DIR is None:
+            raise RuntimeError("Could not determine a local data directory (home directory not found); "
+                              "pause/resume checkpointing is unavailable.")
+        return Path(datamint.configs.DATAMINT_DATA_DIR) / 'checkpoints' / run_id
+
+    def _resolve_resume_checkpoint(self) -> tuple[str, str] | None:
+        """Resolve ``resume_from`` into ``(run_id, checkpoint_path)``, or ``None`` if unset. """
+        if self.resume_from is None:
+            return None
+
+        candidate = Path(self.resume_from)
+        if candidate.is_file():
+            return candidate.parent.name, str(candidate)
+
+        run_id = self.resume_from
+        ckpt_path = self._checkpoint_dir(run_id) / 'last.ckpt'
+        
+        if not ckpt_path.exists():
+            raise FileNotFoundError(
+                f"No checkpoint found for run '{run_id}' at {ckpt_path}. "
+                "Pass a full checkpoint path via 'resume_from' if it lives elsewhere."
+            )
+        return run_id, str(ckpt_path)
+
     def _create_lightning_trainer(
         self,
         run_id: str | None = None,
@@ -192,8 +226,10 @@ class BaseTrainer(ABC):
         *,
         register_model: bool = True,
     ) -> L.Trainer:
+        
         """Build the configured Lightning trainer instance for this wrapper."""
-        callbacks = self._build_default_callbacks(register_model=register_model) + list(self._build_callbacks())
+        callbacks = (self._build_default_callbacks(register_model=register_model, run_id=run_id)
+                     + list(self._build_callbacks()))
         logger = self._build_logger(run_id=run_id)
 
         trainer_params: dict[str, Any] = {
@@ -208,9 +244,15 @@ class BaseTrainer(ABC):
 
         return L.Trainer(**trainer_params)
 
-    def _start_mlflow_run(self):
-        """Start an MLflow run for this trainer workflow."""
+    def _start_mlflow_run(self, resume_run_id: str | None = None):
+        """Start an MLflow run for this trainer workflow.
+
+        When *resume_run_id* is given, reattaches to that existing run.
+        """
+        
         self._with_project()
+        if resume_run_id is not None:
+            return mlflow.start_run(run_id=resume_run_id)
         try:
             exp = mlflow.set_experiment(self.experiment_name)
         except mlflow.exceptions.MlflowException as e:
@@ -233,34 +275,64 @@ class BaseTrainer(ABC):
     def fit(self) -> dict[str, Any]:
         """Run the full training pipeline.
 
+        If ``resume_from`` was passed to the constructor, resumes training
+        from that checkpoint in the same MLflow run instead of starting a
+        fresh one.
+
+        If training is interrupted (e.g. Ctrl+C / SIGTERM) before
+        completion, Lightning saves a resumable checkpoint automatically and
+        this method returns early instead of raising. Resume later by
+        passing the returned ``'run_id'`` as ``resume_from`` to a new
+        trainer instance.
+
         Returns:
-            Dictionary with keys ``'trainer'``, ``'model'``,
-            ``'test_results'``, and ``'adapter'`` (when
+            On a completed run: dictionary with keys ``'trainer'``,
+            ``'model'``, ``'test_results'``, and ``'adapter'`` (when
             *auto_deploy_adapter* is enabled).
+            On a paused run: ``{'paused': True, 'run_id': ..., 'checkpoint_path': ...,
+            'trainer': ..., 'model': ...}`` -- ``test()`` and the deploy adapter are
+            not run.
         """
         self._reset_cached_pipeline_state()
 
-        with self._start_mlflow_run() as run:
-            self._prepare_pipeline()
-            self._lightning_trainer = self._create_lightning_trainer(run_id=run.info.run_id)
+        resume = self._resolve_resume_checkpoint()
+        resume_run_id, ckpt_path = resume if resume is not None else (None, None)
 
-            # 6. Train
-            _LOGGER.info("Starting training...")
-            self._lightning_trainer.fit(self.model, datamodule=self.datamodule)
+        try:
+            with self._start_mlflow_run(resume_run_id=resume_run_id) as run:
+                self._prepare_pipeline()
+                self._lightning_trainer = self._create_lightning_trainer(run_id=run.info.run_id)
 
-            # 7. Test
-            _LOGGER.info("Starting test...")
-            test_results = self._lightning_trainer.test(datamodule=self.datamodule)
+                # 6. Train
+                _LOGGER.info("Starting training...")
+                self._lightning_trainer.fit(self.model, datamodule=self.datamodule, ckpt_path=ckpt_path)
 
-            # 8. Build deploy adapter (only needed when the model is not already a DatamintModel)
-            adapter = None
-            if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
-                _LOGGER.debug("Building deploy adapter...")
-                adapter = self._build_deploy_adapter()
+                # 7. Test
+                _LOGGER.info("Starting test...")
+                test_results = self._lightning_trainer.test(datamodule=self.datamodule)
 
-            # 9. Upload test predictions as annotations
-            predict_model = self.model if isinstance(self.model, BaseDatamintModel) else adapter
-            self._upload_test_predictions(predict_model)
+                # 8. Build deploy adapter (only needed when the model is not already a DatamintModel)
+                adapter = None
+                if self.auto_deploy_adapter and not isinstance(self.model, BaseDatamintModel):
+                    _LOGGER.debug("Building deploy adapter...")
+                    adapter = self._build_deploy_adapter()
+
+                # 9. Upload test predictions as annotations
+                predict_model = self.model if isinstance(self.model, BaseDatamintModel) else adapter
+                self._upload_test_predictions(predict_model)
+        except SystemExit:
+            if self._lightning_trainer is None or self._lightning_trainer.state.status != TrainerStatus.INTERRUPTED:
+                raise
+            run_id = run.info.run_id
+            checkpoint_path = str(self._checkpoint_dir(run_id) / 'last.ckpt')
+            _LOGGER.info("Training paused (run_id=%s). Resume by passing resume_from=%r.", run_id, run_id)
+            return {
+                'paused': True,
+                'run_id': run_id,
+                'checkpoint_path': checkpoint_path,
+                'trainer': self._lightning_trainer,
+                'model': self.model,
+            }
 
         return {
             'trainer': self._lightning_trainer,
@@ -444,7 +516,7 @@ class BaseTrainer(ABC):
             pin_memory=False,
         )
 
-    def _build_default_callbacks(self, *, register_model: bool = True) -> list:
+    def _build_default_callbacks(self, *, register_model: bool = True, run_id: str | None = None) -> list:
         from mlflow.pyfunc.model import PythonModel
 
         from datamint.mlflow.lightning.callbacks import (
@@ -481,9 +553,24 @@ class BaseTrainer(ABC):
 
         callbacks: list = [checkpoint_cls(**checkpoint_kwargs)]
 
+        if run_id is not None:
+            callbacks.append(self._build_resume_checkpoint_callback(run_id))
+
         callbacks.append(_LogDatasetSplitsCallback(self))
 
         return callbacks
+
+    def _build_resume_checkpoint_callback(self, run_id: str):
+        """Plain Lightning checkpoint that maintains a resumable ``last.ckpt``. """
+        from lightning.pytorch.callbacks import ModelCheckpoint
+
+        return ModelCheckpoint(
+            dirpath=str(self._checkpoint_dir(run_id)),
+            filename='last',
+            save_last=True,
+            save_top_k=0,
+            save_on_exception=True,
+        )
 
     def _build_callbacks(self) -> list:
         from lightning.pytorch.callbacks import EarlyStopping
