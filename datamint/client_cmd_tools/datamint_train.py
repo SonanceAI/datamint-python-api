@@ -180,6 +180,11 @@ def _build_trainer_kwargs(args: argparse.Namespace, alias: str) -> dict[str, Any
         if args.max_epochs is not None:
             kwargs['max_epochs'] = args.max_epochs
         kwargs['configuration'] = '2d'
+        if args.resume is not None:
+            raise DatamintTrainCliError(
+                "--resume is not supported with --model nnunet (nnU-Net manages its own "
+                "checkpointing/resuming). Use the Python SDK's NNUNetTrainer(continue_training=True) instead."
+            )
     else:
         kwargs['max_epochs'] = args.max_epochs if args.max_epochs is not None else DEFAULT_MAX_EPOCHS
         if args.batch_size is not None:
@@ -189,6 +194,8 @@ def _build_trainer_kwargs(args: argparse.Namespace, alias: str) -> dict[str, Any
                 kwargs['image_size'] = args.image_size
             elif alias in DEFAULT_IMAGE_SIZE_FOR:
                 kwargs['image_size'] = DEFAULT_IMAGE_SIZE_FOR[alias]
+        if args.resume is not None:
+            kwargs['resume_from'] = args.resume
 
     if args.model_name is not None:
         kwargs['model_name'] = args.model_name
@@ -225,6 +232,17 @@ def _print_nnunet_notice(console: Console) -> None:
         "[warning]nnU-Net notice:[/warning] trains on fold 0 by default, and "
         "configuration defaults to '2d'. --batch-size and --image-size are ignored. "
         "See the notebooks or documentation for more details and advanced options."
+    )
+
+
+def _print_paused(console: Console, project: Project, model_alias: str, results: dict[str, Any]) -> None:
+    run_id = results['run_id']
+    console.print()
+    console.print("[warning]⏸ Training paused.[/warning]")
+    console.print(f"Checkpoint saved to: [key]{results['checkpoint_path']}[/key]")
+    console.print(
+        "Resume with: "
+        f"[key]datamint train --project {project.name!r} --model {model_alias} --resume {run_id}[/key]"
     )
 
 
@@ -346,6 +364,10 @@ def _execute(args: argparse.Namespace, api: Api, console: Console, *, show_plan:
     console.print(f"[bold]Starting training with {trainer_cls.__name__}...[/bold]")
     results = trainer.fit()
 
+    if results.get('paused'):
+        _print_paused(console, project, model_alias, results)
+        return 0
+
     _print_results(console, trainer, results)
 
     if args.show_in_web:
@@ -395,6 +417,10 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
                         help='Target image size (square). Ignored for --model nnunet.')
     parser.add_argument('--model-name', type=str, default=None,
                         help='Name to register the trained model under in MLflow.')
+    parser.add_argument('--resume', type=str, default=None, metavar='RUN_ID',
+                        help='Resume a paused run by its MLflow run ID '
+                        '(printed when a previous run was interrupted with Ctrl+C). '
+                        'Not supported with --model nnunet.')
     parser.add_argument('--dry-run', action='store_true',
                         help='Show the detected training plan without training.')
     parser.add_argument('--show-in-web', action='store_true',
@@ -454,6 +480,7 @@ def main() -> None:
         _USER_LOGGER.error(f'❌ {e}')
         sys.exit(1)
     except KeyboardInterrupt:
+        # Only reached for Ctrl+C before trainer.fit() starts.
         CONSOLE.print("\nTraining cancelled by user.", style='warning')
         sys.exit(1)
 

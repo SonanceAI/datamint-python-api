@@ -364,6 +364,16 @@ Advanced training options (custom losses, transforms, encoders, ``trainer_kwargs
 are intentionally not exposed here — use the Python SDK instead, see
 :doc:`Training your Model <trainer_api>`.
 
+If you interrupt a run with Ctrl+C, a resumable checkpoint is saved and the run's MLflow
+``run_id`` is printed. Resume it with ``--resume``:
+
+.. code-block:: bash
+
+    datamint train --project MyProject --model yolox --resume <run_id>
+
+``--resume`` is not supported with ``--model nnunet``, which manages its own
+checkpointing/resuming.
+
 See all available options by running ``datamint train --help``.
 
 Running local inference
