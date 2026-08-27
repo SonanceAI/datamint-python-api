@@ -91,6 +91,7 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             annotators: Optional list of annotator dicts. Each dict should have:
                 - ``email`` (required): valid email.
                 - ``expertise_level`` (optional): one of ``learner``, ``trained``, ``expert``.
+                - ``requires_review`` (optional): True or False
             frame_labels: Optional list of frame label names.
             image_labels: Optional list of image label names.
             segmentation_data: Optional segmentation group definition dict with keys:

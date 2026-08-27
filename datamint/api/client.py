@@ -46,7 +46,7 @@ class Api:
     def __init__(self,
                  server_url: str | None = None,
                  api_key: str | None = None,
-                 timeout: float = 60.0, max_retries: int = 2,
+                 timeout: float = 30.0, max_retries: int = 2,
                  check_connection: bool = True,
                  verify_ssl: bool | str = True) -> None:
         """Initialize the API client.
@@ -84,7 +84,7 @@ class Api:
         self.high_config = ApiConfig(
             server_url=server_url,
             api_key=api_key,
-            timeout=timeout*5,
+            timeout=900,
             max_retries=max_retries,
             verify_ssl=verify_ssl,
         )
@@ -139,14 +139,17 @@ class Api:
             if self._mlclient is None:
                 self._mlclient = BaseApi._create_client(self.mlflow_config)
             client = self._mlclient
+            endpoint_config = self.mlflow_config
         elif name in ['resources', 'annotations']:
             if self._highclient is None:
                 self._highclient = BaseApi._create_client(self.high_config)
             client = self._highclient
+            endpoint_config = self.high_config
         else:
             if self._client is None:
                 self._client = BaseApi._create_client(self.config)
             client = self._client
+            endpoint_config = self.config
         if name not in self._endpoints:
             api_class = self._API_MAP[name]
             # Inject ProjectsApi into InferenceApi for project_name → project_id resolution
@@ -156,7 +159,11 @@ class Api:
             elif name == 'models':
                 kwargs['deploy_api'] = self.deploy
                 kwargs['projects_api'] = self.projects
-            endpoint = api_class(self.config, client=client, **kwargs)
+            # Build the endpoint with the same config used for its HTTP client so that
+            # aiohttp-based uploads (resource/segmentation/annotation files) fall back to
+            # the intended timeout instead of the default 30s. The `resources` and
+            # `annotations` endpoints intentionally use `high_config` (900s).
+            endpoint = api_class(endpoint_config, client=client, **kwargs)
             # Inject this API instance into the endpoint so it can inject into entities
             endpoint._api_instance = self
             self._endpoints[name] = endpoint
