@@ -166,6 +166,28 @@ If you only want evaluation, use ``test()`` instead:
 With ``register_model=True``, the trainer logs and registers the current model.
 
 
+Resuming a Paused Run
+----------------------
+
+If training is interrupted (e.g. Ctrl+C or SIGTERM) before it finishes, Lightning saves a
+resumable checkpoint automatically and the run's MLflow ``run_id`` is logged:
+
+.. code-block:: text
+
+   Training paused (run_id=abcd1234...). Resume by passing resume_from='abcd1234...'.
+
+To resume, pass that ``run_id`` (or a full checkpoint path) as ``resume_from`` when
+constructing a new trainer.
+
+.. code-block:: python
+
+   trainer = UNetPPTrainer(project="BUSI_Segmentation", resume_from="abcd1234...")
+   results = trainer.fit()
+
+Not supported by ``NNUNetTrainer``, which manages its own checkpointing/resuming — use
+``NNUNetTrainer(continue_training=True)`` instead.
+
+
 Passing Lightning Trainer Options
 ---------------------------------
 

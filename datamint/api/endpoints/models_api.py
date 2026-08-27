@@ -13,7 +13,13 @@ from .deploy_model_api import DeployModelApi
 from .model_types import Model, ModelVersion
 
 if TYPE_CHECKING:
+    from mlflow.models import ModelInputExample, ModelSignature
+
+    from datamint.dataset.base import DatamintBaseDataset
+    from datamint.entities.annotations.annotation_spec import AnnotationSpec
     from datamint.entities.project import Project
+    from datamint.mlflow.flavors.model import BaseDatamintModel
+    from datamint.mlflow.flavors.task_type import TaskType
 
     from .projects_api import ProjectsApi
 
@@ -239,6 +245,96 @@ class ModelsApi(BaseApi):
                     code_paths=code_paths,
                 )
             return self.get_by_name(target_name)
+        finally:
+            if previous_project_id is not None:
+                set_project(previous_project_id)
+            else:
+                _reset_active_project()
+
+    def log_model(self,
+                  datamint_model: 'BaseDatamintModel',
+                  project: 'str | Project',
+                  model_name: str,
+                  *,
+                  dataset: 'DatamintBaseDataset | None' = None,
+                  task_type: 'TaskType | str | None' = None,
+                  annotation_specs: 'Sequence[AnnotationSpec] | None' = None,
+                  supported_modes: 'Sequence[str] | None' = None,
+                  code_paths: 'Sequence[str] | None' = None,
+                  artifacts: dict | None = None,
+                  signature: 'ModelSignature | None' = None,
+                  input_example: 'ModelInputExample | None' = None,
+                  pip_requirements: 'Sequence[str] | None' = None,
+                  extra_pip_requirements: 'Sequence[str] | None' = None,
+                  ) -> Model:
+        """Log a model to the Datamint model registry, opening its own MLflow run.
+
+        A thin wrapper around :func:`~datamint.mlflow.flavors.datamint_flavor.log_model` 
+        for models trained outside a Datamint trainer (the trainers log their models
+        automatically). It resolves the active project, starts an MLflow run,
+        and registers the model under ``model_name`` -- same run-handling as
+        :meth:`clone_model`.
+
+        Args:
+            datamint_model: The trained model to log.
+            project: Project (name, ID, or :class:`~datamint.entities.project.Project`)
+                to register the model under.
+            model_name: Name to register the model under. Also used as the
+                MLflow experiment name.
+            dataset: The dataset the model was trained on, used to derive
+                ``annotation_specs`` automatically when they aren't given
+                explicitly. Same dataset object you already have from training
+                (e.g. an :class:`~datamint.dataset.ImageDataset`).
+            task_type: Task type used to pick the right annotation-spec
+                builder. Defaults to ``datamint_model.task_type`` when omitted.
+            annotation_specs: Explicit annotation specs. Takes precedence over
+                anything derived from ``dataset``.
+            supported_modes: Prediction modes the model supports.
+            code_paths: Local paths to custom code files/dirs the model's
+                class depends on.
+            artifacts: Extra artifacts to bundle with the model.
+            signature: MLflow model signature.
+            input_example: MLflow input example.
+            pip_requirements: Exact pip requirements for the model environment.
+            extra_pip_requirements: Additional pip requirements on top of the
+                inferred defaults.
+
+        Returns:
+            The newly registered :class:`~.model_types.Model`.
+        """
+        from datamint.mlflow.flavors import datamint_flavor
+        from datamint.mlflow.flavors.annotation_specs import build_annotation_specs_for_task
+        from datamint.mlflow.tracking.fluent import (
+            _reset_active_project,
+            get_active_project_id,
+            set_project,
+        )
+
+        resolved_task_type = task_type or getattr(datamint_model, 'task_type', None)
+
+        resolved_specs = annotation_specs
+        if resolved_specs is None and dataset is not None:
+            resolved_specs = build_annotation_specs_for_task(resolved_task_type, dataset)
+
+        previous_project_id = get_active_project_id()
+        try:
+            set_project(project)
+            mlflow.set_experiment(model_name)
+            with mlflow.start_run(run_name=f"log_{model_name}"):
+                datamint_flavor.log_model(
+                    datamint_model,
+                    task_type=resolved_task_type,
+                    supported_modes=supported_modes,
+                    annotation_specs=resolved_specs,
+                    model_name=model_name,
+                    code_paths=code_paths,
+                    artifacts=artifacts,
+                    signature=signature,
+                    input_example=input_example,
+                    pip_requirements=pip_requirements,
+                    extra_pip_requirements=extra_pip_requirements,
+                )
+            return self.get_by_name(model_name)
         finally:
             if previous_project_id is not None:
                 set_project(previous_project_id)
