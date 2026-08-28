@@ -67,6 +67,14 @@ For Developers
 
       Train models with built-in one-line trainers -- no training loop to write.
 
+   .. grid-item-card:: Bringing an External Model into Datamint
+      :link: inference
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Integrate a model trained outside Datamint, log and register it in MLflow, and deploy it for inference through the UI.
+
    .. grid-item-card:: Tutorials
       :link: tutorials
       :link-type: doc
@@ -97,6 +105,7 @@ For Developers
    client_api
    pytorch_integration
    trainer_api
+   inference
    tutorials
    datamint_vs_raw_pytorch
    ssl_troubleshooting
