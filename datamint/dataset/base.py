@@ -1201,15 +1201,23 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                     if all(s == shapes[0] for s in shapes):
                         collated[key] = torch.stack(values)
                     else:
-                        _LOGGER.warning(f"Different shapes for {key}: {shapes}")
-                        collated[key] = values
+                        raise ValueError(
+                            f"Cannot collate batch: tensors under key '{key}' have mismatched "
+                            f"shapes {shapes}. This usually means the dataset/trainer has no "
+                            "resize transform configured for a project with variable-resolution "
+                            "resources (e.g. pass image_size=... to the trainer)."
+                        )
                 elif isinstance(values[0], np.ndarray):
                     shapes = [a.shape for a in values]
                     if all(s == shapes[0] for s in shapes):
                         collated[key] = np.stack(values)
                     else:
-                        _LOGGER.warning(f"Different shapes for {key}: {shapes}")
-                        collated[key] = values
+                        raise ValueError(
+                            f"Cannot collate batch: arrays under key '{key}' have mismatched "
+                            f"shapes {shapes}. This usually means the dataset/trainer has no "
+                            "resize transform configured for a project with variable-resolution "
+                            "resources (e.g. pass image_size=... to the trainer)."
+                        )
                 else:
                     collated[key] = values
 

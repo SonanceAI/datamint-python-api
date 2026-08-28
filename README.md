@@ -86,6 +86,7 @@ flowchart LR
 - **Annotation Tools**: Create, upload, and manage annotations (segmentations, labels, measurements) with ease
 - **Experiment Tracking**: Seamless support for experiment management via MLflow integration
 - **One-line Trainers**: Train segmentation, classification, and detection models with built-in PyTorch Lightning trainers, skipping the dataset class, training loop, and logging setup
+- **Model Benchmarking**: Compare several trainers against the same dataset and split, and get a ranked leaderboard of their performance
 - **DICOM Support**: Native handling of DICOM files, including powerful anonymization capabilities during upload to protect patient privacy
 - **Multi-format Support**: Robust support for a wide range of medical imaging formats: PNG, JPEG, NIfTI (NIfTI/NRRD), DICOMs and more
 
