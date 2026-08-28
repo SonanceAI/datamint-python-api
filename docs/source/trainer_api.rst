@@ -207,8 +207,10 @@ Any extra keyword arguments that are not consumed by Datamint are forwarded to
    )
 
 
-Using an External Model Inside a Datamint Trainer
--------------------------------------------------
+.. _training_external_model:
+
+Training an External Model Through a Datamint Trainer
+-------------------------------------------------------
 
 There are two supported patterns, and they are not equivalent.
 
@@ -391,6 +393,12 @@ A few rules ``Benchmark`` enforces upfront (before training anything):
 through YAML, independent of any live dataset object. The dataset itself is
 never serialized: ``load_from_file(path, dataset=...)`` requires a
 freshly-built dataset, mirroring the constructor's own requirement.
+
+.. note::
+
+   Have a model that was trained **entirely outside Datamint** and want to integrate,
+   log, and deploy it for inference through the UI? See :doc:`inference` instead.
+
 
 Related Examples
 ----------------
