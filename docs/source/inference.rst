@@ -30,13 +30,16 @@ which covers swapping in your own architecture.
 Shortcut: Your Model Fits a Supported Task Family
 ----------------------------------------------------
 
-If your model can be expressed as a ``SegmentationModule``/``ClassificationModule``
-subclass (the same task-family shapes used by :doc:`trainer_api`) and you already have
-a Datamint project with an annotated test split, skip the custom adapter below: wrap
-your pretrained weights as a Lightning module and call
+Wrap your pretrained weights as a Lightning module and call
 ``trainer.test(register_model=True)``. It runs zero training epochs (your weights are
-untouched), computes test metrics, and registers the model in MLflow in one call (useful when you want metrics 
-logged for the team alongside the model.)
+untouched), computes test metrics, and registers the model in MLflow in one call.
+
+Useful when:
+
+- Your model can be expressed as a ``SegmentationModule``/``ClassificationModule``
+  subclass (the same task-family shapes used by :doc:`trainer_api`).
+- You already have a Datamint project with an annotated test split to evaluate against.
+- You want metrics logged for the team alongside the model.
 
 .. code-block:: python
 
@@ -69,16 +72,10 @@ logged for the team alongside the model.)
    )
    test_metrics = trainer.test(register_model=True)
 
-``test_metrics`` is logged to the MLflow run and shows up in the Datamint dashboard
-alongside metrics from any trainer-trained model. Skip ahead to
-:ref:`Deploy <external_model_deploy>` -- no manual ``log_model()``/adapter needed for
-this path. Note that ``register_model=True`` does not set a ``champion`` alias, so use
+``test_metrics`` shows up in the Datamint dashboard
+alongside metrics from any trainer-trained model. If you want to deploy your model, check 
+:ref:`Deploy <external_model_deploy>`. Note that ``register_model=True`` does not set a ``champion`` alias, so use
 ``model_version=`` when deploying.
-
-This shortcut doesn't apply if your model doesn't fit one of Datamint's task families,
-or you have no labeled test split to evaluate against, use the custom adapter path
-below instead.
-
 
 .. _external_model_custom_adapter:
 
