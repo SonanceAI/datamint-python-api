@@ -1,5 +1,6 @@
 """Datamint Lightning integration."""
 
+from .benchmark import Benchmark
 from .datamodule import DatamintDataModule
 from .trainers import (
     BaseTrainer,
@@ -20,6 +21,7 @@ from .trainers import (
 
 __all__ = [
     "BaseTrainer",
+    "Benchmark",
     "ClassificationTrainer",
     "DatamintDataModule",
     "DeepLabV3PlusTrainer",

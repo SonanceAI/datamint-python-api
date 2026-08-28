@@ -334,6 +334,64 @@ or wrap the final model in a ``DatamintModel`` afterwards.
    Segmentation batches expose masks in ``batch["segmentations"]`` and include the background channel at index 0.
 
 
+Benchmarking Several Trainers
+------------------------------
+
+``Benchmark`` runs several existing trainers sequentially against one shared dataset and split, then
+returns a ranked leaderboard.
+
+.. code-block:: python
+
+   from datamint import ImageDataset
+   from datamint.lightning import Benchmark
+   from datamint.lightning.trainers import UNetPPTrainer, DeepLabV3PlusTrainer, TransUNetTrainer
+
+   dataset = ImageDataset(project="BUSI_Segmentation", return_segmentations=True)
+
+   bench = Benchmark(
+       dataset=dataset,
+       trainers=[
+           (UNetPPTrainer, {"encoder_name": "resnet34", "model_name": "unetpp_r34"}),
+           (DeepLabV3PlusTrainer, {"model_name": "deeplabv3plus"}),
+           (TransUNetTrainer, {"model_name": "transunet"}),
+       ],
+       main_metric="dice",
+       main_metric_mode="max",
+       max_epochs=20,  # shared kwarg, forwarded to every trainer
+   )
+
+   leaderboard = bench.run()
+
+   bench.save_config("benchmark.yaml")
+   # later, possibly in a different process/session:
+   # Benchmark.load_from_file("benchmark.yaml", dataset=dataset).run()
+
+``leaderboard`` is a ``pandas.DataFrame``, one row per trainer, sorted by
+``test/{main_metric}`` (falling back to ``val/{main_metric}`` if the test column is
+entirely missing), with columns ``model_name``, ``trainer_class``,
+``val/{main_metric}``, ``test/{main_metric}``, ``run_id``, and
+``registered_version`` -- so a specific trained model stays unambiguously
+loadable afterward via ``runs:/<run_id>/model``.
+
+A few rules ``Benchmark`` enforces upfront (before training anything):
+
+- All trainers must share one task-family ancestor: classification, 2-D
+  segmentation, volume segmentation, or detection. A trainer outside those
+  families (e.g. ``NNUNetTrainer``) can only be benchmarked against other
+  instances of that same class.
+- Every trainer spec needs an explicit, unique ``model_name`` -- this keeps
+  each trainer's registered model separate in the MLflow Model Registry
+  instead of silently stacking versions under one shared name.
+- The dataset's project must already have split assignments. ``Benchmark``
+  pins one ``split_as_of_timestamp`` at construction (or an explicit override)
+  and forwards it to every trainer, so all of them resolve the identical
+  split assignments even if someone edits them mid-benchmark.
+
+``save_config()``/``load_from_file()`` round-trip the benchmark definition
+through YAML, independent of any live dataset object. The dataset itself is
+never serialized: ``load_from_file(path, dataset=...)`` requires a
+freshly-built dataset, mirroring the constructor's own requirement.
+
 Related Examples
 ----------------
 

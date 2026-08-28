@@ -121,6 +121,17 @@ Specialized Trainers
    :undoc-members:
    :show-inheritance:
 
+Benchmark
+---------
+
+Compares several trainers sequentially against one shared dataset and split,
+and returns a ranked leaderboard. See :doc:`trainer_api` for a walkthrough.
+
+.. automodule:: datamint.lightning.benchmark
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Lightning Modules
 -----------------
 
