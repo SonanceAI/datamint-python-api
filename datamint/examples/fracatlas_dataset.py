@@ -37,7 +37,7 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         return proj
 
     if not _download.is_cached('fracatlas'):
-        print('FracAtlas is ~1.2GB compressed - this download may take a few minutes.')
+        print('This download may take a few minutes.')
 
     download_url = _get_download_url()
     data_dir = _download.download_and_extract(download_url, 'fracatlas')
