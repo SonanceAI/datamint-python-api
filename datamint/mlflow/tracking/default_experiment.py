@@ -1,6 +1,5 @@
 import os
 import sys
-import os
 from mlflow.tracking.default_experiment.abstract_context import (
     DefaultExperimentProvider,
 )
@@ -17,15 +16,19 @@ class DatamintExperimentProvider(DefaultExperimentProvider):
     @override
     def get_experiment_id(self):  # type: ignore[override]
         from mlflow.tracking.client import MlflowClient
-        
+        from datamint.mlflow.tracking.fluent import get_active_project_name
+
         if DatamintExperimentProvider._experiment_id is not None:
             return DatamintExperimentProvider._experiment_id
-        # Get the filename of the main source file
-        source_code_filename = os.path.basename(sys.argv[0])
+
+        # Prefer the active project (set via `datamint.mlflow.set_project()`) as the
+        # experiment name. Fall back to the main source file's name.
+        experiment_name = get_active_project_name() or os.path.basename(sys.argv[0])
+
         mlflowclient = MlflowClient()
-        exp = mlflowclient.get_experiment_by_name(source_code_filename)
+        exp = mlflowclient.get_experiment_by_name(experiment_name)
         if exp is None:
-            experiment_id = mlflowclient.create_experiment(source_code_filename)
+            experiment_id = mlflowclient.create_experiment(experiment_name)
         else:
             experiment_id = exp.experiment_id
         DatamintExperimentProvider._experiment_id = experiment_id
