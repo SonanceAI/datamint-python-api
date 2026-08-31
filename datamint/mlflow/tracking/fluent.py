@@ -15,13 +15,14 @@ _PROJECT_LOCK = threading.Lock()
 _LOGGER = logging.getLogger(__name__)
 
 _ACTIVE_PROJECT_ID: str | None = None
+_ACTIVE_PROJECT_NAME: str | None = None
 
 
 def get_active_project_id() -> str | None:
     """
     Get the active project ID from the environment variable or the global variable.
     """
-    global _ACTIVE_PROJECT_ID
+    global _ACTIVE_PROJECT_ID, _ACTIVE_PROJECT_NAME
 
     if _ACTIVE_PROJECT_ID is not None:
         return _ACTIVE_PROJECT_ID
@@ -35,9 +36,20 @@ def get_active_project_id() -> str | None:
         project = _find_project_by_name(project_name)
         if project is not None:
             _ACTIVE_PROJECT_ID = project['id']
+            _ACTIVE_PROJECT_NAME = project_name
             return _ACTIVE_PROJECT_ID
 
     return None
+
+
+def get_active_project_name() -> str | None:
+    """
+    Get the active project's name, if one was set via `set_project()` or resolved
+    from `DATAMINT_PROJECT_NAME`/`DATAMINT_PROJECT_ID`.
+    """
+    if _ACTIVE_PROJECT_NAME is None:
+        get_active_project_id()
+    return _ACTIVE_PROJECT_NAME
 
 
 def _find_project_by_name(project_name: str):
@@ -68,38 +80,47 @@ def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
 def set_project(project: 'Project | str'):
     """
     Set the active project for the current session.
-    
+
+    The project's name also becomes the default MLflow experiment name for
+    any run started without an explicit experiment (see `DatamintExperimentProvider`).
+
     Args:
         project: The Project instance or project name/ID to set as active.
     """
-    global _ACTIVE_PROJECT_ID
+    global _ACTIVE_PROJECT_ID, _ACTIVE_PROJECT_NAME
 
     # Ensure MLflow is properly configured before proceeding
     ensure_mlflow_configured()
 
     with _PROJECT_LOCK:
         if isinstance(project, str):
-            project_id = None
             project = _get_project_by_name_or_id(project)
-            project_id = project.id
-        else:
-            # It's a Project entity
-            project_id = project.id
 
-        _ACTIVE_PROJECT_ID = project_id
+        _ACTIVE_PROJECT_ID = project.id
+        _ACTIVE_PROJECT_NAME = project.name
+        _reset_default_experiment_cache()
 
     # Set 'DATAMINT_PROJECT_ID' environment variable
     # so that subprocess can inherit it.
-    os.environ[EnvVars.DATAMINT_PROJECT_ID.value] = project_id
+    os.environ[EnvVars.DATAMINT_PROJECT_ID.value] = project.id
 
     return project
 
 
 def _reset_active_project():
     """Clear the active project, restoring the pre-``set_project()`` state. """
-    global _ACTIVE_PROJECT_ID
+    global _ACTIVE_PROJECT_ID, _ACTIVE_PROJECT_NAME
 
     with _PROJECT_LOCK:
         _ACTIVE_PROJECT_ID = None
+        _ACTIVE_PROJECT_NAME = None
+        _reset_default_experiment_cache()
 
     os.environ.pop(EnvVars.DATAMINT_PROJECT_ID.value, None)
+
+
+def _reset_default_experiment_cache():
+    """Invalidate the cached default-experiment id so a project switch takes effect
+    on the next run started without an explicit experiment."""
+    from datamint.mlflow.tracking.default_experiment import DatamintExperimentProvider
+    DatamintExperimentProvider._experiment_id = None
