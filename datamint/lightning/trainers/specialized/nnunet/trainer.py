@@ -499,6 +499,8 @@ class NNUNetTrainer(BaseTrainer):
             mlflow.register_model(f"runs:/{run_id}/nnunet_model", model_name)
             rprint(f"[green]✓[/green] Model registered as '[bold]{model_name}[/bold]' in MLflow registry.")
 
+            self._sync_offline_logs(run_id)
+
         return {'bridge': bridge, 'model_name': model_name}
 
     def _build_deploy_adapter(self, dataset_id: int, bridge) -> None:

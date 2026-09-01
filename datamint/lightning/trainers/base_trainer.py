@@ -320,6 +320,9 @@ class BaseTrainer(ABC):
                 # 9. Upload test predictions as annotations
                 predict_model = self.model if isinstance(self.model, BaseDatamintModel) else adapter
                 self._upload_test_predictions(predict_model)
+
+                # 10. Sync any MLflow log entries buffered locally during a connection drop
+                self._sync_offline_logs(run.info.run_id)
         except SystemExit:
             if self._lightning_trainer is None or self._lightning_trainer.state.status != TrainerStatus.INTERRUPTED:
                 raise
@@ -400,6 +403,32 @@ class BaseTrainer(ABC):
                 )
 
         _LOGGER.info("Finished uploading test predictions.")
+
+    def _sync_offline_logs(self, run_id: str) -> None:
+        """Send any MLflow log entries buffered locally for `run_id` (from a
+        connection drop during training) to the remote server."""
+        from mlflow.tracking.client import MlflowClient
+
+        from datamint.mlflow.tracking.datamint_store import DatamintStore
+        from datamint.mlflow.tracking.offline_buffer import OfflineLogBuffer
+
+        if OfflineLogBuffer(run_id).is_empty():
+            return
+
+        store = MlflowClient()._tracking_client.store
+        if not isinstance(store, DatamintStore):
+            _LOGGER.debug("Active tracking store is not DatamintStore; skipping offline log sync.")
+            return
+
+        try:
+            n = store.sync_offline_logs(run_id)
+            _LOGGER.info("Synced %d locally buffered log entr%s for run '%s'.",
+                         n, 'y' if n == 1 else 'ies', run_id)
+        except Exception as e:
+            _LOGGER.warning(
+                "Could not sync locally buffered log entries for run '%s' (%s). ",
+                run_id, e
+            )
 
     # ── Template hooks (subclasses override these) ──────────────
 
