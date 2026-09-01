@@ -82,6 +82,15 @@ def setup_mlflow_environment(overwrite: bool = False,
     if overwrite or not os.getenv('MLFLOW_TRACKING_URI'):
         os.environ['MLFLOW_TRACKING_URI'] = mlflow_uri
 
+    # MLflow's own request layer retries transient failures internally (default:
+    # 120s timeout per attempt, 7 retries, exponential backoff)
+    if overwrite or not os.getenv('MLFLOW_HTTP_REQUEST_TIMEOUT'):
+        os.environ['MLFLOW_HTTP_REQUEST_TIMEOUT'] = '10'
+    if overwrite or not os.getenv('MLFLOW_HTTP_REQUEST_MAX_RETRIES'):
+        os.environ['MLFLOW_HTTP_REQUEST_MAX_RETRIES'] = '1'
+    if overwrite or not os.getenv('MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR'):
+        os.environ['MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR'] = '1'
+
     _LOGGER.debug(f'Final MLflow environment variables: MLFLOW_TRACKING_URI={os.getenv("MLFLOW_TRACKING_URI")}, MLFLOW_TRACKING_TOKEN={"***" if os.getenv("MLFLOW_TRACKING_TOKEN") is not None else None}')
 
     if set_mlflow:
