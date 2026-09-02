@@ -7,6 +7,7 @@ from mlflow.entities.model_registry import ModelVersion as MlflowModelVersion
 from mlflow.entities.model_registry import RegisteredModel as MlflowRegisteredModel
 
 from datamint._repr_utils import render_html_card, render_text_block
+from datamint.configs import DEFAULT_DEPLOY_MODEL_ALIAS
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
 from datamint.mlflow.flavors.datamint_flavor import FLAVOR_NAME
 from datamint.mlflow.models.tags import DATAMINT_LOGGED_MODEL_ID_TAG
@@ -198,7 +199,7 @@ class Model:
         version = version or self.get_latest_version()
         return version.get_metrics() if version else {}
 
-    def is_deployed(self, tag: str = 'latest') -> bool:
+    def is_deployed(self, tag: str = DEFAULT_DEPLOY_MODEL_ALIAS) -> bool:
         return self._api._deploy_api.image_exists(self.name, tag=tag)
 
     def get_projects(self) -> list['Project']:

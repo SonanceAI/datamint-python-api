@@ -413,7 +413,7 @@ MODEL_NAME = PROJECT_NAME
 api = Api()
 
 # Deploy the model registered during training. This can take a few minutes.
-deploy_job = api.deploy.start(model_name=MODEL_NAME, model_alias="latest")
+deploy_job = api.deploy.start(model_name=MODEL_NAME)
 print(f"Deploying '{MODEL_NAME}'... (this may take a few minutes)")
 
 deploy_job = deploy_job.wait()
@@ -428,7 +428,6 @@ resource = api.resources.get_list(project_name=PROJECT_NAME, limit=1)[0]
 
 inf_job = api.inference.submit(
     model_name=MODEL_NAME,
-    model_alias="latest",
     resource_id=resource.id,
 )
 inf_job = inf_job.wait()
@@ -860,7 +859,7 @@ MODEL_NAME = PROJECT_NAME
 api = Api()
 
 # Deploy the model registered during training. This can take a few minutes.
-deploy_job = api.deploy.start(model_name=MODEL_NAME, model_alias="latest")
+deploy_job = api.deploy.start(model_name=MODEL_NAME)
 print(f"Deploying '{MODEL_NAME}'... (this may take a few minutes)")
 
 deploy_job = deploy_job.wait()
@@ -875,7 +874,6 @@ resource = api.resources.get_list(project_name=PROJECT_NAME, limit=1)[0]
 
 inf_job = api.inference.submit(
     model_name=MODEL_NAME,
-    model_alias="latest",
     resource_id=resource.id,
 )
 inf_job = inf_job.wait()
@@ -1344,7 +1342,7 @@ MODEL_NAME   = PROJECT_NAME
 api = Api()
 
 # Deploy the model registered during training. This can take a few minutes.
-deploy_job = api.deploy.start(model_name=MODEL_NAME, model_alias="latest")
+deploy_job = api.deploy.start(model_name=MODEL_NAME)
 print(f"Deploying '{MODEL_NAME}'... (this may take a few minutes)")
 
 deploy_job = deploy_job.wait()
@@ -1359,7 +1357,6 @@ resource = api.resources.get_list(project_name=PROJECT_NAME, limit=1)[0]
 
 inf_job = api.inference.submit(
     model_name=MODEL_NAME,
-    model_alias="latest",
     resource_id=resource.id,
 )
 inf_job = inf_job.wait()
