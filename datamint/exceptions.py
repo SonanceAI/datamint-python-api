@@ -1,4 +1,4 @@
-from datamint.configs import DEFAULT_MODEL_ALIAS
+from datamint.configs import DEFAULT_DEPLOY_MODEL_ALIAS
 
 
 class DatamintException(Exception):
@@ -142,7 +142,7 @@ class ModelNotDeployedError(DatamintException):
             ref = f"{self.model_name}:{self.model_alias}"
             deploy_kwarg = f"model_alias='{self.model_alias}'"
         else:
-            ref = f"{self.model_name}:{DEFAULT_MODEL_ALIAS}"
+            ref = f"{self.model_name}:{DEFAULT_DEPLOY_MODEL_ALIAS}"
             deploy_kwarg = None
 
         deploy_call = f"api.deploy_model.start('{self.model_name}'"

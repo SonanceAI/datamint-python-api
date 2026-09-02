@@ -17,7 +17,7 @@ DEFAULT_VALUES = {
     APIURL_KEY: 'https://api.datamint.io'
 }
 
-DEFAULT_MODEL_ALIAS = 'champion'
+DEFAULT_DEPLOY_MODEL_ALIAS = 'latest'
 
 _LOGGER = logging.getLogger(__name__)
 
