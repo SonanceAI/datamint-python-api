@@ -3,6 +3,7 @@ import json
 import logging
 from collections.abc import Generator
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -46,7 +47,7 @@ class PodLogsApi(EntityBaseApi[ModelPodLogs]):
         (not a UUID), so plain ``_make_request`` is used instead of the
         UUID-validating entity request helpers.
         """
-        path = f'/{self.endpoint_base}/{model_name}'
+        path = f'/{self.endpoint_base}/{quote(model_name, safe="")}'
         if add_path:
             path += f'/{add_path.strip("/")}'
         return path
@@ -143,10 +144,25 @@ class PodLogsApi(EntityBaseApi[ModelPodLogs]):
 
         Yields:
             Each new log line as a string.
+
+        Raises:
+            ItemNotFoundError: If no pod exists for the given model/tag.
+            httpx.HTTPStatusError: If the server returns another error status.
         """
         params: dict[str, Any] = {'tag': tag, 'interval': interval}
         with self._stream_request('GET', self._pod_path(model_name, 'stream'), params=params) as resp:
+            if resp.status_code == 404:
+                raise ItemNotFoundError(
+                    'pod-logs', {'model_name': model_name, 'tag': tag})
+            resp.raise_for_status()
+            # Standard SSE framing carries the event name on ``event:`` lines;
+            # the DataMint server also embeds it inside the JSON payload, so
+            # both are honored (the payload value takes precedence).
+            sse_event_name: str | None = None
             for line in resp.iter_lines():
+                if line.startswith('event:'):
+                    sse_event_name = line[len('event:'):].strip()
+                    continue
                 if not line.startswith('data:'):
                     continue
                 payload = line[len('data:'):].strip()
@@ -158,7 +174,11 @@ class PodLogsApi(EntityBaseApi[ModelPodLogs]):
                     # Bare-text payload: treat the whole line as a log line
                     yield payload
                     continue
-                event_name = event.get('event')
+                if not isinstance(event, dict):
+                    # Non-object JSON payload: treat it as a log line
+                    yield str(event)
+                    continue
+                event_name = event.get('event', sse_event_name)
                 if event_name == _STREAM_END_EVENT:
                     return
                 log_line = event.get('line', event.get('log'))

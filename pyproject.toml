@@ -42,6 +42,7 @@ Flask-Cors = { version = "<7" }
 albumentations = ">=2.0.0"
 lazy-loader = ">=0.3.0"
 medimgkit = ">=0.17.0"
+jinja2 = ">=3.1"
 typing_extensions = ">=4.0.0"
 pydantic = ">=2.6.4"
 certifi = ">=2025.0.0"

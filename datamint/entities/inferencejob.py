@@ -245,6 +245,11 @@ class InferenceJob(BaseEntity):
         ``model_name``. Useful for debugging failed inference jobs —
         the serving pod's logs often contain the model-side error.
 
+        Note:
+            Logs are fetched from the ``'champion'`` pod. If this job was
+            served by a challenger deployment, use
+            ``api.pod_logs.get_logs(model_name, tag=...)`` directly.
+
         Args:
             tail: Maximum number of log lines to return (server-enforced max 5000).
 
@@ -256,7 +261,7 @@ class InferenceJob(BaseEntity):
             datamint.exceptions.ItemNotFoundError: If no pod exists for the model.
         """
         api: InferenceApi = self._api  # type: ignore[assignment]
-        parent_api = getattr(api, '_api_instance', None)
+        parent_api = api._api_instance
         if parent_api is None:
             raise RuntimeError(
                 "This entity is not attached to an Api client. "
