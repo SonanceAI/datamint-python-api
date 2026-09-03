@@ -367,6 +367,8 @@ class BaseApi:
             for key, value in headers.items():
                 if key.lower() == 'apikey':
                     value = '<YOUR-API-KEY>'  # Mask API key for security
+                elif key.lower() == 'authorization':
+                    value = 'Bearer <YOUR-API-KEY>'  # Mask API key for security
                 curl_command.extend(['-H', f"'{key}: {value}'"])
 
             # Add query parameters

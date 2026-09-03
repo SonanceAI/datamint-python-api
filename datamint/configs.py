@@ -17,6 +17,8 @@ DEFAULT_VALUES = {
     APIURL_KEY: 'https://api.datamint.io'
 }
 
+DEFAULT_DEPLOY_MODEL_ALIAS = 'latest'
+
 _LOGGER = logging.getLogger(__name__)
 
 DIRS = PlatformDirs(appname='datamintapi')
