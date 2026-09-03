@@ -64,5 +64,12 @@ class VideoResource(Resource):
 
         return frame_count
 
-    def iter_frames(self) -> list[SlicedVideoResource]:
-        return super().iter_frames()
+    def iter_frames(self, use_cache: bool = False) -> list[SlicedVideoResource]:
+        """Expand a video into one proxy resource per frame.
+
+        Args:
+            use_cache: If True, decoded frames are cached in memory and on
+                disk. If False (default), frames are decoded on demand and
+                nothing is written to the filesystem.
+        """
+        return super().iter_frames(use_cache=use_cache)

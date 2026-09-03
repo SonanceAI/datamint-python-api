@@ -712,7 +712,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         Args:
             files_path: A sequence of paths to resource files, IO objects, or pydicom.Dataset objects.
-                Must contain at least 2 items. Supports mixed types within the sequence.
+                Supports mixed types within the sequence.
             mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.

@@ -288,7 +288,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             include_annotations: Whether to also prefetch segmentation
                 annotation payloads.
         """
-        _LOGGER.info(f"Prefetching {len(self.resources)} resource(s)...")
+        _LOGGER.debug(f"Prefetching {len(self.resources)} resource(s)...")
         requires_download = any(not r.is_cached() for r in self.resources)
         iterator = iter(self.resources)
         if requires_download:
@@ -347,8 +347,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                     annotation.fetch_file_data(auto_convert=False, use_cache=True)
                 except Exception as e:
                     _LOGGER.warning(f"Failed to prefetch annotation '{getattr(annotation, 'id', None)}': {e}")
-
-        _LOGGER.info("Prefetch complete.")
 
     def __getstate__(self) -> dict:
         get = getattr(super(), '__getstate__', None)
