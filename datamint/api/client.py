@@ -11,6 +11,7 @@ from .endpoints import (
     DatasetsInfoApi,
     DeployModelApi,
     InferenceApi,
+    PodLogsApi,
     ProjectsApi,
     ResourcesApi,
     UsersApi,
@@ -34,6 +35,7 @@ class Api:
         'annotationworklists': AnnotationWorklistApi,
         'deploy': DeployModelApi,
         'inference': InferenceApi,
+        'pod_logs': PodLogsApi,
     }
 
     # (server_url, api_key, verify_ssl) signatures already verified successfully in
@@ -218,6 +220,11 @@ class Api:
     def inference(self) -> InferenceApi:
         """Access model inference endpoints."""
         return self._get_endpoint('inference', is_mlflow=True)
+
+    @property
+    def pod_logs(self) -> PodLogsApi:
+        """Access serving-pod log endpoints."""
+        return self._get_endpoint('pod_logs', is_mlflow=True)
 
     def __getstate__(self) -> dict:
         return {

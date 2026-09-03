@@ -7,6 +7,7 @@ from .cache_manager import CacheManager
 from .channel import Channel, ChannelResourceData
 from .datasetinfo import DatasetInfo
 from .inferencejob import InferenceJob
+from .pod import ModelPodLogs, PodSummary
 from .project import Project
 from .project_resource_split import ProjectResourceSplit
 from .resource import LocalResource, Resource
@@ -32,6 +33,8 @@ __all__ = [
     'ImageResource',
     'InferenceJob',
     'LocalResource',
+    'ModelPodLogs',
+    'PodSummary',
     'NiftiResource',
     'Project',
     'ProjectResourceSplit',

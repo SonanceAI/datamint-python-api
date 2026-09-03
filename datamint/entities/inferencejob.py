@@ -10,6 +10,7 @@ from datamint.entities.base_entity import MISSING_FIELD, BaseEntity
 if TYPE_CHECKING:
     from datamint.api.endpoints.inference_api import InferenceApi
     from datamint.entities.annotations import Annotation
+    from datamint.entities.pod import ModelPodLogs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -236,3 +237,29 @@ class InferenceJob(BaseEntity):
 
         api.wait(self, on_status=_sync_self, poll_interval=poll_interval, timeout=timeout)
         return self
+
+    def get_pod_logs(self, *, tail: int = 200) -> ModelPodLogs:
+        """Fetch recent logs from the pod serving this job's model.
+
+        Convenience for :meth:`PodLogsApi.get_logs` using this job's
+        ``model_name``. Useful for debugging failed inference jobs —
+        the serving pod's logs often contain the model-side error.
+
+        Args:
+            tail: Maximum number of log lines to return (server-enforced max 5000).
+
+        Returns:
+            A :class:`ModelPodLogs` with the pod metadata and log lines.
+
+        Raises:
+            RuntimeError: If this entity is not attached to an ``Api`` client.
+            datamint.exceptions.ItemNotFoundError: If no pod exists for the model.
+        """
+        api: InferenceApi = self._api  # type: ignore[assignment]
+        parent_api = getattr(api, '_api_instance', None)
+        if parent_api is None:
+            raise RuntimeError(
+                "This entity is not attached to an Api client. "
+                "Use api.pod_logs.get_logs(model_name) directly."
+            )
+        return parent_api.pod_logs.get_logs(self.model_name, tail=tail)
