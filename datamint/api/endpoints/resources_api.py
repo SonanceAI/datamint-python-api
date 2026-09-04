@@ -1131,10 +1131,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     except ValueError as e:
                         _LOGGER.warning(f"Could not convert file to a known format: {e}")
                         resource_file = response.content
-                    except NotImplementedError:
-                        _LOGGER.warning(f"Conversion not implemented yet for {mimetype} and save_path=None." +
-                                        " Returning a bytes array. If you want the conversion for this mimetype, provide a save_path.")
-                        resource_file = response.content
             else:
                 resource_file = response.content
         except ItemNotFoundError as e:

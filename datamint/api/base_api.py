@@ -10,8 +10,8 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 import aiohttp
-import cv2
 import httpx
+import numpy as np
 from PIL import Image
 
 from datamint.exceptions import (
@@ -688,6 +688,25 @@ class BaseApi:
         return items
 
     @staticmethod
+    def _decode_video_frames(bytes_array: bytes) -> np.ndarray:
+        """Decode every frame of a video from raw bytes
+
+        Returns:
+            Array of shape ``(T, C, H, W)``
+        """
+        import av
+
+        try:
+            with av.open(BytesIO(bytes_array), mode='r') as container:
+                frames = [
+                    frame.to_ndarray(format='rgb24').transpose(2, 0, 1)
+                    for frame in container.decode(video=0)
+                ]
+        except (av.FFmpegError, IndexError) as e:
+            raise ValueError(f"Could not decode video content: {e}") from e
+        return np.array(frames)
+
+    @staticmethod
     def convert_format(bytes_array: bytes,
                        mimetype: str | None = None,
                        file_path: str | None = None
@@ -697,12 +716,12 @@ class BaseApi:
         Args:
             bytes_array: Raw file content bytes
             mimetype: Optional MIME type of the content
-            file_path: Path to the source file. Required when mimetype is a video type
-                (used to open the file with ``cv2.VideoCapture``) or a NIfTI type
+            file_path: Path to the source file. Required when mimetype is a NIfTI type
                 (used to load the file with ``nibabel``).
 
         Returns:
-            Converted content in appropriate format (pydicom.Dataset, PIL Image, cv2.VideoCapture, ...)
+            Converted content in appropriate format (pydicom.Dataset, PIL Image,
+            a video frame array of shape ``(T, C, H, W)``, ...)
 
         Example:
             >>> fpath = 'path/to/file.dcm'
@@ -725,9 +744,7 @@ class BaseApi:
         elif mimetype.startswith('image/'):
             return Image.open(content_io)
         elif mimetype.startswith('video/'):
-            if file_path is None:
-                raise NotImplementedError("file_path=None is not implemented yet for video/* mimetypes.")
-            return cv2.VideoCapture(file_path)
+            return BaseApi._decode_video_frames(bytes_array)
         elif mimetype == 'application/json':
             return json.loads(bytes_array)
         elif mimetype == 'application/octet-stream':
