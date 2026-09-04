@@ -3,6 +3,7 @@
 from .annotations.annotation import Annotation
 from .annotations.annotation_spec import AnnotationSpec
 from .base_entity import BaseEntity, BaseEntityModel
+from .buildlog import BuildLogs
 from .cache_manager import CacheManager
 from .channel import Channel, ChannelResourceData
 from .datasetinfo import DatasetInfo
@@ -25,6 +26,7 @@ __all__ = [
     'AnnotationSpec',
     'BaseEntity',
     'BaseEntityModel',
+    'BuildLogs',
     'CacheManager',
     'Channel',
     'ChannelResourceData',

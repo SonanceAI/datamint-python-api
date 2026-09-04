@@ -1,9 +1,15 @@
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from pydantic import field_validator
 
 from datamint.entities.base_entity import BaseEntity
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from datamint.entities.buildlog import BuildLogs
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -199,6 +205,7 @@ class DeployJob(BaseEntity):
         self,
         *,
         on_status: Callable[['DeployJob'], None] | None = None,
+        on_log: Callable[[str], None] | None = None,
         poll_interval: float = 2.0,
         timeout: float | None = None,
     ) -> 'DeployJob':
@@ -210,6 +217,9 @@ class DeployJob(BaseEntity):
         Args:
             on_status: Optional callback invoked with an updated
                 ``DeployJob`` on every status change.
+            on_log: Optional callback invoked with each new build-log
+                line as it streams in. The callback is invoked from a
+                background thread, so it must be thread-safe.
             poll_interval: Seconds between polls in polling-fallback mode.
             timeout: Maximum seconds to wait.  Raises ``TimeoutError``
                 on expiry.
@@ -227,5 +237,45 @@ class DeployJob(BaseEntity):
             if on_status is not None:
                 on_status(self)
 
-        api.wait(self, on_status=_sync_self, poll_interval=poll_interval, timeout=timeout)
+        api.wait(self, on_status=_sync_self, on_log=on_log,
+                 poll_interval=poll_interval, timeout=timeout)
         return self
+
+    def get_logs(self,
+                 *,
+                 tail: int = 2000,
+                 since: str | None = None) -> 'BuildLogs':
+        """Fetch a snapshot of this job's Docker build logs.
+
+        Args:
+            tail: Maximum number of log lines to return (server-enforced max 5000).
+            since: Only return lines logged at/after this ISO-8601 timestamp.
+
+        Returns:
+            A :class:`BuildLogs` entity with the job metadata and log lines.
+        """
+        from datamint.api.endpoints.deploy_model_api import DeployModelApi
+
+        api: DeployModelApi = self._api  # type: ignore[assignment]
+        return api.get_logs(self, tail=tail, since=since)
+
+    def stream_logs(self,
+                    *,
+                    interval: float = 2.0) -> 'Generator[str, None, None]':
+        """Stream this job's new build-log lines via Server-Sent Events.
+
+        The generator ends when the server closes the stream with the
+        ``end`` event (job completed/failed/cancelled, job not found or
+        max stream duration reached).
+
+        Args:
+            interval: Seconds between server-side log polls for archived
+                (DB-only) jobs (0.5 to 10.0).
+
+        Yields:
+            Each new build-log line as a string.
+        """
+        from datamint.api.endpoints.deploy_model_api import DeployModelApi
+
+        api: DeployModelApi = self._api  # type: ignore[assignment]
+        return api.stream_logs(self, interval=interval)
