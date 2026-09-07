@@ -25,6 +25,8 @@ from datamint.exceptions import (
 from datamint.utils.env import ensure_asyncio_loop
 
 if TYPE_CHECKING:
+    import av
+
     from datamint.api.client import Api
     from datamint.types import ImagingData
 
@@ -688,29 +690,27 @@ class BaseApi:
         return items
 
     @staticmethod
-    def _decode_video_frames(bytes_array: bytes) -> np.ndarray:
-        """Decode every frame of a video from raw bytes
+    def _open_video_container(bytes_array: bytes) -> 'av.container.InputContainer':
+        """Open a video from raw bytes
+
+        The caller owns the returned container: use it (e.g. container.decode(video=0)
+        to iterate frames) and close it when done (container.close() or a with block).
 
         Returns:
-            Array of shape ``(T, C, H, W)``
+            Opened InputContainer.
         """
         import av
 
         try:
-            with av.open(BytesIO(bytes_array), mode='r') as container:
-                frames = [
-                    frame.to_ndarray(format='rgb24').transpose(2, 0, 1)
-                    for frame in container.decode(video=0)
-                ]
-        except (av.FFmpegError, IndexError) as e:
-            raise ValueError(f"Could not decode video content: {e}") from e
-        return np.array(frames)
+            return av.open(BytesIO(bytes_array), mode='r')
+        except av.FFmpegError as e:
+            raise ValueError(f"Could not open video content: {e}") from e
 
     @staticmethod
     def convert_format(bytes_array: bytes,
                        mimetype: str | None = None,
                        file_path: str | None = None
-                       ) -> 'ImagingData | bytes':
+                       ) -> 'ImagingData | av.container.InputContainer | bytes':
         """ Convert the bytes array to the appropriate format based on the mimetype.
 
         Args:
@@ -721,7 +721,7 @@ class BaseApi:
 
         Returns:
             Converted content in appropriate format (pydicom.Dataset, PIL Image,
-            a video frame array of shape ``(T, C, H, W)``, ...)
+            av.container.InputContainer``)
 
         Example:
             >>> fpath = 'path/to/file.dcm'
@@ -744,7 +744,7 @@ class BaseApi:
         elif mimetype.startswith('image/'):
             return Image.open(content_io)
         elif mimetype.startswith('video/'):
-            return BaseApi._decode_video_frames(bytes_array)
+            return BaseApi._open_video_container(bytes_array)
         elif mimetype == 'application/json':
             return json.loads(bytes_array)
         elif mimetype == 'application/octet-stream':
