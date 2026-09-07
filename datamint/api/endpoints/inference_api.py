@@ -116,6 +116,14 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         model_alias: str | None,
     ) -> InferenceJob:
         """POST a prediction/submission request and get the resulting job status. """
+        # Lazily imported to avoid a circular dependency (fluent.py imports `datamint.Api`).
+        from datamint.mlflow.tracking.fluent import get_active_project_id
+
+        if 'project_id' not in payload:
+            resolved_project_id = get_active_project_id()
+            if resolved_project_id is not None:
+                payload['project_id'] = resolved_project_id
+
         try:
             response = self._make_request('POST', f'/{self.endpoint_base}{add_path}', json=payload)
         except (ValidationError, ItemNotFoundError) as e:
