@@ -52,7 +52,7 @@ class VolumeSegmentation(BaseSegmentationAnnotation):
         Args:
             **kwargs: Additional fields passed to parent Annotation class
         """
-        kwargs['scope'] = 'image'
+        kwargs.setdefault('scope', 'image')
         kwargs['annotation_type'] = AnnotationType.SEGMENTATION
         if isinstance(kwargs.get('class_map'), str):
             raise ValueError("class_map must be dict[int, str], not str."
