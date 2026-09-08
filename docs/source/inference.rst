@@ -348,6 +348,6 @@ If an inference job fails, you can jump straight to its model's serving-pod logs
 Related Examples
 ------------------
 
-- `Deploying an Externally Trained Model <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_deploy_external_model.ipynb>`_
+- `Deploying an Externally Trained Model <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_
   -- the full runnable notebook this page is based on, including custom prediction
   modes and updating a deployed model with a new version.

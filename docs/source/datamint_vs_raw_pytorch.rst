@@ -564,5 +564,5 @@ Further reading
 - :ref:`trainer_api` -- Training your Model reference and external-model patterns.
 - `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/02_busi_segmentation.ipynb>`_
   -- Runnable end-to-end segmentation tutorial.
-- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_deploy_external_model.ipynb>`_
+- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_
   -- Deploy a custom model trained with Datamint.

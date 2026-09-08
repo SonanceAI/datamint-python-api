@@ -98,7 +98,6 @@ def _patch_get_cmd():
 def main():
     _patch_get_cmd()
     _configure_gpu_device()
-    _LOGGER.info(f'Initial environment variables: {os.environ}')
     C._serve('local')
 
 
