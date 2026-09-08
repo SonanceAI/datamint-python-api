@@ -404,7 +404,7 @@ Related Examples
 ----------------
 
 - `BUSI trainer notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/02_busi_segmentation.ipynb>`_
-- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_
+- `External model deployment tutorial <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_deploy_external_model.ipynb>`_
 - `UNETR++ on the Synapse dataset <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/01_synapse_unetrpp.ipynb>`_
 - `nnU-Net on the Synapse dataset <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/02_synapse_nnunet.ipynb>`_
 

@@ -42,10 +42,11 @@ Folders are numbered in the recommended learning order.
 2. [`02_model_registry`](04_experiment_tracking/02_model_registry.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Register, list, and inspect models and versions with `api.models`
 
 ### 05 — Deployment
-1. [`01_deploy_registered_model`](05_deployment/01_deploy_registered_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Deploy a model already registered in Datamint
-2. [`02_deploy_external_model`](05_deployment/02_deploy_external_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Wrap and deploy a model trained outside Datamint
-3. [`03_validate_model`](05_deployment/03_validate_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Validate a model before promoting it to production
-4. [`04_predict_images_volumes_and_videos`](05_deployment/04_predict_images_volumes_and_videos.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges
+1. [`01_local_docker_build`](05_deployment/01_local_docker_build.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Build and run a model image locally with `podman` as a pre-deployment sanity check
+2. [`02_deploy_registered_model`](05_deployment/02_deploy_registered_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Deploy a model already registered in Datamint
+3. [`03_deploy_external_model`](05_deployment/03_deploy_external_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Wrap and deploy a model trained outside Datamint
+4. [`04_validate_model`](05_deployment/04_validate_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Validate a model before promoting it to production
+5. [`05_predict_images_volumes_and_videos`](05_deployment/05_predict_images_volumes_and_videos.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges
 
 ### 06 — End-to-End Use Cases
 
