@@ -11,7 +11,10 @@ datamint = 'datamint.__main__:main'
 
 [tool.poetry]
 # license = "Proprietary" # https://python-poetry.org/docs/pyproject/
-include = [{ path = "datamint/logging.yaml", format = ["sdist", "wheel"] }]
+include = [
+    { path = "datamint/logging.yaml", format = ["sdist", "wheel"] },
+    { path = "datamint/mlflow/models/Dockerfile.template", format = ["sdist", "wheel"] },
+]
 packages = [{ include = "datamint" }]
 
 # https://python-poetry.org/docs/dependency-specification/
@@ -52,6 +55,7 @@ argcomplete = ">=3.0.0"
 cachetools = ">=6.0.0"
 segmentation-models-pytorch = ">=0.5.0"
 backports-strenum = { version = "*", python = "<3.11" }
+podman = "^5.0.0"
 # For compatibility with the datamintapi package
 # datamintapi = "0.0.*"
 # Extra dependencies for docs
