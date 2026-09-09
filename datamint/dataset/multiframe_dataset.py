@@ -12,11 +12,26 @@ import albumentations
 import numpy as np
 import torch
 from medimgkit.readers import read_array_normalized
+from nibabel.spatialimages import SpatialImage
 from typing_extensions import override
 
 from .base import DatamintBaseDataset
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _to_picklable_metainfo(metainfo: Any) -> Any:
+    """Strip live nibabel image objects down to plain, picklable metadata.
+
+    nibabel keeps an open file handle (e.g. gzip.GzipFile) inside a
+    SpatialImage's file_map even after uncache(), which crashes DataLoader
+    workers (num_workers > 0) when they try to pickle the batch.
+    """
+    return {
+            'affine': metainfo.affine,
+            'header': dict(metainfo.header),
+            'shape': metainfo.shape,
+        }
 
 
 class MultiFrameDataset(DatamintBaseDataset):
@@ -48,6 +63,9 @@ class MultiFrameDataset(DatamintBaseDataset):
         img, metainfo = read_array_normalized(res_bytesdata, return_metainfo=True)  # shape: (N, C, H, W)
         img = img.transpose(1, 0, 2, 3)  # (N, C, H, W) -> (C, N, H, W)
         _LOGGER.debug(f"Raw image shape from resource {resource.filename}: {img.shape}")
+        
+        if isinstance(metainfo, SpatialImage):
+            metainfo = _to_picklable_metainfo(metainfo)
 
         anns = self.resource_annotations[index]
 
