@@ -1,3 +1,4 @@
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
@@ -670,7 +671,7 @@ class ProjectsApi(CRUDEntityApi[Project]):
     # Project models
     # ------------------------------------------------------------------
 
-    def get_models(self, project: str | Project | None = None) -> list[dict]:
+    def get_models(self, project: str | Project | None = None) -> list[str]:
         """List ML models associated with a project.
 
         Args:
@@ -678,11 +679,19 @@ class ProjectsApi(CRUDEntityApi[Project]):
                 session's default project (see `datamint.select_project()`) when omitted.
 
         Returns:
-            List of model dicts.
+            Names of registered models linked to the project.
         """
         project = self._resolve_project_or_default(project)
-        response = self._make_entity_request('GET', project, add_path='models')
-        return response.json()
+        project_id = self._entid(project)
+        try:
+            uuid.UUID(project_id)
+        except ValueError:
+            project_id = self._entid(self.get_by_name(project_id))
+
+        response = self._api_instance.models._make_request(
+            'GET', f'datamint/api/v1/model-info/get-models/{project_id}'
+        )
+        return response.json().get('model_names', [])
 
     def get_worklists(self, project: str | Project | None = None) -> Sequence['AnnotationWorklist']:
         """List annotation worklists for a project.
