@@ -50,7 +50,7 @@ class ImageSegmentation(BaseSegmentationAnnotation):
             segmentation_data: 2D binary mask as a numpy array or PIL Image.
             **kwargs: Additional fields passed to parent Annotation class
         """
-        kwargs['scope'] = 'image'
+        kwargs.setdefault('scope', 'image')
         kwargs['annotation_type'] = AnnotationType.SEGMENTATION
 
         if isinstance(segmentation_data, np.ndarray):
