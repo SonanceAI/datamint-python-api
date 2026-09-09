@@ -21,12 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def _to_picklable_metainfo(metainfo: Any) -> Any:
-    """Strip live nibabel image objects down to plain, picklable metadata.
-
-    nibabel keeps an open file handle (e.g. gzip.GzipFile) inside a
-    SpatialImage's file_map even after uncache(), which crashes DataLoader
-    workers (num_workers > 0) when they try to pickle the batch.
-    """
+    """Strip live nibabel image objects down to picklable metadata"""
     return {
             'affine': metainfo.affine,
             'header': dict(metainfo.header),
