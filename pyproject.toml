@@ -5,6 +5,24 @@ version = "2.35.0"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
+authors = [{ name = "SonanceAI" }]
+keywords = ["medical-imaging", "dicom", "nifti", "pytorch", "mlflow", "lightning", "datasets", "annotation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://datamint.io"
+Repository = "https://github.com/SonanceAI/datamint-python-api"
 
 [project.scripts]
 datamint = 'datamint.__main__:main'
@@ -65,19 +83,21 @@ sphinx-tabs = { version = ">=3.0.0", optional = true }
 sphinx-rtd-dark-mode = { version = ">=1.3.0", optional = true }
 setuptools = { version = ">=57.0", optional = true }
 # Extra dependencies for dev
-pytest = { version = "^9.0.3", optional = true }
-pytest-cov = { version = "^7.1.0", optional = true }
-responses = { version = "^0.20.0", optional = true }
-aioresponses = { version = "^0.7.8", optional = true }
-respx = { version = ">=0.22.0", optional = true }
 nnunetv2 = { version = ">=2.4,<3.0", optional = true }
 filelock = { version = ">=3.0", optional = true }
 yolox-datamint = { version = ">=0.3.1", optional = true }
 h5py = { version = ">=3.0", optional = true }
+# Dev dependencies: also exposed as the `dev` extra so `pip install .[dev]` works.
+# Keep in sync with [tool.poetry.group.dev.dependencies].
+pytest = { version = "^9.0.3", optional = true }
+pytest-cov = { version = "^7.1.0", optional = true }
+responses = { version = "^0.20.0", optional = true }
+aioresponses = { version = "^0.7.0", optional = true }
+respx = { version = ">=0.22.0", optional = true }
 ruff = { version = "^0.16.1", optional = true }
 
 
-[tool.poetry.group.dev.dependencies] # for `poetry install`
+[tool.poetry.group.dev.dependencies] # for `poetry install` (source of truth; keep in sync with the optional entries above)
 pytest = "^9.0.3"
 pytest-cov = "^7.1.0"
 responses = "^0.20.0"
@@ -87,14 +107,14 @@ ruff = "^0.16.1"
 
 # Extra dependencies
 [tool.poetry.extras]
-docs = ["sphinx", "sphinx_rtd_theme", "sphinx-tabs", "sphinx-rtd-dark-mode", "setuptools"]
+docs = ["sphinx", "sphinx-rtd-theme", "sphinx-tabs", "sphinx-rtd-dark-mode", "setuptools"]
 dev = ["pytest", "pytest-cov", "responses", "aioresponses", "respx", "ruff"]
 nnunet = ["nnunetv2", "filelock"]
 detection = ["yolox-datamint"]
 examples = ["h5py"]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.plugins."mlflow.tracking_store"]
@@ -122,15 +142,29 @@ https = "datamint.mlflow.models.datamint_model_store:DatamintModelRegistryStore"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --strict-markers --strict-config"
+markers = ["integration: end-to-end integration tests requiring nnunetv2"]
+filterwarnings = ["error::DeprecationWarning:datamint.*"]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+extend-exclude = ["docs", "notebooks"]
 
 [tool.ruff.lint]
 # Narrow on purpose: only categories already mostly clean in this codebase.
 # BLE (blind except), S (bandit), TRY (tryceratops), SIM (simplify) are
-# left out 
+# left out
 select = ["E4", "E7", "E9", "F", "RUF"]
 ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]
+"notebooks/*" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["datamint"]
+
+[tool.ruff.format]
+quote-style = "double"
+line-ending = "auto"
