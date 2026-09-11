@@ -1,3 +1,4 @@
+import os
 from typing import IO
 from unittest.mock import patch
 
@@ -140,6 +141,18 @@ class TestAPIHandler:
     @respx.mock
     @patch('os.getenv')
     def test_api_handler_init(self, mock_getenv, get_projects_sample: dict):
+        # `os.getenv` is patched globally, so it must return real string values
+        # for the Datamint env vars. Returning a bare MagicMock would leak into
+        # `Api.__init__`'s config resolution and break URL parsing.
+        def _fake_getenv(key, default=None):
+            if key == 'DATAMINT_API_URL':
+                return _TEST_URL
+            if key == 'DATAMINT_API_KEY':
+                return 'test_api_key'
+            return os.environ.get(key, default)
+
+        mock_getenv.side_effect = _fake_getenv
+
         Api(check_connection=False)
 
         ### Test wrong url ###
