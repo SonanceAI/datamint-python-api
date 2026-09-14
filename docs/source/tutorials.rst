@@ -67,3 +67,7 @@ Other available modules: ``fracatlas_dataset``, ``busi_dataset``, ``synapse_data
 
 * `01_synapse_unetrpp.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/01_synapse_unetrpp.ipynb>`_: Volumetric segmentation on the Synapse dataset using UNETR++.
 * `02_synapse_nnunet.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/02_synapse_nnunet.ipynb>`_: Volumetric segmentation on the Synapse dataset using nnUNet.
+
+**SAM (promptable segmentation)**
+
+* `01_deploy_sam_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/sam/01_deploy_sam_model.ipynb>`_: Deploy SAM 3 and run promptable segmentation with text, point, and box prompts.

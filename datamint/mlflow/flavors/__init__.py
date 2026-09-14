@@ -8,6 +8,7 @@ from .datamint_flavor import (
     log_model,
     save_model,
 )
+from .prediction_router import DeployedModelPrompts
 from .task_type import TaskType
 from .validation import (
     ModelValidationError,
@@ -17,6 +18,7 @@ from .validation import (
 )
 
 __all__ = [
+    "DeployedModelPrompts",
     "ModelValidationError",
     "TaskType",
     "ValidationIssue",

@@ -26,7 +26,7 @@ from datamint.mlflow.flavors.model_loader import (
     LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR,
 )
 from datamint.mlflow.flavors.model_loader import LinkedModelLoader
-from datamint.mlflow.flavors.prediction_router import PredictionRouter, bridge_mode
+from datamint.mlflow.flavors.prediction_router import DeployedModelPrompts, PredictionRouter, bridge_mode
 from datamint.mlflow.flavors.task_type import TaskType
 
 logger = logging.getLogger(__name__)
@@ -275,10 +275,22 @@ class BaseDatamintModel(PythonModel, ABC):
         :func:`datamint.mlflow.flavors.load_model` (testing a registered model outside
         of ``Trainer.fit()``), as opposed to predictions made automatically during
         training, which are tagged ``source='model_pipeline'`` instead.
+
+        If ``params['prompts']`` is a dict, it is converted to a
+        :class:`~datamint.mlflow.flavors.prediction_router.DeployedModelPrompts` instance before dispatch,
+        so ``predict_*`` handlers receive a typed object rather than a raw dict. 
         """
         params = dict(params or {})
         log_predictions = params.pop('log_predictions', False)
         model_name = params.pop('model_name', None)
+
+        raw_prompts = params.pop('prompts', None)
+        if raw_prompts is not None:
+            params['prompts'] = (
+                raw_prompts
+                if isinstance(raw_prompts, DeployedModelPrompts)
+                else DeployedModelPrompts.from_dict(raw_prompts)
+            )
 
         result = self._router.dispatch(model_input, params)
 

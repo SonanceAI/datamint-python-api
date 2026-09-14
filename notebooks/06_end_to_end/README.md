@@ -20,3 +20,11 @@ Models that consume entire volumetric inputs without slicing.
 |---|---|---|---|---|
 | [01_synapse_unetrpp](full_3d/01_synapse_unetrpp.ipynb) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Multi-organ segmentation | Synapse CT | UNETR++ |
 | [02_synapse_nnunet](full_3d/02_synapse_nnunet.ipynb) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Multi-organ segmentation | Synapse CT | nnU-Net |
+
+## SAM (promptable segmentation)
+
+Frozen foundation models prompted with text, points, or boxes instead of trained per class.
+
+| Notebook | Level | Task | Dataset | Architecture |
+|---|---|---|---|---|
+| [01_deploy_sam_model](sam/01_deploy_sam_model.ipynb) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Promptable segmentation | Truck demo image (SAM 3 examples) | SAM 3 |

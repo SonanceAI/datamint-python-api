@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import httpx
 
 from ..entity_base_api import EntityBaseApi, ApiConfig
-from ..dto import SaveResultsOptions
+from ..dto import InferencePrompts, SaveResultsOptions
 from datamint.entities.inferencejob import InferenceJob
 from datamint.exceptions import (
     ItemNotFoundError,
@@ -71,6 +71,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the payload keys shared by every inference request."""
@@ -102,6 +103,13 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             options_dict = options.to_dict()
             if options_dict:
                 payload["save_results_options"] = options_dict
+        if prompts is not None:
+            prompts_obj = (
+                prompts
+                if isinstance(prompts, InferencePrompts)
+                else InferencePrompts(**prompts)
+            )
+            payload["prompts"] = prompts_obj.to_dict()
         if params:
             payload["params"] = params
         return payload
@@ -151,6 +159,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_paths: list[str] | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit an inference job for background processing.
@@ -167,6 +176,11 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results_options: Optional configuration for how results are saved.
                 Pass a dict or ``SaveResultsOptions`` instance with keys:
                 ``worklist_id``, ``annotation_source``, ``imported_from``, ``author_email``.
+            prompts: Prompts for promptable segmentation models (e.g. SAM3-based).
+                Pass a dict or ``InferencePrompts`` instance with keys: ``text``,
+                ``points`` (list of ``{'label', 'x', 'y'}``), ``boxes`` (list of
+                ``{'x_min', 'y_min', 'x_max', 'y_max'}``). A model that doesn't support
+                prompts simply ignores them.
             params: Additional parameters forwarded to the model.
 
         Returns:
@@ -180,6 +194,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path=file_path,
             save_results=save_results,
             save_results_options=save_results_options,
+            prompts=prompts,
             params=params,
         )
         if resource_ids is not None:
@@ -335,6 +350,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit an image prediction job.
@@ -348,6 +364,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results: Whether to save results.
             save_results_options: Optional configuration for how results are saved.
                 Pass a dict or ``SaveResultsOptions`` instance.
+            prompts: Prompts for promptable segmentation models (e.g. SAM3-based).
+                Pass a dict or ``InferencePrompts`` instance.
             params: Additional parameters.
 
         Returns:
@@ -361,6 +379,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path=file_path,
             save_results=save_results,
             save_results_options=save_results_options,
+            prompts=prompts,
             params=params,
         )
         return self._submit_prediction(
@@ -378,6 +397,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a frame-specific prediction job (for video resources).
@@ -392,6 +412,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results: Whether to save results.
             save_results_options: Optional configuration for how results are saved.
                 Pass a dict or ``SaveResultsOptions`` instance.
+            prompts: Prompts for promptable segmentation models (e.g. SAM3-based).
+                Pass a dict or ``InferencePrompts`` instance.
             params: Additional parameters.
 
         Returns:
@@ -405,6 +427,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path=file_path,
             save_results=save_results,
             save_results_options=save_results_options,
+            prompts=prompts,
             params=params,
         )
         payload["frame_index"] = frame_index
@@ -424,6 +447,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a slice-specific prediction job for 3D volumes.
@@ -439,6 +463,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results: Whether to save results.
             save_results_options: Optional configuration for how results are saved.
                 Pass a dict or ``SaveResultsOptions`` instance.
+            prompts: Prompts for promptable segmentation models (e.g. SAM3-based).
+                Pass a dict or ``InferencePrompts`` instance.
             params: Additional parameters.
 
         Returns:
@@ -452,6 +478,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path=file_path,
             save_results=save_results,
             save_results_options=save_results_options,
+            prompts=prompts,
             params=params,
         )
         payload["slice_index"] = slice_index
@@ -470,6 +497,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
         file_path: str | None = None,
         save_results: bool = False,
         save_results_options: dict[str, Any] | SaveResultsOptions | None = None,
+        prompts: dict[str, Any] | InferencePrompts | None = None,
         params: dict[str, Any] | None = None,
     ) -> InferenceJob:
         """Submit a volume prediction job.
@@ -483,6 +511,8 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             save_results: Whether to save results.
             save_results_options: Optional configuration for how results are saved.
                 Pass a dict or ``SaveResultsOptions`` instance.
+            prompts: Prompts for promptable segmentation models (e.g. SAM3-based).
+                Pass a dict or ``InferencePrompts`` instance.
             params: Additional parameters.
 
         Returns:
@@ -496,6 +526,7 @@ class InferenceApi(EntityBaseApi[InferenceJob]):
             file_path=file_path,
             save_results=save_results,
             save_results_options=save_results_options,
+            prompts=prompts,
             params=params,
         )
         return self._submit_prediction(

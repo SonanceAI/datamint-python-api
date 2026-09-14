@@ -58,3 +58,6 @@ Folders are numbered in the recommended learning order.
 #### Full 3D
 1. [`01_synapse_unetrpp`](06_end_to_end/full_3d/01_synapse_unetrpp.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — 3D multi-organ segmentation with UNETR++ (Synapse)
 2. [`02_synapse_nnunet`](06_end_to_end/full_3d/02_synapse_nnunet.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — 3D multi-organ segmentation with nnU-Net (Synapse)
+
+#### SAM (promptable segmentation)
+1. [`01_deploy_sam_model`](06_end_to_end/sam/01_deploy_sam_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Deploy SAM 3 and run promptable segmentation with text, point, and box prompts

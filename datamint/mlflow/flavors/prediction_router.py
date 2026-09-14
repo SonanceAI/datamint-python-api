@@ -12,9 +12,34 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
+from pydantic import BaseModel, ConfigDict
+
 from .prediction_modes import PredictionMode
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class DeployedModelPrompts(BaseModel):
+    """Prompts for a promptable model, as received by a ``predict_*`` handler. """
+
+    model_config = ConfigDict(extra='ignore')
+
+    text: str | None = None
+    point_coordinates: list[list[float]] | None = None
+    point_labels: list[int] | None = None
+    boxes: list[list[float]] | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'DeployedModelPrompts':
+        """Build from the server's preprocessed prompt dict."""
+        point = data.get('point') or {}
+        box = data.get('box') or {}
+        return cls(
+            text=(data.get('text') or {}).get('text'),
+            point_coordinates=point.get('coordinates'),
+            point_labels=point.get('labels'),
+            boxes=box.get('boxes'),
+        )
 
 
 @dataclass(frozen=True, slots=True)
