@@ -3,10 +3,12 @@
 from .annotations.annotation import Annotation
 from .annotations.annotation_spec import AnnotationSpec
 from .base_entity import BaseEntity, BaseEntityModel
+from .buildlog import BuildLogs
 from .cache_manager import CacheManager
 from .channel import Channel, ChannelResourceData
 from .datasetinfo import DatasetInfo
 from .inferencejob import InferenceJob
+from .pod import ModelPodLogs, PodSummary
 from .project import Project
 from .project_resource_split import ProjectResourceSplit
 from .resource import LocalResource, Resource
@@ -24,6 +26,7 @@ __all__ = [
     'AnnotationSpec',
     'BaseEntity',
     'BaseEntityModel',
+    'BuildLogs',
     'CacheManager',
     'Channel',
     'ChannelResourceData',
@@ -32,6 +35,8 @@ __all__ = [
     'ImageResource',
     'InferenceJob',
     'LocalResource',
+    'ModelPodLogs',
+    'PodSummary',
     'NiftiResource',
     'Project',
     'ProjectResourceSplit',

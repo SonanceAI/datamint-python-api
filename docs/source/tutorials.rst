@@ -37,6 +37,7 @@ Deployment
 * `02_deploy_external_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_: Adapt and deploy an externally-trained model in Datamint.
 * `03_validate_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_validate_model.ipynb>`_: Validate a model before promoting it to production.
 * `04_predict_images_volumes_and_videos.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/04_predict_images_volumes_and_videos.ipynb>`_: Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges.
+* `05_local_docker_build.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/05_local_docker_build.ipynb>`_: Build and run a model image locally with podman as a pre-deployment sanity check, and predict against it.
 
 End-to-End Examples
 -------------------
@@ -66,3 +67,7 @@ Other available modules: ``fracatlas_dataset``, ``busi_dataset``, ``synapse_data
 
 * `01_synapse_unetrpp.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/01_synapse_unetrpp.ipynb>`_: Volumetric segmentation on the Synapse dataset using UNETR++.
 * `02_synapse_nnunet.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/02_synapse_nnunet.ipynb>`_: Volumetric segmentation on the Synapse dataset using nnUNet.
+
+**SAM (promptable segmentation)**
+
+* `01_deploy_sam_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/sam/01_deploy_sam_model.ipynb>`_: Deploy SAM 3 and run promptable segmentation with text, point, and box prompts.

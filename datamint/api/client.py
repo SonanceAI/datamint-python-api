@@ -3,6 +3,7 @@ from typing import Any, ClassVar
 
 import datamint.configs
 from datamint.exceptions import AuthenticationError, NetworkError
+from datamint.utils.urls import derive_mlflow_url
 
 from .base_api import ApiConfig, BaseApi
 from .endpoints import (
@@ -11,6 +12,7 @@ from .endpoints import (
     DatasetsInfoApi,
     DeployModelApi,
     InferenceApi,
+    PodLogsApi,
     ProjectsApi,
     ResourcesApi,
     UsersApi,
@@ -34,6 +36,7 @@ class Api:
         'annotationworklists': AnnotationWorklistApi,
         'deploy': DeployModelApi,
         'inference': InferenceApi,
+        'pod_logs': PodLogsApi,
     }
 
     # (server_url, api_key, verify_ssl) signatures already verified successfully in
@@ -88,14 +91,27 @@ class Api:
             max_retries=max_retries,
             verify_ssl=verify_ssl,
         )
-        mlflow_server_url = server_url.replace('https://', 'http://')
-        _LOGGER.debug("NOTE: Replacing https:// with http:// for mlflow server URL")
+        # The MLflow server lives on a dedicated host in production and on the
+        # same host as the API in local/dev. `derive_mlflow_url` returns the full
+        # URL including the port, so `port` is intentionally left as None to avoid
+        # double-appending it in `BaseApi._create_client`.
+        mlflow_server_url = derive_mlflow_url(server_url)
+        if mlflow_server_url is None:
+            _LOGGER.warning(
+                "Could not derive MLflow server URL from '%s'; falling back to the API URL",
+                server_url,
+            )
+            mlflow_server_url = server_url
+        else:
+            # INFO (not just DEBUG) so a misconfigured MLflow URL is visible by
+            # default in logs when troubleshooting tracking/registry issues.
+            _LOGGER.info("Derived MLflow server URL '%s' from API URL '%s'", mlflow_server_url, server_url)
         self.mlflow_config = ApiConfig(
             server_url=mlflow_server_url,
             api_key=api_key,
             timeout=timeout,
             max_retries=max_retries,
-            port=5000,
+            port=None,
             verify_ssl=verify_ssl
         )
         self._client = None
@@ -218,6 +234,11 @@ class Api:
     def inference(self) -> InferenceApi:
         """Access model inference endpoints."""
         return self._get_endpoint('inference', is_mlflow=True)
+
+    @property
+    def pod_logs(self) -> PodLogsApi:
+        """Access serving-pod log endpoints."""
+        return self._get_endpoint('pod_logs', is_mlflow=True)
 
     def __getstate__(self) -> dict:
         return {

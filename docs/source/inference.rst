@@ -305,6 +305,45 @@ programmatically, e.g. for batch/automated inference, via ``api.inference.submit
    inf_job.wait()
    predictions = inf_job.predictions
 
+.. _external_model_pod_logs:
+
+Viewing Serving-Pod Logs
+------------------------------------------
+
+Once a model is deployed, its serving pod runs on the Datamint server. You can fetch
+the pod's recent logs — useful for debugging failed inference jobs or a model that
+misbehaves in serving. Logs are only available while the pod exists (stopped pods
+included); removed pods lose their logs.
+
+.. code-block:: python
+
+   # Recent logs (last 200 lines by default, server max is 5000)
+   logs = api.pod_logs.get_logs(MODEL_NAME, tag='champion', tail=500)
+   print(logs.pod_name, logs.status)
+   print(logs.text)  # full log output as a single string
+
+   # Which pods exist for this model (running or stopped)?
+   for pod in api.pod_logs.list_pods(MODEL_NAME):
+       print(pod.name, pod.status, pod.is_running)
+
+   # Follow new log lines live (stops when the pod is removed)
+   for line in api.pod_logs.stream_logs(MODEL_NAME, interval=1.0):
+       print(line, end='')
+
+If an inference job fails, you can jump straight to its model's serving-pod logs:
+
+.. code-block:: python
+
+   inf_job = api.inference.submit(
+       model_name=MODEL_NAME,
+       model_alias='champion',
+       resource_id=resources[0].id,
+   )
+   try:
+       inf_job.wait()
+   except Exception:
+       print(inf_job.get_pod_logs(tail=100).text)
+
 
 Related Examples
 ------------------

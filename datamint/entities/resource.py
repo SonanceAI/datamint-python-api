@@ -707,14 +707,21 @@ class Resource(BaseResource):
         """Get a decoded video frame as a normalized array."""
         return self.get_frame_resource(index).fetch_frame_data()
 
-    def iter_frames(self) -> list['SlicedVideoResource']:
-        """Expand a video into one proxy resource per frame."""
+    def iter_frames(self, use_cache: bool = False) -> list['SlicedVideoResource']:
+        """Expand a video into one proxy resource per frame.
+
+        Args:
+            use_cache: If True, decoded frames are cached in memory and on
+                disk (gzip-compressed ``.npy.gz`` files). If False (default),
+                frames are decoded on demand and nothing is written to the
+                filesystem.
+        """
         if not self.is_video():
             raise ValueError("Frames are only available for video resources.")
 
         from .sliced_video_resource import SlicedVideoResource
 
-        return SlicedVideoResource.slice_over(self, self._frame_cache_manager)
+        return SlicedVideoResource.slice_over(self, self._frame_cache_manager, use_cache=use_cache)
 
 
 class LocalResource(BaseResource):

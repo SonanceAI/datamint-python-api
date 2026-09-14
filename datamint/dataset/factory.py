@@ -105,5 +105,5 @@ def build_dataset(project: str | Project | None = None,
 
     kind = next(iter(kinds))
     dataset_cls = _KIND_TO_CLS[kind]
-    _LOGGER.info(f"Detected resource type '{kind}'; using {dataset_cls.__name__}.")
+    _LOGGER.debug(f"Detected resource type '{kind}'; using {dataset_cls.__name__}.")
     return dataset_cls(project=project, **kwargs)

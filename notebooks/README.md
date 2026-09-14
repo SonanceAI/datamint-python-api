@@ -46,7 +46,7 @@ Folders are numbered in the recommended learning order.
 2. [`02_deploy_external_model`](05_deployment/02_deploy_external_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Wrap and deploy a model trained outside Datamint
 3. [`03_validate_model`](05_deployment/03_validate_model.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Validate a model before promoting it to production
 4. [`04_predict_images_volumes_and_videos`](05_deployment/04_predict_images_volumes_and_videos.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges
-5. [`05_deploy_sam_model`](05_deployment/05_deploy_sam_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Deploy SAM 3 and run promptable segmentation with text, point, and box prompts
+5. [`05_local_docker_build`](05_deployment/05_local_docker_build.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Build and run a model image locally with `podman` as a pre-deployment sanity check
 
 ### 06 — End-to-End Use Cases
 
@@ -58,3 +58,6 @@ Folders are numbered in the recommended learning order.
 #### Full 3D
 1. [`01_synapse_unetrpp`](06_end_to_end/full_3d/01_synapse_unetrpp.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — 3D multi-organ segmentation with UNETR++ (Synapse)
 2. [`02_synapse_nnunet`](06_end_to_end/full_3d/02_synapse_nnunet.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — 3D multi-organ segmentation with nnU-Net (Synapse)
+
+#### SAM (promptable segmentation)
+1. [`01_deploy_sam_model`](06_end_to_end/sam/01_deploy_sam_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Deploy SAM 3 and run promptable segmentation with text, point, and box prompts

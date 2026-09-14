@@ -712,7 +712,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         Args:
             files_path: A sequence of paths to resource files, IO objects, or pydicom.Dataset objects.
-                Must contain at least 2 items. Supports mixed types within the sequence.
+                Supports mixed types within the sequence.
             mimetype (str): The mimetype of the resources. If None, it will be guessed.
             anonymize (bool): Whether to anonymize the dicoms or not.
             anonymize_retain_codes (Sequence[tuple]): The tags to retain when anonymizing the dicoms.
@@ -1130,10 +1130,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                                save_path)
                     except ValueError as e:
                         _LOGGER.warning(f"Could not convert file to a known format: {e}")
-                        resource_file = response.content
-                    except NotImplementedError:
-                        _LOGGER.warning(f"Conversion not implemented yet for {mimetype} and save_path=None." +
-                                        " Returning a bytes array. If you want the conversion for this mimetype, provide a save_path.")
                         resource_file = response.content
             else:
                 resource_file = response.content

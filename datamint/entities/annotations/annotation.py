@@ -286,7 +286,7 @@ class Annotation(AnnotationBase):
         """Convert this annotation entity into a create DTO."""
         from datamint.api.dto import CreateAnnotationDto
         geometry = self.geometry
-        if geometry is not None and not hasattr(geometry, 'to_dict'):
+        if geometry and not hasattr(geometry, 'to_dict'):
             raise ValueError(
                 'Geometry annotations must use typed geometry entities. '
                 'Use LineAnnotation or BoxAnnotation instead of a raw geometry dict.'

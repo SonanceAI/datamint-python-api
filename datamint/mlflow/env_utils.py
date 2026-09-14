@@ -6,9 +6,9 @@ based on Datamint configuration.
 import logging
 import os
 import sys
-from urllib.parse import urlparse
 
 from datamint import configs
+from datamint.utils.urls import derive_mlflow_url
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,26 +35,27 @@ def get_datamint_api_key() -> str | None:
 
 
 def _get_mlflowdatamint_uri() -> str | None:
+    """Derive the MLflow tracking URI from the configured Datamint API URL.
+
+    Delegates host/port/scheme resolution to
+    [`derive_mlflow_url`](datamint/utils/urls.py:18):
+
+    - Production (``api.<domain>``) -> ``https://mlflow.<domain>:443``
+    - Localhost/dev -> ``http://<host>:5000``
+
+    Returns:
+        The MLflow tracking URI, or ``None`` if it cannot be derived.
+    """
     api_url = get_datamint_api_url()
     if not api_url:
         return None
     _LOGGER.debug(f"Retrieved Datamint API URL: {api_url}")
 
-    # Remove trailing slash if present
-    api_url = api_url.rstrip('/')
-    # api_url samples:
-    # https://api.datamint.io
-    # http://localhost:3001
-
-    parsed_url = urlparse(api_url)
-    base_url = f"{parsed_url.scheme}://{parsed_url.hostname}"
-    _LOGGER.debug(f"Derived base URL for MLflow Datamint: {base_url}")
-    # FIXME: It should work with https or datamint-api server should forward https requests.
-    base_url = base_url.replace('https://', 'http://')
-    if len(base_url.replace('http:', '')) == 0:
+    mlflow_uri = derive_mlflow_url(api_url)
+    if mlflow_uri is None:
+        _LOGGER.warning("Could not derive MLflow URI from Datamint API URL: %s", api_url)
         return None
 
-    mlflow_uri = f"{base_url}:5000"
     return mlflow_uri
 
 

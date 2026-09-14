@@ -67,6 +67,34 @@ def _get_card_template():
     return _card_template
 
 
+# ---------------------------------------------------------------------------
+# Jinja2 HTML template for scrollable monospace log blocks
+# ---------------------------------------------------------------------------
+_LOG_BLOCK_HTML_TEMPLATE = """\
+<div style="max-width: 720px; margin: 10px 0; border-radius: 14px;
+           border: 1px solid var(--vscode-panel-border, #d0d7de);
+           background: var(--vscode-textCodeBlock-background, #f6f8fa); padding: 14px 16px;">
+  <div style="font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+             color: var(--vscode-descriptionForeground, #57606a); margin-bottom: 8px;">Log output</div>
+  <pre style="margin: 0; max-height: 420px; overflow: auto; font-size: 12px; line-height: 1.55;
+             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+             color: var(--vscode-textPreformat-foreground, var(--vscode-foreground, #1f2328));
+             white-space: pre-wrap; word-break: break-word;">{{ log_text }}</pre>
+</div>
+"""
+
+_log_block_template = None
+
+
+def _get_log_block_template():
+    """Lazily compile and cache the Jinja2 log-block template."""
+    global _log_block_template
+    if _log_block_template is None:
+        from jinja2 import Environment
+        _log_block_template = Environment(autoescape=True).from_string(_LOG_BLOCK_HTML_TEMPLATE)
+    return _log_block_template
+
+
 def render_text_block(header: str, fields: list[tuple[str, str]], empty_message: str = "(no non-empty fields)") -> str:
     """Plain-text ``Header\\n  Label: value`` block, used by ``__str__``/``__repr__``."""
     if not fields:
@@ -78,3 +106,8 @@ def render_text_block(header: str, fields: list[tuple[str, str]], empty_message:
 def render_html_card(kind: str, name: str, fields: list[tuple[str, str]]) -> str:
     """Styled HTML card for Jupyter's ``_repr_html_`` display hook."""
     return _get_card_template().render(kind=kind, name=name, fields=fields)
+
+
+def render_log_block(lines: list[str]) -> str:
+    """Scrollable monospace HTML block with the given log lines, for Jupyter display."""
+    return _get_log_block_template().render(log_text='\n'.join(lines))

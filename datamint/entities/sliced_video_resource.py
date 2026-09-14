@@ -30,13 +30,17 @@ class SlicedVideoResource(SlicedResourceBase):
     """Proxy that presents a single frame of a video Resource.
 
     Wraps a :class:`~datamint.entities.resource.Resource` and represents a specific frame by index.
-    Uses gzip-compressed ``.npy.gz`` files on disk for caching, with an
-    in-memory LRU cache managed by :class:`~datamint.entities.cache_manager.CacheManager`.
+    When caching is enabled, decoded frames are stored as gzip-compressed
+    ``.npy.gz`` files on disk, with an in-memory LRU cache managed by
+    :class:`~datamint.entities.cache_manager.CacheManager`.
 
     Args:
         parent: The original video Resource.
         frame_index: The index of the frame in the video.
         frame_cache: Shared :class:`~datamint.entities.cache_manager.CacheManager` for disk-based frame caching.
+        use_cache: If True, decoded frames are cached (memory + disk).
+            If False (default), frames are decoded on demand and nothing
+            is written to the filesystem.
     """
 
     _CACHE_MANAGER_NAMESPACE = "sliced_video_frames"
@@ -46,9 +50,11 @@ class SlicedVideoResource(SlicedResourceBase):
         parent: Resource,
         frame_index: int,
         frame_cache: CacheManager | None = None,
+        use_cache: bool = False,
     ):
         self._parent = parent
         self.frame_index = frame_index
+        self._use_cache = use_cache
         if frame_cache is None:
             frame_cache = CacheManager(SlicedVideoResource._CACHE_MANAGER_NAMESPACE)
         self._frame_cache = frame_cache
@@ -57,19 +63,23 @@ class SlicedVideoResource(SlicedResourceBase):
     def slice_over(
         resource: Resource,
         frame_cache: CacheManager | None = None,
+        use_cache: bool = False,
     ) -> list[SlicedVideoResource]:
         """Expand a video resource into per-frame proxy resources.
 
         Args:
             resource: The video Resource to expand.
             frame_cache: Shared cache for decoded frames.
+            use_cache: If True, decoded frames are cached (memory + disk).
+                If False (default), frames are decoded on demand and nothing
+                is written to the filesystem.
 
         Returns:
             List of :class:`SlicedVideoResource`, one per frame.
         """
         num_frames = resource.get_depth()
         return [
-            SlicedVideoResource(resource, i, frame_cache)
+            SlicedVideoResource(resource, i, frame_cache, use_cache)
             for i in range(num_frames)
         ]
 
@@ -86,6 +96,14 @@ class SlicedVideoResource(SlicedResourceBase):
         Returns:
             Frame array with shape ``(C, H, W)``.
         """
+        if not self._use_cache:
+            # Decode on demand without touching the cache (no disk writes).
+            raw = self._parent.fetch_file_data(auto_convert=False, use_cache=True)
+            frame, self.data_metainfo = read_array_normalized(raw, return_metainfo=True,
+                                                              index=self.frame_index)  # frame.shape is (C, H, W)
+            _LOGGER.debug(f'Fetched raw frame data for frame index {self.frame_index}. Frame shape: {frame.shape}')
+            return np.ascontiguousarray(frame)
+
         version_info = self._get_version_info()
         cache_entity_id = self._frame_cache_entity_id()
 

@@ -10,8 +10,8 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 import aiohttp
-import cv2
 import httpx
+import numpy as np
 from PIL import Image
 
 from datamint.exceptions import (
@@ -25,6 +25,8 @@ from datamint.exceptions import (
 from datamint.utils.env import ensure_asyncio_loop
 
 if TYPE_CHECKING:
+    import av
+
     from datamint.api.client import Api
     from datamint.types import ImagingData
 
@@ -688,21 +690,38 @@ class BaseApi:
         return items
 
     @staticmethod
+    def _open_video_container(bytes_array: bytes) -> 'av.container.InputContainer':
+        """Open a video from raw bytes
+
+        The caller owns the returned container: use it (e.g. container.decode(video=0)
+        to iterate frames) and close it when done (container.close() or a with block).
+
+        Returns:
+            Opened InputContainer.
+        """
+        import av
+
+        try:
+            return av.open(BytesIO(bytes_array), mode='r')
+        except av.FFmpegError as e:
+            raise ValueError(f"Could not open video content: {e}") from e
+
+    @staticmethod
     def convert_format(bytes_array: bytes,
                        mimetype: str | None = None,
                        file_path: str | None = None
-                       ) -> 'ImagingData | bytes':
+                       ) -> 'ImagingData | av.container.InputContainer | bytes':
         """ Convert the bytes array to the appropriate format based on the mimetype.
 
         Args:
             bytes_array: Raw file content bytes
             mimetype: Optional MIME type of the content
-            file_path: Path to the source file. Required when mimetype is a video type
-                (used to open the file with ``cv2.VideoCapture``) or a NIfTI type
+            file_path: Path to the source file. Required when mimetype is a NIfTI type
                 (used to load the file with ``nibabel``).
 
         Returns:
-            Converted content in appropriate format (pydicom.Dataset, PIL Image, cv2.VideoCapture, ...)
+            Converted content in appropriate format (pydicom.Dataset, PIL Image,
+            av.container.InputContainer``)
 
         Example:
             >>> fpath = 'path/to/file.dcm'
@@ -725,9 +744,7 @@ class BaseApi:
         elif mimetype.startswith('image/'):
             return Image.open(content_io)
         elif mimetype.startswith('video/'):
-            if file_path is None:
-                raise NotImplementedError("file_path=None is not implemented yet for video/* mimetypes.")
-            return cv2.VideoCapture(file_path)
+            return BaseApi._open_video_container(bytes_array)
         elif mimetype == 'application/json':
             return json.loads(bytes_array)
         elif mimetype == 'application/octet-stream':

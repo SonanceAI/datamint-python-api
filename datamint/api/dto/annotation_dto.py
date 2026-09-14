@@ -60,7 +60,7 @@ class CreateAnnotationDto:
         self.geometry = geometry
         self.source = source
 
-        if geometry is not None and self.type != geometry.type:
+        if geometry and self.type != geometry.type:
             raise ValueError(f"Annotation type {self.type} does not match geometry type {geometry.type}.")
 
     def to_dict(self) -> dict[str, Any]:

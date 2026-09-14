@@ -235,54 +235,59 @@ The SDK is built around a few core concepts that make data ingestion, annotation
 Common Workflows
 ----------------
 
-Uploading Data
-~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from datamint import Api
-
-   api = Api()
-
-   # Upload a single file
-   resource = api.resources.upload_resource("/path/to/image.dcm")
-
-   # Upload with options
-   api.resources.upload_resource(
-       "/path/to/image.dcm",
-       channel="CT Scans",
-       tags=["baseline", "ct"],
-       anonymize=True,
-   )
-
-   # Upload multiple files
-   api.resources.upload_resources(["/path/to/a.dcm", "/path/to/b.dcm"])
-
 Creating a Training Project
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+Group resources into a project so you can annotate and train against them as one unit.
+
 .. code-block:: python
 
    from datamint import Api
-   from datamint.dataset import ImageDataset
 
    api = Api()
 
-   # Create project
    project = api.projects.create(
        name="Liver Segmentation",
        description="CT liver segmentation dataset",
    )
 
-   # Add resources
-   resources = api.resources.get_list(channel="CT Scans")
-   api.projects.add_resources(resources, project)
+Uploading Data
+~~~~~~~~~~~~~~
 
-   # Load dataset
-   dataset = ImageDataset(project="Liver Segmentation")
+Get your files into the project.
+
+.. code-block:: python
+
+   # Upload a single file, straight into the project
+   resource = api.resources.upload_resource(
+       "/path/to/image.dcm",
+       publish_to="Liver Segmentation",
+       tags=["baseline", "ct"],
+       anonymize=True,
+   )
+
+   # Upload multiple files
+   api.resources.upload_resources(
+       ["/path/to/a.dcm", "/path/to/b.dcm"],
+       publish_to="Liver Segmentation",
+   )
+
+Downloading Dataset
+~~~~~~~~~~~~~~~~~~~~
+
+Load the project straight into a PyTorch-ready dataset instead of downloading raw files by hand.
+
+.. code-block:: python
+
+   from datamint.dataset import build_dataset
+
+   dataset = build_dataset("Liver Segmentation")
+   image, target = dataset[0]
 
 Training a Model
 ~~~~~~~~~~~~~~~~
+
+Train with a built-in trainer, no training loop to write.
 
 .. code-block:: python
 
@@ -293,7 +298,7 @@ Training a Model
        image_size=256,
        batch_size=16,
        max_epochs=50,
-       accelerator="gpu",
+       accelerator="auto",
    )
 
    results = trainer.fit()
@@ -301,6 +306,8 @@ Training a Model
 
 Deploying a Model
 ~~~~~~~~~~~~~~~~~
+
+Register your model for inference through the UI.
 
 .. code-block:: python
 

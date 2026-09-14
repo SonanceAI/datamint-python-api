@@ -1,0 +1,49 @@
+# Build an image that can serve mlflow models.
+# ``docker builder prune`` to clean up build cache
+FROM {base_image}
+
+# Set environment variables for better Python execution
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1
+
+# Limit BLAS/threading libraries to prevent resource exhaustion in containers.
+# Without these, OpenBLAS/Numpy may try to spawn 32+ threads and fail with
+# "pthread_create failed: Resource temporarily unavailable" when the host's
+# RLIMIT_NPROC is constrained (common in container runtimes).
+ENV OPENBLAS_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    OMP_NUM_THREADS=1
+
+{nvidia_env_vars}
+
+WORKDIR /opt/mlflow
+
+{setup_python_venv}
+
+{pip_config_index_url}
+
+# Install base tooling in a single layer
+RUN pip install --no-cache-dir rich mlflow-skinny=={mlflow_version} flask==3.1.2 pandas==2.3.3 fastapi==0.132.1 starlette==0.52.1
+
+# Copy model and install its dependencies (this is the heaviest layer)
+COPY model_dir/ /opt/ml/model
+RUN python -c "from mlflow.models import container as C; C._install_pyfunc_deps('/opt/ml/model', install_mlflow=False, enable_mlserver=False, env_manager='local');"
+
+# Copy linked models and serving entrypoint (lightweight, changes less often than model)
+COPY linked_models/ /opt/mlflow/linked_models/
+#RUN pip install --no-cache-dir mlserver==1.7.1
+COPY serve.py /opt/mlflow/serve.py
+
+ENV MLFLOW_DISABLE_ENV_CREATION=True
+ENV MLFLOW_MODELS_WORKERS=4
+#ENV ENABLE_MLSERVER=True
+
+# granting read/write access and conditional execution authority to all child directories
+# and files to allow for deployment to AWS Sagemaker Serverless Endpoints
+# (see https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html)
+RUN chmod -R o+rwX /opt/mlflow/
+
+ENTRYPOINT ["python", "/opt/mlflow/serve.py"]

@@ -167,7 +167,7 @@ class SlicedVideoDataset(DatamintBaseDataset):
 
         for i, r in enumerate(resources):
             anns = resource_annotations[i]
-            per_frame = SlicedVideoResource.slice_over(r, frame_cache)
+            per_frame = SlicedVideoResource.slice_over(r, frame_cache, use_cache=True)
             frame_resources.extend(per_frame)
             frame_annotations.extend(anns for _ in per_frame)
 
