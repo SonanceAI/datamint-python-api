@@ -9,6 +9,7 @@ import sys
 _COMMANDS: dict[str, str] = {
     "config": "datamint.client_cmd_tools.datamint_config",
     "upload": "datamint.client_cmd_tools.datamint_upload",
+    "download": "datamint.client_cmd_tools.datamint_download",
     "init": "datamint.client_cmd_tools.datamint_init",
     "train": "datamint.client_cmd_tools.datamint_train",
     "inference": "datamint.client_cmd_tools.datamint_inference",
@@ -19,6 +20,7 @@ _COMMANDS: dict[str, str] = {
 _COMMAND_HELP: dict[str, str] = {
     "config": "Configure the API key, URL, and local cache",
     "upload": "Upload DICOM files and other resources",
+    "download": "Download and cache a project's dataset locally",
     "init": "Generate starter scripts for a Datamint workflow",
     "train": "Train a model on a Datamint project",
     "inference": "Run local inference with a registered model",

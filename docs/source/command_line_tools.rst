@@ -26,11 +26,12 @@ You should see this in the first line:
 
     usage: datamint config [-h] [--api-key API_KEY] [--default-url DEFAULT_URL] [-i] [...]
 
-There are seven command-line tools available:
+There are eight command-line tools available:
 
 - ``datamint config``: To configure the Datamint API key and URL.
 - ``datamint upload``: To upload DICOM, NIfTI, video, image, and segmentation files to the Datamint server.
 - ``datamint import``: To import an already-labeled dataset (COCO, Pascal VOC, or YOLO) into a Datamint project.
+- ``datamint download``: To download and cache a Datamint project's dataset locally.
 - ``datamint init``: To scaffold a ready-to-run project (upload, train, and deploy scripts).
 - ``datamint example``: To populate a project with a ready-made example dataset, no data of your own required.
 - ``datamint train``: To train a model on a Datamint project using a built-in one-line trainer.
@@ -296,6 +297,33 @@ Use ``--dry-run`` to parse and print a summary (image/box/class counts) without 
 project or uploading anything, and ``--yes`` to skip the auto-detected-format confirmation prompt.
 
 See all available options by running ``datamint import --help``.
+
+Downloading a project's dataset locally
+-----------------------------------------
+
+``datamint download`` fetches a project's resources (and their annotations) and caches
+them locally, then prints the one-liner to load them as a PyTorch dataset with the SDK:
+
+.. code-block:: bash
+
+    datamint download --project MyProject
+
+Files are cached under ``~/.datamint``, the same location every ``Dataset`` class already
+reads from so the printed snippet (``ImageDataset(project='MyProject')``, or whichever
+class matches your data) loads instantly afterward.
+
+Pass ``-o``/``--output`` to also create a browsable, project-scoped view: a folder of
+symlinks into the cache, organized as ``<output>/<resource_id>/<filename>``, so you can
+inspect the files directly:
+
+.. code-block:: bash
+
+    datamint download --project MyProject -o ./my_data_folder
+
+This requires symlink support (unavailable on some Windows setups without Developer Mode
+enabled); the download itself still succeeds even if the browsable view can't be created.
+
+See all available options by running ``datamint download --help``.
 
 Populating a project with example data
 ---------------------------------------
