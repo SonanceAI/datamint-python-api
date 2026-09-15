@@ -137,6 +137,7 @@ extensions = [
     'sphinx_autodoc_typehints',
     'sphinxcontrib.mermaid',
     'sphinx_rtd_dark_mode',
+    'sphinx_copybutton',
 ]
 
 default_dark_mode = False
