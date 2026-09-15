@@ -138,7 +138,14 @@ extensions = [
     'sphinxcontrib.mermaid',
     'sphinx_rtd_dark_mode',
     'sphinx_copybutton',
+    'nbsphinx',
 ]
+
+### nbsphinx ###
+# Notebooks are tutorials with their outputs committed to the repo. Never
+# execute them during the docs build.
+nbsphinx_execute = 'never'
+##########
 
 default_dark_mode = False
 
@@ -163,7 +170,7 @@ autodoc_inherit_docstrings = True
 autosummary_imported_members = True  # Also documents imports in __init__.py
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns = ['**.ipynb_checkpoints', 'notebooks/README.md', 'notebooks/**/README.md']
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -171,7 +178,6 @@ exclude_patterns = []
 html_theme = "sphinx_rtd_theme"
 html_theme_options = {
     "navigation_depth": 3,
-    "collapse_navigation": False,
     "style_external_links": True,
     "logo_only": False,
 }
