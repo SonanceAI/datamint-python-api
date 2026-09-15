@@ -9,3 +9,4 @@ myst-parser
 sphinx-substitution-extensions
 sphinx-autodoc-typehints
 sphinx-copybutton
+nbsphinx

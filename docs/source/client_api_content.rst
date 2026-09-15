@@ -612,7 +612,7 @@ Model registry (MLflow) operations
 ++++++++++++++++++++++++++++++++++
 
 ``api.models`` wraps the underlying MLflow model registry client directly, so
-these calls map one-to-one onto MLflow's own registry API:
+these calls map one-to-one to MLflow's own registry API:
 
 +---------------------------------------------+-------------------------------------------+
 | Method                                      | MLflow equivalent                         |

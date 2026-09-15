@@ -1,73 +1,67 @@
 Tutorials
 =========
 
-The notebooks below are available in the `notebooks/ directory <https://github.com/SonanceAI/datamint-python-api/tree/main/notebooks>`_
-of the GitHub repository. Run them locally to learn how to use the Datamint Python API across different scenarios.
+Hands-on examples for every step of the Datamint workflow, from your first upload to a deployed model. The same
+notebooks live in the `notebooks/ directory <https://github.com/SonanceAI/datamint-python-api/tree/main/notebooks>`_
+of the GitHub repository if you want to run them yourself.
 
-Getting Started
----------------
+.. grid:: 1 2 3 3
+   :gutter: 2
 
-* `01_upload_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/01_getting_started/01_upload_data.ipynb>`_: Upload images, DICOMs, and other resources to a Datamint project.
-* `02_explore_data.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/01_getting_started/02_explore_data.ipynb>`_: Query and explore resources already in a project.
+   .. grid-item-card:: Getting Started
+      :link: tutorials/getting_started
+      :link-type: doc
 
-Annotations
------------
+      :bdg-success:`Beginner`
 
-* `01_upload_annotations.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/02_annotations/01_upload_annotations.ipynb>`_: Import and manage image-level and frame-level classification annotations.
-* `02_geometry_annotations.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/02_annotations/02_geometry_annotations.ipynb>`_: Upload bounding boxes, lines, and other geometry annotations.
+      Upload resources to a project and explore data already there.
 
-Datasets
---------
+   .. grid-item-card:: Annotations
+      :link: tutorials/annotations
+      :link-type: doc
 
-* `01_project_scoped_splits.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/01_project_scoped_splits.ipynb>`_: Assign project-scoped train/val/test splits, inspect split records, and replay historical snapshots.
-* `02_patient_wise_splits.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/02_patient_wise_splits.ipynb>`_: Split datasets by patient to avoid data leakage between train and test sets.
-* `03_build_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/03_build_dataset.ipynb>`_: Build and configure a PyTorch dataset from a Datamint project.
-* `04_volume_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/04_volume_dataset.ipynb>`_: Work with 3D volume datasets (NIfTI, DICOM series).
-* `05_import_dataset.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/03_datasets/05_import_dataset.ipynb>`_: Import an already-labeled dataset (COCO, Pascal VOC, or YOLO format) into a project in one call.
+      :bdg-success:`Beginner`
 
-Experiment Tracking
--------------------
+      Import classification annotations and geometry (boxes, lines) to resources.
 
-* `01_mlflow_manual_logging.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/04_experiment_tracking/01_mlflow_manual_logging.ipynb>`_: Log models and experiments manually to MLflow via Datamint.
+   .. grid-item-card:: Datasets
+      :link: tutorials/datasets
+      :link-type: doc
 
-Deployment
-----------
+      :bdg-warning:`Intermediate`
 
-* `01_deploy_registered_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/01_deploy_registered_model.ipynb>`_: Deploy a model registered in MLflow as a managed Datamint endpoint.
-* `02_deploy_external_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/02_deploy_external_model.ipynb>`_: Adapt and deploy an externally-trained model in Datamint.
-* `03_validate_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/03_validate_model.ipynb>`_: Validate a model before promoting it to production.
-* `04_predict_images_volumes_and_videos.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/04_predict_images_volumes_and_videos.ipynb>`_: Run a 2D model on images, 3D volumes, and video frames using automatic prediction bridges.
-* `05_local_docker_build.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/05_deployment/05_local_docker_build.ipynb>`_: Build and run a model image locally with podman as a pre-deployment sanity check, and predict against it.
+      Build PyTorch-ready datasets, split them safely, and import already-labeled data.
 
-End-to-End Examples
--------------------
+   .. grid-item-card:: Experiment Tracking
+      :link: tutorials/experiment_tracking
+      :link-type: doc
 
-Complete workflows from data upload to deployment.
+      :bdg-warning:`Intermediate`
 
-Each notebook below trains on a public dataset (BCCD, FracAtlas, BUSI, Synapse). The
-download-and-upload step for each one is a single call into ``datamint.examples``, a
-helper module that downloads the raw dataset, uploads it to a Datamint project, and
-creates the matching annotations:
+      Log runs and register models to MLflow through Datamint.
 
-.. code-block:: python
+   .. grid-item-card:: Deployment
+      :link: tutorials/deployment
+      :link-type: doc
 
-   from datamint.examples import bccd_dataset
+      :bdg-warning:`Intermediate`
 
-   project = bccd_dataset.create(project_name="bccd_detection")
+      Deploy registered or external models, validate them, and run predictions.
 
-Other available modules: ``fracatlas_dataset``, ``busi_dataset``, ``synapse_dataset``.
+   .. grid-item-card:: End-to-End Examples
+      :link: tutorials/end_to_end/index
+      :link-type: doc
 
-**Slice-based (2D)**
+      :bdg-danger:`Advanced`
 
-* `01_fracatlas_classification.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/01_fracatlas_classification.ipynb>`_: End-to-end classification pipeline on the FracAtlas dataset.
-* `02_busi_segmentation.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/02_busi_segmentation.ipynb>`_: Train a 2D segmentation model on the BUSI dataset with ``UNetPPTrainer``, including custom model integration.
-* `03_bccd_detection.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/slice_based/03_bccd_detection.ipynb>`_: Object detection pipeline on the BCCD blood cell dataset.
+      Complete pipelines from data upload to deployment on public datasets.
 
-**Full 3D**
+.. toctree::
+   :hidden:
 
-* `01_synapse_unetrpp.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/01_synapse_unetrpp.ipynb>`_: Volumetric segmentation on the Synapse dataset using UNETR++.
-* `02_synapse_nnunet.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/full_3d/02_synapse_nnunet.ipynb>`_: Volumetric segmentation on the Synapse dataset using nnUNet.
-
-**SAM (promptable segmentation)**
-
-* `01_deploy_sam_model.ipynb <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/06_end_to_end/sam/01_deploy_sam_model.ipynb>`_: Deploy SAM 3 and run promptable segmentation with text, point, and box prompts.
+   tutorials/getting_started
+   tutorials/annotations
+   tutorials/datasets
+   tutorials/experiment_tracking
+   tutorials/deployment
+   tutorials/end_to_end/index
