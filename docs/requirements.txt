@@ -8,3 +8,4 @@ setuptools>=57.0.0
 myst-parser
 sphinx-substitution-extensions
 sphinx-autodoc-typehints
+sphinx-copybutton
