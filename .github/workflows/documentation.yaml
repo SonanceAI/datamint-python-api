@@ -22,6 +22,9 @@ jobs:
       pages: write
       id-token: write
     steps:
+    - name: Install pandoc
+      # Required by nbsphinx to convert notebook markdown cells to RST
+      run: sudo apt-get update && sudo apt-get install -y pandoc
     - id: deployment
       uses: sphinx-notes/pages@v3
       with:
