@@ -4,6 +4,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from datamint.configs import DEFAULT_DEPLOY_MODEL_ALIAS
 from datamint.entities.annotations import annotation_from_dict
 from datamint.entities.base_entity import MISSING_FIELD, BaseEntity
 
@@ -238,19 +239,19 @@ class InferenceJob(BaseEntity):
         api.wait(self, on_status=_sync_self, poll_interval=poll_interval, timeout=timeout)
         return self
 
-    def get_pod_logs(self, *, tail: int = 200) -> ModelPodLogs:
+    def get_pod_logs(self, *, tag: str = DEFAULT_DEPLOY_MODEL_ALIAS, tail: int = 200) -> ModelPodLogs:
         """Fetch recent logs from the pod serving this job's model.
 
         Convenience for :meth:`PodLogsApi.get_logs` using this job's
         ``model_name``. Useful for debugging failed inference jobs —
         the serving pod's logs often contain the model-side error.
 
-        Note:
-            Logs are fetched from the ``'champion'`` pod. If this job was
-            served by a challenger deployment, use
-            ``api.pod_logs.get_logs(model_name, tag=...)`` directly.
+        *tag* defaults to :data:`DEFAULT_DEPLOY_MODEL_ALIAS` regardless of
+        what alias the job was actually submitted with. Pass *tag*
+        explicitly if the job used a different alias.
 
         Args:
+            tag: Image tag of the model pod (e.g. ``'champion'``, ``'latest'``).
             tail: Maximum number of log lines to return (server-enforced max 5000).
 
         Returns:
@@ -267,4 +268,4 @@ class InferenceJob(BaseEntity):
                 "This entity is not attached to an Api client. "
                 "Use api.pod_logs.get_logs(model_name) directly."
             )
-        return parent_api.pod_logs.get_logs(self.model_name, tail=tail)
+        return parent_api.pod_logs.get_logs(self.model_name, tag=tag, tail=tail)
