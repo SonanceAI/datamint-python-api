@@ -1,6 +1,7 @@
 """API handler for model deployment endpoints."""
 import json
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable, Generator
@@ -18,6 +19,22 @@ from ..entity_base_api import ApiConfig, EntityBaseApi
 logger = logging.getLogger(__name__)
 
 _TERMINAL_STATUSES = frozenset({'completed', 'failed', 'cancelled', 'error'})
+
+
+def _model_name_to_image_name(model_name: str) -> str:
+    """Lowercase and clean a model name to match the Docker image name it was deployed as."""
+
+    parts = [p for p in model_name.split("/") if p]
+    if not parts:
+        return "image"
+    cleaned = []
+    for part in parts:
+        part = part.strip().lower()
+        part = re.sub(r"\s+", "_", part)
+        part = re.sub(r"[^a-z0-9._-]", "-", part)
+        part = part.strip("._-")
+        cleaned.append(part or "image")
+    return "/".join(cleaned)
 
 #: SSE event name carrying a single new build-log line
 _LOG_EVENT = 'log'
@@ -214,6 +231,7 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
 
     def remove_image(self, model_name: str, tag: str | None = None) -> dict:
         """Remove a deployed model image."""
+        model_name = _model_name_to_image_name(model_name)
         params = {}
         if tag:
             params['tag'] = tag
@@ -222,6 +240,7 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
 
     def image_exists(self, model_name: str, tag: str = DEFAULT_DEPLOY_MODEL_ALIAS) -> bool:
         """Check if a model image exists."""
+        model_name = _model_name_to_image_name(model_name)
         params = {'tag': tag}
         response = self._make_request('GET', f'/{self.endpoint_base}/image/{model_name}/exists', params=params)
         return response.json().get('exists', False)
