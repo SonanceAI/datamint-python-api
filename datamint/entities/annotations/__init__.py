@@ -1,10 +1,11 @@
 from .annotation import Annotation, _normalize_annotation_data
 from .box_annotation import BoxAnnotation
-from .geometry import BoxGeometry, CoordinateSystem, Geometry, LineGeometry
+from .geometry import BoxGeometry, CoordinateSystem, Geometry, LineGeometry, PointGeometry
 from .image_classification import ImageClassification
 from .image_segmentation import ImageSegmentation
 from .line_annotation import LineAnnotation
 from .numeric_annotation import NumericAnnotation
+from .point_annotation import PointAnnotation
 from .types import AnnotationType
 from .volume_segmentation import VolumeSegmentation
 
@@ -20,6 +21,7 @@ def annotation_from_dict(data: dict) -> Annotation:
     * ``'integer'``/``'float'`` → :class:`NumericAnnotation`
     * ``'line'`` → :class:`LineAnnotation`
     * ``'square'`` → :class:`BoxAnnotation`
+    * ``'point'`` → :class:`PointAnnotation`
     * anything else → :class:`Annotation`
 
     ``segmentation_data`` dicts are automatically deserialised by the
@@ -54,6 +56,9 @@ def annotation_from_dict(data: dict) -> Annotation:
     if annotation_type in (AnnotationType.SQUARE, AnnotationType.SQUARE.value):
         return BoxAnnotation(**normalized_data)
 
+    if annotation_type in (AnnotationType.POINT, AnnotationType.POINT.value):
+        return PointAnnotation(**normalized_data)
+
     return Annotation(**normalized_data)
 
 
@@ -69,6 +74,8 @@ __all__ = [
     "LineAnnotation",
     "LineGeometry",
     "NumericAnnotation",
+    "PointAnnotation",
+    "PointGeometry",
     "VolumeSegmentation",
     "annotation_from_dict",
 ]

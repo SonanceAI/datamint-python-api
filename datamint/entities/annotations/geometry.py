@@ -274,6 +274,83 @@ class LineGeometry(_TwoPointGeometry):
     type: ClassVar[str] = 'line'
 
 
+class PointGeometry(Geometry):
+    points: tuple[Point3D]
+    type: ClassVar[str] = 'point'
+
+    @field_validator('points', mode='before')
+    @classmethod
+    def _validate_points(cls, value: Any) -> tuple[Point3D]:
+        if not isinstance(value, (list, tuple)) or len(value) != 1:
+            raise ValueError('Point geometries require exactly one point.')
+
+        (point,) = value
+        return (_normalize_point(point),)
+
+    @property
+    def point(self) -> Point3D:
+        return self.points[0]
+
+    @classmethod
+    def from_coordinates(
+        cls,
+        point: tuple[int, int] | tuple[float, float, float],
+        *,
+        coords_system: CoordinateSystem = 'pixel',
+        slice_plane: ViewPlane | None = None,
+        frame_index: int | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> PointGeometry:
+        if coords_system == 'pixel':
+            return cls._from_pixel_coordinates(
+                point,
+                frame_index=frame_index,
+                metadata=metadata,
+                slice_plane=slice_plane,
+            )
+
+        if coords_system == 'patient':
+            normalized_point = _normalize_point(point, allow_2d=False)
+            viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+            return cls(points=(normalized_point,), coordinate_system='patient',
+                       viewPlaneNormal=viewPlaneNormal, viewUp=viewUp)
+
+        raise ValueError(f'Unknown coordinate system: {coords_system}')
+
+    @classmethod
+    def _from_pixel_coordinates(
+        cls,
+        point: tuple[int, int] | tuple[float, float, float],
+        *,
+        frame_index: int | None = None,
+        slice_plane: ViewPlane | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> PointGeometry:
+        normalized_point = _normalize_point(point)
+        viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+
+        if metadata is not None:
+            patient_point, _ = _TwoPointGeometry._pixel_to_patient_coordinates(
+                normalized_point, normalized_point,
+                frame_index=frame_index,
+                slice_plane=slice_plane,
+                metadata=metadata,
+            )
+            return cls(points=(_normalize_point(patient_point, allow_2d=False),),
+                       coordinate_system='patient', viewPlaneNormal=viewPlaneNormal, viewUp=viewUp)
+
+        _LOGGER.warning('No metadata provided for pixel to patient coordinate conversion;'
+                        ' This is not recommended as the coordinates might be wrongly interpreted')
+
+        z_index = frame_index
+        pixel_point = (
+            normalized_point[0],
+            normalized_point[1],
+            z_index if z_index is not None else normalized_point[2],
+        )
+        return cls(points=(pixel_point,), coordinate_system='pixel')
+
+
 class BoxGeometry(Geometry):
     points: tuple[Point3D, Point3D, Point3D, Point3D]
     type: ClassVar[str] = 'square'
