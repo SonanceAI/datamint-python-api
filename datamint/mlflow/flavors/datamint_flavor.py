@@ -67,11 +67,15 @@ logger = logging.getLogger(__name__)
 FLAVOR_NAME = 'datamint'
 
 
-def _process_input_example(input_example: ModelInputExample | None) -> tuple[ModelInputExample, dict[str, Any]]:
+def _process_input_example(
+    input_example: ModelInputExample | None,
+    extra_params: dict[str, Any] | None = None,
+) -> tuple[ModelInputExample, dict[str, Any]]:
     datamint_params = {
         'mode': 'default',
         'model_name': 'undefined_model_name',
-        'log_predictions': False
+        'log_predictions': False,
+        **(extra_params or {}),
     }
     if input_example is None:
         import datetime
@@ -242,6 +246,7 @@ def save_model(datamint_model: BaseDatamintModel,
                artifacts=None,
                signature: ModelSignature | None = None,
                input_example: ModelInputExample | None = None,
+               extra_params: dict[str, Any] | None = None,
                pip_requirements=None,
                extra_pip_requirements=None,
                metadata=None,
@@ -275,7 +280,7 @@ def save_model(datamint_model: BaseDatamintModel,
 
     # signature = _process_signature(signature, datamint_model)
     try:
-        input_example = _process_input_example(input_example)
+        input_example = _process_input_example(input_example, extra_params)
     except Exception as e:
         logger.error(f"Failed to process input example. {e}")
         raise
@@ -371,6 +376,7 @@ def log_model(
     model_name: str | None = None,
     signature: ModelSignature | None = None,
     input_example: ModelInputExample | None = None,
+    extra_params: dict[str, Any] | None = None,
     pip_requirements=None,
     extra_pip_requirements=None,
     metadata=None,
@@ -391,6 +397,7 @@ def log_model(
         registered_model_name=model_name,
         signature=signature,
         input_example=input_example,
+        extra_params=extra_params,
         pip_requirements=pip_requirements,
         extra_pip_requirements=extra_pip_requirements,
         metadata=metadata,

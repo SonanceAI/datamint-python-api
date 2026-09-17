@@ -1,3 +1,4 @@
+import json
 import logging
 from abc import ABC
 from collections.abc import Sequence
@@ -286,6 +287,10 @@ class BaseDatamintModel(PythonModel, ABC):
 
         raw_prompts = params.pop('prompts', None)
         if raw_prompts is not None:
+            
+            # Sent JSON-encoded
+            if isinstance(raw_prompts, str):
+                raw_prompts = json.loads(raw_prompts)
             params['prompts'] = (
                 raw_prompts
                 if isinstance(raw_prompts, DeployedModelPrompts)
