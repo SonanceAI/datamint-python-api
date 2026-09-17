@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any, ClassVar, Literal, TypeAlias
 
 import numpy as np
@@ -65,6 +66,35 @@ def _normalize_point(point: np.ndarray | list | tuple, *, allow_2d: bool = True)
 
     expected = '2 or 3' if allow_2d else '3'
     raise ValueError(f'Points must contain {expected} coordinates, got {len(point)}.')
+
+
+def _pixel_to_patient_point(
+    point: tuple[int, int] | tuple[float, float, float],
+    *,
+    frame_index: int | None = None,
+    slice_plane: ViewPlane | None = None,
+    metadata: pydicom.Dataset | Nifti1Image,
+):
+    if isinstance(metadata, pydicom.Dataset):
+        return dicom_utils.pixel_to_patient(
+            metadata,
+            point[0],
+            point[1],
+            slice_index=frame_index,
+            axis=slice_plane
+        )
+
+    if isinstance(metadata, Nifti1Image):
+        patient_point = nifti_utils.pixel_to_world(metadata,
+                                                    pixel_x=point[0],
+                                                    pixel_y=point[1],
+                                                    slice_index=frame_index,
+                                                    plane=slice_plane)
+        # IMPORTANT: Datamint assumes opposite direction of slices. So multiply by -1.
+        patient_point[:2] = -patient_point[:2]
+        return patient_point
+
+    raise TypeError(f'Unsupported metadata type: {type(metadata)}')
 
 
 def _normalize_vector(vector: np.ndarray | list | tuple | None) -> Vector3D | None:
@@ -193,41 +223,10 @@ class _TwoPointGeometry(Geometry):
         slice_plane: ViewPlane | None = None,
         metadata: pydicom.Dataset | Nifti1Image | None = None,
     ):
-        if isinstance(metadata, pydicom.Dataset):
-            patient_point1 = dicom_utils.pixel_to_patient(
-                metadata,
-                point1[0],
-                point1[1],
-                slice_index=frame_index,
-                axis=slice_plane
-            )
-            patient_point2 = dicom_utils.pixel_to_patient(
-                metadata,
-                point2[0],
-                point2[1],
-                slice_index=frame_index,
-                axis=slice_plane
-            )
-
-        elif isinstance(metadata, Nifti1Image):
-            patient_point1 = nifti_utils.pixel_to_world(metadata,
-                                                        pixel_x=point1[0],
-                                                        pixel_y=point1[1],
-                                                        slice_index=frame_index,
-                                                        plane=slice_plane)
-            # patient_point1.shape: (3,)
-            patient_point2 = nifti_utils.pixel_to_world(metadata,
-                                                        pixel_x=point2[0],
-                                                        pixel_y=point2[1],
-                                                        slice_index=frame_index,
-                                                        plane=slice_plane)
-            # IMPORTANT: Datamint assumes opposite direction of slices. So multiply by -1.
-            patient_point1[:2] = -patient_point1[:2]
-            patient_point2[:2] = -patient_point2[:2]
-        else:
-            raise TypeError(f'Unsupported metadata type: {type(metadata)}')
-
-        return patient_point1, patient_point2
+        return (
+            _pixel_to_patient_point(point1, frame_index=frame_index, slice_plane=slice_plane, metadata=metadata),
+            _pixel_to_patient_point(point2, frame_index=frame_index, slice_plane=slice_plane, metadata=metadata),
+        )
 
     @classmethod
     def _from_pixel_coordinates(
@@ -330,8 +329,8 @@ class PointGeometry(Geometry):
         viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
 
         if metadata is not None:
-            patient_point, _ = _TwoPointGeometry._pixel_to_patient_coordinates(
-                normalized_point, normalized_point,
+            patient_point = _pixel_to_patient_point(
+                normalized_point,
                 frame_index=frame_index,
                 slice_plane=slice_plane,
                 metadata=metadata,
@@ -349,6 +348,84 @@ class PointGeometry(Geometry):
             z_index if z_index is not None else normalized_point[2],
         )
         return cls(points=(pixel_point,), coordinate_system='pixel')
+
+
+class RegionGeometry(Geometry):
+    """Open polyline or closed contour, defined by an arbitrary number of vertices."""
+
+    points: tuple[Point3D, ...]
+    closed: bool = False
+    type: ClassVar[str] = 'region'
+
+    @field_validator('points', mode='before')
+    @classmethod
+    def _validate_points(cls, value: Any) -> tuple[Point3D, ...]:
+        if not isinstance(value, (list, tuple)) or len(value) < 2:
+            raise ValueError('Region geometries require at least two points.')
+
+        return tuple(_normalize_point(point) for point in value)
+
+    @classmethod
+    def from_coordinates(
+        cls,
+        points: Sequence[tuple[int, int] | tuple[float, float, float]],
+        *,
+        closed: bool = False,
+        coords_system: CoordinateSystem = 'pixel',
+        slice_plane: ViewPlane | None = None,
+        frame_index: int | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> RegionGeometry:
+        if coords_system == 'pixel':
+            return cls._from_pixel_coordinates(
+                points,
+                closed=closed,
+                frame_index=frame_index,
+                metadata=metadata,
+                slice_plane=slice_plane,
+            )
+
+        if coords_system == 'patient':
+            normalized_points = tuple(_normalize_point(point, allow_2d=False) for point in points)
+            viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+            return cls(points=normalized_points, closed=closed, coordinate_system='patient',
+                       viewPlaneNormal=viewPlaneNormal, viewUp=viewUp)
+
+        raise ValueError(f'Unknown coordinate system: {coords_system}')
+
+    @classmethod
+    def _from_pixel_coordinates(
+        cls,
+        points: Sequence[tuple[int, int] | tuple[float, float, float]],
+        *,
+        closed: bool = False,
+        frame_index: int | None = None,
+        slice_plane: ViewPlane | None = None,
+        metadata: pydicom.Dataset | Nifti1Image | None = None,
+    ) -> RegionGeometry:
+        normalized_points = [_normalize_point(point) for point in points]
+        viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+
+        if metadata is not None:
+            patient_points = tuple(
+                _normalize_point(
+                    _pixel_to_patient_point(point, frame_index=frame_index, slice_plane=slice_plane, metadata=metadata),
+                    allow_2d=False,
+                )
+                for point in normalized_points
+            )
+            return cls(points=patient_points, closed=closed, coordinate_system='patient',
+                       viewPlaneNormal=viewPlaneNormal, viewUp=viewUp)
+
+        _LOGGER.warning('No metadata provided for pixel to patient coordinate conversion;'
+                        ' This is not recommended as the coordinates might be wrongly interpreted')
+
+        z_index = frame_index
+        pixel_points = tuple(
+            (point[0], point[1], z_index if z_index is not None else point[2])
+            for point in normalized_points
+        )
+        return cls(points=pixel_points, closed=closed, coordinate_system='pixel')
 
 
 class BoxGeometry(Geometry):
