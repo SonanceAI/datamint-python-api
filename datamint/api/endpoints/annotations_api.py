@@ -30,6 +30,7 @@ from datamint.entities.annotations import (
     ImageClassification,
     LineAnnotation,
     NumericAnnotation,
+    PointAnnotation,
     annotation_from_dict,
 )
 from datamint.exceptions import ItemNotFoundError, ServerError
@@ -1459,6 +1460,81 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         created = self.create(resource_id, annotation)
         if not isinstance(created, str):
             raise TypeError('Expected a single annotation id for box annotation creation.')
+        return created
+
+    def add_point_annotation(self,
+                             point: tuple[int, int] | tuple[float, float, float],
+                             resource: str | Resource,
+                             identifier: str,
+                             frame_index: int | None = None,
+                             slice_plane: ViewPlane | None = None,
+                             metadata: pydicom.Dataset | Nifti1Image | None = None,
+                             coords_system: CoordinateSystem = 'pixel',
+                             worklist_id: str | None = None,
+                             imported_from: str | None = None,
+                             author_email: str | None = None,
+                             model_id: str | None = None,
+                             source: str | None = 'imported') -> str:
+        """
+        Add a point annotation to a resource.
+
+        Args:
+            point: The point coordinates. Can be a 2d or 3d point.
+                If `coords_system` is 'pixel', it must be a 2d point and it represents the pixel coordinates of the image.
+                If `coords_system` is 'patient', it must be a 3d point and it represents the patient coordinates of the image, relative
+                to the DICOM metadata.
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier, also known as the annotation's label.
+            frame_index: The frame index of the annotation.
+            slice_plane: The view plane for the slice (e.g., ViewPlane.AXIAL, ViewPlane.SAGITTAL, ViewPlane.AXIAL).
+            metadata: The DICOM or NIfTI metadata of the resource. If provided and `coords_system` is 'patient',
+                the coordinates will be converted automatically using the metadata.
+            coords_system: The coordinate system of the point. Can be 'pixel', or 'patient'.
+                If 'pixel', the point is in pixel coordinates. If 'patient', the point is in patient coordinates (see DICOM patient coordinates).
+            worklist_id: The annotation worklist unique id. Optional.
+            imported_from: The imported from source value.
+            author_email: The email to consider as the author of the annotation. If None, use the customer of the api key.
+            model_id: The model unique id. Optional.
+            source: Annotation source tag. Defaults to 'imported' since this is a direct API
+                entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+
+        Example:
+            .. code-block:: python
+
+                resource = api.resources.get_list(project_name='Example Project')[0]
+                api.annotations.add_point_annotation(
+                    (500, 375),
+                    resource=resource,
+                    identifier='wheel_point',
+                    frame_index=2,
+                )
+        """
+
+        resolved_metadata = self._resolve_metadata_for_annotation(
+            resource,
+            coords_system,
+            metadata,
+        )
+
+        resource_id = self._entid(resource)
+
+        annotation = PointAnnotation.from_point(
+            point,
+            identifier=identifier,
+            frame_index=frame_index,
+            slice_plane=slice_plane,
+            metadata=resolved_metadata,
+            coords_system=coords_system,
+            annotation_worklist_id=worklist_id,
+            imported_from=imported_from,
+            import_author=author_email,
+            model_id=model_id,
+            source=source,
+        )
+
+        created = self.create(resource_id, annotation)
+        if not isinstance(created, str):
+            raise TypeError('Expected a single annotation id for point annotation creation.')
         return created
 
     def download_file(self,
