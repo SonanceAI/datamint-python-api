@@ -16,6 +16,7 @@ from .endpoints import (
     ProjectsApi,
     ResourcesApi,
     UsersApi,
+    ValidationStudiesApi,
 )
 from .endpoints.models_api import ModelsApi
 
@@ -37,6 +38,7 @@ class Api:
         'deploy': DeployModelApi,
         'inference': InferenceApi,
         'pod_logs': PodLogsApi,
+        'validation_studies': ValidationStudiesApi,
     }
 
     # (server_url, api_key, verify_ssl) signatures already verified successfully in
@@ -175,6 +177,9 @@ class Api:
             elif name == 'models':
                 kwargs['deploy_api'] = self.deploy
                 kwargs['projects_api'] = self.projects
+            elif name == 'validation_studies':
+                kwargs['models_api'] = self.models
+                kwargs['projects_api'] = self.projects
             # Build the endpoint with the same config used for its HTTP client so that
             # aiohttp-based uploads (resource/segmentation/annotation files) fall back to
             # the intended timeout instead of the default 30s. The `resources` and
@@ -239,6 +244,11 @@ class Api:
     def pod_logs(self) -> PodLogsApi:
         """Access serving-pod log endpoints."""
         return self._get_endpoint('pod_logs', is_mlflow=True)
+
+    @property
+    def validation_studies(self) -> ValidationStudiesApi:
+        """Access validation study endpoints."""
+        return self._get_endpoint('validation_studies')
 
     def __getstate__(self) -> dict:
         return {

@@ -17,6 +17,8 @@ class AnnotationSpec(BaseModel):
     scope: str
     required: bool
     identifier: str
+    color: tuple[int, int, int, int] | None = None
+    """RGBA color (0-255 each), only meaningful for segmentation-type specs."""
 
     def __new__(cls, *args, **kwargs):
         if cls is AnnotationSpec and kwargs.get('type') == AnnotationType.CATEGORY:

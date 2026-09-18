@@ -11,21 +11,23 @@ First, import the |ApiClass| class and create an instance:
 
 The |ApiClass| class provides access to different endpoint handlers:
 
-+------------------------+--------------------------------------------------+
-| Property               | Purpose                                          |
-+------------------------+--------------------------------------------------+
-| ``api.resources``      | Upload, download, and manage data files          |
-+------------------------+--------------------------------------------------+
-| ``api.annotations``    | Create and manage annotations                    |
-+------------------------+--------------------------------------------------+
-| ``api.projects``       | Organize resources into projects                 |
-+------------------------+--------------------------------------------------+
-| ``api.models``         | Register and manage ML models                    |
-+------------------------+--------------------------------------------------+
-| ``api.deploy``         | Deploy models                                      |
-+------------------------+--------------------------------------------------+
-| ``api.inference``      | Run inference jobs                                 |
-+------------------------+--------------------------------------------------+
++----------------------------+-----------------------------------------+
+| Property                   | Purpose                                 |
++----------------------------+-----------------------------------------+
+| ``api.resources``          | Upload, download, and manage data files |
++----------------------------+-----------------------------------------+
+| ``api.annotations``        | Create and manage annotations           |
++----------------------------+-----------------------------------------+
+| ``api.projects``           | Organize resources into projects        |
++----------------------------+-----------------------------------------+
+| ``api.models``             | Register and manage ML models           |
++----------------------------+-----------------------------------------+
+| ``api.deploy``             | Deploy models                           |
++----------------------------+-----------------------------------------+
+| ``api.inference``          | Run inference jobs                      |
++----------------------------+-----------------------------------------+
+| ``api.validation_studies`` | Create and manage validation studies    |
++----------------------------+-----------------------------------------+
 
 
 Most day-to-day workflows can stay object-based. Endpoint handlers return
@@ -697,6 +699,74 @@ Use ``api.deploy.start()`` to deploy a model:
 
     # Check whether a model has a deployed image
     model.is_deployed()
+
+Working with Validation Studies
+--------------------------------
+
+A validation study asks readers to evaluate a deployed model's predictions and/or
+provide their own annotations, on a chosen set of resources. Studies are
+created as drafts; adding resources and readers can be done in any order while a study
+is still a draft. Use the UI to launch the validation study.
+
+Create a draft study
++++++++++++++++++++++
+
+Use :py:meth:`api.validation_studies.create() <datamint.api.endpoints.validation_studies_api.ValidationStudiesApi.create>`.
+At least one of ``evaluate_ai_output`` or ``provide_annotations`` must be enabled.
+
+.. code-block:: python
+
+    project = api.projects.get_by_name("Liver Review")
+
+    # Readers review the model's own predictions
+    study = api.validation_studies.create(
+        project=project,
+        name="Liver segmentation review - round 1",
+        model_name="liver-segmentation-model",
+        description="Please review the model's segmentation.",
+        evaluate_ai_output={
+            "enabled": True,
+            "overall": True,           # ask for one overall AI rating per file
+            "indicate_errors": True,   # let readers mark specific errors
+        },
+        resource_ids=[resource.id for resource in resources],
+    )
+
+If ``evaluate_ai_output`` is enabled and no ``annotations`` are given, they're fetched
+automatically from the deployed model's own annotation specs (via
+:py:meth:`api.models.get_deployed_model_info() <datamint.api.endpoints.models_api.ModelsApi.get_deployed_model_info>`),
+so you don't have to hand-type the model's output identifiers/types/scopes. Pass
+``auto_fill_annotations=False`` to opt out.
+
+For readers annotating from scratch instead (or in addition), use
+``provide_annotations``:
+
+.. code-block:: python
+
+    study = api.validation_studies.create(
+        project=project,
+        name="Diagnosis labeling",
+        model_name="liver-segmentation-model",
+        provide_annotations={
+            "enabled": True,
+            "targets": [
+                {"identifier": "diagnosis", "type": "category", "scope": "image",
+                 "required": False, "values": ["benign", "malignant"]},
+            ],
+        },
+    )
+
+Add readers and manage resources
++++++++++++++++++++++++++++++++++
+
+.. code-block:: python
+
+    api.validation_studies.add_readers(study, readers=[
+        {"email": "reader@example.com", "firstname": "Ana", "lastname": "Silva"},
+    ])
+
+    # Replace the full file set (only while the study is still a draft)
+    api.validation_studies.set_resources(study, resource_ids=[resource.id])
 
 Working with Users
 ------------------

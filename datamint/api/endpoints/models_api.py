@@ -93,6 +93,21 @@ class ModelsApi(BaseApi):
             raise
         return Model(_raw=raw_model, _api=self)
 
+    def get_deployed_model_info(self, project: 'str | Project', model_name: str) -> dict:
+        """Get info about a model's deployed image for a specific project.
+
+        Args:
+            project: Project ID or Project instance the model is deployed under.
+            model_name: Name of the registered model.
+        
+        """
+        
+        project_id = project if isinstance(project, str) else project.id
+        response = self.projects_api._make_request(
+            'GET', f'/experiments/project/{project_id}/deployed-models/{model_name}/info'
+        )
+        return response.json()
+
     def get_projects(self, model_name: str, customer_id: str | None = None) -> list['Project']:
         """Get all projects a registered model is associated with.
 
