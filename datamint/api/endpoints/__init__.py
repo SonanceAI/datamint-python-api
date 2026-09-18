@@ -9,6 +9,7 @@ from .pod_logs_api import PodLogsApi
 from .projects_api import ProjectsApi
 from .resources_api import ResourcesApi
 from .users_api import UsersApi
+from .validation_studies_api import ValidationStudiesApi
 
 __all__ = [
     'AnnotationWorklistApi',
@@ -20,4 +21,5 @@ __all__ = [
     'ProjectsApi',
     'ResourcesApi',
     'UsersApi',
+    'ValidationStudiesApi',
 ]
