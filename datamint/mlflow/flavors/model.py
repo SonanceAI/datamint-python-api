@@ -364,7 +364,13 @@ class BaseDatamintModel(PythonModel, ABC):
                     image_inputs.append(SlicedVolumeResource(r, slice_index=slice_index, slice_axis=axis))
                 else:
                     raise ValueError(f"Unsupported resource type for slice prediction: {type(r)}")
-            return self.predict_image(image_inputs, **kwargs)
+            results = self.predict_image(image_inputs, **kwargs)
+            
+            # Stamp the originating slice on each annotation
+            for resource_anns in results:
+                for ann in resource_anns:
+                    ann.slice_index = slice_index
+            return results
         raise NotImplementedError("predict_slice is not implemented")
 
     @bridge_mode

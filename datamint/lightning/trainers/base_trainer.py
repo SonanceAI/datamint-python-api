@@ -145,7 +145,7 @@ class BaseTrainer(ABC):
 
     @property
     def experiment_name(self) -> str:
-        return self.mlflow_experiment_name or f"{self._project_name}_training"
+        return self.mlflow_experiment_name or 'Training'
 
     def _model_description(self) -> str:
         """Short human-readable model description for :meth:`__repr__`. Override per architecture."""
