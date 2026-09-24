@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from datetime import date
@@ -44,11 +45,40 @@ ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'p
 
 _LARGE_FILE_THRESHOLD = 300 * 1024 * 1024  # 300 MB
 _UPLOAD_BATCH_SIZE = 20
+_HEAVY_UPLOAD_LIMIT = 4
+_HEAVY_UPLOAD_THRESHOLD = 50 * 1024 * 1024  # 50 MB
+# only one preparation runs at a time
+_DICOM_PREP_LOCK = threading.Lock()
 
 
 def _infinite_gen(x):
     while True:
         yield x
+
+
+def _get_file_path(all_files_path: Sequence[str | IO], index: int) -> str | IO:
+    with _DICOM_PREP_LOCK, pydicom_config.disable_value_validation():
+        return all_files_path[index]
+
+
+class _UploadSlot:
+    """Holds one slot of a semaphore. """
+    def __init__(self, semaphore: asyncio.Semaphore):
+        self._semaphore = semaphore
+        self._held = False
+
+    async def __aenter__(self) -> '_UploadSlot':
+        await self._semaphore.acquire()
+        self._held = True
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        self.release()
+
+    def release(self) -> None:
+        if self._held:
+            self._held = False
+            self._semaphore.release()
 
 
 class _ProgressFileIO(io.IOBase):
@@ -94,6 +124,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         self.annotations_api = AnnotationsApi(
             config, client, resources_api=self) if annotations_api is None else annotations_api
         self.projects_api = projects_api or ProjectsApi(config, client, resources_api=self)
+        # bounds how many large in-memory payloads (e.g. assembled DICOM volumes) are alive at once
+        self._heavy_upload_slots = asyncio.Semaphore(_HEAVY_UPLOAD_LIMIT)
 
     def get_list(self,
                  status: ResourceStatus | None = None,
@@ -274,6 +306,21 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         return files_path, assembled, mapping_idx
 
+    @staticmethod
+    def _prepare_dicom(file_path: str | IO,
+                       filename: str,
+                       anonymize: bool,
+                       anonymize_retain_codes: Sequence[tuple]) -> tuple[io.BytesIO, str | None]:
+        """Read, optionally anonymize and serialize a DICOM. CPU-heavy, meant to run off the event loop."""
+        with _DICOM_PREP_LOCK:
+            ds = pydicom.dcmread(file_path)
+            if anonymize:
+                _LOGGER.info(f"Anonymizing {file_path}")
+                ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
+            lat = dicom_utils.get_dicom_laterality(ds)
+            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
+            return to_bytesio(ds, filename), lat
+
     async def _upload_single_resource_async(self,
                                             file_path: str | IO,
                                             mimetype: str | None = None,
@@ -286,6 +333,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                             modality: str | None = None,
                                             publish: bool = False,
                                             metadata_file: str | dict | None = None,
+                                            upload_slot: _UploadSlot | None = None,
                                             ) -> str:
         if tags is None:
             tags = []
@@ -337,17 +385,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 tags = []
             else:
                 tags = list(tags)
-            ds = pydicom.dcmread(file_path)
-            if anonymize:
-                _LOGGER.info(f"Anonymizing {file_path}")
-                ds = anonymize_dicom(ds, retain_codes=anonymize_retain_codes)
-            lat = dicom_utils.get_dicom_laterality(ds)
+            f, lat = await asyncio.to_thread(self._prepare_dicom, file_path, filename,
+                                             anonymize, anonymize_retain_codes)
             if lat == 'L':
                 tags.append("left")
             elif lat == 'R':
                 tags.append("right")
-            # make the dicom `ds` object a file-like object in order to avoid unnecessary disk writes
-            f = to_bytesio(ds, filename)
         else:
             f = _open_io(file_path)
 
@@ -362,6 +405,11 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 f.seek(pos)
             except (AttributeError, OSError):
                 file_size = 0
+
+        is_heavy = isinstance(f, io.BytesIO) and file_size >= _HEAVY_UPLOAD_THRESHOLD
+        if upload_slot is not None and not is_heavy:
+            # only hold a slot for heavy uploads, to avoid blocking other uploads unnecessarily
+            upload_slot.release()
 
         upload_pbar: tqdm | None = None
         if file_size > _LARGE_FILE_THRESHOLD:
@@ -498,24 +546,24 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         async def __upload_single_resource(all_files_path, index: int,
                                            segfiles: dict[str, list | dict],
                                            metadata_file: str | dict | None):
-            # all_files_path may be a costly generator
-            with pydicom_config.disable_value_validation():
-                file_path = all_files_path[index]
-            name = file_path.name if is_io_object(file_path) else file_path
-            name = os.path.basename(name)
-            rid = await self._upload_single_resource_async(
-                file_path=file_path,
-                mimetype=mimetype,
-                anonymize=anonymize,
-                anonymize_retain_codes=anonymize_retain_codes,
-                tags=tags,
-                session=session,
-                mung_filename=mung_filename,
-                channel=channel,
-                modality=modality,
-                publish=publish,
-                metadata_file=metadata_file,
-            )
+            async with _UploadSlot(self._heavy_upload_slots) as upload_slot:
+                file_path = await asyncio.to_thread(_get_file_path, all_files_path, index)
+                name = file_path.name if is_io_object(file_path) else file_path
+                name = os.path.basename(name)
+                rid = await self._upload_single_resource_async(
+                    file_path=file_path,
+                    mimetype=mimetype,
+                    anonymize=anonymize,
+                    anonymize_retain_codes=anonymize_retain_codes,
+                    tags=tags,
+                    session=session,
+                    mung_filename=mung_filename,
+                    channel=channel,
+                    modality=modality,
+                    publish=publish,
+                    metadata_file=metadata_file,
+                    upload_slot=upload_slot,
+                )
             if progress_bar:
                 progress_bar.update(1)
                 progress_bar.set_postfix(file=name)
