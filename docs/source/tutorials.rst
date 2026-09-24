@@ -56,6 +56,14 @@ of the GitHub repository if you want to run them yourself.
 
       Complete pipelines from data upload to deployment on public datasets.
 
+   .. grid-item-card:: Evaluating
+      :link: tutorials/evaluating
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Compare models against a dataset with ``Evaluator``.
+
 .. toctree::
    :hidden:
 
@@ -65,3 +73,4 @@ of the GitHub repository if you want to run them yourself.
    tutorials/experiment_tracking
    tutorials/deployment
    tutorials/end_to_end/index
+   tutorials/evaluating

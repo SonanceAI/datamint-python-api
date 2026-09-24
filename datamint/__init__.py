@@ -23,6 +23,8 @@ if TYPE_CHECKING:
     from .dataset.volume_dataset import VolumeDataset as VolumeDataset
 
     from .default_project import select_project as select_project
+    from .evaluate import EvaluationResult as EvaluationResult
+    from .evaluate import Evaluator as Evaluator
     from .importers.coco import COCOImporter as COCOImporter
     from .importers.pascal_voc import PascalVOCImporter as PascalVOCImporter
     from .importers.yolo import YOLOImporter as YOLOImporter
@@ -51,6 +53,7 @@ else:
             "dataset.split_result": ["SplitResult"],
             "dataset.video_dataset": ["VideoDataset"],
             "dataset.volume_dataset": ["VolumeDataset"],
+            "evaluate": ["Evaluator", "EvaluationResult"],
             "mlflow.flavors.validation": ["validate_model", "ValidationReport",
                                           "ValidationIssue", "ModelValidationError"],
             "default_project": ["select_project"],

@@ -364,7 +364,23 @@ class BaseDatamintModel(PythonModel, ABC):
                     image_inputs.append(SlicedVolumeResource(r, slice_index=slice_index, slice_axis=axis))
                 else:
                     raise ValueError(f"Unsupported resource type for slice prediction: {type(r)}")
-            return self.predict_image(image_inputs, **kwargs)
+            results = self.predict_image(image_inputs, **kwargs)
+
+            # Stamp the originating frame on each annotation
+            for sliced, resource_anns in zip(image_inputs, results):
+                if sliced.slice_axis_idx_std != 0:
+                    raise NotImplementedError(
+                        f"Slicing along {sliced.slice_axis!r} doesn't follow the frame axis of {sliced.filename!r}; "
+                        "predictions can't be mapped to frame_index."
+                    )
+                for ann in resource_anns:
+                    ann.scope = 'frame'
+                    ann.frame_index = sliced.slice_index
+                    
+                    #NOTE: This is a bit of a hack to preserve the slice axis in the annotation, however, this field is not uploaded to the server.
+                    ann.slice_axis = sliced.slice_axis
+
+            return results
         raise NotImplementedError("predict_slice is not implemented")
 
     @bridge_mode
@@ -387,8 +403,18 @@ class BaseDatamintModel(PythonModel, ABC):
     def predict_frame(self, model_input: list[BaseResource], frame_index: int, **kwargs: Any) -> PredictionImageResult:
         """Process a single video frame through :meth:`predict_image`."""
         if "image" in self.get_supported_modes():
-            frame_inputs = [SlicedVideoResource(r, frame_index=frame_index) for r in model_input]
-            return self.predict_image(frame_inputs, **kwargs)
+            frame_inputs = [
+                r if isinstance(r, SlicedVideoResource) else SlicedVideoResource(r, frame_index=frame_index)
+                for r in model_input
+            ]
+            results = self.predict_image(frame_inputs, **kwargs)
+
+            # Stamp the originating frame on each annotation
+            for frame, resource_anns in zip(frame_inputs, results):
+                for ann in resource_anns:
+                    ann.scope = 'frame'
+                    ann.frame_index = frame.frame_index
+            return results
         raise NotImplementedError("predict_frame is not implemented")
 
     @bridge_mode
@@ -400,7 +426,7 @@ class BaseDatamintModel(PythonModel, ABC):
                 frames = SlicedVideoResource.slice_over(resource)
                 resource_anns: list = []
                 for frame in frames:
-                    preds = self.predict_image([frame], **kwargs)
+                    preds = self.predict_frame([frame], frame_index=frame.frame_index, **kwargs)
                     resource_anns.extend(preds[0])
                 results.append(resource_anns)
             return results
