@@ -19,6 +19,7 @@ Folders are numbered in the recommended learning order.
 | [04_experiment_tracking](04_experiment_tracking/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Log metrics and artifacts, and manage the model registry, with MLflow |
 | [05_deployment](05_deployment/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Deploy registered and external models |
 | [06_end_to_end](06_end_to_end/) | ![Advanced](https://img.shields.io/badge/level-advanced-red) | Full pipelines from data to deployed model |
+| [07_evaluating](07_evaluating/) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Compare models against a fixed dataset with `Evaluator` |
 
 ## Notebooks
 
@@ -61,3 +62,6 @@ Folders are numbered in the recommended learning order.
 
 #### SAM (promptable segmentation)
 1. [`01_deploy_sam_model`](06_end_to_end/sam/01_deploy_sam_model.ipynb) ![Advanced](https://img.shields.io/badge/level-advanced-red) — Deploy SAM 3 and run promptable segmentation with text, point, and box prompts
+
+### 07 — Evaluating
+1. [`01_evaluate_models`](07_evaluating/01_evaluate_models.ipynb) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) — Compare models with `Evaluator`

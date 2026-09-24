@@ -67,6 +67,8 @@ class BaseTrainer(ABC):
             stopping.  Set to ``None`` to disable early stopping.
         mlflow_experiment_name: MLflow experiment name.  Auto-generated
             from the project name when ``None``.
+        run_name: Name for the MLflow run. Falls back to MLflow's own
+            randomly-generated name when ``None``. 
         model_name: Name for the model in the registry.
             Auto-generated when ``None``.
         auto_deploy_adapter: When ``True``, auto-generate a
@@ -95,6 +97,7 @@ class BaseTrainer(ABC):
         max_epochs: int = 1,
         early_stopping_patience: int | None = 10,
         mlflow_experiment_name: str | None = None,
+        run_name: str | None = None,
         model_name: str | None = None,
         auto_deploy_adapter: bool = True,
         trainer_kwargs: dict[str, Any] | None = None,
@@ -119,6 +122,7 @@ class BaseTrainer(ABC):
         self.max_epochs = max_epochs
         self.early_stopping_patience = early_stopping_patience
         self.mlflow_experiment_name = mlflow_experiment_name
+        self.run_name = run_name
         self.model_name = model_name
         self.auto_deploy_adapter = auto_deploy_adapter
         self.trainer_kwargs = trainer_kwargs or {}
@@ -269,7 +273,7 @@ class BaseTrainer(ABC):
                     "Choose a unique experiment name via the `mlflow_experiment_name` parameter."
                 ) from e
             raise
-        return mlflow.start_run(experiment_id=exp.experiment_id)
+        return mlflow.start_run(experiment_id=exp.experiment_id, run_name=self.run_name)
 
     # ── Public API ──────────────────────────────────────────────
     def fit(self) -> dict[str, Any]:

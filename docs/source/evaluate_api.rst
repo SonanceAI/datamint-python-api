@@ -54,31 +54,13 @@ Each entry in ``models=[...]`` can be:
        ("deeplabv3plus", {"confidence_threshold": 0.6}),
    ])
 
-If a model is both registered *and* deployed, ``evaluate()`` loads it locally by
+If a model is both registered and deployed, ``evaluate()`` loads it locally by
 default (``prefer_deployed=False``). Pass
 ``prefer_deployed=True`` to predict through the deployed serving pod instead.
 
 Two versions of the same registered model can be compared in one call by passing
 ``ModelVersion`` objects instead of names -- the results dict and MLflow run names are
 disambiguated by version (``model_name_v19``, ``model_name_v10``).
-
-
-Segmentation Metrics
----------------------
-
-Dice and IoU are reported at three levels of granularity on
-``result.scores`` (a ``SegmentationScores``):
-
-``per_resource``
-   ``resource_id -> class_name -> {'dice': ..., 'iou': ...}``.
-
-``per_class``
-   ``class_name -> {'dice': ..., 'iou': ..., 'n': <resources scored>}`` -- the mean
-   of ``per_resource`` across every resource that has that class.
-
-``dataset``
-   ``{'dice': ..., 'iou': ...}`` -- one overall number per model, the mean of the
-   ``per_class`` means.
 
 Hyperparameters
 -----------------
@@ -108,3 +90,14 @@ name with ``experiment_name=`` if you want a dedicated one.
        log_to_mlflow=True,
        experiment_name="liver-segmentation-eval",
    )
+
+
+Examples
+----------------
+
+The `evaluation tutorial notebook <https://github.com/SonanceAI/datamint-python-api/blob/main/notebooks/07_evaluating/01_evaluate_models.ipynb>`_
+walks through one example per task type:
+
+- **Segmentation** -- comparing two models with Dice/IoU.
+- **Classification** -- a single-label model with accuracy, precision, recall and F1.
+- **Detection** -- comparing two models with mAP50 and mAP50:95.

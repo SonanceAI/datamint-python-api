@@ -44,22 +44,22 @@ def _combine_masks(anns: list['BaseSegmentationAnnotation'], depth: int | None) 
     if len(anns) == 1:
         return _to_bool_mask(anns[0])
 
-    slices = {}
+    frames = {}
     for ann in anns:
-        slice_index = getattr(ann, 'slice_index', None)
-        if slice_index is None:
+        frame_index = ann.frame_index
+        if frame_index is None:
             raise ValueError(
                 f"Multiple annotations named {ann.name!r} on the same resource, "
-                "but not all carry a slice_index -- can't tell which 2D mask "
+                "but not all carry a frame_index -- can't tell which 2D mask "
                 "belongs where in the volume."
             )
-        slices[slice_index] = _to_bool_mask(ann)
+        frames[frame_index] = _to_bool_mask(ann)
 
-    h, w = next(iter(slices.values())).shape
-    depth = depth if depth is not None else max(slices) + 1
+    h, w = next(iter(frames.values())).shape
+    depth = depth if depth is not None else max(frames) + 1
     volume = np.zeros((depth, h, w), dtype=bool)
-    for slice_index, mask_2d in slices.items():
-        volume[slice_index] = mask_2d
+    for frame_index, mask_2d in frames.items():
+        volume[frame_index] = mask_2d
     return volume
 
 
@@ -98,6 +98,14 @@ def compute_segmentation_scores(
     """
     scores = SegmentationScores()
     per_class_values: dict[str, list[tuple[float, float]]] = {}
+
+    n_resources, n_gts, n_preds = len(resource_ids), len(ground_truths), len(predictions)
+    if n_resources != n_gts or n_resources != n_preds:
+        _LOGGER.warning(
+            "resource_ids (%d), ground_truths (%d), and predictions (%d) have "
+            "different lengths; zip() will silently truncate to the shortest.",
+            n_resources, n_gts, n_preds,
+        )
 
     for resource_id, gt_anns, pred_anns in zip(resource_ids, ground_truths, predictions):
         gt_by_class: dict[str, list] = {}

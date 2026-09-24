@@ -1,4 +1,4 @@
 from .evaluator import EvaluationResult, Evaluator
-from .metrics import SegmentationScores
+from .metrics import ClassificationScores, DetectionScores, SegmentationScores
 
-__all__ = ['Evaluator', 'EvaluationResult', 'SegmentationScores']
+__all__ = ['Evaluator', 'EvaluationResult', 'SegmentationScores', 'ClassificationScores', 'DetectionScores']
