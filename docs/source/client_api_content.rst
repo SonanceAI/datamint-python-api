@@ -64,6 +64,7 @@ You can see the list of all uploaded resources by calling :py:meth:`api.resource
 
     # Get resources with different filters
     inbox_resources = api.resources.get_list(status="inbox")
+    published_resources = api.resources.get_list(status="published")
     dicom_resources = api.resources.get_list(mimetype="application/dicom")
     ct_resources = api.resources.get_list(channel="CT scans")
 
@@ -190,6 +191,49 @@ Every :py:class:`~datamint.entities.resource.Resource` can fetch its own annotat
 
     for annotation in annotations:
         print(annotation.name, annotation.annotation_type)
+
+Filter annotations by status and source
++++++++++++++++++++++++++++++++++++++++
+
+Every annotation has a ``status`` and a ``source``:
+
+- ``status``: ``'new'`` or ``'published'``.
+- ``source``: who created it. ``'manual'`` (drawn in the web UI), ``'imported'``
+  (uploaded through the API), ``'model_pipeline'`` (written by a training or
+  evaluation pipeline) or ``'model_deploy'`` (written by a deployed model).
+
+Both can be used as filters in
+:py:meth:`api.annotations.get_list() <datamint.api.endpoints.annotations_api.AnnotationsApi.get_list>`.
+Each accepts a single value:
+
+.. code-block:: python
+
+    resource = api.resources.get_list(project_name="Liver Review")[0]
+
+    published = api.annotations.get_list(resource=resource, status="published")
+
+    # Inspect predictions written back by a deployed model
+    predictions = api.annotations.get_list(resource=resource, source="model_deploy")
+
+Datasets (:py:class:`~datamint.dataset.ImageDataset`, :py:class:`~datamint.dataset.VolumeDataset`)
+filter by source through ``trusted_annotation_sources``. By default only ``'imported'`` and
+``'manual'`` annotations are kept, so a model is never trained on its own past predictions:
+
+.. code-block:: python
+
+    from datamint import ImageDataset
+
+    # Default: ('imported', 'manual')
+    dataset = ImageDataset(project="Liver Review")
+
+    # Also train on model predictions
+    dataset = ImageDataset(
+        project="Liver Review",
+        trusted_annotation_sources=("imported", "manual", "model_deploy"),
+    )
+
+    # Disable source filtering
+    dataset = ImageDataset(project="Liver Review", trusted_annotation_sources=None)
 
 Upload segmentations
 ++++++++++++++++++++
