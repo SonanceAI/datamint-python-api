@@ -226,7 +226,7 @@ PROJECT_NAME = "__PROJECT_NAME__"
 #   nms_thre    : IoU threshold for NMS (default 0.45, lower = fewer overlapping boxes)
 #   early_stopping_patience : epochs without val improvement before stopping (default 10)
 #   mlflow_experiment_name  : name of the MLflow experiment. If not set, it defaults to
-#                             "{PROJECT_NAME}_training". Setting it explicitly makes it
+#                             "Training". Setting it explicitly makes it
 #                             easier to find under Training History > Experiments inside
 #                             your project on app.datamint.io.
 trainer = YOLOXTrainer(
@@ -689,7 +689,7 @@ PROJECT_NAME = "__PROJECT_NAME__"
 #   max_epochs  : 10-30 is usually enough for fine-tuning a pretrained backbone
 #   early_stopping_patience : epochs without val improvement before stopping (default 10)
 #   mlflow_experiment_name  : name of the MLflow experiment. If not set, it defaults to
-#                             "{PROJECT_NAME}_training". Setting it explicitly makes it
+#                             "Training". Setting it explicitly makes it
 #                             easier to find under Training History > Experiments inside
 #                             your project on app.datamint.io.
 trainer = ImageClassificationTrainer(
@@ -1161,7 +1161,7 @@ PROJECT_NAME = "__PROJECT_NAME__"
 #   max_epochs   : 50 is usually enough with early stopping
 #   early_stopping_patience : epochs without val improvement before stopping (default 10)
 #   mlflow_experiment_name  : name of the MLflow experiment. If not set, it defaults to
-#                             "{PROJECT_NAME}_training". Setting it explicitly makes it
+#                             "Training". Setting it explicitly makes it
 #                             easier to find under Training History > Experiments inside
 #                             your project on app.datamint.io.
 trainer = UNetPPTrainer(

@@ -85,6 +85,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  dataset_id: str | None = None,
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
+                 source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
                  group_by_resource: Literal[False] = False
@@ -100,6 +101,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  dataset_id: str | None = None,
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
+                 source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
                  *,
@@ -116,6 +118,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         dataset_id: str | None = None,
         worklist_id: str | None = None,
         status: Literal['new', 'published'] | None = None,
+        source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
         load_ai_segmentations: bool | None = None,
         limit: int | None = None,
         group_by_resource: bool = False,
@@ -134,6 +137,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             dataset_id: Filter by dataset unique id.
             worklist_id: Filter by annotation worklist unique id.
             status: Filter by annotation status ('new' or 'published').
+            source: Filter by annotation source ('manual', 'imported', 'model_pipeline' or 'model_deploy').
             load_ai_segmentations: Whether to load AI-generated segmentations.
             limit: Maximum number of annotations to return.
             group_by_resource: If True, return results grouped by resource.
@@ -156,6 +160,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     annotation_type='segmentation',
                     status='published'
                 )
+
+                # Inspect predictions written back by a deployed model
+                predictions = api.annotations.get_list(resource=resource, source='model_deploy')
 
                 # Get annotations for multiple resources
                 resources = api.resources.get_list(project_name='Liver Review')[:3]
@@ -181,6 +188,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             'dataset_id': dataset_id,
             'annotation_worklist_id': worklist_id,
             'status': status,
+            'source': source,
             'load_ai_segmentations': load_ai_segmentations,
         }
 

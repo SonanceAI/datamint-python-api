@@ -57,7 +57,6 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         auto_update: If True, sync with server on init.
         api_key: API key for authentication.
         server_url: Datamint server URL.
-        all_annotations: If True, include unpublished annotations.
         return_metainfo: If True, include metadata in output.
         return_segmentations: If True, process and return segmentations.
         return_as_semantic_segmentation: If True, convert to semantic format.
@@ -84,6 +83,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             cannot be retrained on its own past predictions. Annotations with no
             ``source`` at all (legacy annotations predating this tag) are always kept.
             Pass ``None`` to disable this filtering entirely and include every source.
+            A resource whose annotations are all excluded is treated as unannotated,
+            so it is kept (with an empty mask) unless ``include_unannotated=False``.
     """
 
     resources: Sequence['Resource']

@@ -106,6 +106,20 @@ class ModelVersion:
             return None
         return [AnnotationSpec.create(**s) for s in raw_specs]
 
+    def get_hyperparameters(self) -> dict[str, str]:
+        """Training hyperparameters logged on this version's run.
+
+        Returns ``{}`` when this version has no ``run_id`` (e.g. externally
+        registered with no run behind it), or when the run was created
+        without calling ``mlflow.log_params``/Lightning's
+        ``save_hyperparameters``. Values come back as strings, mirroring
+        MLflow's own run params, and the set of keys is not guaranteed to be
+        stable across versions of the same model.
+        """
+        if self.run_id is None:
+            return {}
+        return dict(mlflow.get_run(self.run_id).data.params)
+
     def get_metrics(self) -> dict[str, float]:
         """Training/test metrics logged for this version.
 

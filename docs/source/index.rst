@@ -67,6 +67,14 @@ For Developers
 
       Train models with built-in one-line trainers -- no training loop to write.
 
+   .. grid-item-card:: Evaluating your Model
+      :link: evaluate_api
+      :link-type: doc
+
+      :bdg-warning:`Intermediate`
+
+      Predict and score one or more models -- registered, deployed, or in-memory -- against a fixed dataset.
+
    .. grid-item-card:: Bringing an External Model into Datamint
       :link: inference
       :link-type: doc
@@ -105,6 +113,7 @@ For Developers
    client_api
    pytorch_integration
    trainer_api
+   evaluate_api
    inference
    tutorials
    datamint_vs_raw_pytorch
