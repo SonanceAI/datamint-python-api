@@ -1260,10 +1260,6 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             A ``pydicom.Dataset`` or ``Nifti1Image`` suitable for coordinate
             conversion, or ``None`` when not required.
         """
-        # No metadata needed for pixel coordinates
-        if coords_system != 'patient':
-            return None
-
         # Metadata already provided
         if metadata is not None:
             return metadata
@@ -1475,7 +1471,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              imported_from: str | None = None,
                              author_email: str | None = None,
                              model_id: str | None = None,
-                             source: str | None = 'imported') -> str:
+                             source: str | None = 'imported',
+                             value: dict[str, Any] | None = None) -> str:
         """
         Add a point annotation to a resource.
 
@@ -1498,6 +1495,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id. Optional.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            value: Optional free-form payload stored as the annotation ``value`` (JSON-serialized).
 
         Example:
             .. code-block:: python
@@ -1531,6 +1529,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             import_author=author_email,
             model_id=model_id,
             source=source,
+            payload=value,
         )
 
         created = self.create(resource_id, annotation)
@@ -1551,7 +1550,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                 imported_from: str | None = None,
                                 author_email: str | None = None,
                                 model_id: str | None = None,
-                                source: str | None = 'imported') -> str:
+                                source: str | None = 'imported',
+                                value: dict[str, Any] | None = None) -> str:
         """
         Add a polyline (or closed contour) annotation to a resource.
 
@@ -1575,6 +1575,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id. Optional.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            value: Optional free-form payload JSON-serialized into the annotation ``value``.
 
         Example:
             .. code-block:: python
@@ -1609,6 +1610,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             import_author=author_email,
             model_id=model_id,
             source=source,
+            payload=value,
         )
 
         created = self.create(resource_id, annotation)

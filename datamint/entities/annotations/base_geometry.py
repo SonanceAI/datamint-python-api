@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, TypeVar
 
 from .annotation import Annotation
@@ -13,6 +14,9 @@ class BaseGeometryAnnotation(Annotation):
 
     geometry: Geometry | None = None
 
+    payload: dict[str, Any] | None = None
+    """Optional free-form payload stored as the annotation ``value``."""
+
     def __init__(self, geometry: Geometry | dict[str, Any] | None = None, **kwargs: Any) -> None:
         if 'scope' not in kwargs:
             inferred_scope = 'image'
@@ -25,6 +29,18 @@ class BaseGeometryAnnotation(Annotation):
             kwargs['scope'] = inferred_scope
 
         super().__init__(geometry=geometry, **kwargs)
+
+    def _to_create_dto(self):
+        """Convert this annotation entity into a create DTO.
+
+        Returns:
+            The create DTO produced by the base class, with ``value`` replaced
+            by the JSON-serialized :attr:`payload` when a payload is set.
+        """
+        dto = super()._to_create_dto()
+        if self.payload is not None:
+            dto.value = json.dumps(self.payload)
+        return dto
 
     @staticmethod
     def _coerce_geometry(
