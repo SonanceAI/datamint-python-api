@@ -61,7 +61,7 @@ class BaseResource(BaseEntity, ABC):
     location: str
     filename: str
     mimetype: str
-    size: int
+    size: int | None = None
     status: str
     created_at: str
     created_by: str
@@ -119,21 +119,25 @@ class BaseResource(BaseEntity, ABC):
         """
 
     @property
-    def size_mb(self) -> float:
+    def size_mb(self) -> float | None:
         """Get file size in megabytes.
 
         Returns:
-            File size in MB rounded to 1 decimal place
+            File size in MB rounded to 1 decimal place, or None if the size is unknown
         """
+        if self.size is None:
+            return None
         return round(self.size / (1024 * 1024), 1)
 
     @property
-    def size_gb(self) -> float:
+    def size_gb(self) -> float | None:
         """Get file size in gigabytes.
 
         Returns:
-            File size in GB rounded to 1 decimal place
+            File size in GB rounded to 1 decimal place, or None if the size is unknown
         """
+        if self.size is None:
+            return None
         return round(self.size / (1024 * 1024 * 1024), 1)
 
     def is_image(self) -> bool:
