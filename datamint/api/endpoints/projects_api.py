@@ -145,6 +145,29 @@ class ProjectsApi(CRUDEntityApi[Project]):
         """
         return self.get_list(limit=limit, params={'includeArchived': True})
 
+    def get_deleted(self) -> Sequence[Project]:
+        """Get deleted (archived) projects.
+
+        Returns:
+            A list of project instances with ``archived=True``.
+        """
+        return [proj for proj in self.get_all() if proj.archived]
+
+    def restore(self, project: str | Project) -> Project:
+        """Restore a deleted (archived) project. Admins only.
+
+        Its files, worklists, members and annotations come back as they were.
+        Calling it on a live project changes nothing.
+
+        Args:
+            project: The project ID or Project instance to restore.
+
+        Returns:
+            The restored project.
+        """
+        response = self._make_entity_request('POST', project, add_path='restore')
+        return self._init_entity_obj(**response.json())
+
     def get_by_name(self,
                     name: str,
                     include_archived: bool = True) -> Project | None:
