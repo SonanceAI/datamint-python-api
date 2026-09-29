@@ -98,6 +98,35 @@ You can customize the upload with various parameters:
         publish_to=project,
     )
 
+Attach metadata
++++++++++++++++
+
+Use ``metadata`` to attach any extra information to a resource, as a dict or a path to a JSON file.
+It is stored in ``resource.metadata``, together with the metadata read from the file.
+
+This is how you set a patient ID on files that do not carry one, such as NIfTI, PNG, JPEG and videos
+(DICOM files already include it in their header):
+
+.. code-block:: python
+
+    resource_id = api.resources.upload_resource(
+        "/path/to/volume.nii.gz",
+        metadata={
+            "patient_id": "P-001",
+            "series_description": "Arterial phase",
+            "scanner": "X1",  # any custom key is kept in resource.metadata
+        },
+    )
+
+    resource = api.resources.get_by_id(resource_id)
+    print(resource.patient_id, resource.metadata["scanner"])
+
+- ``patient_id``, ``study_uid``, ``series_uid``, ``instance_uid`` and ``series_description`` also fill the
+  resource fields of the same name. For DICOM files these always come from the file header.
+- Keys are case-sensitive: ``PatientID`` stays only in ``resource.metadata``.
+- If a key is also present in the file's own metadata, the file's value is kept.
+- Use ``upload_resources(..., metadata=[...])`` to pass one entry per file.
+
 Download resources
 ++++++++++++++++++
 
