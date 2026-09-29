@@ -86,6 +86,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
                  source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
+                 deleted: Literal['exclude', 'include', 'only'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
                  group_by_resource: Literal[False] = False
@@ -102,6 +103,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
                  source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
+                 deleted: Literal['exclude', 'include', 'only'] | None = None,
                  load_ai_segmentations: bool | None = None,
                  limit: int | None = None,
                  *,
@@ -119,6 +121,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         worklist_id: str | None = None,
         status: Literal['new', 'published'] | None = None,
         source: Literal['manual', 'imported', 'model_pipeline', 'model_deploy'] | None = None,
+        deleted: Literal['exclude', 'include', 'only'] | None = None,
         load_ai_segmentations: bool | None = None,
         limit: int | None = None,
         group_by_resource: bool = False,
@@ -138,6 +141,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: Filter by annotation worklist unique id.
             status: Filter by annotation status ('new' or 'published').
             source: Filter by annotation source ('manual', 'imported', 'model_pipeline' or 'model_deploy').
+            deleted: 'exclude' (server default) returns live annotations, 'only' returns deleted ones,
+                'include' returns both. Deleted annotations are read-only and also include older
+                versions replaced by later edits.
             load_ai_segmentations: Whether to load AI-generated segmentations.
             limit: Maximum number of annotations to return.
             group_by_resource: If True, return results grouped by resource.
@@ -189,6 +195,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             'annotation_worklist_id': worklist_id,
             'status': status,
             'source': source,
+            'deleted': deleted,
             'load_ai_segmentations': load_ai_segmentations,
         }
 
@@ -224,6 +231,20 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if group_by_resource and resource_ids is not None:
             return group_annotations_by_resource(all_annotations, resource_ids)
         return all_annotations
+
+    def get_deleted(self,
+                    resource: str | Resource | Sequence[str | Resource] | None = None,
+                    **kwargs: Any) -> Sequence[Annotation]:
+        """Get deleted annotations. They are read-only and cannot be restored.
+
+        Besides manual deletes, they include older versions replaced by later edits
+        (re-uploaded segmentations, re-saved frame classifications).
+
+        Args:
+            resource: The resource unique id(s) or Resource instance(s), or None for all resources.
+            **kwargs: Same filters as :py:meth:`get_list`.
+        """
+        return self.get_list(resource=resource, deleted='only', **kwargs)
 
     async def _upload_segmentations_async(self,
                                           resource: str | Resource,

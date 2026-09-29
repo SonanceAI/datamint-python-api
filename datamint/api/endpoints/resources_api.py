@@ -35,9 +35,9 @@ from ..entity_base_api import CreatableEntityApi, DeletableEntityApi
 _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 
-ResourceStatus: TypeAlias = Literal['new', 'inbox', 'published', 'archived']
-"""TypeAlias: The available resource status. Possible values: 'new', 'inbox', 'published', 'archived'.
-"""
+ResourceStatus: TypeAlias = Literal['inbox', 'published']
+"""TypeAlias: The resource status accepted by the ``status`` filter. Possible values: 'inbox', 'published'. """
+
 ResourceFields: TypeAlias = Literal['modality', 'created_by', 'published_by', 'published_on', 'filename', 'created_at']
 """TypeAlias: The available fields to order resources. Possible values: 'modality', 'created_by', 'published_by', 'published_on', 'filename', 'created_at' (default).
 """
@@ -141,12 +141,13 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                  channel: str | None = None,
                  project_name: Project | str | list[str] | None = None,
                  filename: str | None = None,
-                 limit: int | None = None
+                 limit: int | None = None,
+                 deleted: Literal['exclude', 'include', 'only'] | None = None
                  ) -> Sequence[Resource]:
         """Get resources with optional filtering.
 
         Args:
-            status: The resource status. Possible values: 'inbox', 'published', 'archived' or None. If None, it will return all resources.
+            status: The resource status. Possible values: 'inbox', 'published' or None. If None, it will return all resources.
             from_date : The start date (inclusive).
             to_date: The end date (exclusive).
             tags: The tags to filter the resources.
@@ -157,6 +158,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             order_ascending: Whether to order the resources in ascending order.
             project_name: The project name or a list of project names to filter resources by project.
                 If multiple projects are provided, resources will be filtered to include only those belonging to ALL of the specified projects.
+            deleted: 'exclude' (server default) returns live resources, 'only' returns deleted ones,
+                'include' returns both. Deleted resources are only visible to admins and librarians.
         """
 
         # Convert datetime objects to ISO format
@@ -183,6 +186,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             "order_by_asc": order_ascending,
             "channel_name": channel,
             "filename": filename,
+            "deleted": deleted,
         }
         # remove nones from payload
         payload = {k: v for k, v in payload.items() if v is not None}
@@ -1408,6 +1412,53 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             self._make_request('DELETE',
                                f'{self.endpoint_base}',
                                params={'resource_ids': ','.join(batch_ids)})
+
+    def get_deleted(self, **kwargs) -> Sequence[Resource]:
+        """Get deleted resources. Admins and librarians only.
+
+        Deleted resources are in no project, so ``project_name`` never matches them.
+        The ``status`` filter still uses the status before deletion ('inbox' or 'published'),
+        but the returned resources have ``status='deleted'``: the previous status is
+        'published' when ``published_on`` is set, otherwise 'inbox'.
+
+        Args:
+            **kwargs: Same filters as :py:meth:`get_list`.
+        """
+        return self.get_list(deleted='only', **kwargs)
+
+    def restore(self, resource: str | Resource) -> Resource:
+        """Restore a deleted resource. Admins and librarians only.
+
+        The resource comes back with its annotations and the status it had before deletion,
+        but not its project and worklist membership: add it to a project again.
+
+        Args:
+            resource: The resource ID or Resource instance to restore.
+
+        Returns:
+            The restored resource.
+        """
+        response = self._make_entity_request('POST', resource, add_path='restore')
+        return self._init_entity_obj(**response.json())
+
+    def bulk_restore(self, resources: Sequence[str | Resource]) -> dict[str, list]:
+        """Restore multiple deleted resources in a single request. Admins and librarians only.
+
+        Resources that cannot be restored are skipped; the rest are restored anyway.
+
+        Args:
+            resources: Sequence of resource IDs or Resource instances to restore.
+
+        Returns:
+            A dict with ``'restored'`` (list of resource IDs) and ``'skipped'``
+            (list of ``{'id', 'reason'}``, reason being 'not_found', 'not_deleted' or 'file_missing').
+        """
+        resource_ids = [self._entid(r) for r in resources]
+        if not resource_ids:
+            return {'restored': [], 'skipped': []}
+        response = self._make_request('POST', f'{self.endpoint_base}/restore',
+                                      json={'ids': resource_ids})
+        return response.json()
 
     def bulk_publish(self, resources: Sequence[str | Resource]) -> None:
         """Publish multiple resources in a single request.

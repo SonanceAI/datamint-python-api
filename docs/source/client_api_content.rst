@@ -140,8 +140,8 @@ To publish a resource, use :py:meth:`api.resources.publish_resources() <datamint
 If you want the resource to land directly in a project, prefer
 ``upload_resource(..., publish_to=project)`` during upload.
 
-Deleting resources
-++++++++++++++++++
+Deleting and restoring resources
+++++++++++++++++++++++++++++++++
 
 To delete a resource:
 
@@ -152,6 +152,41 @@ To delete a resource:
 
     # Delete multiple resources at once
     api.resources.bulk_delete(resources_to_delete)
+
+A deleted resource is removed from every project and worklist, but its annotations are kept.
+Admins and librarians can list deleted resources with
+:py:meth:`api.resources.get_deleted() <datamint.api.endpoints.resources_api.ResourcesApi.get_deleted>`
+and bring them back with
+:py:meth:`api.resources.restore() <datamint.api.endpoints.resources_api.ResourcesApi.restore>` or
+:py:meth:`api.resources.bulk_restore() <datamint.api.endpoints.resources_api.ResourcesApi.bulk_restore>`:
+
+.. code-block:: python
+
+    deleted = api.resources.get_deleted()
+
+    # Same filters as get_list(), e.g. only resources deleted from the inbox
+    deleted_inbox = api.resources.get_deleted(status="inbox")
+
+    # Restore one resource
+    resource = api.resources.restore(deleted[0])
+
+    # Restore several at once
+    result = api.resources.bulk_restore(deleted[1:])
+    print(result["restored"])  # restored resource ids
+    print(result["skipped"])   # [{'id': ..., 'reason': ...}]
+
+    # Restoring does not bring back project membership: add the resource again
+    project = api.projects.get_by_name("Liver Review")
+    api.projects.add_resources(resource, project)
+
+Things to keep in mind:
+
+- Deleted resources have ``status='deleted'`` and belong to no project, so ``project_name`` never matches them.
+- A restored resource gets back its annotations and its previous status (``'published'`` if it was ever
+  published, otherwise ``'inbox'``), but not its project or worklist membership.
+- ``bulk_restore`` restores what it can and lists the rest in ``skipped``, with the reason
+  ``'not_found'``, ``'not_deleted'`` (the resource is not deleted) or ``'file_missing'``
+  (the file is no longer available, so the resource cannot be restored).
 
 Ranking unlabeled resources
 +++++++++++++++++++++++++++
@@ -234,6 +269,30 @@ filter by source through ``trusted_annotation_sources``. By default only ``'impo
 
     # Disable source filtering
     dataset = ImageDataset(project="Liver Review", trusted_annotation_sources=None)
+
+Deleted annotations
++++++++++++++++++++
+
+Deleted annotations can be listed with
+:py:meth:`api.annotations.get_deleted() <datamint.api.endpoints.annotations_api.AnnotationsApi.get_deleted>`,
+but they are read-only and cannot be restored. Besides annotations deleted explicitly, the list
+also includes older versions replaced by later edits, such as a segmentation uploaded again:
+
+.. code-block:: python
+
+    resource = api.resources.get_list(project_name="Liver Review")[0]
+
+    # Delete an annotation
+    annotation = resource.fetch_annotations()[0]
+    api.annotations.delete(annotation)
+
+    # Deleted annotations only
+    deleted = api.annotations.get_deleted(resource=resource)
+    for annotation in deleted:
+        print(annotation.name, annotation.deleted_at, annotation.deleted_by)
+
+    # Live and deleted annotations together
+    everything = api.annotations.get_list(resource=resource, deleted="include")
 
 Upload segmentations
 ++++++++++++++++++++
@@ -479,6 +538,27 @@ ratio kwargs:
 Each returned subset records ``split_name``, ``split_source``, and
 ``split_as_of_timestamp`` for reproducibility. Local ratio splits remain
 available with calls such as ``dataset.split(train=0.8, val=0.2, seed=42)``.
+
+Deleting and restoring projects
++++++++++++++++++++++++++++++++
+
+Deleting a project archives it: its resources, worklists, members and annotations are kept,
+and :py:meth:`api.projects.restore() <datamint.api.endpoints.projects_api.ProjectsApi.restore>`
+brings it back as it was. Both are available to admins only:
+
+.. code-block:: python
+
+    project = api.projects.get_by_name("Old Project")
+    api.projects.delete(project)
+
+    # List deleted projects (they have archived=True)
+    for project in api.projects.get_deleted():
+        print(project.name)
+
+    # Bring it back
+    project = api.projects.restore(project)
+
+A deleted project keeps its name, so you cannot create a new project with the same name.
 
 Working with Channels
 ---------------------
