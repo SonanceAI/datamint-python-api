@@ -236,6 +236,24 @@ dashboard.
 
    print(f"Model URI : {model_info.model_uri}")
 
+Choosing the Inference Device
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default the model picks its device when it loads: the
+``MLFLOW_DEFAULT_PREDICTION_DEVICE`` environment variable if set, otherwise ``cuda``
+when a GPU is available, otherwise ``cpu``. To pin a device, pass it in
+``model_config`` when logging:
+
+.. code-block:: python
+
+   log_model(
+       adapter,
+       task_type=TaskType.IMAGE_SEGMENTATION,
+       name='segmentation_model',
+       registered_model_name=MODEL_NAME,
+       model_config={'device': 'cpu'},
+   )
+
 Assign an Alias
 ^^^^^^^^^^^^^^^^^
 
