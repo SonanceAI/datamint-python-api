@@ -264,7 +264,6 @@ def save_model(datamint_model: BaseDatamintModel,
         mlflow_model = Model()
 
     model_config = model_config or {}
-    model_config.setdefault('device', 'cuda' if datamint_model.settings.need_gpu else 'cpu')
 
     pip_requirements, extra_pip_requirements, extra_artifacts = _resolve_requirements(
         pip_requirements, extra_pip_requirements
