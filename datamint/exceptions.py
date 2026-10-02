@@ -145,7 +145,7 @@ class ModelNotDeployedError(DatamintException):
             ref = f"{self.model_name}:{DEFAULT_DEPLOY_MODEL_ALIAS}"
             deploy_kwarg = None
 
-        deploy_call = f"api.deploy_model.start('{self.model_name}'"
+        deploy_call = f"api.deploy.start('{self.model_name}'"
         if deploy_kwarg:
             deploy_call += f", {deploy_kwarg}"
         deploy_call += ")"
@@ -153,7 +153,7 @@ class ModelNotDeployedError(DatamintException):
         return (
             f"Model '{ref}' is not deployed, so it cannot run inference yet. "
             f"Deploy it first with {deploy_call}, wait for the job to finish "
-            f"(api.deploy_model.wait(job)), then retry."
+            f"(api.deploy.wait(job)), then retry."
         )
 
 
