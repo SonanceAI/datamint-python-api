@@ -1,12 +1,14 @@
 from .annotation import Annotation, _normalize_annotation_data
 from .box_annotation import BoxAnnotation
+from .category_annotation import CategoryAnnotation, ImageClassification
 from .geometry import BoxGeometry, CoordinateSystem, Geometry, LineGeometry, PointGeometry, RegionGeometry
-from .image_classification import ImageClassification
 from .image_segmentation import ImageSegmentation
+from .label_annotation import LabelAnnotation
 from .line_annotation import LineAnnotation
 from .numeric_annotation import NumericAnnotation
 from .point_annotation import PointAnnotation
 from .region_annotation import RegionAnnotation
+from .text_annotation import TextAnnotation
 from .types import AnnotationType
 from .volume_segmentation import VolumeSegmentation
 
@@ -18,7 +20,9 @@ def annotation_from_dict(data: dict) -> Annotation:
 
     * ``'segmentation'`` with a ``class_map`` → :class:`VolumeSegmentation`
     * ``'segmentation'`` without ``class_map`` → :class:`ImageSegmentation`
-    * ``'category'`` → :class:`ImageClassification`
+    * ``'category'`` → :class:`CategoryAnnotation`
+    * ``'text'`` → :class:`TextAnnotation`
+    * ``'label'`` → :class:`LabelAnnotation`
     * ``'integer'``/``'float'`` → :class:`NumericAnnotation`
     * ``'line'`` → :class:`LineAnnotation`
     * ``'square'`` → :class:`BoxAnnotation`
@@ -47,7 +51,13 @@ def annotation_from_dict(data: dict) -> Annotation:
         return ImageSegmentation(**normalized_data)
 
     if annotation_type in (AnnotationType.CATEGORY, AnnotationType.CATEGORY.value):
-        return ImageClassification(**normalized_data)
+        return CategoryAnnotation(**normalized_data)
+
+    if annotation_type in (AnnotationType.TEXT, AnnotationType.TEXT.value):
+        return TextAnnotation(**normalized_data)
+
+    if annotation_type in (AnnotationType.LABEL, AnnotationType.LABEL.value):
+        return LabelAnnotation(**normalized_data)
 
     if annotation_type in (AnnotationType.INTEGER, AnnotationType.FLOAT):
         return NumericAnnotation(**normalized_data)
@@ -72,10 +82,12 @@ __all__ = [
     "AnnotationType",
     "BoxAnnotation",
     "BoxGeometry",
+    "CategoryAnnotation",
     "CoordinateSystem",
     "Geometry",
     "ImageClassification",
     "ImageSegmentation",
+    "LabelAnnotation",
     "LineAnnotation",
     "LineGeometry",
     "NumericAnnotation",
@@ -83,6 +95,7 @@ __all__ = [
     "PointGeometry",
     "RegionAnnotation",
     "RegionGeometry",
+    "TextAnnotation",
     "VolumeSegmentation",
     "annotation_from_dict",
 ]

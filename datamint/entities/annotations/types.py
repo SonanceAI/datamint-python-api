@@ -20,3 +20,5 @@ class AnnotationType(StrEnum):
     LABEL = 'label'
     INTEGER = 'integer'
     FLOAT = 'float'
+    TEXT = 'text'
+    SPLINE = 'spline'

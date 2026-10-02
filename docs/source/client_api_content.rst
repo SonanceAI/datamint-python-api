@@ -394,13 +394,23 @@ Upload classification annotations
 
 .. code-block:: python
 
-    # Upload image classification labels
-    api.annotations.upload_segmentations(
-        resource,
-        labels=["normal", "pathology"],
-        name="diagnosis",
-        annotation_type="category",
-    )
+    # Category: a value from the list set up in the project
+    api.annotations.add_category_annotation(resource, identifier="diagnosis", value="pathology")
+
+    # Text: any free text
+    api.annotations.add_text_annotation(resource, identifier="findings", value="small fracture line")
+
+    # Label: no value, marks that something is present
+    api.annotations.add_label_annotation(resource, identifier="Fracture")
+
+    # Frames: frame_range is (start, end) with end not included, so this covers frames 42 to 45
+    api.annotations.add_category_annotation(resource, identifier="diagnosis", value="pathology",
+                                            frame_range=(42, 46))
+
+    # Replace all frames of one annotation at once (anything not listed is removed)
+    api.annotations.set_frame_ranges(resource, identifier="diagnosis", type="category",
+                                     values={"pathology": [(0, 10)], "normal": [(10, 20)]})
+    api.annotations.get_frame_ranges(resource)
 
 Inspect annotation entities
 +++++++++++++++++++++++++++

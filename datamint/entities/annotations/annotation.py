@@ -60,7 +60,7 @@ class AnnotationBase(BaseEntity):
     """Minimal base class for creating annotations.
 
     This class contains only the essential fields needed to create annotations.
-    Use this for creating specific annotation types like ImageClassification.
+    Use this for creating specific annotation types like CategoryAnnotation.
     """
 
     model_config = ConfigDict(populate_by_name=True)

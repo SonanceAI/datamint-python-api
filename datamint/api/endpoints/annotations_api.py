@@ -21,13 +21,14 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from datamint.api.dto import CreateAnnotationDto
+from datamint.api.dto.annotation_dto import _remove_none
 from datamint.entities import Resource
 from datamint.entities.annotations import (
     Annotation,
     AnnotationType,
     BoxAnnotation,
+    CategoryAnnotation,
     CoordinateSystem,
-    ImageClassification,
     LineAnnotation,
     NumericAnnotation,
     PointAnnotation,
@@ -1124,6 +1125,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         Create an image-level classification annotation.
 
+        Same as :meth:`add_category_annotation` without frames.
+
         Args:
             resource: The resource unique id or Resource instance.
             identifier: The annotation identifier/label.
@@ -1139,7 +1142,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Returns:
             The id of the created annotation.
         """
-        annotation = ImageClassification(
+        annotation = CategoryAnnotation(
             name=identifier,
             value=value,
             worklist_id=worklist_id,
@@ -1200,6 +1203,241 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if not isinstance(created, str):
             raise TypeError('Expected a single annotation id for numeric annotation creation.')
         return created
+
+    @staticmethod
+    def _resolve_frame_scope(frame_index: int | None,
+                             frame_range: tuple[int, int] | None,
+                             ) -> tuple[str, tuple[int, int] | None]:
+        """Return the scope and the inclusive frame range expected by the server."""
+        if frame_index is not None and frame_range is not None:
+            raise ValueError('Pass either frame_index or frame_range, not both.')
+        if frame_range is None:
+            return ('image' if frame_index is None else 'frame'), None
+        start, end = frame_range
+        if start < 0 or end <= start:
+            raise ValueError(f'Invalid frame_range {frame_range}. Expected half-open (start, end) with 0 <= start < end.')
+        return 'frame', (start, end - 1)
+
+    def _add_value_annotation(self,
+                              annotation_type: AnnotationType,
+                              resource: str | Resource,
+                              identifier: str,
+                              value: str | None,
+                              frame_index: int | None,
+                              frame_range: tuple[int, int] | None,
+                              worklist_id: str | None,
+                              author_email: str | None,
+                              imported_from: str | None,
+                              model_id: str | None,
+                              source: str | None) -> str:
+        scope, inclusive_range = self._resolve_frame_scope(frame_index, frame_range)
+        dto = CreateAnnotationDto(
+            type=annotation_type,
+            identifier=identifier,
+            scope=scope,
+            value=value,
+            frame_index=frame_index,
+            frame_range=inclusive_range,
+            annotation_worklist_id=worklist_id,
+            import_author=author_email,
+            imported_from=imported_from,
+            model_id=model_id,
+            source=source,
+        )
+        created = self.create(resource, dto)
+        if not isinstance(created, str):
+            raise TypeError(f'Expected a single annotation id for {annotation_type.value} annotation creation.')
+        return created
+
+    def add_text_annotation(self,
+                            resource: str | Resource,
+                            identifier: str,
+                            value: str,
+                            frame_index: int | None = None,
+                            frame_range: tuple[int, int] | None = None,
+                            worklist_id: str | None = None,
+                            author_email: str | None = None,
+                            imported_from: str | None = None,
+                            model_id: str | None = None,
+                            source: str | None = 'imported') -> str:
+        """
+        Add a free-text annotation to a resource, for the whole image or for frames.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier.
+            value: Any free text.
+            frame_index: A single frame (0-based). Makes the annotation frame-scoped.
+            frame_range: Half-open ``(start, end)`` frame range, 0-based, ``end`` not included.
+                Makes the annotation frame-scoped. Mutually exclusive with `frame_index`.
+            worklist_id: The annotation worklist unique id.
+            author_email: The email to consider as the author of the annotation.
+                If None, use the customer of the api key.
+            imported_from: The imported from source value.
+            model_id: The model unique id.
+            source: Annotation source tag.
+
+        Returns:
+            The id of the created annotation.
+
+        Example:
+            .. code-block:: python
+
+                api.annotations.add_text_annotation(resource, 'findings', 'small fracture line')
+                api.annotations.add_text_annotation(resource, 'findings', 'motion blur', frame_range=(10, 20))
+        """
+        return self._add_value_annotation(AnnotationType.TEXT, resource, identifier, value,
+                                          frame_index, frame_range, worklist_id, author_email,
+                                          imported_from, model_id, source)
+
+    def add_category_annotation(self,
+                                resource: str | Resource,
+                                identifier: str,
+                                value: str,
+                                frame_index: int | None = None,
+                                frame_range: tuple[int, int] | None = None,
+                                worklist_id: str | None = None,
+                                author_email: str | None = None,
+                                imported_from: str | None = None,
+                                model_id: str | None = None,
+                                source: str | None = 'imported') -> str:
+        """
+        Add a category annotation to a resource, for the whole image or for frames.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier.
+            value: One of the category values set up in the project (e.g. 'Displaced').
+            frame_index: A single frame (0-based). Makes the annotation frame-scoped.
+            frame_range: Half-open ``(start, end)`` frame range, 0-based, ``end`` not included.
+                Makes the annotation frame-scoped. Mutually exclusive with `frame_index`.
+            worklist_id: The annotation worklist unique id.
+            author_email: The email to consider as the author of the annotation.
+                If None, use the customer of the api key.
+            imported_from: The imported from source value.
+            model_id: The model unique id.
+            source: Annotation source tag.
+
+        Returns:
+            The id of the created annotation.
+        """
+        return self._add_value_annotation(AnnotationType.CATEGORY, resource, identifier, value,
+                                          frame_index, frame_range, worklist_id, author_email,
+                                          imported_from, model_id, source)
+
+    def add_label_annotation(self,
+                             resource: str | Resource,
+                             identifier: str,
+                             frame_index: int | None = None,
+                             frame_range: tuple[int, int] | None = None,
+                             worklist_id: str | None = None,
+                             author_email: str | None = None,
+                             imported_from: str | None = None,
+                             model_id: str | None = None,
+                             source: str | None = 'imported') -> str:
+        """
+        Add a label annotation to a resource, for the whole image or for frames.
+        A label marks that something is present and carries no value.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The label name (e.g. 'Fracture').
+            frame_index: A single frame (0-based). Makes the annotation frame-scoped.
+            frame_range: Half-open ``(start, end)`` frame range, 0-based, ``end`` not included.
+                Makes the annotation frame-scoped. Mutually exclusive with `frame_index`.
+            worklist_id: The annotation worklist unique id.
+            author_email: The email to consider as the author of the annotation.
+                If None, use the customer of the api key.
+            imported_from: The imported from source value.
+            model_id: The model unique id.
+            source: Annotation source tag.
+
+        Returns:
+            The id of the created annotation.
+        """
+        return self._add_value_annotation(AnnotationType.LABEL, resource, identifier, None,
+                                          frame_index, frame_range, worklist_id, author_email,
+                                          imported_from, model_id, source)
+
+    def set_frame_ranges(self,
+                         resource: str | Resource,
+                         identifier: str,
+                         type: AnnotationType | str,
+                         values: dict[str | float | None, Sequence[tuple[int, int]]],
+                         worklist_id: str | None = None,
+                         model_id: str | None = None,
+                         source: str | None = None) -> dict[str, Any]:
+        """
+        Replace all frame ranges of one track (resource + identifier + type + author + worklist).
+
+        Anything not in `values` is removed, so passing an empty dict clears the track.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            identifier: The annotation identifier.
+            type: One of 'text', 'category', 'integer', 'float' or 'label'.
+            values: Maps each value to its half-open ``(start, end)`` frame ranges, 0-based.
+                Use ``None`` as the key for a label, which carries no value.
+            worklist_id: The annotation worklist unique id. Omit for project-level tracks.
+            model_id: Registered model name. Only allowed for API keys.
+            source: Annotation source tag. Defaults from the auth context when omitted.
+
+        Returns:
+            The server response, with the ``created`` and ``deleted`` rows.
+
+        Example:
+            .. code-block:: python
+
+                api.annotations.set_frame_ranges(resource, 'position', 'category',
+                                                 {'Displaced': [(0, 10), (20, 31)],
+                                                  'Normal': [(10, 20)]})
+        """
+        type = type if isinstance(type, AnnotationType) else AnnotationType(type)
+        payload_values = []
+        for value, ranges in values.items():
+            item: dict[str, Any] = {'frame_ranges': [{'start': start, 'end': end} for start, end in ranges]}
+            if value is not None:
+                item['value'] = value
+            payload_values.append(item)
+
+        payload = _remove_none({
+            'identifier': identifier,
+            'type': type.value,
+            'annotation_worklist_id': worklist_id,
+            'values': payload_values,
+            'source': source,
+            'model_id': model_id,
+        })
+        resource_id = self._entid(resource)
+        resp = self._make_request('PUT',
+                                  f'{self.endpoint_base}/{resource_id}/frame-ranges',
+                                  json=payload)
+        return resp.json()
+
+    def get_frame_ranges(self,
+                         resource: str | Resource,
+                         worklist_id: str | None = None,
+                         created_by: str | None = None) -> list[dict[str, Any]]:
+        """
+        Get the frame-scoped classifications (text, category, integer, float, label) of a resource,
+        one record per identifier + value + author.
+
+        Args:
+            resource: The resource unique id or Resource instance.
+            worklist_id: Restrict to a worklist. Omit for project-level tracks.
+            created_by: Restrict to a single author (email).
+
+        Returns:
+            The server records, with ``frame_ranges`` as a list of half-open ``(start, end)`` tuples.
+        """
+        params = _remove_none({'annotation_worklist_id': worklist_id, 'created_by': created_by})
+        resource_id = self._entid(resource)
+        records = self._make_request('GET',
+                                     f'{self.endpoint_base}/{resource_id}/frame-ranges',
+                                     params=params).json()
+        for rec in records:
+            rec['frame_ranges'] = [(r['start'], r['end']) for r in rec.get('frame_ranges') or []]
+        return records
 
     def upload_predictions(
         self,

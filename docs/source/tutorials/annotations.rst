@@ -1,7 +1,7 @@
 Annotations
 ===========
 
-Import classification annotations and geometry (boxes, lines) to resources.
+Import classification annotations (category, text, label) and geometry (boxes, lines) to resources.
 
 .. toctree::
    :maxdepth: 1
