@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 import nibabel as nib
+import numpy as np
 
 from datamint.mlflow.flavors.model import BaseDatamintModel
 from datamint.mlflow.flavors.task_type import TaskType
@@ -116,6 +117,9 @@ class NNUNetInferenceModel(BaseDatamintModel):
         from datamint.entities.annotations.volume_segmentation import VolumeSegmentation
 
         nifti = nib.load(str(pred_path))
+        # nib.load is lazy and keeps reading from pred_path, which lives in a temp dir
+        # removed right after prediction. Load the voxels now so the annotation owns them.
+        nifti = nib.Nifti1Image(np.asanyarray(nifti.dataobj), nifti.affine, nifti.header)
         return VolumeSegmentation.from_semantic_segmentation(nifti, self.class_map)
 
     def predict_volume(self, model_input, **kwargs):
