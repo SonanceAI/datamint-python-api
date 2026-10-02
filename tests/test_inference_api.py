@@ -31,7 +31,7 @@ def test_predict_image_raises_model_not_deployed_error(
     assert err.model_version is None
     assert err.model_alias is None
     assert "not deployed" in str(err)
-    assert "api.deploy_model.start('my_model')" in str(err)
+    assert "api.deploy.start('my_model')" in str(err)
 
 
 def test_predict_image_unrelated_404_is_not_translated(
