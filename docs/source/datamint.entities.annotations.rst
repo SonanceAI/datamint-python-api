@@ -86,8 +86,20 @@ Geometry Annotations
 Classification Annotations
 --------------------------
 
-.. automodule:: datamint.entities.annotations.image_classification
-   :members: ImageClassification
+.. automodule:: datamint.entities.annotations.category_annotation
+   :members: CategoryAnnotation
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+.. automodule:: datamint.entities.annotations.text_annotation
+   :members: TextAnnotation
+   :undoc-members:
+   :show-inheritance:
+   :no-index:
+
+.. automodule:: datamint.entities.annotations.label_annotation
+   :members: LabelAnnotation
    :undoc-members:
    :show-inheritance:
    :no-index:

@@ -39,7 +39,8 @@ class CreateAnnotationDto:
                  model_id: str | None = None,
                  geometry: 'Geometry | None' = None,
                  units: str | None = None,
-                 source: str | None = None):
+                 source: str | None = None,
+                 frame_range: tuple[int, int] | None = None):
         self.type = type if isinstance(type, AnnotationType) else AnnotationType(type)
         self.value = value
         self.identifier = identifier
@@ -48,6 +49,7 @@ class CreateAnnotationDto:
         self.imported_from = imported_from
         self.import_author = import_author
         self.frame_index = frame_index
+        self.frame_range = frame_range  # inclusive [start, end], as the server expects
         self.units = units
         self.model_id = model_id
         if model_id is not None:
@@ -70,6 +72,7 @@ class CreateAnnotationDto:
             "identifier": self.identifier,
             "scope": self.scope,
             'frame_index': self.frame_index,
+            'frame_range': list(self.frame_range) if self.frame_range is not None else None,
             'annotation_worklist_id': self.annotation_worklist_id,
             'imported_from': self.imported_from,
             'import_author': self.import_author,

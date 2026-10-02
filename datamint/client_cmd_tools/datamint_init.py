@@ -541,7 +541,7 @@ for class_dir in class_dirs:
     print(f"  '{class_name}': uploaded {len(uploaded)} images.")
 
     for res in uploaded:
-        api.annotations.create_image_classification(
+        api.annotations.add_category_annotation(
             resource=res,
             identifier=LABEL_NAME,
             value=class_name,
@@ -800,7 +800,7 @@ for resource in test_resources:
     pred_anns = predictions[0] if predictions else []
 
     for ann in pred_anns:
-        api.annotations.create_image_classification(
+        api.annotations.add_category_annotation(
             resource=resource,
             identifier=LABEL_NAME,
             value=ann.value,

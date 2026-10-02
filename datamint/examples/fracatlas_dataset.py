@@ -62,13 +62,13 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
     )
 
     for resource_id in tqdm(non_fractured_ids, desc='Uploading annotations'):
-        api.annotations.create_image_classification(
+        api.annotations.add_category_annotation(
             resource=resource_id,
             identifier=_LABEL_IDENTIFIER,
             value='no',
         )
     for resource_id in tqdm(fractured_ids, desc='Uploading annotations'):
-        api.annotations.create_image_classification(
+        api.annotations.add_category_annotation(
             resource=resource_id,
             identifier=_LABEL_IDENTIFIER,
             value='yes',

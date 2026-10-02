@@ -13,7 +13,7 @@ from albumentations.pytorch import ToTensorV2
 from torch import Tensor, nn
 from torchmetrics import MetricCollection
 
-from datamint.entities.annotations import ImageClassification
+from datamint.entities.annotations import CategoryAnnotation
 from datamint.mlflow.flavors.task_type import TaskType
 
 from .base import DatamintLightningModule
@@ -158,7 +158,7 @@ class ClassificationModule(DatamintLightningModule):
         compute_uncertainty: bool = False,
         **kwargs: Any,
     ):
-        """Run classification inference, returning :class:`~datamint.entities.annotations.ImageClassification` per resource.
+        """Run classification inference, returning :class:`~datamint.entities.annotations.CategoryAnnotation` per resource.
 
         Args:
             compute_uncertainty: If ``True``, also compute a predictive-entropy
@@ -193,7 +193,7 @@ class ClassificationModule(DatamintLightningModule):
                 extra = {}
                 if compute_uncertainty:
                     extra['uncertainty'] = categorical_entropy(probs)[0].item()
-                all_preds.append([ImageClassification(
+                all_preds.append([CategoryAnnotation(
                     name=identifier, value=value,
                     confiability=confidence,
                     **extra,

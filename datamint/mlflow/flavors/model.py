@@ -15,7 +15,7 @@ from typing_extensions import override
 
 from datamint.entities.annotations import (
     Annotation,
-    ImageClassification,
+    CategoryAnnotation,
     ImageSegmentation,
 )
 from datamint.entities.annotations.annotation_spec import AnnotationSpec
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Type aliases
 PredictionResult: TypeAlias = list[list[Annotation]]
-PredictionImageResult: TypeAlias = Sequence[Sequence[ImageSegmentation | ImageClassification]]
+PredictionImageResult: TypeAlias = Sequence[Sequence[ImageSegmentation | CategoryAnnotation]]
 
 
 def _move_torch_modules_to_device(obj: Any, device: str, _seen: set[int] | None = None) -> None:
