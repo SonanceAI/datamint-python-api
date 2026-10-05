@@ -1135,6 +1135,15 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         for i in range(len(self)):
             yield self[i]
 
+    def items(self) -> Iterator[tuple['Resource', list['Annotation']]]:
+        """Iterate over ``(resource, annotations)`` pairs.
+
+        Yields:
+            Tuple of resource and a copy of its annotation list.
+        """
+        for resource, annotations in zip(self.resources, self.resource_annotations):
+            yield resource, list(annotations)
+
     def __add__(self, other: 'DatamintBaseDataset') -> ConcatDataset:
         """Concatenate datasets."""
         return ConcatDataset([self, other])  # type: ignore[list-item]

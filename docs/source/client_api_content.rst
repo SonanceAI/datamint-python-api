@@ -240,6 +240,25 @@ A common scoring function is model uncertainty -- see
 :doc:`command_line_tools` and :mod:`datamint.utils.uncertainty` for how to
 compute it.
 
+Iterate resources and annotations of a dataset
+++++++++++++++++++++++++++++++++++++++++++++++
+
+To loop over the resources of a dataset together with their annotations, use
+:py:meth:`dataset.items() <datamint.dataset.base.DatamintBaseDataset.items>`.
+It yields ``(resource, annotations)`` pairs:
+
+.. code-block:: python
+
+    from datamint import VolumeDataset
+
+    dataset = VolumeDataset(project="Liver Review")
+
+    for resource, annotations in dataset.items():
+        print(resource.filename, [annotation.name for annotation in annotations])
+        
+- Each ``annotations`` is a copy, so changing it does not affect the dataset.
+- ``items()`` returns a generator: call it again to loop again.
+
 Working with Annotations
 ------------------------
 
