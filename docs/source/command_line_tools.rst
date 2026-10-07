@@ -195,6 +195,30 @@ The value passed to ``--ai-model`` must match the name of an existing deployed
 model on the server. This option only affects uploaded segmentations; resource
 uploads without ``--segmentation_path`` are unchanged.
 
+Linking segmentations to a project worklist
++++++++++++++++++++++++++++++++++++++++++++
+
+Annotations count toward a project only through one of its worklists. 
+
+When ``--project`` and ``--segmentation_path`` are given, the uploaded resources are added to the
+worklist ``Imported annotations`` of the project (created if it does not exist yet) and the
+segmentations are linked to it. Resources without a segmentation are added too, so they show up
+as still to annotate. Use ``--worklist`` to pick another worklist, by name or id:
+
+.. code-block:: bash
+
+    datamint upload data/OAI_CARE/dicoms/ -r --segmentation_path data/OAI_CARE/segmentations/ --project MyProject --worklist "Knee worklist"
+
+Segmentations uploaded with ``--ai-model`` are AI segmentations: annotators see them in the worklist
+as a starting point they can edit and save as their own annotation (``--ai-segmentations viewable``
+shows them read-only instead). AI segmentations alone don't make a file count as annotated: it
+counts once an annotator saves an annotation in the worklist or marks it as done.
+Give the segment names with ``--segmentation_names`` so the worklist knows which AI segmentations to show.
+This only affects the worklist: the project's file viewer shows AI segmentations either way.
+
+A worklist is set when the annotation is created, so segmentations uploaded before without a worklist
+are not linked to it afterwards.
+
 JSON metadata support for NIfTI files
 +++++++++++++++++++++++++++++++++++++
 
@@ -257,7 +281,12 @@ See all available options by running ``datamint upload --help``:
                         name
   --ai-model MODEL_NAME
                         Name of a deployed AI model to associate with uploaded segmentations.
-  --yes                 Automatically answer yes to all prompts
+  --worklist NAME_OR_ID
+                        Worklist of --project to link the uploaded segmentations to, by name or id. A name not found in the project creates a new worklist.
+                        Default: "Imported annotations". Annotations only count toward a project through one of its worklists.
+  --ai-segmentations {editable,viewable}
+                        With --ai-model, how annotators see the AI segmentations in the worklist: as a starting point they can edit (default) or read-only.
+  --yes                Automatically answer yes to all prompts
   --transpose-segmentation
                         Transpose the segmentation dimensions to match the image dimensions
   --auto-detect-json    Automatically detect and include JSON metadata files with the same base name as NIFTI files

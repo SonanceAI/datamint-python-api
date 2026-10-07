@@ -18,6 +18,7 @@ DEFAULT_VALUES = {
 }
 
 DEFAULT_DEPLOY_MODEL_ALIAS = 'latest'
+DEFAULT_UPLOAD_WORKLIST_NAME = 'Imported annotations'
 
 _LOGGER = logging.getLogger(__name__)
 

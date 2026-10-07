@@ -2,7 +2,6 @@ import logging
 
 import nibabel as nib
 import numpy as np
-from tqdm.auto import tqdm
 
 from datamint import Api
 from datamint.entities import Project
@@ -86,21 +85,14 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
     data_dir = _download.download_and_extract(_SYNAPSE_URL, 'synapse')
     image_paths, label_paths = _convert_to_nifti(data_dir)
 
-    resource_ids = api.resources.upload_resources(
+    # Uploading the labels with the resources links them to the project's worklist.
+    api.resources.upload_resources(
         [str(p) for p in image_paths],
         tags=['synapse', 'ct', 'abdomen'],
         publish_to=proj,
+        segmentation_files=[{'files': [str(p)], 'names': _SYNAPSE_CLASSES} for p in label_paths],
         progress_bar=True,
     )
-
-    for lbl_path, resource_id in tqdm(zip(label_paths, resource_ids), total=len(label_paths),
-                                      desc='Uploading annotations'):
-        api.annotations.upload_volume_segmentation(
-            resource=resource_id,
-            file_path=str(lbl_path),
-            name=_SYNAPSE_CLASSES,
-            imported_from='Synapse Multi-Organ CT',
-        )
 
     _common.print_summary(_DATASET_NAME, len(image_paths), len(label_paths), data_dir, proj)
     return proj

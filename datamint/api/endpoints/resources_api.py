@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import re
 import threading
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -22,7 +23,9 @@ from PIL import Image
 from pydicom import config as pydicom_config
 from tqdm.auto import tqdm
 
+from datamint.configs import DEFAULT_UPLOAD_WORKLIST_NAME
 from datamint.entities import Channel, Project, Resource
+from datamint.entities.annotation_worklist import AnnotationWorklist
 from datamint.entities.annotations import AnnotationType
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
@@ -54,6 +57,32 @@ _DICOM_PREP_LOCK = threading.Lock()
 def _infinite_gen(x):
     while True:
         yield x
+
+
+_UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
+
+def _looks_like_uuid(value: str) -> bool:
+    return bool(_UUID_PATTERN.match(value))
+
+
+def _segment_identifiers(segmentation_files: Sequence[dict | None] | None) -> list[str]:
+    """Segment names given with the segmentation files, in order of appearance.
+
+    The `names` of a segmentation file is a str, a {value: name} dict, or a list of them (one per file).
+    """
+    identifiers = []
+    for segfiles in segmentation_files or []:
+        if segfiles is None:
+            continue
+        names = segfiles.get('names')
+        for entry in [names] if isinstance(names, (dict, str)) else (names or []):
+            if isinstance(entry, dict):
+                values = [v for k, v in entry.items() if k != 'default']
+            else:
+                values = [entry] if isinstance(entry, str) else []
+            identifiers.extend(v for v in values if v not in identifiers)
+    return identifiers
 
 
 def _get_file_path(all_files_path: Sequence[str | IO], index: int) -> str | IO:
@@ -575,25 +604,10 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 _USER_LOGGER.info(f'"{name}" uploaded')
 
             if segfiles is not None:
-                fpaths = segfiles['files']
-                names = segfiles.get('names', _infinite_gen(None))
-                if isinstance(names, dict):
-                    names = _infinite_gen(names)
-                frame_indices = segfiles.get('frame_index', _infinite_gen(None))
-                for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
-                                                 desc=f"Uploading segmentations for {file_path}",
-                                                 total=len(fpaths)):
-                    if f is not None:
-                        await self.annotations_api._upload_segmentations_async(
-                            rid,
-                            file_path=f,
-                            name=name,
-                            frame_index=frame_index,
-                            transpose_segmentation=transpose_segmentation,
-                            model_id=model_name,
-                            source='imported',
-                            session=session,
-                        )
+                await self._upload_resource_segmentations_async(rid, segfiles, desc=str(file_path),
+                                                                transpose_segmentation=transpose_segmentation,
+                                                                model_name=model_name,
+                                                                session=session)
             return rid
 
         try:
@@ -612,6 +626,135 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             batch_results = await asyncio.gather(*batch, return_exceptions=on_error == 'skip')
             results.extend(batch_results)
         return results
+
+    async def _upload_resource_segmentations_async(self,
+                                                   resource_id: str,
+                                                   segfiles: dict,
+                                                   desc: str,
+                                                   transpose_segmentation: bool = False,
+                                                   model_name: str | None = None,
+                                                   worklist_id: str | None = None,
+                                                   session: aiohttp.ClientSession | None = None,
+                                                   ) -> None:
+        fpaths = segfiles['files']
+        names = segfiles.get('names', _infinite_gen(None))
+        if isinstance(names, dict):
+            names = _infinite_gen(names)
+        frame_indices = segfiles.get('frame_index', _infinite_gen(None))
+        for f, name, frame_index in tqdm(zip(fpaths, names, frame_indices),
+                                         desc=f"Uploading segmentations for {desc}",
+                                         total=len(fpaths)):
+            if f is not None:
+                await self.annotations_api._upload_segmentations_async(
+                    resource_id,
+                    file_path=f,
+                    name=name,
+                    frame_index=frame_index,
+                    transpose_segmentation=transpose_segmentation,
+                    model_id=model_name,
+                    worklist_id=worklist_id,
+                    source='imported',
+                    session=session,
+                )
+
+    async def _upload_segmentations_of_resources_async(self,
+                                                       resource_ids: Sequence[str | Exception],
+                                                       segmentation_files: Sequence[dict | None],
+                                                       file_names: Sequence[str],
+                                                       on_error: Literal['raise', 'skip'],
+                                                       worklist_id: str,
+                                                       transpose_segmentation: bool = False,
+                                                       model_name: str | None = None,
+                                                       ) -> list[str | Exception]:
+        """Upload the segmentations of already uploaded resources, linked to a worklist.
+
+        Failed uploads and resources without segmentation are skipped.
+        A failed segmentation upload replaces the resource id in the result, as in the single-phase upload.
+        """
+        session = self._get_aiohttp_session()
+
+        async def __upload(rid: str | Exception, segfiles: dict | None, name: str):
+            if isinstance(rid, Exception) or segfiles is None:
+                return rid
+            await self._upload_resource_segmentations_async(rid, segfiles, desc=name,
+                                                            transpose_segmentation=transpose_segmentation,
+                                                            model_name=model_name,
+                                                            worklist_id=worklist_id,
+                                                            session=session)
+            return rid
+
+        tasks = [__upload(rid, segfiles, name)
+                 for rid, segfiles, name in zip(resource_ids, segmentation_files, file_names)]
+        results = []
+        for i in range(0, len(tasks), _UPLOAD_BATCH_SIZE):
+            batch = tasks[i:i + _UPLOAD_BATCH_SIZE]
+            results.extend(await asyncio.gather(*batch, return_exceptions=on_error == 'skip'))
+        return results
+
+    def _find_upload_worklist(self,
+                              project: Project,
+                              worklist: 'AnnotationWorklist | str | None',
+                              ) -> tuple[str | None, str]:
+        """Find the worklist of `project` that the uploaded annotations are linked to.
+
+        Returns:
+            The worklist id and name. The id is ``None`` when no worklist of the project has that name,
+            so it is created after the upload.
+
+        Raises:
+            ItemNotFoundError: If `worklist` is an instance or an id not found in the project.
+        """
+        worklist_api = self.projects_api.annotationworklist_api
+        key = worklist.id if isinstance(worklist, AnnotationWorklist) else (worklist or DEFAULT_UPLOAD_WORKLIST_NAME)
+        matches = [w for w in worklist_api.get_by_project(project) if key in (w.id, w.name)]
+        if len(matches) > 1:
+            _USER_LOGGER.warning(f'Project "{project.name}" has {len(matches)} worklists named '
+                                 f'"{key}". Using the first one ({matches[0].id}).')
+        if matches:
+            return matches[0].id, matches[0].name
+        if _looks_like_uuid(key):
+            raise ItemNotFoundError('AnnotationWorklist', {'id': key, 'project': project.name})
+        return None, key
+
+    def _prepare_upload_worklist(self,
+                                 project: Project,
+                                 worklist_id: str | None,
+                                 worklist_name: str,
+                                 resource_ids: Sequence[str | Exception],
+                                 segmentation_files: Sequence[dict | None] | None,
+                                 model_name: str | None,
+                                 ai_segmentations: Literal['editable', 'viewable'],
+                                 ) -> str:
+        """Create the worklist found by `_find_upload_worklist` if needed, and add the uploaded resources to it.
+
+        Returns:
+            The worklist id.
+        """
+        worklist_api = self.projects_api.annotationworklist_api
+        succ_ids = [rid for rid in resource_ids if not isinstance(rid, Exception)]
+        identifiers = _segment_identifiers(segmentation_files)
+        editable = ai_segmentations == 'editable'
+        if model_name is not None and not identifiers:
+            _USER_LOGGER.warning("No segmentation names given: the AI segmentations may not be shown "
+                                 "to the annotators of the worklist. Use --segmentation_names.")
+
+        if worklist_id is None:
+            ai_ids = identifiers if model_name is not None and identifiers else None
+            worklist_id = worklist_api.create(
+                worklist_name,
+                resource_ids=succ_ids,
+                project=project,
+                viewable_ai_segmentations=ai_ids,
+                editable_ai_segmentations=ai_ids if editable else None,
+                return_entity=False,
+            )
+            _USER_LOGGER.info(f'Created worklist "{worklist_name}" in project "{project.name}"')
+        else:
+            worklist_api.update_resources(worklist_id, resource_ids_to_add=succ_ids)
+            if model_name is not None and identifiers:
+                worklist_api.add_ai_segmentations(worklist_id, identifiers, editable=editable)
+            _USER_LOGGER.info(f'Using worklist "{worklist_name}" of project "{project.name}"')
+        return worklist_id
 
     def _validate_upload_params(
         self,
@@ -756,6 +899,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                          metadata: Sequence[str | dict | None] | None = None,
                          discard_dicom_reports: bool = True,
                          progress_bar: bool = False,
+                         worklist: AnnotationWorklist | str | None = None,
+                         ai_segmentations: Literal['editable', 'viewable'] = 'editable',
                          ) -> Sequence[str | Exception]:
         """
         Upload multiple resources.
@@ -789,16 +934,29 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             metadata (Optional[list[str | dict | None]]): JSON metadata to include with each resource.
                 Must have the same length as `files_path`.
                 Can be file paths (str) or already loaded dictionaries (dict).
+            worklist (Optional[AnnotationWorklist | str]): The worklist of `publish_to` to link the segmentations to,
+                as an instance, id or name. A name not found in the project creates a new worklist.
+                Annotations count toward a project only through one of its worklists, so when `publish_to` and
+                `segmentation_files` are given, the worklist named ``'Imported annotations'`` is used
+                (created if needed) when this is ``None``. The uploaded resources are added to the worklist.
+            ai_segmentations (Literal['editable', 'viewable']): With `model_name`, how annotators see the
+                AI segmentations in the worklist: as a starting point they can edit, or read-only.
+                AI segmentations alone don't make a file count as annotated. This only affects the worklist:
+                the project's file viewer shows AI segmentations either way.
 
         Raises:
-            ValueError: If a single resource is provided instead of multiple resources.
-            ItemNotFoundError: If `publish_to` is supplied, and the project does not exists.
+            ValueError: If a single resource is provided instead of multiple resources,
+                or `worklist` is given without `publish_to`.
+            ItemNotFoundError: If `publish_to` is supplied, and the project does not exists,
+                or `worklist` is an id not found in the project.
 
         Returns:
             list[str | Exception]: A list of resource IDs or errors.
         """
 
         self._validate_upload_params(on_error, files_path)
+        if worklist is not None and publish_to is None:
+            raise ValueError("`worklist` requires `publish_to`: a worklist belongs to a project.")
 
         proj = self._resolve_project(publish_to)
         publish = publish or (proj is not None)
@@ -823,6 +981,12 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         _LOGGER.debug('Normalizing segmentation_files parameter...')
         normalized_seg_files = self._normalize_segmentation_files(segmentation_files, files_path, assembled)
+        has_segmentations = normalized_seg_files is not None and any(s is not None for s in normalized_seg_files)
+        # Segmentations are linked to the worklist at creation, and the worklist only takes published
+        # resources already in the project, so they are uploaded after the resources in that case.
+        use_worklist = proj is not None and (has_segmentations or worklist is not None)
+        if use_worklist:
+            worklist_id, worklist_name = self._find_upload_worklist(proj, worklist)
 
         _LOGGER.debug('Starting asynchronous upload of resources...')
         resource_ids = self._run_async_upload(
@@ -837,7 +1001,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             mung_filename=mung_filename,
             channel=channel,
             publish=publish,
-            segmentation_files=normalized_seg_files,
+            segmentation_files=None if use_worklist else normalized_seg_files,
             transpose_segmentation=transpose_segmentation,
             model_name=model_name,
             modality=modality,
@@ -848,6 +1012,21 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         if proj is not None:
             self._post_upload_add_to_project(resource_ids, proj, on_error)
+
+        if use_worklist:
+            worklist_id = self._prepare_upload_worklist(proj, worklist_id, worklist_name, resource_ids,
+                                                        normalized_seg_files,
+                                                        model_name=model_name,
+                                                        ai_segmentations=ai_segmentations)
+            if has_segmentations:
+                file_names = [getattr(f, 'name', 'file') if is_io_object(f) else f for f in files_path]
+                resource_ids = asyncio.get_event_loop().run_until_complete(
+                    self._upload_segmentations_of_resources_async(resource_ids, normalized_seg_files,
+                                                                  file_names=file_names,
+                                                                  on_error=on_error,
+                                                                  worklist_id=worklist_id,
+                                                                  transpose_segmentation=transpose_segmentation,
+                                                                  model_name=model_name))
 
         if mapping_idx:
             resource_ids = [resource_ids[idx] for idx in mapping_idx]

@@ -34,6 +34,8 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                editable_ai_annotations: list[str] | None = None,
                project: 'str | Project | None' = None,
                return_url: str | None = None,
+               viewable_ai_segmentations: list[str] | None = None,
+               editable_ai_segmentations: list[str] | None = None,
                *,
                return_entity: Literal[True] = True,
                exists_ok: bool = False
@@ -53,6 +55,8 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                editable_ai_annotations: list[str] | None = None,
                project: 'str | Project | None' = None,
                return_url: str | None = None,
+               viewable_ai_segmentations: list[str] | None = None,
+               editable_ai_segmentations: list[str] | None = None,
                *,
                return_entity: Literal[False],
                exists_ok: bool = False
@@ -72,6 +76,8 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
                editable_ai_annotations: list[str] | None = None,
                project: 'str | Project | None' = None,
                return_url: str | None = None,
+               viewable_ai_segmentations: list[str] | None = None,
+               editable_ai_segmentations: list[str] | None = None,
                *,
                return_entity: bool = True,
                exists_ok: bool = False,
@@ -101,6 +107,10 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             editable_ai_annotations: Optional list of AI annotation identifiers to allow editing.
             project: Optional project ID or Project instance to associate with this worklist.
             return_url: Optional URL to redirect after annotation.
+            viewable_ai_segmentations: Optional identifiers of AI segmentations annotators see read-only.
+            editable_ai_segmentations: Optional identifiers of AI segmentations annotators may start from and edit.
+                They must also be in `viewable_ai_segmentations`, since the worklist only returns
+                AI segmentations that are viewable.
 
         Returns:
             The ID of the created annotation set.
@@ -126,7 +136,37 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             payload['project_id'] = self._entid(project)
         if return_url is not None:
             payload['return_url'] = return_url
+        if viewable_ai_segmentations is not None:
+            payload['viewable_ai_segmentations'] = viewable_ai_segmentations
+        if editable_ai_segmentations is not None:
+            payload['editable_ai_segmentations'] = editable_ai_segmentations
         return self._create(payload, return_entity=return_entity, exists_ok=exists_ok)
+
+    def add_ai_segmentations(self,
+                             worklist: 'str | AnnotationWorklist',
+                             identifiers: list[str],
+                             editable: bool = True) -> None:
+        """Show AI segmentations to the annotators of a worklist, keeping the ones already set.
+
+        Args:
+            worklist: The annotation worklist ID or AnnotationWorklist instance.
+            identifiers: Identifiers of the AI segmentations.
+            editable: If ``True``, annotators may start from them and edit; otherwise they are read-only.
+                Editable ones are added to the viewable ones too, since the worklist only returns
+                AI segmentations that are viewable.
+        """
+        details = self._make_entity_request('GET', worklist).json()
+        keys = [('viewable_ai_segs', 'viewable_ai_segmentations')]
+        if editable:
+            keys.append(('editable_ai_segs', 'editable_ai_segmentations'))
+        payload = {}
+        for current_key, payload_key in keys:
+            current = details.get(current_key) or []
+            merged = current + [i for i in identifiers if i not in current]
+            if merged != current:
+                payload[payload_key] = merged
+        if payload:
+            self._make_entity_request('PATCH', worklist, json=payload)
 
     def update_segmentation_group(self,
                                   worklist_id: 'str | AnnotationWorklist | None' = None,

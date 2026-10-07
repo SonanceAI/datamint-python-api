@@ -3,7 +3,7 @@ import logging
 import requests
 from tqdm.auto import tqdm
 
-from datamint import Api
+from datamint import Api, configs
 from datamint.entities import Project
 
 from . import _common, _download
@@ -60,18 +60,25 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         publish_to=proj,
         progress_bar=True,
     )
+    # Annotations count toward a project only through one of its worklists.
+    worklist_id = api.annotationworklists.create(configs.DEFAULT_UPLOAD_WORKLIST_NAME,
+                                                 resource_ids=list(non_fractured_ids) + list(fractured_ids),
+                                                 project=proj,
+                                                 return_entity=False)
 
     for resource_id in tqdm(non_fractured_ids, desc='Uploading annotations'):
         api.annotations.add_category_annotation(
             resource=resource_id,
             identifier=_LABEL_IDENTIFIER,
             value='no',
+            worklist_id=worklist_id,
         )
     for resource_id in tqdm(fractured_ids, desc='Uploading annotations'):
         api.annotations.add_category_annotation(
             resource=resource_id,
             identifier=_LABEL_IDENTIFIER,
             value='yes',
+            worklist_id=worklist_id,
         )
 
     n_files = len(non_fractured_ids) + len(fractured_ids)
