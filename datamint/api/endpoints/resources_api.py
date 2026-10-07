@@ -734,16 +734,19 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         succ_ids = [rid for rid in resource_ids if not isinstance(rid, Exception)]
         identifiers = _segment_identifiers(segmentation_files)
         editable = ai_segmentations == 'editable'
-        if model_name is not None and not identifiers:
-            _USER_LOGGER.warning("No segmentation names given: the AI segmentations may not be shown "
-                                 "to the annotators of the worklist. Use --segmentation_names.")
+        if not identifiers and any(s is not None for s in segmentation_files or []):
+            _USER_LOGGER.warning("No segmentation names given: the uploaded segmentations (human or AI) may not be "
+                                 "shown to the annotators of the worklist. Use --segmentation_names.")
 
         if worklist_id is None:
             ai_ids = identifiers if model_name is not None and identifiers else None
+            schema = worklist_api.segment_schema(identifiers) if identifiers else {}
             worklist_id = worklist_api.create(
                 worklist_name,
                 resource_ids=succ_ids,
                 project=project,
+                annotations=schema.get('annotations'),
+                segmentation_data=schema.get('segmentation_data'),
                 viewable_ai_segmentations=ai_ids,
                 editable_ai_segmentations=ai_ids if editable else None,
                 return_entity=False,
@@ -751,6 +754,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             _USER_LOGGER.info(f'Created worklist "{worklist_name}" in project "{project.name}"')
         else:
             worklist_api.update_resources(worklist_id, resource_ids_to_add=succ_ids)
+            if identifiers:
+                worklist_api.add_segments(worklist_id, identifiers)
             if model_name is not None and identifiers:
                 worklist_api.add_ai_segmentations(worklist_id, identifiers, editable=editable)
             _USER_LOGGER.info(f'Using worklist "{worklist_name}" of project "{project.name}"')

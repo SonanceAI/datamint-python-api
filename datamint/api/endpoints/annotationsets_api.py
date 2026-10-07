@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from typing_extensions import override
@@ -165,6 +166,65 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
             merged = current + [i for i in identifiers if i not in current]
             if merged != current:
                 payload[payload_key] = merged
+        if payload:
+            self._make_entity_request('PATCH', worklist, json=payload)
+
+    @staticmethod
+    def segment_schema(identifiers: Sequence[str],
+                       annotations: list[dict] | None = None,
+                       segmentation_group: dict | None = None,
+                       segmentation_value_type: str = 'single_label',
+                       ) -> dict:
+        """Build the `annotations` and `segmentation_data` fields of a worklist with the given segments.
+
+        Args:
+            identifiers: Identifiers of the segments.
+            annotations: Annotation specs already set, kept as they are.
+            segmentation_group: Segment definitions already set, as returned by the server
+                (``{identifier: {'color': [r, g, b, a], 'index': int}}``), kept as they are.
+            segmentation_value_type: ``'single_label'`` (default) or ``'multi_label'``.
+
+        Returns:
+            The payload with both fields, or an empty dict if all segments are already set.
+        """
+        annotations = list(annotations or [])
+        segmentation_group = segmentation_group or {}
+        identifiers = list(dict.fromkeys(identifiers))
+        spec_ids = {a.get('identifier') for a in annotations if a.get('type') == 'segmentation'}
+        new_specs = [i for i in identifiers if i not in spec_ids]
+        new_defs = [i for i in identifiers if i not in segmentation_group]
+        if not new_specs and not new_defs:
+            return {}
+
+        annotations += [{'type': 'segmentation', 'identifier': i, 'scope': 'frame', 'required': False}
+                        for i in new_specs]
+        definitions = sorted(({'identifier': k, 'color': list(v['color'][:3]), 'index': v['index']}
+                              for k, v in segmentation_group.items()),
+                             key=lambda d: d['index'])
+        if new_defs:
+            from datamint.utils.visualization import generate_color_palette
+            next_index = max((d['index'] for d in definitions), default=0) + 1
+            colors = generate_color_palette(next_index - 1 + len(new_defs))[next_index - 1:]
+            definitions += [{'identifier': i, 'color': list(c), 'index': next_index + n}
+                            for n, (i, c) in enumerate(zip(new_defs, colors))]
+        return {'annotations': annotations,
+                'segmentation_data': {'segmentationValueType': segmentation_value_type,
+                                      'definitions': definitions}}
+
+    def add_segments(self,
+                     worklist: 'str | AnnotationWorklist',
+                     identifiers: Sequence[str]) -> None:
+        """Add segments to the annotation schema of a worklist, keeping the ones already set.
+
+        Args:
+            worklist: The annotation worklist ID or AnnotationWorklist instance.
+            identifiers: Identifiers of the segments.
+        """
+        details = self._make_entity_request('GET', worklist).json()
+        payload = self.segment_schema(identifiers,
+                                      annotations=details.get('annotations'),
+                                      segmentation_group=details.get('segmentation_group'),
+                                      segmentation_value_type=details.get('segmentation_type') or 'single_label')
         if payload:
             self._make_entity_request('PATCH', worklist, json=payload)
 

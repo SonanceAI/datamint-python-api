@@ -60,10 +60,14 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         publish_to=proj,
         progress_bar=True,
     )
-    # Annotations count toward a project only through one of its worklists.
+    # Annotations count toward a project only through one of its worklists,
+    # and annotators only see the categories listed in its annotations.
     worklist_id = api.annotationworklists.create(configs.DEFAULT_UPLOAD_WORKLIST_NAME,
                                                  resource_ids=list(non_fractured_ids) + list(fractured_ids),
                                                  project=proj,
+                                                 annotations=[{'type': 'category', 'identifier': _LABEL_IDENTIFIER,
+                                                               'scope': 'image', 'required': False,
+                                                               'values': ['no', 'yes']}],
                                                  return_entity=False)
 
     for resource_id in tqdm(non_fractured_ids, desc='Uploading annotations'):

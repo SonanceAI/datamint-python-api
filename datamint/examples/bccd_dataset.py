@@ -83,10 +83,15 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         publish_to=proj,
         progress_bar=True,
     )
-    # Annotations count toward a project only through one of its worklists.
+    # Annotations count toward a project only through one of its worklists,
+    # and annotators only see the box labels listed in its annotations.
+    labels = sorted({box.label for sample in samples for box in sample.boxes})
     worklist_id = api.annotationworklists.create(configs.DEFAULT_UPLOAD_WORKLIST_NAME,
                                                  resource_ids=list(resource_ids),
                                                  project=proj,
+                                                 annotations=[{'type': 'square', 'identifier': label,
+                                                               'scope': 'frame', 'required': False}
+                                                              for label in labels],
                                                  return_entity=False)
 
     n_annotated = 0
