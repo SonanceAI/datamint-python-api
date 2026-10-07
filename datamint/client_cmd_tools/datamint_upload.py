@@ -585,6 +585,16 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
                         dest='ai_model',
                         help='Name of an AI model to associate with uploaded segmentations. '
                         'Created automatically in the registry if it does not already exist.')
+    parser.add_argument('--worklist', type=str, required=False, metavar="NAME_OR_ID",
+                        help='Worklist of --project to link the uploaded segmentations to, by name or id. '
+                        'A name not found in the project creates a new worklist. '
+                        f'Default: "{configs.DEFAULT_UPLOAD_WORKLIST_NAME}". '
+                        'Annotations only count toward a project through one of its worklists.')
+    parser.add_argument('--ai-segmentations', choices=['editable', 'viewable'], default='editable',
+                        dest='ai_segmentations',
+                        help='With --ai-model, how annotators see the AI segmentations in the worklist: '
+                        'as a starting point they can edit (default) or read-only. '
+                        'The project\'s file viewer shows AI segmentations either way.')
     parser.add_argument('--yes', action='store_true',
                         help='Automatically answer yes to all prompts')
     parser.add_argument('--transpose-segmentation', action='store_true', default=False,
@@ -634,6 +644,9 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
     if args.retain_pii and len(args.retain_attribute) > 0:
         raise ValueError("Cannot use --retain-pii and --retain-attribute together.")
 
+    if args.worklist is not None and args.project is None:
+        parser.error("--worklist requires --project: a worklist belongs to a project.")
+
     # include-extensions and exclude-extensions are mutually exclusive
     if args.include_extensions is not None and args.exclude_extensions is not None:
         raise ValueError("--include-extensions and --exclude-extensions are mutually exclusive.")
@@ -681,6 +694,9 @@ def _parse_args() -> tuple[Any, list[str], list[dict] | None, list[str] | None]:
             segmentation_files = _find_segmentation_files(args.segmentation_path,
                                                           file_path,
                                                           segmentation_metainfo=segmentation_names)
+            if args.project is None:
+                _USER_LOGGER.warning("Segmentations uploaded without --project are not linked to any project worklist, "
+                                     "so they won't count as annotated in any project.")
 
         _LOGGER.info(f"args parsed: {args}")
 
@@ -753,6 +769,11 @@ def print_input_summary(files_path: list[str],
                 _USER_LOGGER.warning(msg)
             else:
                 _USER_LOGGER.info(msg)
+
+    has_segmentations = segfiles is not None and any(seg is not None for seg in segfiles)
+    if args.project is not None and (has_segmentations or args.worklist is not None):
+        worklist_name = args.worklist or configs.DEFAULT_UPLOAD_WORKLIST_NAME
+        _USER_LOGGER.info(f'Worklist: "{worklist_name}" (created in the project if it does not exist)')
 
     if metadata_files is not None:
         num_metadata_files = sum([1 if metadata is not None else 0 for metadata in metadata_files])
@@ -836,7 +857,9 @@ def main():
                                                      model_name=args.ai_model,
                                                      assemble_dicoms=args.assemble_dicoms,
                                                      metadata=metadata_files,
-                                                     progress_bar=True
+                                                     progress_bar=True,
+                                                     worklist=args.worklist,
+                                                     ai_segmentations=args.ai_segmentations,
                                                      )
         except pydicom.errors.InvalidDicomError as e:
             _USER_LOGGER.error(f'❌ Invalid DICOM file: {e}')

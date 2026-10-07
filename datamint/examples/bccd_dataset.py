@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tqdm.auto import tqdm
 
-from datamint import Api
+from datamint import Api, configs
 from datamint.entities import Project
 
 from . import _common, _download
@@ -83,6 +83,16 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         publish_to=proj,
         progress_bar=True,
     )
+    # Annotations count toward a project only through one of its worklists,
+    # and annotators only see the box labels listed in its annotations.
+    labels = sorted({box.label for sample in samples for box in sample.boxes})
+    worklist_id = api.annotationworklists.create(configs.DEFAULT_UPLOAD_WORKLIST_NAME,
+                                                 resource_ids=list(resource_ids),
+                                                 project=proj,
+                                                 annotations=[{'type': 'square', 'identifier': label,
+                                                               'scope': 'frame', 'required': False}
+                                                              for label in labels],
+                                                 return_entity=False)
 
     n_annotated = 0
     for sample, resource_id in tqdm(zip(samples, resource_ids), total=len(samples),
@@ -96,6 +106,7 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
                 point2=(box.x2, box.y2),
                 resource=resource_id,
                 identifier=box.label,
+                worklist_id=worklist_id,
             )
 
     _common.print_summary(_DATASET_NAME, len(samples), n_annotated, data_dir, proj)

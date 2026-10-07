@@ -1,7 +1,5 @@
 import logging
 
-from tqdm.auto import tqdm
-
 from datamint import Api
 from datamint.entities import Project
 
@@ -42,26 +40,18 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
             image_paths.append(img_path)
             mask_paths.append(mask_path if mask_path.exists() else None)
 
-    resource_ids = api.resources.upload_resources(
+    # normal images have no lesion mask; masks are named 'benign' or 'malignant'.
+    # Uploading them with the resources links them to the project's worklist.
+    segmentation_files = [{'files': [str(mask_path)], 'names': [img_path.parent.name]} if mask_path is not None else None
+                          for img_path, mask_path in zip(image_paths, mask_paths)]
+    api.resources.upload_resources(
         [str(p) for p in image_paths],
         tags=['busi', 'ultrasound', 'breast'],
         publish_to=proj,
+        segmentation_files=segmentation_files,
         progress_bar=True,
     )
 
-    n_annotated = 0
-    for img_path, mask_path, resource_id in tqdm(zip(image_paths, mask_paths, resource_ids),
-                                                  total=len(image_paths),
-                                                  desc='Uploading annotations'):
-        if mask_path is None:
-            continue  # normal images have no lesion mask
-        n_annotated += 1
-        api.annotations.upload_segmentations(
-            resource=resource_id,
-            file_path=mask_path,
-            name=img_path.parent.name,  # 'benign' or 'malignant'
-            imported_from='Original GT BUSI Dataset',
-        )
-
+    n_annotated = sum(mask_path is not None for mask_path in mask_paths)
     _common.print_summary(_DATASET_NAME, len(image_paths), n_annotated, data_dir, proj)
     return proj
