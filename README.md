@@ -71,6 +71,7 @@ flowchart LR
 - [See it in action](#-see-it-in-action)
 - [Features](#-features)
 - [Quick Start](#-quick-start)
+- [Using Datamint with AI agents](#-using-datamint-with-ai-agents)
 - [Documentation](#-documentation)
 - [Support](#-support)
 
@@ -151,6 +152,21 @@ trainer = UNetPPTrainer(project="my-project")
 results = trainer.fit()
 ```
 
+## 🤖 Using Datamint with AI agents
+
+This repository ships skills that teach AI coding agents (Claude Code, Cursor, OpenCode, ...) to use the Datamint SDK correctly: upload, data access, training, custom models, experiments, deployment and end-to-end pipelines.
+
+```bash
+# Claude Code
+claude plugin marketplace add SonanceAI/datamint-python-api
+claude plugin install datamint@datamint
+
+# other agents
+npx skills add SonanceAI/datamint-python-api
+```
+
+See the [Agent Skills guide](https://sonanceai.github.io/datamint-python-api/agent_skills.html) for details.
+
 ## 📚 Documentation
 
 **Difficulty levels:**
@@ -167,6 +183,7 @@ results = trainer.fit()
 | [🧠 Trainer Guide](https://sonanceai.github.io/datamint-python-api/trainer_api.html) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Built-in trainers, trainer lifecycle, and custom model integration |
 | [🔍 Bringing an External Model into Datamint](https://sonanceai.github.io/datamint-python-api/inference.html) | ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) | Integrate, log, and deploy a model trained outside Datamint for inference through the UI |
 | [🛠️ Command Line Tools](https://sonanceai.github.io/datamint-python-api/command_line_tools.html) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Full reference for `datamint upload`, `datamint init`, and `datamint config` |
+| [🤖 Agent Skills](https://sonanceai.github.io/datamint-python-api/agent_skills.html) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) | Install the Datamint skills for Claude Code, Cursor and other AI coding agents |
 | [🔒 SSL Troubleshooting](https://sonanceai.github.io/datamint-python-api/ssl_troubleshooting.html) | — | Fixing `SSLCertVerificationError` |
 | [📓 Notebooks](notebooks/) | ![Beginner](https://img.shields.io/badge/level-beginner-brightgreen) ![Intermediate](https://img.shields.io/badge/level-intermediate-yellow) ![Advanced](https://img.shields.io/badge/level-advanced-red) | Numbered, runnable tutorials. Start at `01_getting_started` and work through annotations, datasets, experiment tracking, deployment, and a full end-to-end example |
 

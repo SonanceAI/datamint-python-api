@@ -97,6 +97,14 @@ For Developers
 
       Side-by-side comparison of raw PyTorch/Lightning code vs the Datamint equivalent.
 
+   .. grid-item-card:: Agent Skills
+      :link: agent_skills
+      :link-type: doc
+
+      :bdg-success:`Beginner`
+
+      Install the Datamint skills for Claude Code, Cursor and other AI coding agents.
+
    .. grid-item-card:: SSL Troubleshooting
       :link: ssl_troubleshooting
       :link-type: doc
@@ -117,6 +125,7 @@ For Developers
    inference
    tutorials
    datamint_vs_raw_pytorch
+   agent_skills
    ssl_troubleshooting
 
 For Non-Developers

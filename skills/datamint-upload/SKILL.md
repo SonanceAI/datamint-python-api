@@ -65,7 +65,7 @@ segmentation_files = [
 ```
 
 - `files`: list of mask files for that resource. The mask must match the image geometry (same size and frames/slices). If axes are swapped, pass `transpose_segmentation=True`.
-- `names`: `{pixel_value: name}` dict, or a list of names with the same length as `files`.
+- `names`: a `{pixel_value: name}` dict (e.g. `{1: 'Lesion'}`). With several mask files per resource, use a list of such dicts, one per file. Plain strings are not accepted here.
 
 With `publish_to` set:
 - Resources are added to the worklist `'Imported annotations'` of the project (created if missing), and the masks are linked to it. Resources without masks are added too, so they show as still to annotate.

@@ -1,0 +1,20 @@
+{
+  "name": "datamint",
+  "description": "Datamint plugins for AI coding agents.",
+  "owner": {
+    "name": "Datamint",
+    "url": "https://datamint.io/"
+  },
+  "plugins": [
+    {
+      "name": "datamint",
+      "description": "Skills for the Datamint Python SDK: upload, data access, training, custom models, experiments, deployment and end-to-end pipelines.",
+      "author": {
+        "name": "Datamint"
+      },
+      "category": "development",
+      "source": "./",
+      "homepage": "https://github.com/SonanceAI/datamint-python-api"
+    }
+  ]
+}

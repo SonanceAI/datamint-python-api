@@ -1,0 +1,12 @@
+{
+  "name": "datamint",
+  "version": "0.1.0",
+  "description": "Skills for the Datamint Python SDK: uploading data and annotations, exploring and downloading data, training models, bringing your own model, experiment tracking, deployment and inference, and end-to-end pipelines.",
+  "author": {
+    "name": "Datamint",
+    "url": "https://datamint.io/"
+  },
+  "homepage": "https://sonanceai.github.io/datamint-python-api/",
+  "repository": "https://github.com/SonanceAI/datamint-python-api",
+  "skills": "./skills/"
+}
