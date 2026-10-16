@@ -108,6 +108,11 @@ dmypy.json
 logs/
 junit/
 
+# training / MLflow run artifacts
+mlruns/
+lightning_logs/
+**/checkpoints/
+
 # local dev files and folders
 .local
 

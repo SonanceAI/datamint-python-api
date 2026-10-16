@@ -20,7 +20,7 @@ from pydantic import BeforeValidator, Field, PlainSerializer
 
 from datamint.types import CacheMode, ImagingData
 
-from .annotation import Annotation
+from .annotation import Annotation, _normalize_annotation_data
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -285,6 +285,63 @@ class BaseSegmentationAnnotation(Annotation):
             'Segmentation annotations require file upload. '
             'Use upload_segmentations or upload_volume_segmentation instead.'
         )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> 'BaseSegmentationAnnotation':
+        """Create a segmentation annotation from a dictionary.
+
+        This overrides :meth:`Annotation.from_dict`, which rejects
+        segmentation annotations that have no associated ``file``.  A
+        segmentation payload may instead carry the mask inline through the
+        ``segmentation_data`` field (or its ``mask`` alias), as produced by
+        :meth:`BaseEntity.asdict` / ``model_dump``.  Such payloads are
+        accepted here and the mask is decoded by the Pydantic
+        ``BeforeValidator`` on :attr:`segmentation_data`.
+
+        Args:
+            data: Dictionary containing annotation data, optionally including
+                an inline ``segmentation_data`` (or ``mask``) payload.
+
+        Returns:
+            A segmentation annotation instance with ``segmentation_data``
+            decoded to a native object (``np.ndarray``, ``PIL.Image.Image``
+            or ``Nifti1Image``).
+
+        Raises:
+            ValueError: If neither an associated ``file`` nor an inline
+                ``segmentation_data`` payload is present.
+
+        Example:
+            >>> import json
+            >>> from datamint.entities.annotations import ImageSegmentation
+            >>> with open('annotation.json') as f:
+            ...     raw = json.load(f)  # list[list[dict]]
+            >>> seg = ImageSegmentation.from_dict(raw[0][0])
+            >>> seg.segmentation_data.shape
+        """
+        converted_data = _normalize_annotation_data(data)
+
+        has_inline_mask = (
+            converted_data.get('segmentation_data') is not None
+            or converted_data.get('mask') is not None
+        )
+
+        if converted_data.get('file') is None and not has_inline_mask:
+            raise ValueError(
+                "Segmentation annotations must have an associated file or an "
+                f"inline segmentation_data payload. {data}"
+            )
+
+        # Accept both field names and their aliases (e.g. ``mask`` for
+        # ``segmentation_data``) so inline payloads are not silently dropped.
+        valid_fields = set(cls.model_fields)
+        for field in cls.model_fields.values():
+            if field.alias:
+                valid_fields.add(field.alias)
+
+        filtered_data = {k: v for k, v in converted_data.items() if k in valid_fields}
+
+        return cls(**filtered_data)
 
     @overload
     def fetch_file_data(

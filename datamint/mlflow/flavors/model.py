@@ -281,28 +281,35 @@ class BaseDatamintModel(PythonModel, ABC):
         :class:`~datamint.mlflow.flavors.prediction_router.DeployedModelPrompts` instance before dispatch,
         so ``predict_*`` handlers receive a typed object rather than a raw dict. 
         """
-        params = dict(params or {})
-        log_predictions = params.pop('log_predictions', False)
-        model_name = params.pop('model_name', None)
+        logger.info(f'Predicting on {len(model_input)} resources')
+        try:
+            params = dict(params or {})
+            log_predictions = params.pop('log_predictions', False)
+            model_name = params.pop('model_name', None)
 
-        raw_prompts = params.pop('prompts', None)
-        if raw_prompts is not None:
-            
-            # Sent JSON-encoded
-            if isinstance(raw_prompts, str):
-                raw_prompts = json.loads(raw_prompts)
-            params['prompts'] = (
-                raw_prompts
-                if isinstance(raw_prompts, DeployedModelPrompts)
-                else DeployedModelPrompts.from_dict(raw_prompts)
-            )
+            raw_prompts = params.pop('prompts', None)
+            if raw_prompts is not None:
+                
+                # Sent JSON-encoded
+                if isinstance(raw_prompts, str):
+                    raw_prompts = json.loads(raw_prompts)
+                params['prompts'] = (
+                    raw_prompts
+                    if isinstance(raw_prompts, DeployedModelPrompts)
+                    else DeployedModelPrompts.from_dict(raw_prompts)
+                )
 
-        result = self._router.dispatch(model_input, params)
 
-        if log_predictions:
-            self._log_predictions(model_input, result, model_name=model_name)
+            result = self._router.dispatch(model_input, params)
 
-        return result
+            if log_predictions:
+                self._log_predictions(model_input, result, model_name=model_name)
+
+            return result
+        except Exception as e:
+            logger.error(f'Failed to predict on {len(model_input)} resources: {e}')
+            logger.exception(e)
+            raise
 
     def _log_predictions(
         self,
