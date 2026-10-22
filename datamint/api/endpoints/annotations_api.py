@@ -36,6 +36,7 @@ from datamint.entities.annotations import (
     annotation_from_dict,
 )
 from datamint.exceptions import ItemNotFoundError, ServerError
+from datamint.utils.date_utils import to_iso_date_str
 from datamint.utils.nifti_utils import metadata_to_nifti_obj
 
 from ..entity_base_api import ApiConfig, CreatableEntityApi, DeletableEntityApi
@@ -81,8 +82,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  resource: str | Resource | Sequence[str | Resource] | None = None,
                  annotation_type: AnnotationType | str | None = None,
                  annotator_email: str | None = None,
-                 from_date: date | None = None,
-                 to_date: date | None = None,
+                 from_date: date | str | None = None,
+                 to_date: date | str | None = None,
                  dataset_id: str | None = None,
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
@@ -98,8 +99,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                  resource: str | Resource | Sequence[str | Resource] | None = None,
                  annotation_type: AnnotationType | str | None = None,
                  annotator_email: str | None = None,
-                 from_date: date | None = None,
-                 to_date: date | None = None,
+                 from_date: date | str | None = None,
+                 to_date: date | str | None = None,
                  dataset_id: str | None = None,
                  worklist_id: str | None = None,
                  status: Literal['new', 'published'] | None = None,
@@ -116,8 +117,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         resource: str | Resource | Sequence[str | Resource] | None = None,
         annotation_type: AnnotationType | str | None = None,
         annotator_email: str | None = None,
-        from_date: date | None = None,
-        to_date: date | None = None,
+        from_date: date | str | None = None,
+        to_date: date | str | None = None,
         dataset_id: str | None = None,
         worklist_id: str | None = None,
         status: Literal['new', 'published'] | None = None,
@@ -136,8 +137,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 a list of resources, or None to retrieve annotations from all resources.
             annotation_type: Filter by annotation type (e.g., 'segmentation', 'category').
             annotator_email: Filter by annotator email address.
-            from_date: Filter annotations created on or after this date.
-            to_date: Filter annotations created on or before this date.
+            from_date: Filter annotations created on or after this date (``date`` or ISO date string).
+            to_date: Filter annotations created on or before this date (``date`` or ISO date string).
             dataset_id: Filter by dataset unique id.
             worklist_id: Filter by annotation worklist unique id.
             status: Filter by annotation status ('new' or 'published').
@@ -190,8 +191,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         payload = {
             'annotation_type': annotation_type,
             'annotatorEmail': annotator_email,
-            'from': from_date.isoformat() if from_date is not None else None,
-            'to': to_date.isoformat() if to_date is not None else None,
+            'from': to_iso_date_str(from_date),
+            'to': to_iso_date_str(to_date),
             'dataset_id': dataset_id,
             'annotation_worklist_id': worklist_id,
             'status': status,
