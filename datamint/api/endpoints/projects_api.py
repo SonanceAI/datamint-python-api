@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
@@ -8,6 +9,7 @@ import httpx
 from datamint.entities.project import Project
 from datamint.entities.project_resource_split import ProjectResourceSplit
 from datamint.entities.resource import Resource
+from datamint.utils.date_utils import to_iso_date_str
 from datamint.exceptions import (
     DefaultProjectNotSetError,
     EntityAlreadyExistsError,
@@ -544,8 +546,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
                              format: str = 'csv',
                              annotators: list[str] | None = None,
                              annotations: list[str] | None = None,
-                             from_date: str | None = None,
-                             to_date: str | None = None,
+                             from_date: date | str | None = None,
+                             to_date: date | str | None = None,
                              progress_bar: bool = True,
                              project: str | Project | None = None) -> None:
         """Download annotation data as a CSV or Excel file.
@@ -555,8 +557,8 @@ class ProjectsApi(CRUDEntityApi[Project]):
             format: Export format, ``'csv'`` (default) or ``'xlsx'``.
             annotators: Optional list of annotator emails to include.
             annotations: Optional list of annotation identifiers to include.
-            from_date: Optional start date filter (ISO string).
-            to_date: Optional end date filter (ISO string).
+            from_date: Optional start date filter (``date`` or ISO date string).
+            to_date: Optional end date filter (``date`` or ISO date string).
             progress_bar: Whether to display a progress bar.
             project: The project ID or Project instance. Falls back to the
                 session's default project (see `datamint.select_project()`) when omitted.
@@ -566,9 +568,9 @@ class ProjectsApi(CRUDEntityApi[Project]):
         proj_id = self._entid(self._resolve_project_or_default(project))
         params: dict = {'format': format}
         if from_date is not None:
-            params['from'] = from_date
+            params['from'] = to_iso_date_str(from_date)
         if to_date is not None:
-            params['to'] = to_date
+            params['to'] = to_iso_date_str(to_date)
         if annotators is not None:
             params['annotators[]'] = annotators
         if annotations is not None:

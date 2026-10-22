@@ -30,6 +30,7 @@ from datamint.entities.annotations import AnnotationType
 from datamint.entities.annotations.annotation import Annotation
 from datamint.exceptions import ItemNotFoundError, ServerError, ValidationError
 from datamint.types import ImagingData
+from datamint.utils.date_utils import to_iso_date_str
 from datamint.utils.collection_utils import ChainedSequence
 
 from ..base_api import ApiConfig, BaseApi
@@ -191,22 +192,10 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 'include' returns both. Deleted resources are only visible to admins and librarians.
         """
 
-        # Convert datetime objects to ISO format
-        if from_date:
-            if isinstance(from_date, str):
-                date.fromisoformat(from_date)
-            else:
-                from_date = from_date.isoformat()
-        if to_date:
-            if isinstance(to_date, str):
-                date.fromisoformat(to_date)
-            else:
-                to_date = to_date.isoformat()
-
         # Prepare the payload
         payload = {
-            "from": from_date,
-            "to": to_date,
+            "from": to_iso_date_str(from_date),
+            "to": to_iso_date_str(to_date),
             "status": status if status is not None else "",
             "modality": modality,
             "mimetype": mimetype,

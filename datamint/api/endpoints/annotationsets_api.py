@@ -1,10 +1,12 @@
 import logging
 from collections.abc import Sequence
+from datetime import date
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 from typing_extensions import override
 
 from datamint.entities.annotation_worklist import AnnotationWorklist
+from datamint.utils.date_utils import to_iso_date_str
 
 from ..entity_base_api import CreatableEntityApi, UpdatableEntityApi
 
@@ -723,8 +725,8 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
     def download_annotations(
         self,
         worklist_id: str | None = None,
-        from_date: str | None = None,
-        to_date: str | None = None,
+        from_date: date | str | None = None,
+        to_date: date | str | None = None,
         annotators: list[str] | None = None,
         annotations: list[str] | None = None,
         format: str = 'csv',
@@ -733,8 +735,8 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
 
         Args:
             worklist_id: The annotation worklist ID.
-            from_date: Optional start date filter (ISO string).
-            to_date: Optional end date filter (ISO string).
+            from_date: Optional start date filter (``date`` or ISO date string).
+            to_date: Optional end date filter (``date`` or ISO date string).
             annotators: Optional list of annotator emails. Accepts either a repeated/array
                 input or a comma-separated string.
             annotations: Optional list of annotation identifiers. Accepts either a repeated/array
@@ -749,9 +751,9 @@ class AnnotationWorklistApi(CreatableEntityApi[AnnotationWorklist],
 
         params: dict[str, str | list[str]] = {'format': format}
         if from_date is not None:
-            params['from'] = from_date
+            params['from'] = to_iso_date_str(from_date)
         if to_date is not None:
-            params['to'] = to_date
+            params['to'] = to_iso_date_str(to_date)
         if annotators is not None:
             params['annotators[]'] = annotators
         if annotations is not None:
