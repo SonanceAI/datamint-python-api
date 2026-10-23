@@ -6,7 +6,7 @@ from collections.abc import Generator, Sequence
 from datetime import date
 from io import BytesIO
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, BinaryIO, Literal, overload
+from typing import IO, TYPE_CHECKING, Any, Literal, overload
 
 import aiohttp
 import httpx
@@ -308,7 +308,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             )
 
         # Handle frame-by-frame upload (existing logic)
-        nframes, fios = AnnotationsApi._generate_segmentations_ios(
+        nframes, frames = AnnotationsApi._generate_segmentation_frames(
             file_path, transpose_segmentation=transpose_segmentation
         )
         if frame_index is None:
@@ -323,11 +323,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             raise ValueError("frame_index must be a list of integers or None.")
 
         annotids = []
-        for fidx, f in zip(frames_indices, fios):
+        for fidx, frame in zip(frames_indices, frames):
             frame_annotids = await self._upload_single_frame_segmentation_async(
                 resource_id=resource_id,
                 frame_index=fidx,
-                fio=f,
+                frame=frame,
                 name=name,
                 imported_from=imported_from,
                 author_email=author_email,
@@ -343,7 +343,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     async def _upload_single_frame_segmentation_async(self,
                                                       resource_id: str,
                                                       frame_index: int | None,
-                                                      fio: IO,
+                                                      frame: np.ndarray,
                                                       name: dict[int, str] | dict[tuple, str],
                                                       imported_from: str | None = None,
                                                       author_email: str | None = None,
@@ -359,7 +359,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Args:
             resource_id: The resource unique id.
             frame_index: The frame index for the segmentation.
-            fio: File-like object containing the segmentation image.
+            frame: Segmentation frame as a uint8 array of shape (height, width, 3).
             name: The name of the segmentation, a dictionary mapping pixel values to names,
                   or a dictionary mapping RGB tuples to names.
             imported_from: The imported from value.
@@ -373,81 +373,73 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             List of annotation IDs created.
         """
         try:
-            try:
-                img_pil = Image.open(fio)
-                img_array = np.array(img_pil)  # shape: (height, width, channels)
-                # Returns a list of (count, color) tuples
-                unique_vals = img_pil.getcolors(maxcolors=MAX_NUMBER_DISTINCT_COLORS)
-                # convert to list of RGB tuples
-                if unique_vals is None:
-                    raise ValueError(f'Number of unique colors exceeds {MAX_NUMBER_DISTINCT_COLORS}.')
-                rgb_unique_vals = [
-                    (int(color[0]), int(color[1]), int(color[2]))
-                    for _, color in unique_vals
-                    if isinstance(color, tuple) and len(color) >= 3
-                ]
-                # Remove black/transparent pixels
-                black_pixel = (0, 0, 0)
-                rgb_unique_vals = [rgb for rgb in rgb_unique_vals if rgb != black_pixel]
+            # Returns a list of (count, color) tuples
+            unique_vals = Image.fromarray(frame).getcolors(maxcolors=MAX_NUMBER_DISTINCT_COLORS)
+            # convert to list of RGB tuples
+            if unique_vals is None:
+                raise ValueError(f'Number of unique colors exceeds {MAX_NUMBER_DISTINCT_COLORS}.')
+            rgb_unique_vals = [
+                (int(color[0]), int(color[1]), int(color[2]))
+                for _, color in unique_vals
+                if isinstance(color, tuple) and len(color) >= 3
+            ]
+            # Remove black pixels
+            black_pixel = (0, 0, 0)
+            rgb_unique_vals = [rgb for rgb in rgb_unique_vals if rgb != black_pixel]
 
-                rgb_name_map: dict[tuple[int, int, int] | str, str] = {}
-                for key, value in name.items():
-                    if key == 'default':
-                        rgb_name_map['default'] = value
-                    elif isinstance(key, tuple) and len(key) >= 3:
-                        rgb_name_map[(int(key[0]), int(key[1]), int(key[2]))] = value
+            rgb_name_map: dict[tuple[int, int, int] | str, str] = {}
+            for key, value in name.items():
+                if key == 'default':
+                    rgb_name_map['default'] = value
+                elif isinstance(key, tuple) and len(key) >= 3:
+                    rgb_name_map[(int(key[0]), int(key[1]), int(key[2]))] = value
 
-                if discard_empty_segmentations:
-                    if len(rgb_unique_vals) == 0:
-                        msg = f"Discarding empty RGB segmentation for frame {frame_index}"
-                        _LOGGER.debug(msg)
-                        _USER_LOGGER.debug(msg)
-                        return []
-                segnames = AnnotationsApi._get_segmentation_names_rgb(rgb_unique_vals, names=rgb_name_map)
-                segs_generator = AnnotationsApi._split_rgb_segmentations(img_array, rgb_unique_vals)
+            if discard_empty_segmentations:
+                if len(rgb_unique_vals) == 0:
+                    msg = f"Discarding empty RGB segmentation for frame {frame_index}"
+                    _LOGGER.debug(msg)
+                    _USER_LOGGER.debug(msg)
+                    return []
+            segnames = AnnotationsApi._get_segmentation_names_rgb(rgb_unique_vals, names=rgb_name_map)
+            segs_generator = AnnotationsApi._split_rgb_segmentations(frame, rgb_unique_vals)
 
-                fio.seek(0)
-                # TODO: Optimize this. It is not necessary to open the image twice.
+            # Create annotations
+            annotations: list[CreateAnnotationDto] = []
+            for segname in segnames:
+                ann = CreateAnnotationDto(
+                    type='segmentation',
+                    identifier=segname,
+                    scope='frame',
+                    frame_index=frame_index,
+                    imported_from=imported_from,
+                    import_author=author_email,
+                    model_id=model_id,
+                    annotation_worklist_id=worklist_id,
+                    source=source,
+                )
+                annotations.append(ann)
 
-                # Create annotations
-                annotations: list[CreateAnnotationDto] = []
-                for segname in segnames:
-                    ann = CreateAnnotationDto(
-                        type='segmentation',
-                        identifier=segname,
-                        scope='frame',
-                        frame_index=frame_index,
-                        imported_from=imported_from,
-                        import_author=author_email,
-                        model_id=model_id,
-                        annotation_worklist_id=worklist_id,
-                        source=source,
-                    )
-                    annotations.append(ann)
+            # Validate unique identifiers
+            if len(annotations) != len({a.identifier for a in annotations}):
+                raise ValueError(
+                    "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
+                )
 
-                # Validate unique identifiers
-                if len(annotations) != len({a.identifier for a in annotations}):
-                    raise ValueError(
-                        "Multiple annotations with the same identifier, frame_index, scope and author is not supported yet."
-                    )
-
-                annotids = await self._create_annotations_async(resource_id=resource_id,
-                                                                annotations_dto=annotations,
-                                                                session=session)
-
-                # Upload segmentation files
-                if len(annotids) != len(segnames):
-                    _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
-                                    f" does not match the number of annotations ({len(segnames)})")
-
-                for annotid, segname, fio_seg in zip(annotids, segnames, segs_generator):
-                    await self.upload_annotation_file_async(resource_id, annotid, fio_seg,
-                                                            content_type='image/png',
-                                                            filename=segname,
+            annotids = await self._create_annotations_async(resource_id=resource_id,
+                                                            annotations_dto=annotations,
                                                             session=session)
-                return annotids
-            finally:
-                fio.close()
+
+            # Upload segmentation files
+            if len(annotids) != len(segnames):
+                _LOGGER.warning(f"Number of uploaded annotations ({len(annotids)})" +
+                                f" does not match the number of annotations ({len(segnames)})")
+
+            for annotid, segname, fio_seg in zip(annotids, segnames, segs_generator):
+                await self.upload_annotation_file_async(resource_id, annotid, fio_seg,
+                                                        content_type='image/png',
+                                                        filename=segname,
+                                                        session=session)
+            return annotids
         except ItemNotFoundError:
             raise ItemNotFoundError('resource', {'resource_id': resource_id})
 
@@ -1014,9 +1006,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         _USER_LOGGER.info(f'Volume segmentation uploaded for resource {resource_id}')
 
     @staticmethod
-    def _generate_segmentations_ios(file_path: str | np.ndarray,
-                                    transpose_segmentation: bool = False
-                                    ) -> tuple[int, Generator[BinaryIO, None, None]]:
+    def _generate_segmentation_frames(file_path: str | np.ndarray,
+                                      transpose_segmentation: bool = False
+                                      ) -> tuple[int, Generator[np.ndarray, None, None]]:
         if not isinstance(file_path, (str, np.ndarray)):
             raise ValueError(f"Unsupported file type: {type(file_path)}")
 
@@ -1030,7 +1022,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
 
             nframes = normalized_imgs.shape[3]
-            fios = AnnotationsApi._numpy_to_bytesio_png(normalized_imgs)
+            frames = AnnotationsApi._numpy_to_rgb_frames(normalized_imgs)
 
         elif file_path.endswith(('.nii', '.nii.gz')):
             loaded_image: Any = nib_load(file_path)
@@ -1046,7 +1038,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
 
             nframes = normalized_imgs.shape[3]
-            fios = AnnotationsApi._numpy_to_bytesio_png(normalized_imgs)
+            frames = AnnotationsApi._numpy_to_rgb_frames(normalized_imgs)
 
         elif file_path.endswith('.png'):
             with Image.open(file_path) as img:
@@ -1056,12 +1048,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 if transpose_segmentation:
                     normalized_imgs = normalized_imgs.transpose(0, 2, 1, 3)
 
-                fios = AnnotationsApi._numpy_to_bytesio_png(normalized_imgs)
+                frames = AnnotationsApi._numpy_to_rgb_frames(normalized_imgs)
                 nframes = 1
         else:
             raise ValueError(f"Unsupported file format of '{file_path}'")
 
-        return nframes, fios
+        return nframes, frames
 
     @staticmethod
     def _normalize_segmentation_array(seg_imgs: np.ndarray) -> np.ndarray:
@@ -1088,15 +1080,15 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         return seg_imgs
 
     @staticmethod
-    def _numpy_to_bytesio_png(seg_imgs: np.ndarray) -> Generator[BinaryIO, None, None]:
+    def _numpy_to_rgb_frames(seg_imgs: np.ndarray) -> Generator[np.ndarray, None, None]:
         """
-        Convert normalized segmentation images to PNG BytesIO objects.
+        Convert normalized segmentation images to RGB frames.
 
         Args:
             seg_imgs: Normalized segmentation array in shape (channels, height, width, frames).
 
         Yields:
-            BinaryIO: PNG image data as BytesIO objects
+            np.ndarray: uint8 array of shape (height, width, 3)
         """
         # PIL RGB format is: (height, width, channels)
         if seg_imgs.shape[0] not in [1, 3, 4]:
@@ -1105,13 +1097,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         for i in range(nframes):
             img = seg_imgs[:, :, :, i].astype(np.uint8)
             if img.shape[0] == 1:
-                pil_img = Image.fromarray(img[0]).convert('RGB')
-            else:
-                pil_img = Image.fromarray(img.transpose(1, 2, 0))
-            img_bytes = BytesIO()
-            pil_img.save(img_bytes, format='PNG')
-            img_bytes.seek(0)
-            yield img_bytes
+                img = np.repeat(img, 3, axis=0)
+            yield np.ascontiguousarray(img[:3].transpose(1, 2, 0))
 
     def create_image_classification(self,
                                     resource: str | Resource,
