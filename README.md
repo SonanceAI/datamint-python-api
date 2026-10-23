@@ -7,7 +7,7 @@
 ![Build Status](https://github.com/SonanceAI/datamint-python-api/actions/workflows/run_test.yaml/badge.svg)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-Datamint turns medical imaging ML work. Dataset management, annotation, training, and deployment into a few lines of Python, with built-in support for DICOM/NIfTI/PNG, PyTorch Lightning trainers, and MLflow tracking.
+Datamint turns medical imaging ML work (dataset management, annotation, training and deployment) into a few lines of Python, with built-in support for DICOM, NIfTI and PNG, PyTorch Lightning trainers and MLflow tracking.
 
 **Common use cases:** 🩻 Segmentation · 🏷️ Classification · 📦 Detection
 
