@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.45.0"
+version = "2.46.0a0"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -58,7 +58,7 @@ platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
 lightning = { extras = ['extra'], version = ">=2.5.6" }
-mlflow-skinny = "==3.8.1"
+mlflow-skinny = "==3.17.*"
 Flask = { version = "<4" }
 Flask-Cors = { version = "<7" }
 albumentations = ">=2.0.0"
