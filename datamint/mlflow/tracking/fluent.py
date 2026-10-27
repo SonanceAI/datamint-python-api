@@ -1,7 +1,10 @@
 import logging
 import os
 import threading
+import uuid
 from typing import TYPE_CHECKING
+
+import mlflow
 
 from datamint import Api
 from datamint.exceptions import ItemNotFoundError
@@ -16,6 +19,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _ACTIVE_PROJECT_ID: str | None = None
 _ACTIVE_PROJECT_NAME: str | None = None
+
+#: MLflow workspace that holds a Datamint project: ``proj-<canonical uuid>``.
+#: Both client and server canonicalise the id through ``uuid.UUID``.
+PROJECT_WORKSPACE_PREFIX = 'proj-'
 
 
 def get_active_project_id() -> str | None:
@@ -77,6 +84,30 @@ def _get_project_by_name_or_id(project_name_or_id: str) -> 'Project':
     return project
 
 
+def bind_project_workspace(project_id: str) -> str:
+    """Bind the MLflow workspace that holds *project_id*, returning its name.
+
+    The id is canonicalised through :class:`uuid.UUID` to match the server's
+    ``proj-<uuid>`` naming.
+
+    Raises:
+        ValueError: If *project_id* is not a UUID.
+    """
+    try:
+        workspace = f'{PROJECT_WORKSPACE_PREFIX}{uuid.UUID(str(project_id))}'
+    except ValueError as exc:
+        raise ValueError(f'Datamint project id {project_id!r} is not a UUID.') from exc
+    mlflow.set_workspace(workspace)
+    _LOGGER.debug('Bound MLflow workspace %s', workspace)
+    return workspace
+
+
+def release_project_workspace() -> None:
+    """Release the bound MLflow workspace so no project context leaks further."""
+    mlflow.set_workspace(None)
+    _LOGGER.debug('Released the MLflow workspace binding')
+
+
 def set_project(project: 'Project | str'):
     """
     Set the active project for the current session.
@@ -84,8 +115,18 @@ def set_project(project: 'Project | str'):
     The project's name also becomes the default MLflow experiment name for
     any run started without an explicit experiment (see `DatamintExperimentProvider`).
 
+    The matching MLflow workspace (``proj-<project uuid>``) is bound as well, so
+    every tracking, registry and artifact call is scoped to the project instead
+    of the reserved ``default`` workspace.
+
     Args:
         project: The Project instance or project name/ID to set as active.
+
+    Returns:
+        The resolved Project instance.
+
+    Raises:
+        ValueError: If the resolved project's id is not a UUID.
     """
     global _ACTIVE_PROJECT_ID, _ACTIVE_PROJECT_NAME
 
@@ -95,6 +136,10 @@ def set_project(project: 'Project | str'):
     with _PROJECT_LOCK:
         if isinstance(project, str):
             project = _get_project_by_name_or_id(project)
+
+        # Validate and bind before mutating state: an invalid id must not leave
+        # the process pointing at a project whose workspace cannot be addressed.
+        bind_project_workspace(project.id)
 
         _ACTIVE_PROJECT_ID = project.id
         _ACTIVE_PROJECT_NAME = project.name
@@ -117,6 +162,10 @@ def _reset_active_project():
         _reset_default_experiment_cache()
 
     os.environ.pop(EnvVars.DATAMINT_PROJECT_ID.value, None)
+
+    # Drop the workspace too, otherwise the previous project's workspace stays
+    # bound for the rest of the process: a cross-tenant read waiting to happen.
+    release_project_workspace()
 
 
 def _reset_default_experiment_cache():
