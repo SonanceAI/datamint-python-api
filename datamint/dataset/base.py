@@ -60,7 +60,10 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         return_metainfo: If True, include metadata in output.
         return_segmentations: If True, process and return segmentations.
         return_as_semantic_segmentation: If True, convert to semantic format.
-        semantic_seg_merge_strategy: Strategy for merging multi-annotator segs.
+        semantic_seg_merge_strategy: Strategy for merging multi-annotator segs:
+            'union', 'intersection', 'mode' (majority, ties positive) or 'consensus_soft'
+            (per-pixel fraction of annotators, e.g. 2 of 3 -> 0.67; built-in modules train on it
+            and compute metrics against ``>= 0.5``). Not used by nnU-Net.
         alb_transform: Albumentations transform.
         include_unannotated: If True, include resources without annotations.
         include_annotators: Whitelist of annotators.
@@ -85,6 +88,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             Pass ``None`` to disable this filtering entirely and include every source.
             A resource whose annotations are all excluded is treated as unannotated,
             so it is kept (with an empty mask) unless ``include_unannotated=False``.
+        label_weighting: ``'agreement'`` adds ``item['agreement_weight']``, floored at 0.1 and
+            1.0 with fewer than 2 annotators. With ``return_as_semantic_segmentation=True``: mean
+            pairwise Dice between annotators' semantic masks (after ``alb_transform``), averaged
+            over labeled classes. Otherwise requires ``image_categories_merge_strategy='mode'``:
+            fraction of annotators that voted for the majority category.
     """
 
     resources: Sequence['Resource']
@@ -119,6 +127,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         image_categories_merge_strategy: MergeStrategy | None = None,
         worklists: Sequence[AnnotationWorklist] | Literal['all'] | None = 'all',
         trusted_annotation_sources: Sequence[str] | None = ('imported', 'manual'),
+        label_weighting: Literal['agreement'] | None = None,
     ):
         # Validate merge strategy values
         _valid_strategies = ('union', 'intersection', 'mode', None)
@@ -157,6 +166,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             raise ValueError("Cannot return semantic segmentation without returning segmentations.")
         if semantic_seg_merge_strategy and not return_as_semantic_segmentation:
             raise ValueError("semantic_seg_merge_strategy requires return_as_semantic_segmentation=True")
+        if label_weighting not in ('agreement', None):
+            raise ValueError(f"label_weighting must be 'agreement' or None, got {label_weighting!r}")
+        if label_weighting and not (return_as_semantic_segmentation or image_categories_merge_strategy == 'mode'):
+            raise ValueError(
+                "label_weighting requires return_as_semantic_segmentation=True "
+                "or image_categories_merge_strategy='mode'"
+            )
 
         # Store API configuration for (possibly deferred) initialization
         self._server_url = server_url
@@ -172,6 +188,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         self.return_boxes = return_boxes
         self.return_as_semantic_segmentation = return_as_semantic_segmentation
         self.semantic_seg_merge_strategy: MergeStrategy | None = semantic_seg_merge_strategy
+        self.label_weighting: Literal['agreement'] | None = label_weighting
         self.include_unannotated = include_unannotated
         self.worklists = worklists
 
@@ -423,7 +440,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
     def _extract_image_categories(
         self,
         annotations: Sequence['Annotation'],
-    ) -> dict[str, torch.Tensor] | torch.Tensor:
+    ) -> tuple[dict[str, torch.Tensor] | torch.Tensor, torch.Tensor | None]:
         """Extract image-level category annotations.
 
         When ``image_categories_merge_strategy`` is ``None`` (default), returns a dict
@@ -436,20 +453,28 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             annotations: All annotations for the item.
 
         Returns:
-            Dict[annotator_id, Tensor] or merged Tensor depending on
-            :attr:`image_categories_merge_strategy`.
+            Tuple of (Dict[annotator_id, Tensor] or merged Tensor depending on
+            :attr:`image_categories_merge_strategy`, category agreement weight as a 0-d
+            tensor if ``label_weighting='agreement'`` applies to categories, else ``None``).
         """
         category_annotations = AnnotationProcessor.filter_annotations(
             annotations, type='category', scope='image'
         )
         categories_dict = self.annotation_processor.convert_image_categories(category_annotations)
         if self.image_categories_merge_strategy is None:
-            return categories_dict
-        return AnnotationProcessor.merge_image_categories(
+            return categories_dict, None
+        agreement_weight = None
+        
+        # With semantic masks the weight comes from the segmentations instead.
+        if (getattr(self, 'label_weighting', None) == 'agreement' and not self.return_as_semantic_segmentation and self.image_categories_merge_strategy == 'mode'):
+            agreement_weight = torch.tensor(AnnotationProcessor.compute_category_agreement_weight(categories_dict))
+            
+        merged = AnnotationProcessor.merge_image_categories(
             categories_dict,
             self.image_categories_merge_strategy,
             num_categories=len(self.image_categories_set),
         )
+        return merged, agreement_weight
 
     def _validate_filter_params(
         self,
@@ -1008,7 +1033,8 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
     def _process_segmentations(self,
                                segmentations: dict,
                                seg_labels: dict,
-                               output_shape: tuple | None = None) -> tuple[Tensor | np.ndarray | dict, dict | None]:
+                               output_shape: tuple | None = None
+                               ) -> tuple[Tensor | np.ndarray | dict, dict | None, Tensor | None]:
         """Process segmentations by optionally converting to semantic format and applying merge strategy.
 
         Args:
@@ -1017,8 +1043,10 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             output_shape: Fallback output shape for semantic segmentation with no segmentations.
 
         Returns:
-            Tuple of (processed segmentations, seg_labels or ``None``).
+            Tuple of (processed segmentations, seg_labels or ``None``,
+            agreement weight as a 0-d tensor if ``label_weighting='agreement'``, else ``None``).
         """
+        agreement_weight = None
         # segmentations['author'] shape: (#instances, depth, H, W)
         if self.return_as_semantic_segmentation:
             sem_segs = {}
@@ -1028,6 +1056,11 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                     num_labels=len(self.segmentation_labels_set)
                 )
             segmentations = sem_segs
+            
+            if getattr(self, 'label_weighting', None) == 'agreement':
+                # Before the merge: needs per-annotator masks
+                agreement_weight = torch.tensor(self.annotation_processor.compute_agreement_weight(sem_segs))
+                
             if self.semantic_seg_merge_strategy:
                 if len(segmentations) > 0:
                     segmentations = self.annotation_processor.apply_merge_strategy(
@@ -1052,7 +1085,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
                 # In semantic format, we don't need `seg_labels`, as the label info is at the new dimension (axis=0) of the semantic segmentation array.
                 seg_labels = None
 
-        return segmentations, seg_labels
+        return segmentations, seg_labels, agreement_weight
 
     def __getitem__(self, index: int) -> dict[str, Any]:
         """Get item with full processing."""
@@ -1092,10 +1125,13 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         # Post-process and write to result
         if self.return_segmentations:
             masks = targets.get('masks', {})
-            masks, seg_labels = self._process_segmentations(masks, seg_labels, output_shape=img.shape[1:])
+            masks, seg_labels, agreement_weight = self._process_segmentations(
+                masks, seg_labels, output_shape=img.shape[1:])
             result['masks'] = masks
             if seg_labels:
                 result['mask_labels'] = seg_labels
+            if agreement_weight is not None:
+                result['agreement_weight'] = agreement_weight
 
         if self.return_boxes:
             result['boxes'] = targets.get('boxes', torch.zeros((0, 4), dtype=torch.float32))
@@ -1103,7 +1139,9 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
-        result['image_categories'] = self._extract_image_categories(annotations)
+        result['image_categories'], category_weight = self._extract_image_categories(annotations)
+        if category_weight is not None:
+            result['agreement_weight'] = category_weight
 
         return result
 
@@ -1165,6 +1203,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             'return_boxes': self.return_boxes,
             'return_as_semantic_segmentation': self.return_as_semantic_segmentation,
             'semantic_seg_merge_strategy': str(self.semantic_seg_merge_strategy),
+            'label_weighting': str(self.label_weighting),
             'include_unannotated': self.include_unannotated,
             'include_annotators': self.include_annotators,
             'exclude_annotators': self.exclude_annotators,

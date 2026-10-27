@@ -33,7 +33,7 @@ class _BCEDiceLoss3D(nn.Module):
 
     Expects:
         pred:   ``(B, C, D, H, W)`` logits
-        target: ``(B, C, D, H, W)`` binary masks (float)
+        target: ``(B, C, D, H, W)`` masks in [0, 1] (float). Soft targets allowed
     """
 
     def forward(

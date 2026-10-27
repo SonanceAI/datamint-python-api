@@ -108,13 +108,16 @@ Each item is a dict:
 | `boxes`, `box_labels` | When `return_boxes=True` |
 | `image_labels`, `image_categories` | Image-level labels and categories (classification targets) |
 | `metainfo`, `resource`, `annotations` | Source data |
+| `agreement_weight` | 0-d tensor, inter-annotator agreement in [0.1, 1], when `label_weighting='agreement'` (segmentation or classification) |
 
 The mask key is `masks`.
 
 Masks format:
 - Default: dict `{annotator: tensor (num_instances, H, W)}` with names in `mask_labels`.
 - `return_as_semantic_segmentation=True`: dict `{annotator: tensor (num_labels + 1, H, W)}`.
-- Semantic + `semantic_seg_merge_strategy` (`'union'`, `'intersection'`, `'mode'`): one tensor `(num_labels + 1, H, W)`. This is what models usually need. **Background is channel 0**, so built-in modules use `batch['masks'][:, 1:]`.
+- Semantic + `semantic_seg_merge_strategy` (`'union'`, `'intersection'`, `'mode'`, `'consensus_soft'`): one tensor `(num_labels + 1, H, W)`. This is what models usually need. **Background is channel 0**, so built-in modules use `batch['masks'][:, 1:]`.
+- `'consensus_soft'`: each pixel holds the fraction of annotators that labeled it (2 of 3 -> 0.67) instead of 0/1, so training learns from annotator disagreement. Built-in modules compute metrics against the majority (`>= 0.5`); a custom loop must threshold before integer metrics, since `.long()` truncates 0.67 to 0. nnU-Net ignores it.
+- Built-in seg trainers default to `'union'`; pass `dataset_kwargs={'semantic_seg_merge_strategy': 'consensus_soft', 'label_weighting': 'agreement'}` to change it.
 
 Useful constructor options:
 
@@ -128,6 +131,7 @@ Useful constructor options:
 | `trusted_annotation_sources` (default `('imported', 'manual')`) | Excludes model predictions (`model_deploy`, `model_pipeline`) so a model isn't retrained on its own outputs. `None` keeps all sources |
 | `allow_external_annotations` (default `False`) | Include annotation labels that are not part of the project's official schema (e.g. labels from other projects or legacy annotations) |
 | `resources=` | Build from a list of resources instead of `project=` |
+| `label_weighting='agreement'` | Adds `agreement_weight` per item, floor `0.1`, `1.0` with one annotator. Semantic segmentation: mean pairwise Dice between annotators. Otherwise needs `image_categories_merge_strategy='mode'` (the classification trainers' default): fraction of annotators that voted for the majority category. Built-in modules multiply each sample's training loss by it (val/test unweighted). Segmentation then computes Dice per sample, so its loss differs slightly from the default even when all weights are 1. Custom loops must apply the weight themselves |
 
 **Items come back with no annotations (empty masks, empty `image_labels`, empty `*_labels_set`)?** Most likely the annotations use labels that are not in the project's schema, and `allow_external_annotations=False` filters them out. Rebuild with `allow_external_annotations=True` (also for `build_dataset` and `dataset_kwargs=` of trainers). If that doesn't help, check `trusted_annotation_sources` (model predictions are excluded by default) and the `include_*` / `exclude_*` filters.
 
