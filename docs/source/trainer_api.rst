@@ -166,6 +166,63 @@ If you only want evaluation, use ``test()`` instead:
 With ``register_model=True``, the trainer logs and registers the current model.
 
 
+Multiple Annotators
+-------------------
+
+When several annotators segmented the same image, segmentation trainers merge their masks
+into one target. Pass ``dataset_kwargs=`` to choose how. ``semantic_seg_merge_strategy``
+accepts:
+
+``'union'`` (default)
+   A pixel is positive if any annotator labeled it.
+
+``'intersection'``
+   A pixel is positive only if every annotator labeled it.
+
+``'mode'``
+   Majority vote: a pixel is positive if at least half of the annotators labeled it.
+
+``'consensus_soft'``
+   Each pixel holds the fraction of annotators that labeled it (2 of 3 gives 0.67) instead
+   of 0/1, so the model learns from annotator disagreement. Metrics are computed against the
+   majority vote (``>= 0.5``).
+
+Independently of the merge strategy:
+
+``label_weighting='agreement'``
+   Multiplies each image's training loss by how much its annotators agree (mean pairwise
+   Dice, between 0.1 and 1.0; 1.0 with a single annotator), so images where annotators
+   disagree count less. Validation and test losses are not weighted.
+
+``include_annotators`` / ``exclude_annotators``
+   Lists of annotator emails to keep or drop before merging.
+
+.. code-block:: python
+
+   trainer = UNetPPTrainer(
+       project="BUSI_Segmentation",
+       dataset_kwargs={
+           "semantic_seg_merge_strategy": "consensus_soft",
+           "label_weighting": "agreement",
+       },
+   )
+
+``NNUNetTrainer`` uses its own training pipeline and does not support the merge strategy or
+``label_weighting``.
+
+Classification trainers label each image with the majority vote of its annotators
+(``image_categories_merge_strategy='mode'``). ``label_weighting='agreement'`` works there
+too: the weight is the fraction of annotators that voted for that category (2 of 3 gives
+0.67), with the same floor and the same train-only weighting.
+
+.. code-block:: python
+
+   trainer = ImageClassificationTrainer(
+       project="Fracture_Classification",
+       dataset_kwargs={"label_weighting": "agreement"},
+   )
+
+
 Resuming a Paused Run
 ----------------------
 
@@ -285,21 +342,21 @@ If you already have a plain ``lightning.LightningModule``, pass the instance thr
 
        def training_step(self, batch, batch_idx):
            images = batch["image"]
-           masks = batch["segmentations"][:, 1:].float()
+           masks = batch["masks"][:, 1:].float()
            loss = self.loss_fn(self(images), masks)
            self.log("train/loss", loss)
            return loss
 
        def validation_step(self, batch, batch_idx):
            images = batch["image"]
-           masks = batch["segmentations"][:, 1:].float()
+           masks = batch["masks"][:, 1:].float()
            loss = self.loss_fn(self(images), masks)
            self.log("val/loss", loss)
            return loss
 
        def test_step(self, batch, batch_idx):
            images = batch["image"]
-           masks = batch["segmentations"][:, 1:].float()
+           masks = batch["masks"][:, 1:].float()
            loss = self.loss_fn(self(images), masks)
            self.log("test/loss", loss)
            return loss
@@ -333,7 +390,7 @@ or wrap the final model in a ``DatamintModel`` afterwards.
 
 .. caution::
 
-   Segmentation batches expose masks in ``batch["segmentations"]`` and include the background channel at index 0.
+   Segmentation batches expose masks in ``batch["masks"]`` and include the background channel at index 0.
 
 
 Benchmarking Several Trainers

@@ -12,6 +12,7 @@ for any dataset type, while specialized logic is in subclasses.
 import logging
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from itertools import combinations
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Type alias for merge strategy
-MergeStrategy = Literal['union', 'intersection', 'mode']
+MergeStrategy = Literal['union', 'intersection', 'mode', 'consensus_soft']
 
 
 class AnnotationProcessor:
@@ -356,6 +357,59 @@ class AnnotationProcessor:
         new_segmentations = new_segmentations >= len(segmentations) / 2
         return new_segmentations.bool().to(torch.uint8)
 
+    def _merge_consensus_soft(self, segmentations: dict[str, Tensor]) -> Tensor:
+        """Soft merge: pixel value is the fraction of annotators that labeled it."""
+        return torch.stack(list(segmentations.values())).float().mean(dim=0)
+
+    def compute_agreement_weight(self,
+                                 segmentations: dict[str, Tensor] | dict[str, np.ndarray],
+                                 min_weight: float = 0.1) -> float:
+        """Agreement weight from per-annotator semantic segmentations.
+
+        Mean pairwise Dice per foreground class (channel 0 is background), averaged over classes.
+        Pairs where neither annotator labeled the class are ignored.
+
+        Args:
+            segmentations: Dict of author -> semantic segmentation of shape (num_labels+1, ...).
+            min_weight: Lower bound of the returned weight.
+
+        Returns:
+            Weight in [min_weight, 1]. 1.0 with fewer than 2 annotators or no labeled class.
+        """
+        if len(segmentations) < 2:
+            return 1.0
+
+        # One (num_classes, num_pixels) mask per annotator, without the background channel
+        masks = [torch.as_tensor(seg)[1:].flatten(1).float() for seg in segmentations.values()]
+        num_classes = masks[0].shape[0]
+
+        # Dice of every annotator pair, grouped by class
+        dice_by_class: list[list[float]] = [[] for _ in range(num_classes)]
+        for mask_a, mask_b in combinations(masks, 2):
+            for class_idx, dice in enumerate(self._pairwise_dice_per_class(mask_a, mask_b)):
+                if dice is not None:
+                    dice_by_class[class_idx].append(dice)
+
+        # Average the pairs of each class, then average the classes.
+        class_means = [sum(dices) / len(dices) for dices in dice_by_class if dices]
+        if not class_means:
+            return 1.0  # no annotator labeled any class
+        return max(sum(class_means) / len(class_means), min_weight)
+
+    @staticmethod
+    def _pairwise_dice_per_class(mask_a: Tensor, mask_b: Tensor) -> list[float | None]:
+        """Dice between two annotators for each class. ``None`` if neither labeled the class.
+
+        Args:
+            mask_a: Mask of shape (num_classes, num_pixels).
+            mask_b: Mask of shape (num_classes, num_pixels).
+        """
+
+        overlap = torch.einsum('cp,cp->c', mask_a, mask_b)
+        total = mask_a.sum(dim=1) + mask_b.sum(dim=1)
+        
+        return [(2 * o / t).item() if t > 0 else None for o, t in zip(overlap, total)]
+
     def convert_image_labels(
         self,
         annotations: Sequence['Annotation'],
@@ -515,6 +569,18 @@ class AnnotationProcessor:
             return (stacked.min(dim=0).values > 0).int()
         raise ValueError(f"Unknown merge strategy: {strategy!r}")
 
+    @staticmethod
+    def compute_category_agreement_weight(categories_by_user: dict[str, Tensor], min_weight: float = 0.1) -> float:
+        """Fraction of annotators that voted for the majority category, floored at ``min_weight``.
+
+        Annotators without a valid category (index < 0) are ignored. Returns 1.0 with fewer than 2 votes.
+        """
+        votes = [t for t in categories_by_user.values() if t.item() >= 0]
+        if len(votes) < 2:
+            return 1.0
+        top_count = torch.bincount(torch.stack(votes)).max().item()
+        return max(top_count / len(votes), min_weight)
+
     @overload
     def apply_merge_strategy(
         self,
@@ -538,7 +604,8 @@ class AnnotationProcessor:
 
         Args:
             segmentations: Dict of author -> semantic segmentation tensor.
-            strategy: Merge strategy ('union', 'intersection', 'mode').
+            strategy: Merge strategy ('union', 'intersection', 'mode', 'consensus_soft').
+                'consensus_soft' returns, per pixel, the fraction of annotators that labeled it.
 
         Returns:
             Merged tensor if strategy is specified, otherwise original dict.
@@ -557,6 +624,8 @@ class AnnotationProcessor:
             merged = self._merge_intersection(segmentations)
         elif strategy == 'mode':
             merged = self._merge_mode(segmentations)
+        elif strategy == 'consensus_soft':
+            merged = self._merge_consensus_soft(segmentations)
         else:
             raise ValueError(f"Unknown merge strategy: {strategy}")
 

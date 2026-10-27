@@ -21,7 +21,7 @@ class _BCEDiceLoss(nn.Module):
 
     Expects:
         pred:   ``(B, C, H, W)`` logits
-        target: ``(B, C, H, W)`` binary masks (float)
+        target: ``(B, C, H, W)`` masks in [0, 1] (float). Soft targets allowed
     """
 
     def forward(self, pred: torch.Tensor, target: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:

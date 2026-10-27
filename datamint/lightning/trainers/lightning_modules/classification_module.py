@@ -83,12 +83,24 @@ class ClassificationModule(DatamintLightningModule):
         else:
             return self.criterion(logits, labels).unsqueeze(0).expand(logits.shape[0])
 
+    def _per_sample_loss(self, logits: Tensor, labels: Tensor) -> Tensor:
+        """Per-sample loss (shape ``(B,)``), calling the criterion once per sample. """
+        return torch.stack([self.criterion(logits[i:i + 1], labels[i:i + 1]) for i in range(logits.shape[0])])
+
     def _common_step(self, batch: dict, stage: str) -> Tensor:
         images = batch['image']
         labels = batch['image_categories']
         logits = self(images)
 
-        if self._log_sample_metrics:
+        # Agreement weights ('label_weighting') only weight the training loss.
+        weights = batch.get('agreement_weight') if stage == 'train' else None
+
+        if weights is not None:
+            loss_per_sample = self._per_sample_loss(logits, labels)
+            loss = (loss_per_sample * weights.to(loss_per_sample)).mean()
+            if self._log_sample_metrics:
+                self._accumulate_sample_data(batch, logits, loss_per_sample, stage)
+        elif self._log_sample_metrics:
             loss_unreduced = self._compute_unreduced_loss(logits, labels) # (B,)
             loss = loss_unreduced.mean()
             self._accumulate_sample_data(batch, logits, loss_unreduced, stage)

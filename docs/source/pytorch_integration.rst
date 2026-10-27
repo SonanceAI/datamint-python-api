@@ -52,7 +52,7 @@ Basic PyTorch Usage
    # Training loop – each batch is a dict
    for batch in dataloader:
        images = batch['image']           # Shape: [B, C, H, W]
-       segmentations = batch['segmentations']  # Shape varies by mode
+       segmentations = batch['masks']  # Shape varies by mode
        metadata = batch['metainfo']      # List of dicts
        # (...)
 
@@ -111,7 +111,7 @@ Loading all data and metadata:
 
     for batch in dataloader:
         images = batch['image']  # shape: (batch_size, C, H, W)
-        segmentations = batch['segmentations']
+        segmentations = batch['masks']
         image_labels = batch['image_labels']
         image_categories = batch['image_categories']
 

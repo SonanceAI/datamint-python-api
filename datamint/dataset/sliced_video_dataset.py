@@ -94,6 +94,7 @@ class SlicedVideoDataset(DatamintBaseDataset):
         instance.return_segmentations = parent_dataset.return_segmentations
         instance.return_as_semantic_segmentation = parent_dataset.return_as_semantic_segmentation
         instance.semantic_seg_merge_strategy = parent_dataset.semantic_seg_merge_strategy
+        instance.label_weighting = parent_dataset.label_weighting
         instance.include_unannotated = parent_dataset.include_unannotated
 
         # Transforms
@@ -381,9 +382,11 @@ class SlicedVideoDataset(DatamintBaseDataset):
                 result['image'] = img
                 frame_segs = aug_result['segmentations']
 
-            segmentations_processed, seg_labels_out = self._process_segmentations(
+            segmentations_processed, seg_labels_out, agreement_weight = self._process_segmentations(
                 frame_segs, seg_labels, output_shape=img.shape[1:],
             )
+            if agreement_weight is not None:
+                result['agreement_weight'] = agreement_weight
             # Remove dummy depth dimension: (#instances, 1, H, W) -> (#instances, H, W)
             if isinstance(segmentations_processed, (Tensor, np.ndarray)):
                 segmentations_processed = segmentations_processed.squeeze(1)
