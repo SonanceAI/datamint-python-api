@@ -138,7 +138,6 @@ failed = [x for x in results if not x['success']]              # each dict has '
 api.projects.download_annotations('annotations.csv', format='csv', project=proj)   # or 'xlsx'
 api.projects.get_annotations_stats(proj)
 api.projects.get_annotators_stats(proj)
-api.projects.get_annotation_statuses(proj)
 ```
 
 `download_annotations` filters: `annotators` (emails), `annotations` (identifiers), `from_date`, `to_date` (ISO strings).
