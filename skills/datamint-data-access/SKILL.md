@@ -122,7 +122,7 @@ anns = r.fetch_annotations(annotation_type='category')
 
 `get_list` filters: `resource` (one or many, one request for many), `annotation_type`, `annotator_email`, `worklist_id`, `status` (`'new'` / `'published'`), `source` (`'manual'`, `'imported'`, `'model_pipeline'`, `'model_deploy'`), `from_date`, `to_date`, `deleted`, `limit`. Pass `load_ai_segmentations=True` when AI segmentations are needed.
 
-Annotation attributes: `id`, `identifier`, `type`, `scope`, `frame_index`.
+Annotation attributes: `id`, `identifier`, `type`, `scope`, `frame_index`, `frame_ranges`. A classification over several frames has `scope='frame'`, `frame_index=None` and `frame_ranges=[(start, end)]` (half-open, 0-based); check frames with `ann.covers_frame(i)`, not `frame_index`.
 
 Segmentation masks:
 

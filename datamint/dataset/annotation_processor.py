@@ -730,7 +730,8 @@ class AnnotationProcessor:
 
         filtered = []
         for ann in annotations:
-            ann_scope = 'image' if ann.frame_index is None else 'frame'
+            # By scope, not frame_index, multi-frame annotations (frame_ranges) have frame_index=None
+            ann_scope = 'frame' if ann.scope == 'frame' else 'image'
             type_matches = type == 'all' or ann.annotation_type == type
             scope_matches = scope == 'all' or scope == ann_scope
 
