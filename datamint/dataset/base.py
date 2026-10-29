@@ -784,12 +784,12 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         if ann.is_segmentation():
             return self._should_include_segmentation(ann.identifier)
         elif ann.is_label():
-            if ann.frame_index is None:  # image-level
+            if ann.scope != 'frame':  # image-level
                 return self._should_include_image_label(ann.identifier)
             else:  # frame-level
                 return self._should_include_frame_label(ann.identifier)
         elif ann.is_category() and not self.allow_external_annotations:
-            lsets = self.image_lsets if ann.frame_index is None else self.frame_lsets
+            lsets = self.image_lsets if ann.scope != 'frame' else self.frame_lsets
             valid_identifiers = {ident for ident, _ in lsets.get('multiclass', [])}
             if ann.identifier not in valid_identifiers:
                 return False
@@ -867,7 +867,7 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
 
         for annotations in self.resource_annotations:
             for ann in annotations:
-                ann_scope = 'image' if ann.frame_index is None else 'frame'
+                ann_scope = 'frame' if ann.scope == 'frame' else 'image'
                 if ann_scope != scope:
                     continue
 
