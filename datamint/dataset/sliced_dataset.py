@@ -465,8 +465,11 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         - 'image': np.ndarray or Tensor of shape (C, H, W).
         - 'masks' (if enabled): segmentation masks with depth dimension removed.
         - 'image_labels': dict of annotator -> label tensor.
+        - 'image_categories': image-level categories, same format as in VolumeDataset.
         - 'frame_labels': frame-level labels covering this slice, same format as
           'image_labels'. Always empty for non-depth slices (coronal/sagittal).
+        - 'frame_categories': frame-level categories covering this slice, same format as
+          'image_categories'. Always empty for non-depth slices (coronal/sagittal).
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of size {len(self)}")
@@ -511,11 +514,15 @@ class SlicedVolumeDataset(DatamintBaseDataset):
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
+        result['image_categories'], category_weight = self._extract_image_categories(annotations)
+        if category_weight is not None:
+            result['agreement_weight'] = category_weight
 
         # Frame labels index depth slices, so they only apply when slicing along depth
         is_depth_slice = self._std_axis_to_seg_axis(resource.slice_axis_idx_std) == 0
-        result['frame_labels'] = self._extract_frame_labels(
-            annotations, resource.slice_index if is_depth_slice else None)
+        frame_index = resource.slice_index if is_depth_slice else None
+        result['frame_labels'] = self._extract_frame_labels(annotations, frame_index)
+        result['frame_categories'] = self._extract_frame_categories(annotations, frame_index)
 
         # # Squeeze depth=1 from image: (C, 1, H, W) -> (C, H, W)
         # img = result['image']

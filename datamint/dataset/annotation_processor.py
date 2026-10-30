@@ -463,20 +463,23 @@ class AnnotationProcessor:
     def convert_image_categories(
         self,
         annotations: Sequence['Annotation'],
+        category2code: dict[tuple[str, str], int] | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Convert image-level category annotations to class index tensors.
+        """Convert category annotations to class index tensors.
 
-        For multiclass classification, we expect exclusively one valid category 
+        For multiclass classification, we expect exclusively one valid category
         per image (per user), representing the target class index in CrossEntropyLoss.
         If multiple categories exist, the first one encountered is used.
 
         Args:
-            annotations: List of category annotations (image-scoped).
+            annotations: List of category annotations.
+            category2code: Mapping from ``(identifier, value)`` to class index. Defaults to the image-level mapping. Pass the frame-level one to convert frame categories.
 
         Returns:
             Dict of annotator_id -> 0-D long tensor containing the class index.
         """
-        category2code = self.image_lcodes.get('multiclass', {})
+        if category2code is None:
+            category2code = self.image_lcodes.get('multiclass', {})
 
         # If allow_external_annotations, discover unknown labels
         if self.allow_external_annotations:
