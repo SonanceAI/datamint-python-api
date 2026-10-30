@@ -511,6 +511,42 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
         )
         return merged, agreement_weight
 
+    def _extract_frame_categories(
+        self,
+        annotations: Sequence['Annotation'],
+        frame_index: int | None,
+    ) -> dict[str, torch.Tensor] | torch.Tensor:
+        """Extract the frame-level categories that cover one frame.
+
+        Same output format as _extract_image_categories, with class indices over
+        ``frame_lsets['multiclass']`` and merged with ``image_categories_merge_strategy``.
+        No agreement weight is computed for frame categories.
+
+        Args:
+            annotations: All annotations for the item.
+            frame_index: Frame (or depth slice) of the item. ``None`` when the item is not
+                a frame, e.g. a coronal slice, so no frame category applies.
+
+        Returns:
+            Dict[annotator_id, Tensor] or merged Tensor depending on
+            :attr:`image_categories_merge_strategy`.
+        """
+        category_annotations = []
+        if frame_index is not None:
+            category_annotations = [ann for ann in AnnotationProcessor.filter_annotations(
+                annotations, type='category', scope='frame') if ann.covers_frame(frame_index)]
+        categories_dict = self.annotation_processor.convert_image_categories(
+            category_annotations,
+            category2code=self.frame_lcodes.setdefault('multiclass', {}),
+        )
+        if self.image_categories_merge_strategy is None:
+            return categories_dict
+        return AnnotationProcessor.merge_image_categories(
+            categories_dict,
+            self.image_categories_merge_strategy,
+            num_categories=len(self.frame_lsets.get('multiclass', [])),
+        )
+
     def _validate_filter_params(
         self,
         include_annotators, exclude_annotators,
