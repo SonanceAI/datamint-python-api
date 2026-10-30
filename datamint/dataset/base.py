@@ -437,6 +437,41 @@ class DatamintBaseDataset(ABC, torch.utils.data.Dataset):
             labels_dict, self.image_labels_merge_strategy
         )
 
+    def _extract_frame_labels(
+        self,
+        annotations: Sequence['Annotation'],
+        frame_index: int | None,
+    ) -> dict[str, torch.Tensor] | torch.Tensor:
+        """Extract the frame-level labels that cover one frame.
+
+        Same output format as _extract_image_labels, with tensors of shape
+        ``(len(frame_labels_set),)`` and merged with ``image_labels_merge_strategy``.
+
+        Args:
+            annotations: All annotations for the item.
+            frame_index: Frame (or depth slice) of the item. ``None`` when the item is not
+                a frame, e.g. a coronal slice, so no frame label applies.
+
+        Returns:
+            Dict[annotator_id, Tensor] or merged Tensor depending on
+            :attr:`image_labels_merge_strategy`.
+        """
+        label_annotations = []
+        if frame_index is not None:
+            label_annotations = [ann for ann in AnnotationProcessor.filter_annotations(
+                annotations, type='label', scope='frame') if ann.covers_frame(frame_index)]
+        labels_dict = self.annotation_processor.convert_image_labels(
+            label_annotations,
+            labels_set=self.frame_labels_set,
+            label2code=self.frame_lcodes.setdefault('multilabel', {}),
+        )
+        if self.image_labels_merge_strategy is None:
+            return labels_dict
+        return self.annotation_processor.merge_image_labels(
+            labels_dict, self.image_labels_merge_strategy,
+            num_labels=len(self.frame_labels_set),
+        )
+
     def _extract_image_categories(
         self,
         annotations: Sequence['Annotation'],

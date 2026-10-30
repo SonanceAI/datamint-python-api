@@ -355,6 +355,7 @@ class SlicedVideoDataset(DatamintBaseDataset):
         - ``'image'``: np.ndarray or Tensor of shape ``(C, H, W)``.
         - ``'segmentations'`` (if enabled): segmentation masks of shape ``(num_instances, H, W)`` or ``(num_labels+1, H, W)``.
         - ``'image_labels'``: dict of annotator -> label tensor.
+        - ``'frame_labels'``: frame-level labels covering this frame, same format as ``'image_labels'``.
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of size {len(self)}")
@@ -401,6 +402,7 @@ class SlicedVideoDataset(DatamintBaseDataset):
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
+        result['frame_labels'] = self._extract_frame_labels(annotations, resource.frame_index)
 
         return result
 

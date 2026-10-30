@@ -413,16 +413,24 @@ class AnnotationProcessor:
     def convert_image_labels(
         self,
         annotations: Sequence['Annotation'],
+        labels_set: list[str] | None = None,
+        label2code: dict[str, int] | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Convert image-level label annotations to one-hot tensors.
+        """Convert label annotations to one-hot tensors.
 
         Args:
-            annotations: List of label annotations (image-scoped).
+            annotations: List of label annotations.
+            labels_set: Label names defining the tensor size. Defaults to the image-level set. Pass the frame-level set to convert frame labels.
+            label2code: Mapping from label name to tensor position, matching ``labels_set``.
 
         Returns:
             Dict of annotator_id -> one-hot tensor of shape (num_labels,).
         """
-        label2code = self.image_lcodes.get('multilabel', {})
+        if labels_set is None:
+            labels_set = self.image_labels_set
+            label2code = self.image_lcodes.get('multilabel', {})
+        elif label2code is None:
+            raise ValueError("label2code is required when labels_set is given")
 
         # If allow_external_annotations, first pass to discover unknown labels
         if self.allow_external_annotations:
@@ -430,12 +438,12 @@ class AnnotationProcessor:
                 if ann.annotation_type != 'label':
                     continue
                 if ann.identifier not in label2code:
-                    new_code = len(self.image_labels_set)
-                    self.image_labels_set.append(ann.identifier)
+                    new_code = len(labels_set)
+                    labels_set.append(ann.identifier)
                     label2code[ann.identifier] = new_code
-                    _LOGGER.info(f"Dynamically added image label '{ann.identifier}' with code {new_code}")
+                    _LOGGER.info(f"Dynamically added label '{ann.identifier}' with code {new_code}")
 
-        labels_ret_size = (len(self.image_labels_set),)
+        labels_ret_size = (len(labels_set),)
         labels_by_user: dict[str, torch.Tensor] = {}
 
         for ann in annotations:
@@ -503,18 +511,23 @@ class AnnotationProcessor:
         self,
         labels_by_user: dict[str, Tensor],
         strategy: MergeStrategy,
+        num_labels: int | None = None,
     ) -> Tensor:
         """Merge per-annotator label tensors into a single binary tensor.
 
         Args:
             labels_by_user: Dict of annotator_id -> binary label tensor of shape (num_labels,).
             strategy: One of 'union', 'intersection', or 'mode'.
+            num_labels: Size of the zero tensor returned when there are no annotations.
+                Defaults to the number of image-level labels.
 
         Returns:
             Merged label tensor of shape (num_labels,), dtype int32.
         """
         if not labels_by_user:
-            return torch.zeros(len(self.image_labels_set), dtype=torch.int32)
+            if num_labels is None:
+                num_labels = len(self.image_labels_set)
+            return torch.zeros(num_labels, dtype=torch.int32)
         stacked = torch.stack(list(labels_by_user.values()), dim=0).float()  # (num_users, num_labels)
         if strategy == 'union':
             return (stacked.max(dim=0).values > 0).int()
