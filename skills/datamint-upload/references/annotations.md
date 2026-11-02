@@ -54,7 +54,9 @@ api.annotations.add_text_annotation(res, identifier='findings', value='small fra
 api.annotations.create_numeric_annotation(res, identifier='diameter', value=12.5, units='mm', worklist_id=wl_id)
 ```
 
-Frames (video, multi-frame DICOM): `frame_index=3` for one frame (0-based), `frame_range=(42, 46)` for frames 42 to 45 (end excluded, like `range()`). Without either, the annotation covers the whole resource.
+Frames (video, multi-frame DICOM, volume slices): `frame_index=3` for one frame (0-based), `frame_range=(42, 46)` for frames 42 to 45 (end excluded, like `range()`). Without either, the annotation covers the whole resource. All four calls above accept both.
+
+Prefer one `frame_range` over one call per frame. `upload_predictions` already does this, merging per-frame classification predictions with the same value on consecutive frames into one range.
 
 `set_frame_ranges` sets the whole timeline of one identifier and **replaces** what was there:
 
@@ -104,3 +106,5 @@ api.annotations.add_polyline_annotation([(0, 0), (10, 0), (10, 10)], resource=re
 for ann in api.annotations.get_list(resource=res):
     print(ann.identifier, ann.type)
 ```
+
+A classification over several frames comes back with `scope='frame'`, `frame_index=None` and `frame_ranges=[(42, 46)]` (half-open). Use `ann.covers_frame(i)` instead of comparing `frame_index`.

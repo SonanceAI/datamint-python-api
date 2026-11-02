@@ -52,6 +52,47 @@ _LOGGER = logging.getLogger(__name__)
 _USER_LOGGER = logging.getLogger('user_logger')
 MAX_NUMBER_DISTINCT_COLORS = 2048
 
+# Annotation types the server can store as frame ranges.
+_FRAME_RANGE_TYPES = {t.value for t in (AnnotationType.LABEL, AnnotationType.CATEGORY, AnnotationType.TEXT,
+                                        AnnotationType.INTEGER, AnnotationType.FLOAT)}
+
+
+def _collapse_frame_predictions(annotations: Sequence[Annotation]) -> list[Annotation]:
+    """Merge frame-scope classifications that differ only by frame into frame ranges.
+
+    Consecutive frames of the same prediction become one ``frame_ranges`` entry, so a video
+    classified frame by frame is stored as one row per run instead of one row per frame.
+    
+    Other annotations and isolated frames are returned unchanged.
+    """
+    
+    result: list[Annotation] = []
+    groups: dict[str, dict[int, Annotation]] = {}
+    
+    for ann in annotations:
+        if (ann.annotation_type in _FRAME_RANGE_TYPES and ann.scope == 'frame'
+                and ann.frame_index is not None and not ann.frame_ranges):
+
+            key = json.dumps({**ann._to_create_dto().to_dict(), 'frame_index': None}, sort_keys=True, default=str)
+            groups.setdefault(key, {})[ann.frame_index] = ann
+        else:
+            result.append(ann)
+
+    for by_frame in groups.values():
+        frames = sorted(by_frame)
+        run_start = frames[0]
+        for prev, frame in zip(frames, frames[1:] + [None]):
+            if frame == prev + 1:
+                continue
+            first = by_frame[run_start]
+            if prev == run_start:
+                result.append(first)
+            else:
+                result.append(first.model_copy(update={'frame_index': None,
+                                                       'frame_ranges': [(run_start, prev + 1)]}))
+            run_start = frame
+    return result
+
 
 class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotation]):
     def __init__(
@@ -562,7 +603,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
         Returns:
             The id of the created annotation if a single annotation was provided,
-            or a list of ids if multiple annotations were created.
+            or a list of ids if multiple annotations were created. An annotation with
+            several ``frame_ranges`` creates one annotation per range.
         """
         is_single_annotation = isinstance(annotation_dto, (CreateAnnotationDto, Annotation, dict))
         annotations_input = [annotation_dto] if is_single_annotation else list(annotation_dto)
@@ -572,7 +614,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             if isinstance(annotation, CreateAnnotationDto):
                 annotations_payload.append(annotation.to_dict())
             elif isinstance(annotation, Annotation):
-                annotations_payload.append(annotation._to_create_dto().to_dict())
+                annotations_payload.extend(dto.to_dict() for dto in annotation._to_create_dtos())
             elif isinstance(annotation, dict):
                 annotations_payload.append(annotation)
             else:
@@ -585,7 +627,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         for r in respdata:
             if isinstance(r, dict) and 'error' in r:
                 raise ServerError(r['error'])
-        if is_single_annotation:
+        if is_single_annotation and len(respdata) == 1:
             return respdata[0]
         return respdata
 
@@ -1155,9 +1197,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                   imported_from: str | None = None,
                                   model_id: str | None = None,
                                   source: str | None = 'imported',
+                                  frame_index: int | None = None,
+                                  frame_range: tuple[int, int] | None = None,
                                   ) -> str:
         """
-        Create a numeric value annotation (e.g. a measurement or count).
+        Create a numeric value annotation (e.g. a measurement or count), for the whole image or for frames.
 
         Args:
             resource: The resource unique id or Resource instance.
@@ -1172,10 +1216,20 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            frame_index: A single frame (0-based). Makes the annotation frame-scoped.
+            frame_range: Half-open ``(start, end)`` frame range, 0-based, ``end`` not included.
+                Makes the annotation frame-scoped. Mutually exclusive with `frame_index`.
 
         Returns:
             The id of the created annotation.
+
+        Example:
+            .. code-block:: python
+
+                api.annotations.create_numeric_annotation(resource, 'heart_rate', 72, units='bpm',
+                                                          frame_range=(0, 30))
         """
+        scope, _ = self._resolve_frame_scope(frame_index, frame_range)
         annotation = NumericAnnotation(
             name=identifier,
             value=value,
@@ -1185,6 +1239,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from=imported_from,
             model_id=model_id,
             source=source,
+            scope=scope,
+            frame_index=frame_index,
+            frame_ranges=[frame_range] if frame_range is not None else None,
         )
 
         created = self.create(resource, annotation)
@@ -1443,12 +1500,16 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 each annotation so predictions can be distinguished from human labels.
             source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
 
+        Non-segmentation predictions are sent in one request. Frame-scope classifications
+        that repeat over consecutive frames are merged into one frame-range annotation.
+
         Returns:
             List of created annotation ids.
         """
         from datamint.entities.annotations import ImageSegmentation, VolumeSegmentation
 
         annotation_ids = []
+        others: list[Annotation] = []  # non-segmentation predictions, sent in one request
         for ann in predictions:
             if isinstance(ann, VolumeSegmentation):
                 mask = ann.segmentation_data
@@ -1486,11 +1547,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             else:
                 ann.model_id = model_name  # server maps model_id → created_by_model
                 ann.source = source
-                created = self.create(resource, ann)
-                if isinstance(created, list):
-                    annotation_ids.extend(created)
-                else:
-                    annotation_ids.append(created)
+                others.append(ann)
+
+        if others:
+            annotation_ids.extend(self.create(resource, _collapse_frame_predictions(others)))
 
         return annotation_ids
 

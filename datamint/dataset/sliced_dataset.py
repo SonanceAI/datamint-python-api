@@ -105,7 +105,7 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             _attributes_to_copy = [
                 'return_metainfo', 'return_segmentations',
                 'return_as_semantic_segmentation', 'semantic_seg_merge_strategy',
-                'include_unannotated', 'allow_external_annotations',
+                'label_weighting', 'include_unannotated', 'allow_external_annotations',
                 'trusted_annotation_sources',
                 'image_labels_merge_strategy', 'image_categories_merge_strategy',
                 'split_name', 'split_source',
@@ -465,6 +465,11 @@ class SlicedVolumeDataset(DatamintBaseDataset):
         - 'image': np.ndarray or Tensor of shape (C, H, W).
         - 'masks' (if enabled): segmentation masks with depth dimension removed.
         - 'image_labels': dict of annotator -> label tensor.
+        - 'image_categories': image-level categories, same format as in VolumeDataset.
+        - 'frame_labels': frame-level labels covering this slice, same format as
+          'image_labels'. Always empty for non-depth slices (coronal/sagittal).
+        - 'frame_categories': frame-level categories covering this slice, same format as
+          'image_categories'. Always empty for non-depth slices (coronal/sagittal).
         """
         if index >= len(self):
             raise IndexError(f"Index {index} out of bounds for dataset of size {len(self)}")
@@ -491,8 +496,8 @@ class SlicedVolumeDataset(DatamintBaseDataset):
                 result['image'] = img
                 sliced_segs = aug_result.get('masks', {})
 
-            segmentations_processed, seg_labels_out = self._process_segmentations(sliced_segs, seg_labels,
-                                                                                  output_shape=img.shape[1:])
+            segmentations_processed, seg_labels_out, agreement_weight = self._process_segmentations(
+                sliced_segs, seg_labels, output_shape=img.shape[1:])
             # remove temporary dummy dimension: (#instances, 1, DIM1, DIM2) -> (#instances, DIM1, DIM2)
             if isinstance(segmentations_processed, (Tensor, np.ndarray)):
                 segmentations_processed = segmentations_processed.squeeze(1)
@@ -504,9 +509,20 @@ class SlicedVolumeDataset(DatamintBaseDataset):
             result['masks'] = segmentations_processed
             if seg_labels_out:
                 result['mask_labels'] = seg_labels_out
+            if agreement_weight is not None:
+                result['agreement_weight'] = agreement_weight
 
         # Process image-level labels
         result['image_labels'] = self._extract_image_labels(annotations)
+        result['image_categories'], category_weight = self._extract_image_categories(annotations)
+        if category_weight is not None:
+            result['agreement_weight'] = category_weight
+
+        # Frame labels index depth slices, so they only apply when slicing along depth
+        is_depth_slice = self._std_axis_to_seg_axis(resource.slice_axis_idx_std) == 0
+        frame_index = resource.slice_index if is_depth_slice else None
+        result['frame_labels'] = self._extract_frame_labels(annotations, frame_index)
+        result['frame_categories'] = self._extract_frame_categories(annotations, frame_index)
 
         # # Squeeze depth=1 from image: (C, 1, H, W) -> (C, H, W)
         # img = result['image']

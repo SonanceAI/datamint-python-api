@@ -546,9 +546,14 @@ class UNETRPPModule(SegmentationModule):
         images, masks = self._random_crop_3d(images, masks)
 
         logits = self(images)
-        loss = self.criterion(logits, masks) if self.criterion else None
+        weights = batch.get('agreement_weight')
+        if self.criterion and weights is not None:
+            loss_per_sample = self._per_sample_loss(logits, masks)
+            loss = (loss_per_sample * weights.to(loss_per_sample)).mean()
+        else:
+            loss = self.criterion(logits, masks) if self.criterion else None
 
-        self.train_metrics.update((logits > 0).long(), masks.long())
+        self.train_metrics.update((logits > 0).long(), (masks >= 0.5).long())
 
         if loss is not None:
             self.log('train/loss', loss, on_step=True, on_epoch=True,
@@ -572,7 +577,7 @@ class UNETRPPModule(SegmentationModule):
 
         logits = self._sliding_window_inference(images)
         loss = self.criterion(logits, masks) if self.criterion else None
-        getattr(self, f'{stage}_metrics').update((logits > 0).long(), masks.long())
+        getattr(self, f'{stage}_metrics').update((logits > 0).long(), (masks >= 0.5).long())
 
         if loss is not None:
             self.log(f'{stage}/loss', loss, on_epoch=True, prog_bar=True,

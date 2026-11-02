@@ -6,6 +6,7 @@ records returned by the DataMint API.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -37,6 +38,9 @@ _FIELD_MAPPING = {
 }
 
 _ANNOTATION_CACHE_KEY = "annotation_data"
+
+# One half-open range of a Postgres int4multirange, e.g. '[10,20)' in '{[10,20),[30,40)}'
+_FRAME_RANGE_PATTERN = re.compile(r'\[(\d+),(\d+)\)')
 
 
 def _normalize_annotation_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -115,7 +119,10 @@ class Annotation(AnnotationBase):
         id: Unique identifier for the annotation.
         identifier: User-friendly identifier or label for the annotation.
         scope: Scope of the annotation (e.g., "frame", "image").
-        frame_index: Index of the frame if scope is frame-based.
+        frame_index: Index of the frame if scope is frame-based. ``None`` when the
+            annotation spans several frames (see ``frame_ranges``).
+        frame_ranges: Half-open, 0-based ``(start, end)`` frame ranges covered by a
+            frame-scope classification (label, category, text, integer, float).
         annotation_type: Type of annotation (e.g., "segmentation", "bbox", "label").
         text_value: Optional text value associated with the annotation.
         numeric_value: Optional numeric value associated with the annotation.
@@ -146,6 +153,7 @@ class Annotation(AnnotationBase):
     identifier: str = Field(alias="name")
     scope: str
     frame_index: int | None = None
+    frame_ranges: list[tuple[int, int]] | None = None
     text_value: str | None = None
     numeric_value: float | int | None = None
     units: str | None = None
@@ -177,10 +185,31 @@ class Annotation(AnnotationBase):
 
     _api: 'AnnotationsApi' = PrivateAttr()
 
+    @field_validator("frame_ranges", mode="before")
+    @classmethod
+    def _parse_frame_ranges(cls, value: Any) -> list[tuple[int, int]] | None:
+        """Accept the server's int4multirange text (``'{[10,20)}'``) or a list of ranges"""
+        if isinstance(value, str):
+            return [(int(start), int(end)) for start, end in _FRAME_RANGE_PATTERN.findall(value)]
+        if isinstance(value, list):
+            return [(r['start'], r['end']) if isinstance(r, dict) else tuple(r) for r in value]
+        return value
+
     def __init__(self, **data):
         """Initialize the annotation entity."""
         super().__init__(**data)
         self._resource: Resource | None = None
+
+    def covers_frame(self, frame_index: int) -> bool:
+        """Whether this annotation applies to ``frame_index``.
+
+        Non frame-scope annotations (e.g. image scope) apply to every frame.
+        """
+        if self.scope != 'frame':
+            return True
+        if self.frame_ranges:
+            return any(start <= frame_index < end for start, end in self.frame_ranges)
+        return self.frame_index == frame_index
 
     @property
     def _cache(self) -> CacheManager[bytes]:
@@ -307,6 +336,23 @@ class Annotation(AnnotationBase):
             units=self.units,
             source=getattr(self, 'source', None),
         )
+
+    def _to_create_dtos(self) -> list:
+        """Convert into create DTOs, one per frame range.
+
+        Single-frame ranges are sent as ``frame_index``..
+        """
+        if not self.frame_ranges:
+            return [self._to_create_dto()]
+        dtos = []
+        for start, end in self.frame_ranges:
+            dto = self._to_create_dto()
+            if end - start == 1:
+                dto.frame_index, dto.frame_range = start, None
+            else:
+                dto.frame_index, dto.frame_range = None, (start, end - 1)  # inclusive
+            dtos.append(dto)
+        return dtos
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> 'Annotation':

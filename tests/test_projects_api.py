@@ -6,7 +6,7 @@ from datamint.api.base_api import ApiConfig
 from datamint.api.endpoints.projects_api import ProjectsApi
 
 
-def test_projects_api_members_and_annotation_statuses(
+def test_projects_api_members(
     api_config: ApiConfig,
     api_ids,
     make_client,
@@ -21,13 +21,6 @@ def test_projects_api_members_and_annotation_statuses(
             "roles": ["PROJECT_ANNOTATOR"],
         }
     ]
-    statuses_payload = [
-        {
-            "resource_id": api_ids.resource_id,
-            "status": "annotated",
-            "user_id": api_ids.user_id,
-        }
-    ]
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
@@ -38,8 +31,6 @@ def test_projects_api_members_and_annotation_statuses(
             return httpx.Response(200, json={"updated": True})
         if request.method == "DELETE" and path == f"/projects/{api_ids.project_id}/members/{api_ids.user_id}":
             return httpx.Response(200, json={"removed": True})
-        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/annotation-statuses":
-            return httpx.Response(200, json=statuses_payload)
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
 
     with make_client(handler) as client:
@@ -48,19 +39,9 @@ def test_projects_api_members_and_annotation_statuses(
         members = projects_api.get_members(api_ids.project_id)
         projects_api.set_member(api_ids.user_id, ["PROJECT_ANNOTATOR"], project=api_ids.project_id)
         projects_api.remove_member(api_ids.user_id, project=api_ids.project_id)
-        statuses = projects_api.get_annotation_statuses(
-            api_ids.project_id,
-            status="annotated",
-            user_id=api_ids.user_id,
-            resource=api_ids.resource_id,
-        )
 
     assert members == members_payload
-    assert statuses == statuses_payload
     assert json_body(requests[1]) == {"roles": ["PROJECT_ANNOTATOR"]}
-    assert requests[3].url.params["status"] == "annotated"
-    assert requests[3].url.params["user_id"] == api_ids.user_id
-    assert requests[3].url.params["resource_id"] == api_ids.resource_id
 
 
 def test_projects_api_pinned_metrics(
@@ -166,8 +147,6 @@ def test_projects_api_create_and_annotator_endpoints(
             return httpx.Response(200, json=[])
         if request.method == "POST" and path == "/projects":
             return httpx.Response(200, json={"id": api_ids.project_id})
-        if request.method == "GET" and path == f"/projects/{api_ids.project_id}/annotation-statuses":
-            return httpx.Response(200, json=[])
         if request.method == "DELETE" and path == (
             f"/projects/{api_ids.project_id}/resources/{api_ids.resource_id}"
             f"/annotator/{api_ids.email}/status-reset"
@@ -190,7 +169,6 @@ def test_projects_api_create_and_annotator_endpoints(
             resource_ids=[api_ids.resource_id],
             return_entity=False,
         )
-        projects_api.get_annotation_statuses(api_ids.project_id, resource=api_ids.resource_id)
         projects_api.reset_annotator_status(
             api_ids.resource_id, project=api_ids.project_id, annotator_email=api_ids.email,
         )
@@ -199,4 +177,3 @@ def test_projects_api_create_and_annotator_endpoints(
         projects_api.get_review_messages(project=api_ids.project_id, annotator_email=api_ids.email)
 
     assert json_body(requests[1])["resource_ids"] == [api_ids.resource_id]
-    assert requests[2].url.params["resource_id"] == api_ids.resource_id

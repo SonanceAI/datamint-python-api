@@ -400,35 +400,6 @@ class ProjectsApi(CRUDEntityApi[Project]):
         self._make_request('DELETE', f'/{self.endpoint_base}/{proj_id}/members/{user_id}')
 
     # ------------------------------------------------------------------
-    # Annotation statuses
-    # ------------------------------------------------------------------
-
-    def get_annotation_statuses(self,
-                                project: str | Project | None = None,
-                                status: str | None = None,
-                                user_id: str | None = None,
-                                resource: str | Resource | None = None) -> list[dict]:
-        """Get per-resource annotation statuses for a project.
-
-        Args:
-            project: The project ID or Project instance. Falls back to the
-                session's default project (see `datamint.select_project()`) when omitted.
-            status: Optional status filter.
-            user_id: Optional user ID filter.
-            resource: Optional resource unique id, or Resource instance, filter.
-
-        Returns:
-            List of annotation status dicts.
-        """
-        project = self._resolve_project_or_default(project)
-        params = {k: v for k, v in {'status': status, 'user_id': user_id,
-                                    'resource_id': self._entid(resource) if resource is not None else None
-                                    }.items() if v is not None}
-        response = self._make_entity_request('GET', project, add_path='annotation-statuses',
-                                             params=params or None)
-        return response.json()
-
-    # ------------------------------------------------------------------
     # Project splits
     # ------------------------------------------------------------------
 

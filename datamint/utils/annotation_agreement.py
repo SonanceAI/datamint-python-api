@@ -168,17 +168,29 @@ def _kind(annotation: Annotation) -> str:
     return 'other'
 
 
+def _covered_frames(annotation: Annotation) -> list[int | None]:
+    """List every frame the annotation covers. E.g. ``frame_ranges=[(0, 3)]`` gives ``[0, 1, 2]``. """
+    if annotation.frame_ranges:
+        return [frame for start, end in annotation.frame_ranges for frame in range(start, end)]
+    return [annotation.frame_index]
+
+
 def _group_by_item(annotations: Sequence[Annotation]) -> dict[tuple, dict[str, Annotation]]:
-    """Group annotations by (resource_id, identifier, frame_index), then by annotator."""
+    """Group annotations by (resource_id, identifier, frame), then by annotator.
+
+    An annotation over a frame range is compared frame by frame, so it joins one group per
+    frame it covers.
+    """
     groups: dict[tuple, dict[str, Annotation]] = {}
     for annotation in annotations:
         if annotation.created_by is None:
             continue
-        key = (annotation.resource_id, annotation.identifier, annotation.frame_index)
-        by_annotator = groups.setdefault(key, {})
-        if annotation.created_by in by_annotator:
-            continue  # multiple annotations from the same annotator for the same item; keep the first
-        by_annotator[annotation.created_by] = annotation
+        for frame in _covered_frames(annotation):
+            key = (annotation.resource_id, annotation.identifier, frame)
+            by_annotator = groups.setdefault(key, {})
+            if annotation.created_by in by_annotator:
+                continue  # multiple annotations from the same annotator for the same item, in this case we keep the first
+            by_annotator[annotation.created_by] = annotation
     return groups
 
 
@@ -315,7 +327,8 @@ def compute_agreement(
 
     Groups annotations by ``(resource_id, identifier, frame_index)``, then
     compares every pair of annotators on each group with a metric appropriate
-    to the annotation type.
+    to the annotation type. Annotations over frame ranges are compared frame
+    by frame, so each covered frame counts as one item.
 
     Args:
         annotations: Annotations to compare, typically fetched with

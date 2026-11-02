@@ -70,8 +70,16 @@ class SegmentationModule(DatamintLightningModule):
 
         logits = self(images)
 
+        # Agreement weights ('label_weighting') only weight the training loss
+        weights = batch.get('agreement_weight') if stage == 'train' else None
+
         if self.criterion:
-            if self._log_sample_metrics:
+            if weights is not None:
+                loss_per_sample = self._per_sample_loss(logits, masks)
+                loss = (loss_per_sample * weights.to(loss_per_sample)).mean()
+                if self._log_sample_metrics:
+                    self._accumulate_sample_data(batch, logits, loss_per_sample, stage)
+            elif self._log_sample_metrics:
                 loss_unreduced = self._compute_unreduced_loss(logits, masks)
                 loss = loss_unreduced.mean()
                 self._accumulate_sample_data(batch, logits, loss_unreduced, stage)
@@ -82,7 +90,8 @@ class SegmentationModule(DatamintLightningModule):
 
         preds = (logits > 0).long()
 
-        getattr(self, f'{stage}_metrics').update(preds, masks.long())
+        # Threshold soft targets ('consensus_soft' merge) to the majority vote
+        getattr(self, f'{stage}_metrics').update(preds, (masks >= 0.5).long())
 
         if loss is not None:
             self.log(
@@ -91,6 +100,10 @@ class SegmentationModule(DatamintLightningModule):
                 prog_bar=True, batch_size=len(images),
             )
         return loss
+
+    def _per_sample_loss(self, logits: Tensor, masks: Tensor) -> Tensor:
+        """Per-sample loss (shape ``(B,)``), calling the criterion once per sample. """
+        return torch.stack([self.criterion(logits[i:i + 1], masks[i:i + 1]) for i in range(logits.shape[0])])
 
     def _compute_unreduced_loss(self, logits: Tensor, masks: Tensor) -> Tensor:
         """Compute per-sample loss (shape ``(B,)``).
@@ -142,7 +155,7 @@ class SegmentationModule(DatamintLightningModule):
 
     def _compute_sample_metrics(self, logits: Tensor, batch: dict) -> dict[str, Tensor]:
         """Per-sample IoU and Dice."""
-        masks = batch['masks'][:, 1:].float()
+        masks = (batch['masks'][:, 1:] >= 0.5).float()
         preds = (logits > 0).float()
         intersection = (preds * masks).sum(dim=[1, 2, 3])
         union = ((preds + masks) > 0).float().sum(dim=[1, 2, 3])
