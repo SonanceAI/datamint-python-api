@@ -1,16 +1,38 @@
+import logging
+from collections.abc import Callable
 from functools import partial
+from typing import Any
 
 import requests
 from mlflow.exceptions import MlflowException
+from mlflow.protos import service_pb2
 from mlflow.store.tracking.rest_store import RestStore
 from mlflow.utils.proto_json_utils import message_to_json
 from typing_extensions import override
-from datamint.mlflow.store_utils import resolve_project_id, _inject_project_id_into_body
+
+from datamint.mlflow.store_utils import (
+    _inject_project_id_into_body,
+    add_active_project_id_if_absent,
+)
 from datamint.mlflow.tracking.offline_buffer import OfflineLogBuffer
-import logging
 
 _LOGGER = logging.getLogger(__name__)
 _TRANSIENT_NETWORK_CAUSES = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
+
+#: MLflow v2 experiment endpoints whose requests the Datamint backend scopes by project.
+#: These are injected centrally in :meth:`DatamintStore._call_endpoint` so that every
+#: experiment call is project-scoped, instead of relying on each method to remember it.
+_PROJECT_SCOPED_EXPERIMENT_APIS = frozenset({
+    service_pb2.CreateExperiment,
+    service_pb2.GetExperiment,
+    service_pb2.GetExperimentByName,
+    service_pb2.DeleteExperiment,
+    service_pb2.RestoreExperiment,
+    service_pb2.UpdateExperiment,
+    service_pb2.SetExperimentTag,
+    service_pb2.DeleteExperimentTag,
+    service_pb2.SearchExperiments,
+})
 
 
 def _is_transient_network_failure(exc: MlflowException) -> bool:
@@ -41,6 +63,39 @@ class DatamintStore(RestStore):
         super().__init__(get_host_creds=get_host_creds)
 
         self._warned_offline_runs: set[str] = set()
+
+    def _project_scoped_body_builder(self, api: Any) -> Callable[[str], str] | None:
+        """Return the body transformer for a project-scoped *api*, or ``None``.
+
+        Returns ``None`` when the request is not project-scoped or when the store is
+        talking to a plain MLflow backend, so those calls keep the stock MLflow body.
+        """
+        if self.invalid or api not in _PROJECT_SCOPED_EXPERIMENT_APIS:
+            return None
+        return add_active_project_id_if_absent
+
+    @override
+    def _call_endpoint(self, api, json_body=None, endpoint=None, retry_timeout_seconds=None,
+                       response_proto=None):
+        """Scope MLflow experiment requests to the active Datamint project.
+
+        The Datamint backend requires a ``project_id`` on every project-scoped
+        experiment endpoint. Injecting it here, at the single point every request
+        passes through, keeps the scoping consistent for all of them -- including
+        ``GetExperiment``, which ``mlflow.set_experiment()`` calls to read back an
+        experiment right after creating it.
+        """
+        build_body = self._project_scoped_body_builder(api) if json_body is not None else None
+        if build_body is not None:
+            json_body = build_body(json_body)
+
+        return super()._call_endpoint(
+            api,
+            json_body=json_body,
+            endpoint=endpoint,
+            retry_timeout_seconds=retry_timeout_seconds,
+            response_proto=response_proto,
+        )
 
     def _buffer_after_network_failure(self, run_id: str, kind: str, data: dict) -> None:
         if run_id not in self._warned_offline_runs:
@@ -149,13 +204,15 @@ class DatamintStore(RestStore):
         if self.invalid:
             return super().create_experiment(name, artifact_location, tags)
 
-        resolved_project_id = resolve_project_id(project_id)
         tag_protos = [tag.to_proto() for tag in tags] if tags else []
         req_body = message_to_json(
             CreateExperiment(name=name, artifact_location=artifact_location, tags=tag_protos)
         )
 
-        req_body = _inject_project_id_into_body(req_body, resolved_project_id)
+        # An explicit project_id wins over the store-wide active project, which
+        # `_call_endpoint` would otherwise inject.
+        if project_id is not None:
+            req_body = _inject_project_id_into_body(req_body, project_id)
 
         response_proto = self._call_endpoint(CreateExperiment, req_body)
         return response_proto.experiment_id
@@ -169,10 +226,10 @@ class DatamintStore(RestStore):
         if self.invalid:
             return super().get_experiment_by_name(experiment_name)
 
-        resolved_project_id = resolve_project_id(project_id)
         try:
             req_body = message_to_json(GetExperimentByName(experiment_name=experiment_name))
-            req_body = _inject_project_id_into_body(req_body, resolved_project_id)
+            if project_id is not None:
+                req_body = _inject_project_id_into_body(req_body, project_id)
 
             response_proto = self._call_endpoint(GetExperimentByName, req_body)
             return Experiment.from_proto(response_proto.experiment)
