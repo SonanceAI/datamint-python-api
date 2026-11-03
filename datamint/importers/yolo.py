@@ -9,6 +9,7 @@ from datamint import Api
 from datamint.entities import Project
 
 from . import _common
+from ._detect import _LABEL_DIR_NAMES
 
 _DEFAULT_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp')
 
@@ -27,6 +28,7 @@ class YOLOSample:
     image_path: Path
     file_name: str
     boxes: list[YOLOBox] = field(default_factory=list)
+    split: str | None = None
 
 
 @dataclass
@@ -67,21 +69,43 @@ def _load_names_from_yaml(path: Path) -> dict[int, str]:
     return {idx: str(name) for idx, name in enumerate(names)}
 
 
+def _as_paths(value: str | Path | Sequence[str | Path]) -> list[Path]:
+    if isinstance(value, (str, Path)):
+        return [Path(value)]
+    return [Path(v) for v in value]
+
+
+def _split_name(labels_dir: Path) -> str:
+    """``train/labels`` -> ``train``, ``labels/train`` -> ``train``."""
+    parts = labels_dir.parts
+    idxs = [i for i, part in enumerate(parts) if part.lower() in _LABEL_DIR_NAMES]
+    if not idxs:
+        return labels_dir.name
+    idx = idxs[-1]
+    return parts[idx + 1] if idx + 1 < len(parts) else parts[idx - 1]
+
+
 class YOLOImporter:
     """Parse a YOLO-format (images + normalized-bbox label .txt files) dataset and
     upload it to a Datamint project.
 
+    ``images_dir`` and ``labels_dir`` take one dir each, or one per split, paired by position.
+    With several splits, each resource is tagged ``split:<name>`` (e.g. ``split:train``).
     """
 
     def __init__(self,
-                images_dir: str | Path,
-                labels_dir: str | Path,
+                images_dir: str | Path | Sequence[str | Path],
+                labels_dir: str | Path | Sequence[str | Path],
                 *,
                 class_names: Sequence[str] | None = None,
                 data_yaml: str | Path | None = None,
                 image_extensions: Sequence[str] = _DEFAULT_IMAGE_EXTENSIONS):
-        self.images_dir = Path(images_dir)
-        self.labels_dir = Path(labels_dir)
+        images_dirs = _as_paths(images_dir)
+        labels_dirs = _as_paths(labels_dir)
+        if len(images_dirs) != len(labels_dirs):
+            raise ValueError(f'images_dir and labels_dir must have the same number of entries '
+                             f'(got {len(images_dirs)} and {len(labels_dirs)}).')
+        self.splits = list(zip(images_dirs, labels_dirs))
         self.class_names_override = list(class_names) if class_names is not None else None
         self.data_yaml = Path(data_yaml) if data_yaml is not None else None
         self.image_extensions = image_extensions
@@ -96,9 +120,9 @@ class YOLOImporter:
 
         raise ValueError('No class names available: pass class_names or data_yaml explicitly.')
 
-    def _find_image(self, stem: str) -> Path | None:
+    def _find_image(self, images_dir: Path, stem: str) -> Path | None:
         for ext in self.image_extensions:
-            candidate = self.images_dir / f'{stem}{ext}'
+            candidate = images_dir / f'{stem}{ext}'
             if candidate.exists():
                 return candidate
         return None
@@ -123,52 +147,55 @@ class YOLOImporter:
         used_class_names: set[str] = set()
         unsupported_annotations = 0
 
-        for txt_path in sorted(self.labels_dir.glob('*.txt')):
-            if txt_path.name in ('classes.txt',):
-                continue
+        tag_splits = len(self.splits) > 1
+        for images_dir, labels_dir in self.splits:
+            split = _split_name(labels_dir) if tag_splits else None
+            for txt_path in sorted(labels_dir.glob('*.txt')):
+                if txt_path.name in ('classes.txt',):
+                    continue
 
-            image_path = self._find_image(txt_path.stem)
-            if image_path is None:
-                missing_images.append(txt_path.name)
-                continue
+                image_path = self._find_image(images_dir, txt_path.stem)
+                if image_path is None:
+                    missing_images.append(txt_path.name)
+                    continue
 
-            img_w, img_h = Image.open(image_path).size
+                img_w, img_h = Image.open(image_path).size
 
-            sample = YOLOSample(image_path=image_path, file_name=image_path.name)
-            with open(txt_path) as f:
-                for line in f:
-                    parts = line.split()
-                    if not parts:
-                        continue
-                    if len(parts) != 5:
-                        # segmentation/OBB/keypoint variants have a different field count -- not supported
-                        unsupported_annotations += 1
-                        continue
+                sample = YOLOSample(image_path=image_path, file_name=image_path.name, split=split)
+                with open(txt_path) as f:
+                    for line in f:
+                        parts = line.split()
+                        if not parts:
+                            continue
+                        if len(parts) != 5:
+                            # segmentation/OBB/keypoint variants have a different field count -- not supported
+                            unsupported_annotations += 1
+                            continue
 
-                    class_id = int(parts[0])
-                    if class_id not in class_names_by_id:
-                        raise ValueError(f"Label '{txt_path}' references unknown class_id {class_id}.")
+                        class_id = int(parts[0])
+                        if class_id not in class_names_by_id:
+                            raise ValueError(f"Label '{txt_path}' references unknown class_id {class_id}.")
 
-                    cx, cy, w, h = (float(v) for v in parts[1:])
-                    for coord_name, value in (('x_center', cx), ('y_center', cy), ('width', w), ('height', h)):
-                        if not (0.0 <= value <= 1.0):
-                            raise ValueError(f"Label '{txt_path}' has out-of-range normalized "
-                                            f"{coord_name}={value!r} (expected 0<=v<=1).")
+                        cx, cy, w, h = (float(v) for v in parts[1:])
+                        for coord_name, value in (('x_center', cx), ('y_center', cy), ('width', w), ('height', h)):
+                            if not (0.0 <= value <= 1.0):
+                                raise ValueError(f"Label '{txt_path}' has out-of-range normalized "
+                                                f"{coord_name}={value!r} (expected 0<=v<=1).")
 
-                    cx, w = cx * img_w, w * img_w
-                    cy, h = cy * img_h, h * img_h
+                        cx, w = cx * img_w, w * img_w
+                        cy, h = cy * img_h, h * img_h
 
-                    label = class_names_by_id[class_id]
-                    sample.boxes.append(YOLOBox(
-                        label=label,
-                        x1=cx - w / 2,
-                        y1=cy - h / 2,
-                        x2=cx + w / 2,
-                        y2=cy + h / 2,
-                    ))
-                    used_class_names.add(label)
+                        label = class_names_by_id[class_id]
+                        sample.boxes.append(YOLOBox(
+                            label=label,
+                            x1=cx - w / 2,
+                            y1=cy - h / 2,
+                            x2=cx + w / 2,
+                            y2=cy + h / 2,
+                        ))
+                        used_class_names.add(label)
 
-            samples.append(sample)
+                samples.append(sample)
 
         self._result = YOLOParseResult(
             samples=samples,
@@ -195,7 +222,8 @@ class YOLOImporter:
         return _common.import_boxes_to_project(
             result, project, api,
             box_points=lambda b: ((b.x1, b.y1), (b.x2, b.y2)),
-            source_label=str(self.labels_dir),
+            source_label=', '.join(str(labels_dir) for _, labels_dir in self.splits),
+            sample_tags=lambda s: [f'split:{s.split}'] if s.split else [],
             tags=tags,
             imported_from=imported_from,
             on_error=on_error,

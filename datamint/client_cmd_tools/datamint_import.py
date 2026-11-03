@@ -132,7 +132,8 @@ def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
 
         _USER_LOGGER.info(f"Detected a {fmt.upper()} dataset under '{path}':")
         for key, value in base_kwargs.items():
-            _USER_LOGGER.info(f'  {key}: {value}')
+            for v in (value if isinstance(value, list) else [value]):
+                _USER_LOGGER.info(f'  {key}: {v}')
         if not args.yes:
             answer = input(f'Import as {fmt.upper()}? (y/n): ')
             if answer.strip().lower() != 'y':
@@ -160,6 +161,15 @@ def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
             f"Could not locate the {fmt.upper()} dataset layout under '{path}'. "
             f'Pass {flags} explicitly.'
         )
+
+    if fmt == 'yolo':
+        n_images, n_labels = (len(v) if isinstance(v, list) else 1
+                              for v in (base_kwargs['images_dir'], base_kwargs['labels_dir']))
+        if n_images != n_labels:
+            raise DatamintException(
+                f'Detected {max(n_images, n_labels)} YOLO splits under \'{path}\', so a single '
+                '--images-dir or --labels-dir is ambiguous. Pass both --images-dir and --labels-dir.'
+            )
 
     return fmt, base_kwargs
 
