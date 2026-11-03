@@ -15,6 +15,7 @@ from typing import Literal
 DatasetFormat = Literal['coco', 'yolo', 'pascal_voc']
 
 _IMAGE_DIR_NAMES = {'images', 'image', 'imgs', 'jpegimages', 'img'}
+_LABEL_DIR_NAMES = {'labels', 'label'}
 
 
 @dataclass
@@ -22,7 +23,7 @@ class DetectedDataset:
     """Result of a format sniff: which format, and the constructor kwargs
     to feed the matching ``*Importer``."""
     format: DatasetFormat
-    importer_kwargs: dict[str, Path] = field(default_factory=dict)
+    importer_kwargs: dict[str, Path | list[Path]] = field(default_factory=dict)
 
 
 def _find_dir(root: Path, names: set[str]) -> Path | None:
@@ -61,19 +62,48 @@ def sniff_pascal_voc(root: Path) -> DetectedDataset | None:
     return None
 
 
+def _is_yolo_labels_dir(path: Path) -> bool:
+    txt_paths = [p for p in sorted(path.glob('*.txt')) if p.name != 'classes.txt']
+    for txt_path in txt_paths[:5]:
+        values = txt_path.read_text().split()
+        # YOLO box line: class cx cy w h
+        if values and len(values) % 5 == 0:
+            return True
+    return False
+
+
+def _yolo_images_dir(labels_dir: Path) -> Path:
+    """Swap the last ``labels`` component of the path for its sibling images dir
+    (``train/labels`` -> ``train/images``, ``labels/train`` -> ``images/train``)."""
+    parts = labels_dir.parts
+    for i in reversed(range(len(parts))):
+        if parts[i].lower() not in _LABEL_DIR_NAMES:
+            continue
+        for sibling in sorted(Path(*parts[:i]).iterdir()):
+            candidate = sibling.joinpath(*parts[i + 1:])
+            if sibling.is_dir() and sibling.name.lower() in _IMAGE_DIR_NAMES and candidate.is_dir():
+                return candidate
+        break
+    return labels_dir.parent / 'images'
+
+
 def sniff_yolo(root: Path) -> DetectedDataset | None:
-    """Look for a ``labels/`` dir of YOLO ``.txt`` files (class + 4 normalized floats)."""
-    labels_dir = _find_dir(root, {'labels', 'label'})
-    if labels_dir is None:
-        return None
-    txt_paths = [p for p in sorted(labels_dir.glob('*.txt')) if p.name != 'classes.txt']
-    if not txt_paths:
-        return None
-    if not any(len(p.read_text().split()) % 5 == 0 and p.read_text().strip() for p in txt_paths[:5]):
+    """Look for ``labels/`` dirs of YOLO ``.txt`` files (class + 4 normalized floats).
+
+    Every split (``train``, ``valid``, ``test``, ...) is picked up, each paired with its images dir.
+    """
+    labels_dirs = [p for p in sorted(root.rglob('*'))
+                   if p.is_dir()
+                   and any(part.lower() in _LABEL_DIR_NAMES for part in p.relative_to(root).parts)
+                   and _is_yolo_labels_dir(p)]
+    if not labels_dirs:
         return None
 
-    images_dir = _find_dir(root, _IMAGE_DIR_NAMES) or labels_dir.parent / 'images'
-    kwargs: dict[str, Path] = {'images_dir': images_dir, 'labels_dir': labels_dir}
+    images_dirs = [_yolo_images_dir(p) for p in labels_dirs]
+    kwargs: dict[str, Path | list[Path]] = {
+        'images_dir': images_dirs[0] if len(images_dirs) == 1 else images_dirs,
+        'labels_dir': labels_dirs[0] if len(labels_dirs) == 1 else labels_dirs,
+    }
 
     data_yaml = next(root.glob('*.yaml'), None) or next(root.glob('*.yml'), None)
     if data_yaml is not None:
