@@ -637,7 +637,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 await self.annotations_api._upload_segmentations_async(
                     resource_id,
                     file_path=f,
-                    name=name,
+                    name=self.annotations_api.standardize_segmentation_names(name),
                     frame_index=frame_index,
                     transpose_segmentation=transpose_segmentation,
                     model_id=model_name,
