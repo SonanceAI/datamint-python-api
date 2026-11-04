@@ -56,7 +56,7 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
 Examples:
   datamint import ./my_coco_dataset --project MyProject          # auto-detect the format
   datamint import ./my_yolo_dataset --project MyProject --format yolo
-  datamint import ./voc_dataset --project MyProject --dry-run    # preview without uploading
+  datamint import ./voc_dataset --dry-run                        # preview without uploading
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
@@ -68,8 +68,9 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         parser = argparse.ArgumentParser(**kwargs)
 
     parser.add_argument('path', type=str, metavar='PATH', help='Root directory of the labeled dataset.')
-    parser.add_argument('--project', type=str, required=True,
-                        help='Name of the Datamint project to import into. Created if it does not exist yet.')
+    parser.add_argument('--project', type=str, required=False,
+                        help='Name of the Datamint project to import into. Created if it does not exist yet. '
+                             'Required unless --dry-run is given.')
     parser.add_argument('--format', type=str, choices=sorted(_IMPORTER_CLASSES),
                         help='Annotation format. If omitted, the format is auto-detected from PATH.')
 
@@ -104,7 +105,10 @@ def _parse_args() -> argparse.Namespace:
     parser = _build_parser()
     import argcomplete
     argcomplete.autocomplete(parser)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.project is None and not args.dry_run:
+        parser.error('--project is required unless --dry-run is given.')
+    return args
 
 
 def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
