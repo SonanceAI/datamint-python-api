@@ -19,12 +19,14 @@ def import_boxes_to_project(result,
                             imported_from: str,
                             on_error: Literal['raise', 'skip'],
                             progress_bar: bool,
-                            result_cls: type):
+                            result_cls: type,
+                            sample_tags: Callable[[object], Sequence[str]] | None = None):
     """Shared upload loop behind every ``*Importer.import_to_project()``.
 
     ``result`` is a parse result with ``samples``, ``missing_images``, and
     ``unsupported_annotations`` attributes. ``box_points`` maps a format's box
     dataclass to a ``(point1, point2)`` pair for ``add_box_annotation``.
+    ``sample_tags`` gives extra tags per sample (e.g. its split), added to ``tags``.
 
     """
     api = api or Api()
@@ -37,13 +39,24 @@ def import_boxes_to_project(result,
                         f'unsupported annotation type (e.g. polygon/segmentation) and were not '
                         f'imported; only bounding boxes are supported.')
 
-    uploaded = api.resources.upload_resources(
-        [str(s.image_path) for s in result.samples],
-        tags=tags,
-        publish_to=project,
-        on_error=on_error,
-        progress_bar=progress_bar,
-    )
+    # upload_resources applies one tag list to all files, so samples are uploaded in groups of equal tags
+    groups: dict[tuple[str, ...], list[int]] = {}
+    for i, sample in enumerate(result.samples):
+        extra = tuple(sample_tags(sample)) if sample_tags is not None else ()
+        groups.setdefault(extra, []).append(i)
+
+    uploaded: list = [None] * len(result.samples)
+    for extra, idxs in groups.items():
+        group_tags = list(tags or []) + list(extra)
+        group_ids = api.resources.upload_resources(
+            [str(result.samples[i].image_path) for i in idxs],
+            tags=group_tags or None,
+            publish_to=project,
+            on_error=on_error,
+            progress_bar=progress_bar,
+        )
+        for i, resource_id in zip(idxs, group_ids):
+            uploaded[i] = resource_id
 
     resource_ids: list[str] = []
     errors: list[tuple[str, Exception]] = []
