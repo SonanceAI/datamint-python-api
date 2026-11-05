@@ -3,17 +3,27 @@ import json
 import logging
 import threading
 import time
+import uuid
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from datamint.configs import DEFAULT_DEPLOY_MODEL_ALIAS
 from datamint.entities.buildlog import BuildLogs
 from datamint.entities.deployjob import DeployJob
-from datamint.exceptions import ItemNotFoundError, JobTimeoutError, ResourceNotFoundError, ValidationError
+from datamint.exceptions import (
+    DefaultProjectNotSetError,
+    ItemNotFoundError,
+    JobTimeoutError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
 from ..entity_base_api import ApiConfig, EntityBaseApi
+
+if TYPE_CHECKING:
+    from datamint.entities.project import Project
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +36,119 @@ _LOG_EVENT = 'log'
 _STREAM_END_EVENT = 'end'
 
 class DeployModelApi(EntityBaseApi[DeployJob]):
-    """API handler for model deployment endpoints."""
+    """API handler for model deployment endpoints.
+
+    The deployment server scopes most of these endpoints to a project: it
+    requires ``project_id`` (a canonical UUID) or ``project_name`` in the JSON
+    body of ``start`` and in the query string of the image-inspection
+    endpoints. This handler resolves that scope automatically, in this order:
+
+    1. an explicit ``project=`` argument,
+    2. the session's active project (see
+       :func:`datamint.mlflow.set_project`, ``DATAMINT_PROJECT_ID`` or
+       ``DATAMINT_PROJECT_NAME``),
+    3. the session's default project (see :func:`datamint.select_project`).
+
+    Methods that take no ``project`` argument (:meth:`__init__` aside) accept
+    one so callers can override the ambient scope per call.
+    """
 
     def __init__(self,
                  config: ApiConfig,
                  client: httpx.Client | None = None) -> None:
         super().__init__(config, DeployJob, 'datamint/api/v1/deploy-model', client)
+
+    @staticmethod
+    def _canonical_uuid(value: str) -> str | None:
+        """Return *value* as a canonical UUID string, or ``None`` if it is not one.
+
+        The server rejects non-canonical IDs because two spellings of the same
+        UUID would address two distinct MLflow workspaces.
+        """
+        try:
+            return str(uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
+            return None
+
+    def _project_scope(self, project: 'Project | str | None' = None) -> dict[str, str]:
+        """Build the project-scoping keys for a request body or query string.
+
+        Args:
+            project: Explicit project (name, ID or ``Project``) overriding the
+                ambient scope.
+
+        Returns:
+            ``{'project_id': <uuid>}``, ``{'project_name': <name>}``, or ``{}``
+            when no project can be determined locally.
+        """
+        if project is not None:
+            if isinstance(project, str):
+                canonical = self._canonical_uuid(project)
+                return {'project_id': canonical} if canonical else {'project_name': project}
+            return {'project_id': self._canonical_uuid(project.id) or project.id}
+
+        # Imported lazily: both modules import `datamint.Api`, which imports this one.
+        from datamint.mlflow.tracking.fluent import get_active_project_id, get_active_project_name
+
+        active_id = get_active_project_id()
+        if active_id is not None:
+            canonical = self._canonical_uuid(active_id)
+            if canonical is not None:
+                return {'project_id': canonical}
+
+        active_name = get_active_project_name()
+        if active_name is not None:
+            return {'project_name': active_name}
+
+        from datamint.default_project import get_default_project_hint
+
+        hint = get_default_project_hint()
+        if hint is not None:
+            canonical = self._canonical_uuid(hint)
+            return {'project_id': canonical} if canonical else {'project_name': hint}
+
+        return {}
+
+    @staticmethod
+    def _raise_if_project_scope_missing(error: Exception) -> None:
+        """Re-raise *error* as :class:`DefaultProjectNotSetError` when the server
+        rejected the request for lacking a project scope.
+
+        The server's 400 is accurate but silent about how to fix it, so it is
+        rewritten into the actionable error the rest of the SDK uses for
+        "you never told me which project".
+        """
+        if 'project-scoped' not in str(error).lower():
+            return
+        raise DefaultProjectNotSetError() from error
+
+    def _scoped_request(self, method: str, endpoint: str, *, project: 'Project | str | None',
+                        in_query: bool, **kwargs) -> httpx.Response:
+        """Issue a project-scoped request, translating a missing-scope 400.
+
+        Args:
+            method: HTTP method.
+            endpoint: Endpoint path.
+            project: Explicit project overriding the ambient scope.
+            in_query: Send the scope in the query string instead of the JSON body.
+            **kwargs: Forwarded to :meth:`_make_request`.
+        """
+        scope = self._project_scope(project)
+        if in_query:
+            params = dict(kwargs.pop('params', None) or {})
+            for key, value in scope.items():
+                params.setdefault(key, value)
+            kwargs['params'] = params
+        else:
+            payload = dict(kwargs.pop('json', None) or {})
+            for key, value in scope.items():
+                payload.setdefault(key, value)
+            kwargs['json'] = payload
+        try:
+            return self._make_request(method, endpoint, **kwargs)
+        except ValidationError as e:
+            self._raise_if_project_scope_missing(e)
+            raise
 
     def get_by_id(self, entity_id: str) -> DeployJob:
         """Get deployment job status by ID."""
@@ -175,8 +292,32 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
               image_name: str | None = None,
               with_gpu: bool = False,
               convert_to_onnx: bool = False,
-              input_shape: list[int] | None = None) -> DeployJob:
-        """Start a new deployment job."""
+              input_shape: list[int] | None = None,
+              project: 'Project | str | None' = None) -> DeployJob:
+        """Start a new deployment job.
+
+        The server requires the model's project, so the request is scoped to
+        ``project`` when given, otherwise to the session's active project (see
+        :func:`datamint.mlflow.set_project`).
+
+        Args:
+            model_name: Name of the registered model to deploy.
+            model_version: Specific model version number.
+            model_alias: Model alias (e.g. ``'latest'``). Mutually exclusive
+                with ``model_version``.
+            image_name: Override the image name the model is built into.
+            with_gpu: Whether the deployment needs a GPU.
+            convert_to_onnx: Whether to convert the model to ONNX when building.
+            input_shape: Static input shape for the ONNX conversion.
+            project: Project (name, ID, or :class:`~datamint.entities.project.Project`)
+                the model is registered under. Defaults to the active project.
+
+        Returns:
+            The created :class:`~datamint.entities.deployjob.DeployJob`.
+
+        Raises:
+            DefaultProjectNotSetError: If no project scope can be resolved.
+        """
         payload = {
             "model_name": model_name,
             "model_version": model_version,
@@ -189,7 +330,8 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
         # Remove None values
         payload = {k: v for k, v in payload.items() if v is not None}
 
-        response = self._make_request('POST', f'/{self.endpoint_base}/start', json=payload)
+        response = self._scoped_request('POST', f'/{self.endpoint_base}/start',
+                                        project=project, in_query=False, json=payload)
         data = response.json()
         return self.get_by_id(data['job_id'])
 
@@ -204,26 +346,63 @@ class DeployModelApi(EntityBaseApi[DeployJob]):
         response = self._make_request('GET', f'/{self.endpoint_base}/jobs')
         return response.json()
 
-    def list_images(self, model_name: str | None = None) -> list[dict]:
-        """List deployed model images."""
+    def list_images(self,
+                    model_name: str | None = None,
+                    project: 'Project | str | None' = None) -> list[dict]:
+        """List deployed model images.
+
+        Args:
+            model_name: Restrict the listing to this model.
+            project: Project scope. Defaults to the active project.
+
+        Raises:
+            DefaultProjectNotSetError: If no project scope can be resolved.
+        """
         params = {}
         if model_name:
             params['model_name'] = model_name
-        response = self._make_request('GET', f'/{self.endpoint_base}/images', params=params)
+        response = self._scoped_request('GET', f'/{self.endpoint_base}/images',
+                                        project=project, in_query=True, params=params)
         return response.json()
 
-    def remove_image(self, model_name: str, tag: str | None = None) -> dict:
-        """Remove a deployed model image."""
+    def remove_image(self,
+                     model_name: str,
+                     tag: str | None = None,
+                     project: 'Project | str | None' = None) -> dict:
+        """Remove a deployed model image.
+
+        Args:
+            model_name: Name of the model whose image should be removed.
+            tag: Specific image tag to remove. Removes all tags when omitted.
+            project: Project scope. Defaults to the active project.
+
+        Raises:
+            DefaultProjectNotSetError: If no project scope can be resolved.
+        """
         params = {}
         if tag:
             params['tag'] = tag
-        response = self._make_request('DELETE', f'/{self.endpoint_base}/image/{model_name}', params=params)
+        response = self._scoped_request('DELETE', f'/{self.endpoint_base}/image/{model_name}',
+                                        project=project, in_query=True, params=params)
         return response.json()
 
-    def image_exists(self, model_name: str, tag: str = DEFAULT_DEPLOY_MODEL_ALIAS) -> bool:
-        """Check if a model image exists."""
+    def image_exists(self,
+                     model_name: str,
+                     tag: str = DEFAULT_DEPLOY_MODEL_ALIAS,
+                     project: 'Project | str | None' = None) -> bool:
+        """Check if a model image exists.
+
+        Args:
+            model_name: Name of the registered model.
+            tag: Image tag to look for.
+            project: Project scope. Defaults to the active project.
+
+        Raises:
+            DefaultProjectNotSetError: If no project scope can be resolved.
+        """
         params = {'tag': tag}
-        response = self._make_request('GET', f'/{self.endpoint_base}/image/{model_name}/exists', params=params)
+        response = self._scoped_request('GET', f'/{self.endpoint_base}/image/{model_name}/exists',
+                                        project=project, in_query=True, params=params)
         return response.json().get('exists', False)
 
     # ------------------------------------------------------------------
