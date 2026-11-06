@@ -1,4 +1,8 @@
 import logging
+import math
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Literal, Sequence
 
 from tqdm.auto import tqdm
@@ -7,6 +11,104 @@ from datamint import Api
 from datamint.entities import Project
 
 _LOGGER = logging.getLogger(__name__)
+
+IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp')
+
+IssueKind = Literal['unknown_class', 'out_of_bounds', 'invalid_box', 'unknown_image', 'invalid_file']
+
+
+@dataclass
+class ImportIssue:
+    """A problem found while parsing. The affected box, annotation or file is skipped."""
+    kind: IssueKind
+    source: str
+    detail: str = ''
+
+
+def check_box(x1: float, y1: float, x2: float, y2: float,
+              img_w: float | None, img_h: float | None) -> IssueKind | None:
+    """Return the issue kind for a pixel-space box, or None if it is valid.
+
+    The bounds check is skipped when the image size is unknown.
+    """
+    if not all(math.isfinite(v) for v in (x1, y1, x2, y2)) or x2 <= x1 or y2 <= y1:
+        return 'invalid_box'
+    if not img_w or not img_h:
+        return None
+    if x1 < 0 or y1 < 0 or x2 > img_w or y2 > img_h:
+        return 'out_of_bounds'
+    return None
+
+
+def find_unreferenced_images(images_dir: Path, referenced: set[Path], recursive: bool = False) -> list[str]:
+    """Image files under ``images_dir`` that no annotation refers to (they are not uploaded)."""
+    if not images_dir.is_dir():
+        return []
+    referenced = {p.resolve() for p in referenced}
+    paths = images_dir.rglob('*') if recursive else images_dir.iterdir()
+    return sorted(str(p.relative_to(images_dir)) for p in paths
+                  if p.suffix.lower() in IMAGE_EXTENSIONS and p.is_file() and p.resolve() not in referenced)
+
+
+# --- Report ---
+
+_FORMAT_NAMES = {'coco': 'COCO', 'pascal_voc': 'Pascal VOC', 'yolo': 'YOLO'}
+
+_ISSUE_MESSAGES = {
+    'unknown_class': 'box(es) with unknown class',
+    'out_of_bounds': 'box(es) outside image bounds',
+    'invalid_box': 'invalid box(es)',
+    'unknown_image': 'annotation(s) referencing unknown image ids',
+    'invalid_file': 'unreadable annotation file(s)',
+}
+
+
+def summarize_issues(result) -> list[str]:
+    """One line per kind of problem found while parsing."""
+    lines = []
+    if result.missing_images:
+        lines.append(f'{len(result.missing_images)} referenced image(s) not found on disk')
+    if result.unsupported_annotations:
+        lines.append(f'{result.unsupported_annotations} unsupported annotation(s), only boxes are imported')
+    for kind, n in Counter(issue.kind for issue in result.issues).items():
+        line = f'{n} {_ISSUE_MESSAGES[kind]}'
+        if kind == 'unknown_class':
+            line += f' {sorted({issue.detail for issue in result.issues if issue.kind == kind})}'
+        lines.append(line)
+    return lines
+
+
+def build_report(fmt: str, result, *, detected: bool, paths: dict, project: str | None,
+                 dry_run: bool) -> list[tuple[str, str]]:
+    """(key, value) rows describing what the import found and what it will do."""
+    n_empty = sum(1 for s in result.samples if not s.boxes)
+    splits = Counter(s.split for s in result.samples if getattr(s, 'split', None))
+    issues = summarize_issues(result)
+    verb = 'would upload' if dry_run else 'will upload'
+    target = f"to project '{project}' (created if missing)" if project else '(no --project given)'
+
+    rows = [('format', f"{_FORMAT_NAMES[fmt]} ({'detected' if detected else 'given'})")]
+    for key, value in paths.items():
+        if key != 'class_names':
+            rows.append((key, ', '.join(map(str, value)) if isinstance(value, list) else str(value)))
+    rows += [
+        ('images', f'{result.num_images:,} ({len(result.unreferenced_images):,} on disk not referenced, skipped)'),
+        ('labeled', f'{result.num_images - n_empty:,} ({n_empty:,} without boxes)'),
+    ]
+    if splits:
+        rows.append(('splits', ' · '.join(f'{name} {n:,}' for name, n in sorted(splits.items()))))
+    rows += [
+        ('boxes', f'{result.num_boxes:,}'),
+        ('classes', f'{len(result.class_names)} · {result.class_names}'),
+        ('issues', ' · '.join(issues) if issues else 'none'),
+        ('action', f'{verb} {result.num_images:,} image(s) and {result.num_boxes:,} box(es) {target}'),
+    ]
+    return rows
+
+
+def format_report(rows: list[tuple[str, str]]) -> str:
+    width = max(len(key) for key, _ in rows) + 2
+    return '\n'.join(f'{key:<{width}}{value}' for key, value in rows)
 
 
 def import_boxes_to_project(result,
@@ -38,6 +140,9 @@ def import_boxes_to_project(result,
         _LOGGER.warning(f'{result.unsupported_annotations} annotation(s) in {source_label} use an '
                         f'unsupported annotation type (e.g. polygon/segmentation) and were not '
                         f'imported; only bounding boxes are supported.')
+    if result.issues:
+        _LOGGER.warning(f'{len(result.issues)} box(es)/annotation(s) in {source_label} have issues '
+                        f'(unknown class, invalid or out-of-bounds box, ...) and were not imported.')
 
     # upload_resources applies one tag list to all files, so samples are uploaded in groups of equal tags
     groups: dict[tuple[str, ...], list[int]] = {}

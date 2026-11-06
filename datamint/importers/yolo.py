@@ -9,9 +9,10 @@ from datamint import Api
 from datamint.entities import Project
 
 from . import _common
+from ._common import ImportIssue
 from ._detect import _LABEL_DIR_NAMES
 
-_DEFAULT_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.webp')
+_DEFAULT_IMAGE_EXTENSIONS = _common.IMAGE_EXTENSIONS
 
 
 @dataclass
@@ -37,6 +38,10 @@ class YOLOParseResult:
     class_names: list[str]
     missing_images: list[str]
     unsupported_annotations: int
+    
+    # list of issues and unreferenced images are not used for the import, but can be useful for debugging
+    issues: list[ImportIssue] = field(default_factory=list)
+    unreferenced_images: list[str] = field(default_factory=list)
 
     @property
     def num_images(self) -> int:
@@ -132,10 +137,11 @@ class YOLOImporter:
 
         Cached after the first call; pass ``force=True`` to reparse.
 
+        Lines with an unknown class index, unparsable values, or a box outside
+        the image are skipped and recorded in ``issues``.
+
         Raises:
-            ValueError: If class names can't be resolved, a label line
-                references an unknown class index, or a normalized coordinate
-                is outside the expected ``[0, 1]`` range.
+            ValueError: If class names can't be resolved.
         """
         if self._result is not None and not force:
             return self._result
@@ -146,10 +152,13 @@ class YOLOImporter:
         missing_images: list[str] = []
         used_class_names: set[str] = set()
         unsupported_annotations = 0
+        issues: list[ImportIssue] = []
+        unreferenced_images: list[str] = []
 
         tag_splits = len(self.splits) > 1
         for images_dir, labels_dir in self.splits:
             split = _split_name(labels_dir) if tag_splits else None
+            referenced: set[Path] = set()
             for txt_path in sorted(labels_dir.glob('*.txt')):
                 if txt_path.name in ('classes.txt',):
                     continue
@@ -158,6 +167,7 @@ class YOLOImporter:
                 if image_path is None:
                     missing_images.append(txt_path.name)
                     continue
+                referenced.add(image_path)
 
                 img_w, img_h = Image.open(image_path).size
 
@@ -172,36 +182,41 @@ class YOLOImporter:
                             unsupported_annotations += 1
                             continue
 
-                        class_id = int(parts[0])
-                        if class_id not in class_names_by_id:
-                            raise ValueError(f"Label '{txt_path}' references unknown class_id {class_id}.")
+                        try:
+                            class_id = int(parts[0])
+                            cx, cy, w, h = (float(v) for v in parts[1:])
+                        except ValueError:
+                            issues.append(ImportIssue('invalid_box', txt_path.name, line.strip()))
+                            continue
 
-                        cx, cy, w, h = (float(v) for v in parts[1:])
-                        for coord_name, value in (('x_center', cx), ('y_center', cy), ('width', w), ('height', h)):
-                            if not (0.0 <= value <= 1.0):
-                                raise ValueError(f"Label '{txt_path}' has out-of-range normalized "
-                                                f"{coord_name}={value!r} (expected 0<=v<=1).")
+                        if class_id not in class_names_by_id:
+                            issues.append(ImportIssue('unknown_class', txt_path.name, str(class_id)))
+                            continue
 
                         cx, w = cx * img_w, w * img_w
                         cy, h = cy * img_h, h * img_h
+                        x1, y1, x2, y2 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+
+                        issue = _common.check_box(x1, y1, x2, y2, img_w, img_h)
+                        if issue is not None:
+                            issues.append(ImportIssue(issue, txt_path.name))
+                            continue
 
                         label = class_names_by_id[class_id]
-                        sample.boxes.append(YOLOBox(
-                            label=label,
-                            x1=cx - w / 2,
-                            y1=cy - h / 2,
-                            x2=cx + w / 2,
-                            y2=cy + h / 2,
-                        ))
+                        sample.boxes.append(YOLOBox(label=label, x1=x1, y1=y1, x2=x2, y2=y2))
                         used_class_names.add(label)
 
                 samples.append(sample)
+
+            unreferenced_images += _common.find_unreferenced_images(images_dir, referenced)
 
         self._result = YOLOParseResult(
             samples=samples,
             class_names=sorted(used_class_names),
             missing_images=missing_images,
             unsupported_annotations=unsupported_annotations,
+            issues=issues,
+            unreferenced_images=unreferenced_images,
         )
         return self._result
 

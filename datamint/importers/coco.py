@@ -7,6 +7,7 @@ from datamint import Api
 from datamint.entities import Project
 
 from . import _common
+from ._common import ImportIssue
 
 
 @dataclass
@@ -31,6 +32,8 @@ class COCOParseResult:
     class_names: list[str]
     missing_images: list[str]
     unsupported_annotations: int
+    issues: list[ImportIssue] = field(default_factory=list)
+    unreferenced_images: list[str] = field(default_factory=list)
 
     @property
     def num_images(self) -> int:
@@ -63,9 +66,12 @@ class COCOImporter:
 
         Cached after the first call; pass ``force=True`` to reparse.
 
+        Annotations with an unknown category/image id or an invalid/out-of-bounds
+        box are skipped and recorded in ``issues``. The bounds check needs the
+        image ``width``/``height`` in the JSON and is skipped without them.
+
         Raises:
-            ValueError: If the file is structurally invalid (missing required
-                keys, or an annotation references an unknown category/image id).
+            ValueError: If the file is structurally invalid (missing required keys).
         """
         if self._result is not None and not force:
             return self._result
@@ -78,14 +84,17 @@ class COCOImporter:
                 raise ValueError(f"Invalid COCO file: missing required key '{key}'.")
 
         categories = {cat['id']: cat['name'] for cat in data['categories']}
+        source = self.annotations_file.name
 
         images_by_id: dict[int, tuple[str, Path]] = {}
+        sizes_by_id: dict[int, tuple[float | None, float | None]] = {}
         missing_images: list[str] = []
         samples_by_id: dict[int, COCOSample] = {}
         for img in data['images']:
             file_name = img['file_name']
             image_path = self.images_dir / file_name
             images_by_id[img['id']] = (file_name, image_path)
+            sizes_by_id[img['id']] = (img.get('width'), img.get('height'))
             if not image_path.exists():
                 missing_images.append(file_name)
                 continue
@@ -93,16 +102,19 @@ class COCOImporter:
 
         used_class_names: set[str] = set()
         unsupported_annotations = 0
+        issues: list[ImportIssue] = []
         for ann in data['annotations']:
             image_id = ann['image_id']
             if image_id not in images_by_id:
-                raise ValueError(f"Annotation {ann.get('id')} references unknown image_id {image_id}.")
+                issues.append(ImportIssue('unknown_image', source, str(image_id)))
+                continue
             if image_id not in samples_by_id:
                 continue  # image file missing on disk, already recorded above
 
             category_id = ann['category_id']
             if category_id not in categories:
-                raise ValueError(f"Annotation {ann.get('id')} references unknown category_id {category_id}.")
+                issues.append(ImportIssue('unknown_class', source, str(category_id)))
+                continue
 
             bbox = ann.get('bbox')
             if bbox is None:
@@ -111,16 +123,29 @@ class COCOImporter:
                     unsupported_annotations += 1
                 continue
 
-            x, y, width, height = bbox
+            try:
+                x, y, width, height = (float(v) for v in bbox)
+            except (TypeError, ValueError):
+                issues.append(ImportIssue('invalid_box', source, str(ann.get('id'))))
+                continue
+
+            issue = _common.check_box(x, y, x + width, y + height, *sizes_by_id[image_id])
+            if issue is not None:
+                issues.append(ImportIssue(issue, source, str(ann.get('id'))))
+                continue
+
             label = categories[category_id]
             samples_by_id[image_id].boxes.append(COCOBox(label=label, x=x, y=y, width=width, height=height))
             used_class_names.add(label)
 
+        referenced = {image_path for _, image_path in images_by_id.values()}
         self._result = COCOParseResult(
             samples=list(samples_by_id.values()),
             class_names=sorted(used_class_names),
             missing_images=missing_images,
             unsupported_annotations=unsupported_annotations,
+            issues=issues,
+            unreferenced_images=_common.find_unreferenced_images(self.images_dir, referenced, recursive=True),
         )
         return self._result
 
