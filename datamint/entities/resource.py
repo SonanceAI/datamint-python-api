@@ -22,6 +22,7 @@ from .cache_manager import CacheManager
 
 if TYPE_CHECKING:
     import numpy as np
+    from matplotlib.axes import Axes
     from medimgkit import ViewPlane
 
     from datamint.api.endpoints.resources_api import ResourcesApi
@@ -626,6 +627,41 @@ class Resource(BaseResource):
     def show(self) -> None:
         """Open the resource in the default web browser."""
         webbrowser.open(self.url)
+
+    def plot_segmentations(self,
+                           index: int | None = None,
+                           axis: 'ViewPlane' = 'axial',
+                           alpha: float = 0.5,
+                           ax: 'Axes | None' = None) -> 'Axes':
+        """Plot one slice (or the 2D image) with all its segmentations on top.
+
+        ``index=None`` picks the slice with the biggest mask. ``axis`` is only used for volumes.
+        """
+        from datamint.utils.visualization import plot_segmentations
+
+        return plot_segmentations(self, index=index, axis=axis, alpha=alpha, ax=ax)
+
+    def plot_shapes(self,
+                    axis: 'ViewPlane | None' = None,
+                    index: int | None = None,
+                    ax: 'Axes | None' = None) -> 'Axes':
+        """Plot one slice (or the 2D image) with its boxes, lines, points and regions.
+
+        ``axis`` is required for volumes: shapes are only shown on the plane they were drawn on.
+        ``index=None`` picks the slice with the most shapes.
+        """
+        from datamint.utils.visualization import plot_shapes
+
+        return plot_shapes(self, axis=axis, index=index, ax=ax)
+
+    def plot_labels(self,
+                    index: int | None = None,
+                    axis: 'ViewPlane' = 'axial',
+                    ax: 'Axes | None' = None) -> 'Axes':
+        """Plot one slice (or the 2D image) with its categories, labels, numbers and texts listed on top."""
+        from datamint.utils.visualization import plot_labels
+
+        return plot_labels(self, index=index, axis=axis, ax=ax)
 
     @staticmethod
     def from_local_file(file_path: str | Path):
