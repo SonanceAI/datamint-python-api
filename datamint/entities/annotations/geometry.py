@@ -10,6 +10,7 @@ from medimgkit import ViewPlane, dicom_utils, nifti_utils
 from medimgkit.dicom_utils import get_slice_orientation
 from nibabel.nifti1 import Nifti1Image
 from pydantic import BaseModel, ConfigDict, field_validator
+from typing_extensions import Self
 
 CoordinateSystem: TypeAlias = Literal['pixel', 'patient']
 Point3D: TypeAlias = tuple[int | float, int | float, int | float]
@@ -97,6 +98,31 @@ def _pixel_to_patient_point(
     raise TypeError(f'Unsupported metadata type: {type(metadata)}')
 
 
+def _patient_to_pixel_points(
+    points: Sequence[Point3D],
+    *,
+    slice_plane: ViewPlane | None = None,
+    metadata: pydicom.Dataset | Nifti1Image,
+) -> np.ndarray:
+    """(P, 3) patient points -> (P, 3) pixel points (x, y, slice index) on ``slice_plane``.
+
+    Inverts ``_pixel_to_patient_point``, so both directions follow the same convention.
+    """
+    origin, right, down = (
+        np.asarray(_pixel_to_patient_point(p, frame_index=0, slice_plane=slice_plane, metadata=metadata), dtype=float)
+        for p in [(0, 0), (1, 0), (0, 1)]
+    )
+    dx = right - origin
+    dy = down - origin
+    try:
+        next_slice = _pixel_to_patient_point((0, 0), frame_index=1, slice_plane=slice_plane, metadata=metadata)
+        dz = np.asarray(next_slice, dtype=float) - origin
+    except Exception:
+        dz = np.cross(dx, dy)  # single slice
+    inv = np.linalg.inv(np.column_stack([dx, dy, dz]))
+    return (np.asarray(points, dtype=float) - origin) @ inv.T
+
+
 def _normalize_vector(vector: np.ndarray | list | tuple | None) -> Vector3D | None:
     if vector is None:
         return None
@@ -121,9 +147,39 @@ class Geometry(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra='ignore')
 
     type: ClassVar[str]
+    points: tuple[Point3D, ...]
     viewPlaneNormal: Vector3D | None = None
     viewUp: Vector3D | None = None
     coordinate_system: CoordinateSystem = 'patient'
+
+    def to_pixel_coordinates(self,
+                             metadata: pydicom.Dataset | Nifti1Image | None = None,
+                             slice_plane: ViewPlane | None = None) -> Self:
+        """Copy with points as (x, y, slice index) on ``slice_plane`` (the native plane if None)."""
+        if self.coordinate_system == 'pixel':
+            return self.model_copy()
+        if metadata is None:  # 2D images without geometry: patient and pixel are the same
+            return self.model_copy(update={'coordinate_system': 'pixel'})
+        points = _patient_to_pixel_points(self.points, slice_plane=slice_plane, metadata=metadata)
+        return self.model_copy(update={'points': tuple(_normalize_point(p) for p in points),
+                                       'coordinate_system': 'pixel'})
+
+    def to_patient_coordinates(self,
+                               metadata: pydicom.Dataset | Nifti1Image | None = None,
+                               slice_plane: ViewPlane | None = None) -> Self:
+        """Copy with points in patient coordinates. The slice index of each point is rounded."""
+        if self.coordinate_system == 'patient':
+            return self.model_copy()
+        if metadata is None:  # 2D images without geometry: patient and pixel are the same
+            return self.model_copy(update={'coordinate_system': 'patient'})
+        points = tuple(
+            _normalize_point(_pixel_to_patient_point(p, frame_index=int(round(p[2])), slice_plane=slice_plane,
+                                                     metadata=metadata), allow_2d=False)
+            for p in self.points
+        )
+        viewPlaneNormal, viewUp = _TwoPointGeometry._extract_view_parameters(metadata)
+        return self.model_copy(update={'points': points, 'coordinate_system': 'patient',
+                                       'viewPlaneNormal': viewPlaneNormal, 'viewUp': viewUp})
 
     def to_dict(self) -> dict[str, Any]:
         payload = self.model_dump(exclude={'type', 'coordinate_system'}, warnings='none')
@@ -272,6 +328,11 @@ class _TwoPointGeometry(Geometry):
 class LineGeometry(_TwoPointGeometry):
     type: ClassVar[str] = 'line'
 
+    @property
+    def length(self) -> float:
+        """In pixels or mm, following ``coordinate_system``."""
+        return float(np.linalg.norm(np.subtract(self.point2, self.point1)))
+
 
 class PointGeometry(Geometry):
     points: tuple[Point3D]
@@ -365,6 +426,22 @@ class RegionGeometry(Geometry):
 
         return tuple(_normalize_point(point) for point in value)
 
+    @property
+    def length(self) -> float:
+        """Polyline length (perimeter if closed), in pixels or mm following ``coordinate_system``."""
+        pts = np.asarray(self.points, dtype=float)
+        if self.closed:
+            pts = np.vstack([pts, pts[:1]])
+        return float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
+
+    @property
+    def area(self) -> float:
+        """Area inside a closed region, in pixels² or mm² following ``coordinate_system``."""
+        if not self.closed:
+            raise ValueError('area is only defined for closed regions')
+        pts = np.asarray(self.points, dtype=float)
+        return float(np.linalg.norm(np.cross(pts, np.roll(pts, -1, axis=0)).sum(0)) / 2)
+
     @classmethod
     def from_coordinates(
         cls,
@@ -453,6 +530,28 @@ class BoxGeometry(Geometry):
     @property
     def point2(self) -> Point3D:
         return self.points[3]
+
+    @property
+    def xyxy(self) -> tuple[float, float, float, float]:
+        """(x1, y1, x2, y2) in pixels. Needs pixel coordinates."""
+        if self.coordinate_system != 'pixel':
+            raise ValueError('xyxy needs pixel coordinates, call to_pixel_coordinates(metadata) first')
+        pts = np.asarray(self.points, dtype=float)[:, :2]
+        x1, y1 = pts.min(0)
+        x2, y2 = pts.max(0)
+        return float(x1), float(y1), float(x2), float(y2)
+
+    @property
+    def xywh(self) -> tuple[float, float, float, float]:
+        """(x, y, width, height) in pixels. Needs pixel coordinates."""
+        x1, y1, x2, y2 = self.xyxy
+        return x1, y1, x2 - x1, y2 - y1
+
+    @property
+    def area(self) -> float:
+        """In pixels² or mm², following ``coordinate_system``."""
+        pts = np.asarray(self.points, dtype=float)
+        return float(np.linalg.norm(pts[1] - pts[0]) * np.linalg.norm(pts[2] - pts[0]))
 
     @classmethod
     def from_coordinates(
