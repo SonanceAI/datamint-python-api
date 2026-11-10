@@ -105,9 +105,11 @@ proj.cache_resources(progress_bar=True)           # or api.resources.cache_resou
 CLI equivalent, which also prints the matching dataset one-liner:
 
 ```bash
-datamint download --project "Liver CT"
-datamint download --project "Liver CT" -o ./liver_ct   # browsable folder of symlinks into the cache
+datamint download "Liver CT"
+datamint download "Liver CT" -o ./liver_ct   # browsable folder of symlinks into the cache
 ```
+
+The project can also be passed as `--project "Liver CT"`; use one form or the other, not both.
 
 Cache management: `datamint config --list-local-data`, `datamint config --clean-local-data resources`, `datamint config --clean-all-local-data`.
 
