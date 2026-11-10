@@ -7,6 +7,7 @@ from datamint import Api
 from datamint.entities import Project
 
 from . import _common
+from ._common import ImportIssue
 
 
 @dataclass
@@ -32,6 +33,8 @@ class PascalVOCParseResult:
     class_names: list[str]
     missing_images: list[str]
     unsupported_annotations: int
+    issues: list[ImportIssue] = field(default_factory=list)
+    unreferenced_images: list[str] = field(default_factory=list)
 
     @property
     def num_images(self) -> int:
@@ -51,6 +54,14 @@ class PascalVOCImportResult:
     errors: list[tuple[str, Exception]] = field(default_factory=list)
 
 
+def _read_size(root: ET.Element) -> tuple[float | None, float | None]:
+    """Image (width, height) from the ``size`` element, or (None, None) if missing/invalid."""
+    try:
+        return float(root.findtext('size/width')), float(root.findtext('size/height'))
+    except (TypeError, ValueError):
+        return None, None
+
+
 class PascalVOCImporter:
     """Parse a Pascal VOC-format annotations directory and upload it to a Datamint project.
 
@@ -67,9 +78,12 @@ class PascalVOCImporter:
 
         Cached after the first call; pass ``force=True`` to reparse.
 
+        XML files that can't be read or have no ``filename``, and invalid or
+        out-of-bounds boxes, are skipped and recorded in ``issues``. The bounds
+        check needs the ``size`` element and is skipped without it.
+
         Raises:
-            ValueError: If ``annotations_dir`` doesn't exist, or an XML file is
-                missing its required ``filename`` element.
+            ValueError: If ``annotations_dir`` doesn't exist.
         """
         if self._result is not None and not force:
             return self._result
@@ -81,19 +95,28 @@ class PascalVOCImporter:
         missing_images: list[str] = []
         used_class_names: set[str] = set()
         unsupported_annotations = 0
+        issues: list[ImportIssue] = []
+        referenced: set[Path] = set()
 
         for xml_path in sorted(self.annotations_dir.glob('*.xml')):
-            root = ET.parse(xml_path).getroot()
+            try:
+                root = ET.parse(xml_path).getroot()
+            except ET.ParseError:
+                issues.append(ImportIssue('invalid_file', xml_path.name))
+                continue
 
             file_name = root.findtext('filename', default='').strip()
             if not file_name:
-                raise ValueError(f"Invalid Pascal VOC annotation '{xml_path}': missing required element 'filename'.")
+                issues.append(ImportIssue('invalid_file', xml_path.name, "missing 'filename'"))
+                continue
 
             image_path = self.images_dir / file_name
+            referenced.add(image_path)
             if not image_path.exists():
                 missing_images.append(file_name)
                 continue
 
+            img_w, img_h = _read_size(root)
             sample = PascalVOCSample(image_path=image_path, file_name=file_name)
             for obj in root.findall('object'):
                 label = obj.findtext('name', default='').strip()
@@ -106,15 +129,19 @@ class PascalVOCImporter:
                     # incomplete object entry skip it
                     continue
 
+                try:
+                    x1, y1, x2, y2 = (float(bb.findtext(k)) for k in ('xmin', 'ymin', 'xmax', 'ymax'))
+                except (TypeError, ValueError):
+                    issues.append(ImportIssue('invalid_box', xml_path.name, label))
+                    continue
+
+                issue = _common.check_box(x1, y1, x2, y2, img_w, img_h)
+                if issue is not None:
+                    issues.append(ImportIssue(issue, xml_path.name, label))
+                    continue
+
                 difficult = obj.findtext('difficult', default='0').strip() == '1'
-                sample.boxes.append(PascalVOCBox(
-                    label=label,
-                    x1=float(bb.findtext('xmin')),
-                    y1=float(bb.findtext('ymin')),
-                    x2=float(bb.findtext('xmax')),
-                    y2=float(bb.findtext('ymax')),
-                    difficult=difficult,
-                ))
+                sample.boxes.append(PascalVOCBox(label=label, x1=x1, y1=y1, x2=x2, y2=y2, difficult=difficult))
                 used_class_names.add(label)
 
             samples.append(sample)
@@ -124,6 +151,8 @@ class PascalVOCImporter:
             class_names=sorted(used_class_names),
             missing_images=missing_images,
             unsupported_annotations=unsupported_annotations,
+            issues=issues,
+            unreferenced_images=_common.find_unreferenced_images(self.images_dir, referenced),
         )
         return self._result
 

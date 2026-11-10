@@ -16,7 +16,9 @@ from datamint.importers import (
     DatasetFormat,
     PascalVOCImporter,
     YOLOImporter,
+    build_report,
     detect_format,
+    format_report,
     sniff_single_format,
 )
 from datamint.utils.logging_utils import load_cmdline_logging_config
@@ -56,7 +58,7 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
 Examples:
   datamint import ./my_coco_dataset --project MyProject          # auto-detect the format
   datamint import ./my_yolo_dataset --project MyProject --format yolo
-  datamint import ./voc_dataset --project MyProject --dry-run    # preview without uploading
+  datamint import ./voc_dataset --dry-run                        # preview without uploading
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
@@ -68,8 +70,9 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         parser = argparse.ArgumentParser(**kwargs)
 
     parser.add_argument('path', type=str, metavar='PATH', help='Root directory of the labeled dataset.')
-    parser.add_argument('--project', type=str, required=True,
-                        help='Name of the Datamint project to import into. Created if it does not exist yet.')
+    parser.add_argument('--project', type=str, required=False,
+                        help='Name of the Datamint project to import into. Created if it does not exist yet. '
+                             'Required unless --dry-run is given.')
     parser.add_argument('--format', type=str, choices=sorted(_IMPORTER_CLASSES),
                         help='Annotation format. If omitted, the format is auto-detected from PATH.')
 
@@ -92,9 +95,10 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
     parser.add_argument('--on-error', type=str, choices=('raise', 'skip'), default='raise',
                         help='Whether to stop or skip past a single resource/annotation upload failure.')
     parser.add_argument('--dry-run', action='store_true', default=False,
-                        help='Parse and print a summary, but do not create the project or upload anything.')
+                        help='Parse and print the report, but do not create the project or upload anything.')
     parser.add_argument('--yes', action='store_true', default=False,
-                        help='Skip the auto-detected-format confirmation prompt.')
+                        help='Skip the confirmation prompt shown after the report when the format was '
+                             'auto-detected or issues were found.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Print debug messages.')
 
     return parser
@@ -104,13 +108,16 @@ def _parse_args() -> argparse.Namespace:
     parser = _build_parser()
     import argcomplete
     argcomplete.autocomplete(parser)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.project is None and not args.dry_run:
+        parser.error('--project is required unless --dry-run is given.')
+    return args
 
 
-def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
+def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict, bool]:
     """Figure out the format + importer constructor kwargs, applying CLI overrides.
 
-    Prompts for confirmation when the format was auto-detected (unless ``--yes``).
+    Returns ``(format, importer_kwargs, auto_detected)``.
     Raises ``DatamintException`` when the format/paths can't be resolved.
     """
     path = Path(args.path)
@@ -129,17 +136,6 @@ def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
             )
         fmt = detected.format
         base_kwargs = dict(detected.importer_kwargs)
-
-        _USER_LOGGER.info(f"Detected a {fmt.upper()} dataset under '{path}':")
-        for key, value in base_kwargs.items():
-            for v in (value if isinstance(value, list) else [value]):
-                _USER_LOGGER.info(f'  {key}: {v}')
-        if not args.yes:
-            answer = input(f'Import as {fmt.upper()}? (y/n): ')
-            if answer.strip().lower() != 'y':
-                raise DatamintException(
-                    'Aborted. Re-run with --format to choose a different format explicitly.'
-                )
 
     overrides = {
         'annotations_file': args.annotations_file,
@@ -171,7 +167,7 @@ def _resolve_dataset(args: argparse.Namespace) -> tuple[DatasetFormat, dict]:
                 '--images-dir or --labels-dir is ambiguous. Pass both --images-dir and --labels-dir.'
             )
 
-    return fmt, base_kwargs
+    return fmt, base_kwargs, args.format is None
 
 
 def main() -> None:
@@ -190,24 +186,31 @@ def main() -> None:
         if not path.is_dir():
             raise DatamintException(f"'{path}' is not a directory.")
 
-        fmt, importer_kwargs = _resolve_dataset(args)
+        fmt, importer_kwargs, auto_detected = _resolve_dataset(args)
         importer = _IMPORTER_CLASSES[fmt](**importer_kwargs)
 
-        result = importer.parse()
-        _USER_LOGGER.info(
-            f'Parsed {result.num_images} image(s), {result.num_boxes} box(es), '
-            f'{len(result.class_names)} class(es): {result.class_names}'
-        )
-        if result.missing_images:
-            _USER_LOGGER.warning(f'{len(result.missing_images)} referenced image(s) not found on disk.')
-        if result.unsupported_annotations:
-            _USER_LOGGER.warning(
-                f'{result.unsupported_annotations} annotation(s) use an unsupported type and will be skipped.'
-            )
+        try:
+            result = importer.parse()
+        except ValueError as e:
+            raise DatamintException(f'Could not parse the {fmt.upper()} dataset: {e}') from e
+
+        rows = build_report(fmt, result,
+                            detected=auto_detected,
+                            paths=importer_kwargs,
+                            project=args.project,
+                            dry_run=args.dry_run)
+        _USER_LOGGER.info(format_report(rows))
 
         if args.dry_run:
             _USER_LOGGER.info('Dry run: nothing was uploaded.')
             return
+
+        has_issues = bool(result.issues or result.missing_images or result.unsupported_annotations)
+        if not args.yes and (auto_detected or has_issues):
+            answer = input('Proceed? (y/n): ')
+            if answer.strip().lower() != 'y':
+                hint = ' Re-run with --format to choose a different format explicitly.' if auto_detected else ''
+                raise DatamintException(f'Aborted.{hint}')
 
         api_key = handle_api_key()
         if api_key is None:
