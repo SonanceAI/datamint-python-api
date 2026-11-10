@@ -269,36 +269,6 @@ def plot_segmentations(resource: 'Resource',
     return ax
 
 
-def _patient_to_slice(metainfo, plane: 'ViewPlane | None'):
-    """Map patient points (P, 3) to (x, y, slice index) on ``plane``.
-
-    Inverts the pixel -> patient conversion used to create geometry annotations, so both directions
-    follow the same convention.
-    """
-    import pydicom
-    from nibabel import Nifti1Image
-
-    from datamint.entities.annotations.geometry import _pixel_to_patient_point
-
-    if not isinstance(metainfo, (pydicom.Dataset, Nifti1Image)):
-        # 2D images without geometry: points are already pixels
-        return lambda pts: np.asarray(pts, dtype=float)
-
-    def to_patient(x: float, y: float, k: int) -> np.ndarray:
-        return np.asarray(_pixel_to_patient_point((x, y), frame_index=k, slice_plane=plane, metadata=metainfo),
-                          dtype=float)
-
-    origin = to_patient(0, 0, 0)
-    dx = to_patient(1, 0, 0) - origin
-    dy = to_patient(0, 1, 0) - origin
-    try:
-        dz = to_patient(0, 0, 1) - origin
-    except Exception:
-        dz = np.cross(dx, dy)  # single slice
-    inv = np.linalg.inv(np.column_stack([dx, dy, dz]))
-    return lambda pts: (np.asarray(pts, dtype=float) - origin) @ inv.T
-
-
 def _draw_shape(ax: Axes, ann_type: str, pts: np.ndarray, color, closed: bool = False) -> None:
     """``pts`` are (P, 2) pixel coordinates on the plotted slice."""
     if ann_type == 'point':
@@ -327,7 +297,7 @@ def plot_shapes(resource: 'Resource',
         raise ValueError("axis is required for volumes, e.g. axis='axial'")
 
     vol, metainfo, std_axis = _read_volume(resource, axis)
-    to_slice = _patient_to_slice(metainfo, axis if resource.is_volume() else None)
+    plane = axis if resource.is_volume() else None
 
     anns = [ann for ann in resource.fetch_annotations() if ann.annotation_type in _SHAPE_TYPES]
     shapes = []  # (annotation, (P, 3) slice coordinates)
@@ -337,7 +307,7 @@ def plot_shapes(resource: 'Resource',
         if not isinstance(geom, Geometry):
             skipped[ann.annotation_type] = skipped.get(ann.annotation_type, 0) + 1
             continue
-        pts = to_slice(geom.points) if geom.coordinate_system == 'patient' else np.asarray(geom.points, dtype=float)
+        pts = np.asarray(geom.to_pixel_coordinates(metainfo, plane).points, dtype=float)
         if np.ptp(pts[:, 2]) > 0.5:
             skipped['other plane'] = skipped.get('other plane', 0) + 1
             continue
