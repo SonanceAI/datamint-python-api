@@ -53,3 +53,24 @@ def download_and_extract(url: str, dataset_subdir: str) -> Path:
     marker.touch()
 
     return out_dir
+
+
+def download_kaggle(handle: str, dataset_subdir: str) -> Path:
+    """Download a Kaggle dataset (e.g. ``'owner/dataset'``) with kagglehub into the examples cache directory.
+
+    Idempotent, same as :func:`download_and_extract`.
+    """
+    import kagglehub
+
+    out_dir = cache_dir(dataset_subdir)
+    marker = out_dir / _DONE_MARKER
+    if marker.exists():
+        _LOGGER.info(f'Using cached dataset at {out_dir}')
+        return out_dir
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _LOGGER.info(f'Downloading Kaggle dataset {handle}...')
+    kagglehub.dataset_download(handle, output_dir=str(out_dir))
+    marker.touch()
+
+    return out_dir

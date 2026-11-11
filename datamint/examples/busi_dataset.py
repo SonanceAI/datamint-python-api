@@ -7,7 +7,7 @@ from . import _common, _download
 
 _LOGGER = logging.getLogger(__name__)
 
-_BUSI_URL = 'https://www.kaggle.com/api/v1/datasets/download/sabahesaraki/breast-ultrasound-images-dataset'
+_BUSI_KAGGLE_HANDLE = 'sabahesaraki/breast-ultrasound-images-dataset'
 _DATASET_NAME = 'BUSI Segmentation Example'
 _DESCRIPTION = ('Breast ultrasound segmentation example dataset (BUSI), '
                'auto-populated by datamint.examples.busi_dataset.')
@@ -27,7 +27,7 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         _common.print_skip_summary(_DATASET_NAME, proj)
         return proj
 
-    data_dir = _download.download_and_extract(_BUSI_URL, 'busi')
+    data_dir = _download.download_kaggle(_BUSI_KAGGLE_HANDLE, 'busi')
     base_dir = data_dir / 'Dataset_BUSI_with_GT'
 
     image_paths = []
