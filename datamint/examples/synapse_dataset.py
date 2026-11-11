@@ -10,7 +10,7 @@ from . import _common, _download
 
 _LOGGER = logging.getLogger(__name__)
 
-_SYNAPSE_URL = 'https://www.kaggle.com/api/v1/datasets/download/dogcdt/synapse'
+_SYNAPSE_KAGGLE_HANDLE = 'dogcdt/synapse'
 _DATASET_NAME = 'Synapse Segmentation Example'
 _DESCRIPTION = ('Synapse Multi-Organ CT 3D segmentation example dataset, '
                'auto-populated by datamint.examples.synapse_dataset.')
@@ -82,7 +82,7 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         _common.print_skip_summary(_DATASET_NAME, proj)
         return proj
 
-    data_dir = _download.download_and_extract(_SYNAPSE_URL, 'synapse')
+    data_dir = _download.download_kaggle(_SYNAPSE_KAGGLE_HANDLE, 'synapse')
     image_paths, label_paths = _convert_to_nifti(data_dir)
 
     # Uploading the labels with the resources links them to the project's worklist.
