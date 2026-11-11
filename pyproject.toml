@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.50.0a0"
+version = "2.51.0a0"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -46,6 +46,7 @@ torch = ">=2.4.1"
 torchvision = ">=0.19.1"
 tqdm = "^4.0.0"
 requests = "^2.0.0"
+kagglehub = ">=1.0.0"
 pyyaml = ">=5.0.0"
 pydicom = "^3.0.0"
 aiohttp = "^3.0.0"

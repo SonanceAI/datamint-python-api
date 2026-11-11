@@ -24,8 +24,9 @@ def _build_parser(subparsers: argparse._SubParsersAction | None = None) -> argpa
         'description': "Download and cache a Datamint project's dataset locally.",
         'epilog': """
 Examples:
-  datamint download --project MyProject                     # cache the dataset locally
-  datamint download --project MyProject -o ./my_data_folder  # also create a browsable view
+  datamint download MyProject                      # cache the dataset locally
+  datamint download MyProject -o ./my_data_folder  # also create a browsable view
+  datamint download --project MyProject            # same as the first, using the --project flag
 
 More Documentation: https://sonanceai.github.io/datamint-python-api/command_line_tools.html
         """,
@@ -35,8 +36,11 @@ More Documentation: https://sonanceai.github.io/datamint-python-api/command_line
         parser = subparsers.add_parser('download', **kwargs)
     else:
         parser = argparse.ArgumentParser(**kwargs)
-    parser.add_argument('--project', type=str, required=True,
+    parser.add_argument('project', nargs='?', metavar='PROJECT',
                         help='Name of the Datamint project to download.')
+    # --project option also works
+    parser.add_argument('--project', dest='project_flag', type=str, metavar='PROJECT',
+                        help='Name of the Datamint project.')
     parser.add_argument('-o', '--output', type=str, default=None,
                         help='Optional folder for a browsable view of the downloaded files '
                              '(symlinks into the SDK cache; requires symlink support).')
@@ -49,7 +53,14 @@ def _parse_args() -> argparse.Namespace:
     parser = _build_parser()
     import argcomplete
     argcomplete.autocomplete(parser)
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.project is not None and args.project_flag is not None:
+        parser.error("Both positional project and --project flag provided. Use only one.")
+    args.project = args.project or args.project_flag
+    if args.project is None:
+        parser.error("Project name is required. Provide it as a positional argument or use --project flag.")
+    return args
 
 
 def _export_view(resources, output_dir: Path) -> None:
