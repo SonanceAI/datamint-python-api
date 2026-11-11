@@ -130,7 +130,7 @@ def _datamint_requirement() -> tuple[str, Path | None]:
     return _build_datamint_wheel(source_dir)
 
 
-def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path]:
+def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path | None]:
     """Build a wheel from *source_dir* and return (requirement_str, wheel_path).
 
     The wheel is written to a mkdtemp directory; the caller is responsible for
@@ -139,6 +139,10 @@ def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path]:
     Venvs inside the package dir (e.g. datamint/env/) contain symlinks that
     resolve to system paths outside the project root, causing poetry-core to
     crash with a ValueError.  Building from a clean copy avoids this.
+
+    On build failure, falls back to the normal ``datamint==<version>`` requirement
+    and returns ``None`` for the wheel path so the deploy container installs from
+    PyPI / configured index instead of bundling a local wheel.
     """
     import shutil
     import subprocess
@@ -164,17 +168,24 @@ def _build_datamint_wheel(source_dir: Path) -> tuple[str, Path]:
             capture_output=True,
             text=True,
         )
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, Exception) as e:
         shutil.rmtree(tmpdir, ignore_errors=True)
-        raise RuntimeError(
-            f"pip wheel failed for {source_dir}.\n"
-            f"stdout:\n{e.output}\nstderr:\n{e.stderr}"
-        ) from e
+        logger.warning(
+            "Failed to build datamint wheel from %s: %s. "
+            "Falling back to normal datamint requirement for deploy container.",
+            source_dir, e,
+        )
+        return f'datamint=={datamint.__version__}', None
 
     wheels = list(wheel_dir.glob('datamint*.whl'))
     if not wheels:
         shutil.rmtree(tmpdir, ignore_errors=True)
-        raise RuntimeError(f"pip wheel produced no datamint wheel in {wheel_dir}.")
+        logger.warning(
+            "pip wheel produced no datamint wheel in %s. "
+            "Falling back to normal datamint requirement.",
+            wheel_dir,
+        )
+        return f'datamint=={datamint.__version__}', None
 
     wheel_path = wheels[0]
     requirement = f'datamint @ file://{_DEPLOY_MODEL_PATH}/artifacts/{wheel_path.name}'
