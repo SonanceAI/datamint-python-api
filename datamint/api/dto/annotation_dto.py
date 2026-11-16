@@ -14,6 +14,7 @@ Classes:
     CreateAnnotationDto: Main DTO for creating annotation requests.
 """
 
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from datamint.entities.annotations import AnnotationType
@@ -21,8 +22,19 @@ from datamint.entities.annotations import AnnotationType
 if TYPE_CHECKING:
     from datamint.entities.annotations.geometry import Geometry
 
+
 def _remove_none(d: dict) -> dict:
     return {k: _remove_none(v) for k, v in d.items() if v is not None} if isinstance(d, dict) else d
+
+
+def _normalize_model_uuid(model_uuid: str | uuid.UUID | None) -> str | None:
+    if model_uuid is None:
+        return None
+    if isinstance(model_uuid, uuid.UUID):
+        return str(model_uuid)
+    if not isinstance(model_uuid, str):
+        raise ValueError("model_uuid must be a valid UUID string if provided.")
+    return str(uuid.UUID(model_uuid))
 
 
 class CreateAnnotationDto:
@@ -37,6 +49,7 @@ class CreateAnnotationDto:
                  frame_index: int | None = None,
                  is_model: bool | None = None,
                  model_id: str | None = None,
+                 model_uuid: str | None = None,
                  geometry: 'Geometry | None' = None,
                  units: str | None = None,
                  source: str | None = None,
@@ -52,10 +65,11 @@ class CreateAnnotationDto:
         self.frame_range = frame_range  # inclusive [start, end], as the server expects
         self.units = units
         self.model_id = model_id
-        if model_id is not None:
+        self.model_uuid = _normalize_model_uuid(model_uuid)
+        if model_id is not None or self.model_uuid is not None:
             if is_model is False:
-                raise ValueError("model_id==False while self.model_id is provided.")
-            if not isinstance(model_id, str):
+                raise ValueError("is_model==False while model_id/model_uuid is provided.")
+            if model_id is not None and not isinstance(model_id, str):
                 raise ValueError("model_id must be a string if provided.")
             is_model = True
         self.is_model = is_model
@@ -80,6 +94,7 @@ class CreateAnnotationDto:
             "geometry": self.geometry.to_dict() if self.geometry else None,
             "is_model": self.is_model,
             "model_id": self.model_id,
+            "model_uuid": self.model_uuid,
             "source": self.source,
         }
         return _remove_none(ret)

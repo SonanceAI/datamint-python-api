@@ -21,7 +21,7 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from datamint.api.dto import CreateAnnotationDto
-from datamint.api.dto.annotation_dto import _remove_none
+from datamint.api.dto.annotation_dto import _normalize_model_uuid, _remove_none
 from datamint.entities import Resource
 from datamint.entities.annotations import (
     Annotation,
@@ -303,6 +303,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                           upload_volume: bool | str = 'auto',
                                           source: str | None = None,
                                           session: aiohttp.ClientSession | None = None,
+                                          model_uuid: str | None = None,
                                           ) -> Sequence[str]:
         """
         Upload segmentations asynchronously.
@@ -320,10 +321,13 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             transpose_segmentation: Whether to transpose the segmentation.
             upload_volume: Whether to upload the volume as a single file or split into frames.
             source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            model_uuid: Optional registered model UUID.
 
         Returns:
             List of annotation IDs created.
         """
+        model_uuid = _normalize_model_uuid(model_uuid)
+
         if upload_volume == 'auto':
             if isinstance(file_path, str) and (file_path.endswith(('.nii', '.nii.gz'))):
                 upload_volume = True
@@ -346,6 +350,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 transpose_segmentation=transpose_segmentation,
                 source=source,
                 session=session,
+                model_uuid=model_uuid,
             )
 
         # Handle frame-by-frame upload (existing logic)
@@ -377,6 +382,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 model_id=model_id,
                 source=source,
                 session=session,
+                model_uuid=model_uuid,
             )
             annotids.extend(frame_annotids)
         return annotids
@@ -393,6 +399,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                       model_id: str | None = None,
                                                       source: str | None = None,
                                                       session: aiohttp.ClientSession | None = None,
+                                                      model_uuid: str | None = None,
                                                       ) -> list[str]:
         """
         Upload a single frame segmentation asynchronously.
@@ -409,6 +416,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             worklist_id: The annotation worklist unique id.
             model_id: The model unique id.
             source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            model_uuid: Optional registered model UUID.
 
         Returns:
             List of annotation IDs created.
@@ -455,6 +463,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     imported_from=imported_from,
                     import_author=author_email,
                     model_id=model_id,
+                    model_uuid=model_uuid,
                     annotation_worklist_id=worklist_id,
                     source=source,
                 )
@@ -647,6 +656,16 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         else:
             return None
 
+    def _resolve_model_identity(
+        self,
+        model_name: str | None,
+        model_uuid: str | None,
+    ) -> tuple[str | None, str | None]:
+        """Resolve ``(model_id, model_uuid)``, skipping ``_check_model`` when ``model_uuid`` is provided."""
+        if model_uuid is not None:
+            return model_name, _normalize_model_uuid(model_uuid)
+        return self._check_model(model_name), None
+
     def upload_volume_segmentation(self,
                                    resource: str | Resource,
                                    file_path: str | Path | np.ndarray,
@@ -656,6 +675,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                    model_name: str | None = None,
                                    transpose_segmentation: bool = False,
                                    source: str | None = 'imported',
+                                   model_uuid: str | None = None,
                                    ) -> list[str]:
         """
         Upload a 3D volume segmentation to a resource.
@@ -674,6 +694,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             transpose_segmentation: Whether to transpose the segmentation before uploading.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            model_uuid: Optional registered model UUID. When supplied, local UUID validation
+                is performed and the client-side MLflow model lookup is skipped.
 
         Returns:
             List of annotation unique ids created.
@@ -681,7 +703,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Raises:
             ItemNotFoundError: If the item does not exist.
             FileNotFoundError: If the file path does not exist.
-            ValueError: If the file format is unsupported.
+            ValueError: If the file format is unsupported or ``model_uuid`` is not a valid UUID.
 
         Example:
             .. code-block:: python
@@ -707,7 +729,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if isinstance(file_path, str) and not os.path.exists(file_path):
             raise FileNotFoundError(f"File {file_path} not found.")
 
-        model_id = self._check_model(model_name)
+        model_id, normalized_model_uuid = self._resolve_model_identity(model_name, model_uuid)
 
         nest_asyncio.apply()
         loop = asyncio.get_event_loop()
@@ -721,6 +743,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id,
             transpose_segmentation=transpose_segmentation,
             source=source,
+            model_uuid=normalized_model_uuid,
         )
         return list(loop.run_until_complete(task))
 
@@ -736,6 +759,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              transpose_segmentation: bool = False,
                              model_name: str | None = None,
                              source: str | None = 'imported',
+                             model_uuid: str | None = None,
                              ) -> list[str]:
         """
         Upload frame-by-frame segmentations to a resource.
@@ -762,11 +786,12 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             author_email: The author email.
             discard_empty_segmentations: Whether to discard empty segmentations or not.
             worklist_id: The annotation worklist unique id.
-            model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation or not.
             model_name: Optional AI model name to associate with the segmentation.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            model_uuid: Optional registered model UUID. When supplied, local UUID validation
+                is performed and the client-side MLflow model lookup is skipped.
 
         Returns:
             List of segmentation unique ids.
@@ -774,7 +799,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Raises:
             ItemNotFoundError: If the item does not exist or the segmentation is invalid.
             FileNotFoundError: If the file path does not exist.
-            ValueError: If a NIfTI file is provided (use ``upload_volume_segmentation`` instead).
+            ValueError: If a NIfTI file is provided (use ``upload_volume_segmentation`` instead)
+                or ``model_uuid`` is not a valid UUID.
 
         Example:
             .. code-block:: python
@@ -806,7 +832,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 "NIfTI files are volume segmentations. Use `upload_volume_segmentation` instead."
             )
 
-        model_id = self._check_model(model_name)
+        model_id, normalized_model_uuid = self._resolve_model_identity(model_name, model_uuid)
 
         standardized_name = self.standardize_segmentation_names(name)
         _LOGGER.debug(f"Standardized segmentation names: {standardized_name}")
@@ -833,6 +859,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             transpose_segmentation=transpose_segmentation,
             upload_volume=False,
             source=source,
+            model_uuid=normalized_model_uuid,
         )
         return list(loop.run_until_complete(task))
 
@@ -929,6 +956,52 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             f_out.seek(0)
             yield f_out
 
+    async def _post_volume_segmentation_form_async(
+        self,
+        resource_id: str,
+        file_obj: IO[bytes] | BytesIO,
+        filename: str,
+        name: dict[int, str] | dict[tuple, str],
+        *,
+        imported_from: str | None = None,
+        worklist_id: str | None = None,
+        model_id: str | None = None,
+        model_uuid: str | None = None,
+        source: str | None = None,
+        session: aiohttp.ClientSession | None = None,
+    ) -> Sequence[str]:
+        form = aiohttp.FormData()
+        form.add_field('file', file_obj, filename=filename, content_type=DEFAULT_NIFTI_MIME)
+        if model_id is not None:
+            form.add_field('model_id', model_id)
+        if model_uuid is not None:
+            form.add_field('model_uuid', model_uuid)
+        if worklist_id is not None:
+            form.add_field('annotation_worklist_id', worklist_id)
+        if source is not None:
+            form.add_field('source', source)
+        if imported_from is not None:
+            form.add_field('imported_from', imported_from)
+        form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
+
+        try:
+            respdata = await self._make_request_async_json(
+                'POST',
+                f'{self.endpoint_base}/{resource_id}/segmentations/file',
+                session=session,
+                data=form,
+            )
+        except ItemNotFoundError as e:
+            e.set_params(
+                'resource or model',
+                _remove_none({'resource_id': resource_id, 'model_id': model_id, 'model_uuid': model_uuid}),
+            )
+            raise
+
+        if 'error' in respdata:
+            raise ServerError(respdata['error'])
+        return respdata
+
     async def _upload_volume_segmentation_async(self,
                                                 resource_id: str,
                                                 file_path: str | np.ndarray,
@@ -939,6 +1012,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                                 transpose_segmentation: bool = False,
                                                 source: str | None = None,
                                                 session: aiohttp.ClientSession | None = None,
+                                                model_uuid: str | None = None,
                                                 ) -> Sequence[str]:
         """
         Upload a volume segmentation as a single file asynchronously.
@@ -952,6 +1026,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             transpose_segmentation: Whether to transpose the segmentation.
             source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            model_uuid: Optional registered model UUID.
 
         Returns:
             List of annotation IDs created.
@@ -959,6 +1034,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         Raises:
             ValueError: If name is not a string or file format is unsupported for volume upload.
         """
+        model_uuid = _normalize_model_uuid(model_uuid)
 
         if isinstance(name, str):
             raise NotImplementedError("`name=string` is not supported yet for volume segmentation.")
@@ -977,33 +1053,18 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 # Upload NIfTI file directly
                 _LOGGER.debug('uploading segmentation as a volume')
                 with open(file_path, 'rb') as f:
-                    filename = os.path.basename(file_path)
-                    form = aiohttp.FormData()
-                    form.add_field('file', f, filename=filename, content_type=DEFAULT_NIFTI_MIME)
-                    if model_id is not None:
-                        form.add_field('model_id', model_id)  # Add model_id if provided
-                    if worklist_id is not None:
-                        form.add_field('annotation_worklist_id', worklist_id)
-                    if source is not None:
-                        form.add_field('source', source)
-                    if imported_from is not None:
-                        form.add_field('imported_from', imported_from)
-                    form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
-
-                    try:
-                        respdata = await self._make_request_async_json(
-                            'POST',
-                            f'{self.endpoint_base}/{resource_id}/segmentations/file',
-                            session=session,
-                            data=form
-                        )
-                    except ItemNotFoundError as e:
-                        e.set_params('resource or model', {'resource_id': resource_id, 'model_id': model_id})
-                        raise
-
-                    if 'error' in respdata:
-                        raise ServerError(respdata['error'])
-                    return respdata
+                    return await self._post_volume_segmentation_form_async(
+                        resource_id,
+                        f,
+                        os.path.basename(file_path),
+                        name,
+                        imported_from=imported_from,
+                        worklist_id=worklist_id,
+                        model_id=model_id,
+                        model_uuid=model_uuid,
+                        source=source,
+                        session=session,
+                    )
             else:
                 raise ValueError(f"Volume upload not supported for file format: {file_path}")
         elif isinstance(file_path, np.ndarray):
@@ -1014,38 +1075,20 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             img.to_file_map(file_map)
             bio.seek(0)
 
-            filename = 'segmentation.nii'
-            form = aiohttp.FormData()
-            form.add_field('file', bio, filename=filename, content_type=DEFAULT_NIFTI_MIME)
-            if model_id is not None:
-                form.add_field('model_id', model_id)
-            if worklist_id is not None:
-                form.add_field('annotation_worklist_id', worklist_id)
-            if source is not None:
-                form.add_field('source', source)
-            if imported_from is not None:
-                form.add_field('imported_from', imported_from)
-            if name is not None:
-                form.add_field('segmentation_map', json.dumps(name), content_type='application/json')
-
-            try:
-                respdata = await self._make_request_async_json(
-                    'POST',
-                    f'{self.endpoint_base}/{resource_id}/segmentations/file',
-                    session=session,
-                    data=form
-                )
-            except ItemNotFoundError as e:
-                e.set_params('resource or model', {'resource_id': resource_id, 'model_id': model_id})
-                raise
-
-            if 'error' in respdata:
-                raise ServerError(respdata['error'])
-            return respdata
+            return await self._post_volume_segmentation_form_async(
+                resource_id,
+                bio,
+                'segmentation.nii',
+                name,
+                imported_from=imported_from,
+                worklist_id=worklist_id,
+                model_id=model_id,
+                model_uuid=model_uuid,
+                source=source,
+                session=session,
+            )
         else:
             raise ValueError(f"Unsupported file_path type for volume upload: {type(file_path)}")
-
-        _USER_LOGGER.info(f'Volume segmentation uploaded for resource {resource_id}')
 
     @staticmethod
     def _generate_segmentation_frames(file_path: str | np.ndarray,
@@ -1151,6 +1194,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                     imported_from: str | None = None,
                                     model_id: str | None = None,
                                     source: str | None = 'imported',
+                                    model_uuid: str | None = None,
                                     ) -> str:
         """
         Create an image-level classification annotation.
@@ -1168,6 +1212,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            model_uuid: Optional registered model UUID.
 
         Returns:
             The id of the created annotation.
@@ -1180,6 +1225,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from=imported_from,
             model_id=model_id,
             source=source,
+            model_uuid=model_uuid,
         )
 
         created = self.create(resource, annotation)
@@ -1199,6 +1245,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                   source: str | None = 'imported',
                                   frame_index: int | None = None,
                                   frame_range: tuple[int, int] | None = None,
+                                  model_uuid: str | None = None,
                                   ) -> str:
         """
         Create a numeric value annotation (e.g. a measurement or count), for the whole image or for frames.
@@ -1219,6 +1266,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             frame_index: A single frame (0-based). Makes the annotation frame-scoped.
             frame_range: Half-open ``(start, end)`` frame range, 0-based, ``end`` not included.
                 Makes the annotation frame-scoped. Mutually exclusive with `frame_index`.
+            model_uuid: Optional registered model UUID.
 
         Returns:
             The id of the created annotation.
@@ -1239,6 +1287,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from=imported_from,
             model_id=model_id,
             source=source,
+            model_uuid=model_uuid,
             scope=scope,
             frame_index=frame_index,
             frame_ranges=[frame_range] if frame_range is not None else None,
@@ -1274,7 +1323,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                               author_email: str | None,
                               imported_from: str | None,
                               model_id: str | None,
-                              source: str | None) -> str:
+                              source: str | None,
+                              model_uuid: str | None = None) -> str:
         scope, inclusive_range = self._resolve_frame_scope(frame_index, frame_range)
         dto = CreateAnnotationDto(
             type=annotation_type,
@@ -1287,6 +1337,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             import_author=author_email,
             imported_from=imported_from,
             model_id=model_id,
+            model_uuid=model_uuid,
             source=source,
         )
         created = self.create(resource, dto)
@@ -1304,7 +1355,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             author_email: str | None = None,
                             imported_from: str | None = None,
                             model_id: str | None = None,
-                            source: str | None = 'imported') -> str:
+                            source: str | None = 'imported',
+                            model_uuid: str | None = None) -> str:
         """
         Add a free-text annotation to a resource, for the whole image or for frames.
 
@@ -1321,6 +1373,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from: The imported from source value.
             model_id: The model unique id.
             source: Annotation source tag.
+            model_uuid: Optional registered model UUID.
 
         Returns:
             The id of the created annotation.
@@ -1333,7 +1386,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         return self._add_value_annotation(AnnotationType.TEXT, resource, identifier, value,
                                           frame_index, frame_range, worklist_id, author_email,
-                                          imported_from, model_id, source)
+                                          imported_from, model_id, source, model_uuid=model_uuid)
 
     def add_category_annotation(self,
                                 resource: str | Resource,
@@ -1345,7 +1398,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                 author_email: str | None = None,
                                 imported_from: str | None = None,
                                 model_id: str | None = None,
-                                source: str | None = 'imported') -> str:
+                                source: str | None = 'imported',
+                                model_uuid: str | None = None) -> str:
         """
         Add a category annotation to a resource, for the whole image or for frames.
 
@@ -1362,13 +1416,14 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from: The imported from source value.
             model_id: The model unique id.
             source: Annotation source tag.
+            model_uuid: Optional registered model UUID.
 
         Returns:
             The id of the created annotation.
         """
         return self._add_value_annotation(AnnotationType.CATEGORY, resource, identifier, value,
                                           frame_index, frame_range, worklist_id, author_email,
-                                          imported_from, model_id, source)
+                                          imported_from, model_id, source, model_uuid=model_uuid)
 
     def add_label_annotation(self,
                              resource: str | Resource,
@@ -1379,7 +1434,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              author_email: str | None = None,
                              imported_from: str | None = None,
                              model_id: str | None = None,
-                             source: str | None = 'imported') -> str:
+                             source: str | None = 'imported',
+                             model_uuid: str | None = None) -> str:
         """
         Add a label annotation to a resource, for the whole image or for frames.
         A label marks that something is present and carries no value.
@@ -1396,13 +1452,14 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             imported_from: The imported from source value.
             model_id: The model unique id.
             source: Annotation source tag.
+            model_uuid: Optional registered model UUID.
 
         Returns:
             The id of the created annotation.
         """
         return self._add_value_annotation(AnnotationType.LABEL, resource, identifier, None,
                                           frame_index, frame_range, worklist_id, author_email,
-                                          imported_from, model_id, source)
+                                          imported_from, model_id, source, model_uuid=model_uuid)
 
     def set_frame_ranges(self,
                          resource: str | Resource,
@@ -1490,6 +1547,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         predictions: list[Annotation],
         model_name: str | None = None,
         source: str | None = None,
+        *,
+        model_uuid: str | None = None,
     ) -> list[str]:
         """Upload model prediction annotations for a resource.
 
@@ -1499,6 +1558,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_name: The registered model name. Stored as ``created_by_model`` on
                 each annotation so predictions can be distinguished from human labels.
             source: Annotation source tag (e.g. 'model_pipeline', 'model_deploy').
+            model_uuid: Optional registered model UUID. Forwarded to segmentation uploads
+                (skipping client-side MLflow model lookup) and attached to created annotations.
 
         Non-segmentation predictions are sent in one request. Frame-scope classifications
         that repeat over consecutive frames are merged into one frame-range annotation.
@@ -1507,6 +1568,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             List of created annotation ids.
         """
         from datamint.entities.annotations import ImageSegmentation, VolumeSegmentation
+
+        model_uuid = _normalize_model_uuid(model_uuid)
 
         annotation_ids = []
         others: list[Annotation] = []  # non-segmentation predictions, sent in one request
@@ -1524,6 +1587,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     name=ann.class_map,
                     model_name=model_name,
                     source=source,
+                    model_uuid=model_uuid,
                 )
                 annotation_ids.extend(ids)
 
@@ -1541,11 +1605,14 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     frame_index=ann.frame_index,
                     model_name=model_name,
                     source=source,
+                    model_uuid=model_uuid,
                 )
                 annotation_ids.extend(ids)
 
             else:
                 ann.model_id = model_name  # server maps model_id → created_by_model
+                if model_uuid is not None:
+                    ann.model_uuid = model_uuid
                 ann.source = source
                 others.append(ann)
 
@@ -1619,7 +1686,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                             imported_from: str | None = None,
                             author_email: str | None = None,
                             model_id: str | None = None,
-                            source: str | None = 'imported') -> str:
+                            source: str | None = 'imported',
+                            model_uuid: str | None = None) -> str:
         """
         Add a line annotation to a resource.
 
@@ -1642,6 +1710,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id. Optional.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            model_uuid: Optional registered model UUID.
 
         Example:
             .. code-block:: python
@@ -1676,6 +1745,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             import_author=author_email,
             model_id=model_id,
             source=source,
+            model_uuid=model_uuid,
         )
 
         resource_id = self._entid(resource)
@@ -1697,7 +1767,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                            imported_from: str | None = None,
                            author_email: str | None = None,
                            model_id: str | None = None,
-                           source: str | None = 'imported') -> str:
+                           source: str | None = 'imported',
+                           model_uuid: str | None = None) -> str:
         """
         Add a box annotation to a resource.
 
@@ -1721,6 +1792,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id: The model unique id. Optional.
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
+            model_uuid: Optional registered model UUID.
 
         Example:
             .. code-block:: python
@@ -1767,6 +1839,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             import_author=author_email,
             model_id=model_id,
             source=source,
+            model_uuid=model_uuid,
         )
 
         created = self.create(resource_id, annotation)
@@ -1787,7 +1860,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                              author_email: str | None = None,
                              model_id: str | None = None,
                              source: str | None = 'imported',
-                             value: dict[str, Any] | None = None) -> str:
+                             value: dict[str, Any] | None = None,
+                             model_uuid: str | None = None) -> str:
         """
         Add a point annotation to a resource.
 
@@ -1811,6 +1885,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
             value: Optional free-form payload stored as the annotation ``value`` (JSON-serialized).
+            model_uuid: Optional registered model UUID.
 
         Example:
             .. code-block:: python
@@ -1845,6 +1920,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id,
             source=source,
             payload=value,
+            model_uuid=model_uuid,
         )
 
         created = self.create(resource_id, annotation)
@@ -1866,7 +1942,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                 author_email: str | None = None,
                                 model_id: str | None = None,
                                 source: str | None = 'imported',
-                                value: dict[str, Any] | None = None) -> str:
+                                value: dict[str, Any] | None = None,
+                                model_uuid: str | None = None) -> str:
         """
         Add a polyline (or closed contour) annotation to a resource.
 
@@ -1891,6 +1968,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             source: Annotation source tag. Defaults to 'imported' since this is a direct API
                 entry point; :meth:`upload_predictions` overrides it with 'model_pipeline'/'model_deploy'.
             value: Optional free-form payload JSON-serialized into the annotation ``value``.
+            model_uuid: Optional registered model UUID.
 
         Example:
             .. code-block:: python
@@ -1926,6 +2004,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             model_id=model_id,
             source=source,
             payload=value,
+            model_uuid=model_uuid,
         )
 
         created = self.create(resource_id, annotation)

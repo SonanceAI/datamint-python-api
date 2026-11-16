@@ -174,6 +174,7 @@ class Annotation(AnnotationBase):
     created_by_model: str | None = None
     is_model: bool | None = None
     model_id: str | None = None
+    model_uuid: str | None = None
     set_name: str | None = None
     resource_filename: str | None = None
     resource_modality: str | None = None
@@ -332,6 +333,7 @@ class Annotation(AnnotationBase):
             frame_index=self.frame_index,
             is_model=self.is_model,
             model_id=self.model_id,
+            model_uuid=self.model_uuid,
             geometry=geometry,
             units=self.units,
             source=getattr(self, 'source', None),

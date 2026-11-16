@@ -16,6 +16,7 @@ class LabelAnnotation(Annotation):
         imported_from: str | None = None,
         model_id: str | None = None,
         source: str | None = None,
+        model_uuid: str | None = None,
         **kwargs: Any,
     ) -> None:
         if name is not None:
@@ -30,6 +31,8 @@ class LabelAnnotation(Annotation):
             kwargs.setdefault('model_id', model_id)
         if source is not None:
             kwargs.setdefault('source', source)
+        if model_uuid is not None:
+            kwargs.setdefault('model_uuid', model_uuid)
 
         kwargs.setdefault('confiability', confiability)
         kwargs.setdefault('scope', 'image')
