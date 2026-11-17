@@ -316,13 +316,38 @@ def test_annotations_api_json_endpoints_serialize_model_uuid(
             model_id="Baseline",
             model_uuid=model_uuid,
         )
+        annotations_api.create(
+            api_ids.resource_id,
+            CreateAnnotationDto(
+                type="category",
+                identifier="finding",
+                scope="image",
+                value="benign",
+                model_id="Baseline",
+                model_uuid=model_uuid,
+            ),
+        )
+        annotations_api.create(
+            api_ids.resource_id,
+            {
+                "type": "category",
+                "identifier": "finding",
+                "scope": "image",
+                "value": "benign",
+                "is_model": True,
+                "model_id": "Baseline",
+                "model_name": "Baseline",
+                "model_uuid": model_uuid,
+            },
+        )
 
-    assert len(requests) == 10
+    assert len(requests) == 12
     for req in requests:
         body = json_body(req)
         assert isinstance(body, list)
         assert body[0]["is_model"] is True
-        assert body[0]["model_id"] == "Baseline"
+        assert "model_id" not in body[0]
+        assert "model_name" not in body[0]
         assert body[0]["model_uuid"] == model_uuid
 
 
@@ -371,7 +396,8 @@ def test_upload_segmentations_with_model_uuid_skips_check_model(
     create_calls = [kwargs for method, url, kwargs in aiohttp_calls if method == "POST" and url == create_url]
     assert len(create_calls) == 1
     sent_json = create_calls[0]["json"]
-    assert sent_json[0]["model_id"] == "Baseline"
+    assert "model_id" not in sent_json[0]
+    assert "model_name" not in sent_json[0]
     assert sent_json[0]["model_uuid"] == model_uuid
     assert sent_json[0]["is_model"] is True
     assert sent_json[0]["source"] == "model_deploy"
@@ -421,7 +447,8 @@ def test_upload_volume_segmentation_with_model_uuid_skips_check_model(
     form = upload_calls[0]["data"]
     assert isinstance(form, aiohttp.FormData)
     fields = {opts["name"]: value for opts, _, value in form._fields}
-    assert fields["model_id"] == "Baseline"
+    assert "model_id" not in fields
+    assert "model_name" not in fields
     assert fields["model_uuid"] == model_uuid
     assert fields["source"] == "model_deploy"
 
@@ -456,7 +483,7 @@ def test_upload_predictions_forwards_model_uuid_across_types(
         segmentation_data=np.ones((4, 4), dtype=np.uint8),
         frame_index=0,
     )
-    cat_ann = CategoryAnnotation(name="finding", value="positive")
+    cat_ann = CategoryAnnotation(name="finding", value="positive", model_id="PreExisting")
 
     vol_url = f"{TEST_URL}/annotations/{api_ids.resource_id}/segmentations/file"
     create_url = f"{TEST_URL}/annotations/{api_ids.resource_id}/annotations"
@@ -493,20 +520,23 @@ def test_upload_predictions_forwards_model_uuid_across_types(
     vol_calls = [kwargs for method, url, kwargs in aiohttp_calls if method == "POST" and url == vol_url]
     assert len(vol_calls) == 1
     vol_fields = {opts["name"]: value for opts, _, value in vol_calls[0]["data"]._fields}
-    assert vol_fields["model_id"] == "Baseline"
+    assert "model_id" not in vol_fields
+    assert "model_name" not in vol_fields
     assert vol_fields["model_uuid"] == model_uuid
 
     # ImageSegmentation JSON create
     seg_calls = [kwargs for method, url, kwargs in aiohttp_calls if method == "POST" and url == create_url]
     assert len(seg_calls) == 1
     seg_json = seg_calls[0]["json"]
-    assert seg_json[0]["model_id"] == "Baseline"
+    assert "model_id" not in seg_json[0]
+    assert "model_name" not in seg_json[0]
     assert seg_json[0]["model_uuid"] == model_uuid
 
     # CategoryAnnotation JSON create
     assert len(httpx_requests) == 1
     cat_json = json_body(httpx_requests[0])
-    assert cat_json[0]["model_id"] == "Baseline"
+    assert "model_id" not in cat_json[0]
+    assert "model_name" not in cat_json[0]
     assert cat_json[0]["model_uuid"] == model_uuid
     assert cat_json[0]["is_model"] is True
     assert cat_json[0]["source"] == "model_deploy"

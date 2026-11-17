@@ -57,6 +57,13 @@ _FRAME_RANGE_TYPES = {t.value for t in (AnnotationType.LABEL, AnnotationType.CAT
                                         AnnotationType.INTEGER, AnnotationType.FLOAT)}
 
 
+def _sanitize_model_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Omit ``model_id`` and ``model_name`` when ``model_uuid`` is provided."""
+    if payload.get('model_uuid') is not None:
+        return {k: v for k, v in payload.items() if k not in ('model_id', 'model_name')}
+    return payload
+
+
 def _collapse_frame_predictions(annotations: Sequence[Annotation]) -> list[Annotation]:
     """Merge frame-scope classifications that differ only by frame into frame ranges.
 
@@ -327,6 +334,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             List of annotation IDs created.
         """
         model_uuid = _normalize_model_uuid(model_uuid)
+        if model_uuid is not None:
+            model_id = None
 
         if upload_volume == 'auto':
             if isinstance(file_path, str) and (file_path.endswith(('.nii', '.nii.gz'))):
@@ -462,7 +471,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                     frame_index=frame_index,
                     imported_from=imported_from,
                     import_author=author_email,
-                    model_id=model_id,
+                    model_id=None if model_uuid is not None else model_id,
                     model_uuid=model_uuid,
                     annotation_worklist_id=worklist_id,
                     source=source,
@@ -621,11 +630,13 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         annotations_payload: list[dict[str, Any]] = []
         for annotation in annotations_input:
             if isinstance(annotation, CreateAnnotationDto):
-                annotations_payload.append(annotation.to_dict())
+                annotations_payload.append(_sanitize_model_payload(annotation.to_dict()))
             elif isinstance(annotation, Annotation):
-                annotations_payload.extend(dto.to_dict() for dto in annotation._to_create_dtos())
+                annotations_payload.extend(
+                    _sanitize_model_payload(dto.to_dict()) for dto in annotation._to_create_dtos()
+                )
             elif isinstance(annotation, dict):
-                annotations_payload.append(annotation)
+                annotations_payload.append(_sanitize_model_payload(annotation))
             else:
                 raise TypeError(f'Unsupported annotation input type: {type(annotation)}')
 
@@ -661,9 +672,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         model_name: str | None,
         model_uuid: str | None,
     ) -> tuple[str | None, str | None]:
-        """Resolve ``(model_id, model_uuid)``, skipping ``_check_model`` when ``model_uuid`` is provided."""
+        """Resolve ``(model_id, model_uuid)``, omitting ``model_id`` and skipping ``_check_model`` when ``model_uuid`` is provided."""
         if model_uuid is not None:
-            return model_name, _normalize_model_uuid(model_uuid)
+            return None, _normalize_model_uuid(model_uuid)
         return self._check_model(model_name), None
 
     def upload_volume_segmentation(self,
@@ -889,7 +900,10 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                                         resource_id: str,
                                         annotations_dto: list[CreateAnnotationDto] | list[dict],
                                         session: aiohttp.ClientSession | None = None) -> list[str]:
-        annotations = [ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann for ann in annotations_dto]
+        annotations = [
+            _sanitize_model_payload(ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann)
+            for ann in annotations_dto
+        ]
         respdata = await self._make_request_async_json('POST',
                                                        f'{self.endpoint_base}/{resource_id}/annotations',
                                                        session=session,
@@ -972,8 +986,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
     ) -> Sequence[str]:
         form = aiohttp.FormData()
         form.add_field('file', file_obj, filename=filename, content_type=DEFAULT_NIFTI_MIME)
-        if model_id is not None:
-            form.add_field('model_id', model_id)
+        effective_model_id = None if model_uuid is not None else model_id
+        if effective_model_id is not None:
+            form.add_field('model_id', effective_model_id)
         if model_uuid is not None:
             form.add_field('model_uuid', model_uuid)
         if worklist_id is not None:
@@ -994,7 +1009,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         except ItemNotFoundError as e:
             e.set_params(
                 'resource or model',
-                _remove_none({'resource_id': resource_id, 'model_id': model_id, 'model_uuid': model_uuid}),
+                _remove_none({'resource_id': resource_id, 'model_id': effective_model_id, 'model_uuid': model_uuid}),
             )
             raise
 
@@ -1035,6 +1050,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             ValueError: If name is not a string or file format is unsupported for volume upload.
         """
         model_uuid = _normalize_model_uuid(model_uuid)
+        if model_uuid is not None:
+            model_id = None
 
         if isinstance(name, str):
             raise NotImplementedError("`name=string` is not supported yet for volume segmentation.")
@@ -1570,6 +1587,8 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         from datamint.entities.annotations import ImageSegmentation, VolumeSegmentation
 
         model_uuid = _normalize_model_uuid(model_uuid)
+        if model_uuid is not None:
+            model_name = None
 
         annotation_ids = []
         others: list[Annotation] = []  # non-segmentation predictions, sent in one request
@@ -1610,9 +1629,11 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
                 annotation_ids.extend(ids)
 
             else:
-                ann.model_id = model_name  # server maps model_id → created_by_model
                 if model_uuid is not None:
                     ann.model_uuid = model_uuid
+                    ann.model_id = None
+                else:
+                    ann.model_id = model_name  # server maps model_id → created_by_model
                 ann.source = source
                 others.append(ann)
 
