@@ -607,6 +607,24 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
             if close_file:
                 f.close()
 
+    @staticmethod
+    def _build_create_payload(
+        annotations_input: Sequence[CreateAnnotationDto | Annotation | dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        payload: list[dict[str, Any]] = []
+        for annotation in annotations_input:
+            if isinstance(annotation, CreateAnnotationDto):
+                payload.append(_sanitize_model_payload(annotation.to_dict()))
+            elif isinstance(annotation, Annotation):
+                payload.extend(
+                    _sanitize_model_payload(dto.to_dict()) for dto in annotation._to_create_dtos()
+                )
+            elif isinstance(annotation, dict):
+                payload.append(_sanitize_model_payload(annotation))
+            else:
+                raise TypeError(f'Unsupported annotation input type: {type(annotation)}')
+        return payload
+
     def create(
         self,
         resource: str | Resource,
@@ -626,19 +644,7 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         """
         is_single_annotation = isinstance(annotation_dto, (CreateAnnotationDto, Annotation, dict))
         annotations_input = [annotation_dto] if is_single_annotation else list(annotation_dto)
-
-        annotations_payload: list[dict[str, Any]] = []
-        for annotation in annotations_input:
-            if isinstance(annotation, CreateAnnotationDto):
-                annotations_payload.append(_sanitize_model_payload(annotation.to_dict()))
-            elif isinstance(annotation, Annotation):
-                annotations_payload.extend(
-                    _sanitize_model_payload(dto.to_dict()) for dto in annotation._to_create_dtos()
-                )
-            elif isinstance(annotation, dict):
-                annotations_payload.append(_sanitize_model_payload(annotation))
-            else:
-                raise TypeError(f'Unsupported annotation input type: {type(annotation)}')
+        annotations_payload = self._build_create_payload(annotations_input)
 
         resource_id = self._entid(resource)
         respdata = self._make_request('POST',
@@ -650,6 +656,82 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
         if is_single_annotation and len(respdata) == 1:
             return respdata[0]
         return respdata
+
+    def bulk_create(
+        self,
+        annotations: Sequence[
+            tuple[
+                str | Resource,
+                CreateAnnotationDto | Annotation | dict[str, Any] | Sequence[CreateAnnotationDto | Annotation | dict[str, Any]],
+            ]
+        ],
+        *,
+        progress_bar: bool = False,
+        desc: str = 'Uploading annotations',
+    ) -> list[str]:
+        """Create annotations across multiple resources concurrently.
+
+        Annotations targeting the same resource are grouped into a single request,
+        and requests across different resources run concurrently over the shared
+        async HTTP session.
+
+        Args:
+            annotations: Sequence of ``(resource, annotation_or_sequence)`` pairs,
+                where each annotation item can be a :class:`CreateAnnotationDto`,
+                an :class:`Annotation` entity, a raw payload dict, or a sequence
+                thereof.
+            progress_bar: Whether to display a progress bar over uploaded annotations.
+            desc: Progress bar description when ``progress_bar=True``.
+
+        Returns:
+            List of created annotation IDs in input order.
+        """
+        grouped_payloads: dict[str, list[dict[str, Any]]] = {}
+        order_refs: list[tuple[str, int, int]] = []
+        for resource, ann_item in annotations:
+            rid = self._entid(resource)
+            items = [ann_item] if isinstance(ann_item, (CreateAnnotationDto, Annotation, dict)) else list(ann_item)
+            payloads = self._build_create_payload(items)
+            if not payloads:
+                continue
+            bucket = grouped_payloads.setdefault(rid, [])
+            start = len(bucket)
+            bucket.extend(payloads)
+            order_refs.append((rid, start, start + len(payloads)))
+
+        if not grouped_payloads:
+            return []
+
+        resource_entries = list(grouped_payloads.items())
+        total_annotations = sum(len(payloads) for _, payloads in resource_entries)
+
+        async def _upload_all(pbar: tqdm | None) -> list[list[str]]:
+            session = self._get_aiohttp_session()
+
+            async def _send_for_resource(_idx: int, entry: tuple[str, list[dict[str, Any]]]) -> list[str]:
+                rid, payloads = entry
+                created_ids = await self._create_annotations_async(rid, payloads, session=session)
+                if pbar is not None:
+                    pbar.update(len(payloads))
+                return created_ids
+
+            return await self._run_bounded(resource_entries, _send_for_resource)
+
+        loop = asyncio.get_event_loop()
+        pbar = tqdm(total=total_annotations, desc=desc, unit='ann') if progress_bar else None
+        try:
+            created_by_idx = loop.run_until_complete(_upload_all(pbar))
+        finally:
+            if pbar is not None:
+                pbar.close()
+
+        results_by_rid = {
+            rid: ids for (rid, _), ids in zip(resource_entries, created_by_idx)
+        }
+        all_ids: list[str] = []
+        for rid, start, end in order_refs:
+            all_ids.extend(results_by_rid[rid][start:end])
+        return all_ids
 
     def _check_model(self, ai_model_name: str | None) -> str | None:
         if ai_model_name is not None:
@@ -898,12 +980,9 @@ class AnnotationsApi(CreatableEntityApi[Annotation], DeletableEntityApi[Annotati
 
     async def _create_annotations_async(self,
                                         resource_id: str,
-                                        annotations_dto: list[CreateAnnotationDto] | list[dict],
+                                        annotations_dto: Sequence[CreateAnnotationDto | Annotation | dict[str, Any]],
                                         session: aiohttp.ClientSession | None = None) -> list[str]:
-        annotations = [
-            _sanitize_model_payload(ann.to_dict() if isinstance(ann, CreateAnnotationDto) else ann)
-            for ann in annotations_dto
-        ]
+        annotations = self._build_create_payload(annotations_dto)
         respdata = await self._make_request_async_json('POST',
                                                        f'{self.endpoint_base}/{resource_id}/annotations',
                                                        session=session,

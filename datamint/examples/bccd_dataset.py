@@ -3,10 +3,9 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tqdm.auto import tqdm
-
 from datamint import Api, configs
 from datamint.entities import Project
+from datamint.entities.annotations import BoxAnnotation
 
 from . import _common, _download
 
@@ -81,6 +80,8 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         [str(s.image_path) for s in samples],
         tags=['bccd'],
         publish_to=proj,
+        assemble_dicoms=False,
+        discard_dicom_reports=False,
         progress_bar=True,
     )
     # Annotations count toward a project only through one of its worklists,
@@ -94,20 +95,25 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
                                                               for label in labels],
                                                  return_entity=False)
 
-    n_annotated = 0
-    for sample, resource_id in tqdm(zip(samples, resource_ids), total=len(samples),
-                                    desc='Uploading annotations'):
-        if not sample.boxes:
-            continue
-        n_annotated += 1
-        for box in sample.boxes:
-            api.annotations.add_box_annotation(
-                point1=(box.x1, box.y1),
-                point2=(box.x2, box.y2),
-                resource=resource_id,
-                identifier=box.label,
-                worklist_id=worklist_id,
-            )
+    annotations_to_create = [
+        (
+            resource_id,
+            [
+                BoxAnnotation.from_points(
+                    (box.x1, box.y1),
+                    (box.x2, box.y2),
+                    identifier=box.label,
+                    annotation_worklist_id=worklist_id,
+                    source='imported',
+                )
+                for box in sample.boxes
+            ],
+        )
+        for sample, resource_id in zip(samples, resource_ids)
+        if sample.boxes
+    ]
+    api.annotations.bulk_create(annotations_to_create, progress_bar=True)
+    n_annotated = len(annotations_to_create)
 
     _common.print_summary(_DATASET_NAME, len(samples), n_annotated, data_dir, proj)
     return proj

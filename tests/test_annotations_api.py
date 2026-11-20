@@ -540,3 +540,43 @@ def test_upload_predictions_forwards_model_uuid_across_types(
     assert cat_json[0]["model_uuid"] == model_uuid
     assert cat_json[0]["is_model"] is True
     assert cat_json[0]["source"] == "model_deploy"
+
+
+def test_annotations_api_bulk_create_groups_by_resource_and_preserves_order(
+    api_config: ApiConfig,
+    api_ids,
+    make_client,
+    monkeypatch,
+) -> None:
+    url_1 = f"{TEST_URL}/annotations/{api_ids.resource_id}/annotations"
+    url_2 = f"{TEST_URL}/annotations/{api_ids.resource_id_2}/annotations"
+    calls_by_url: dict[str, list[list[dict]]] = {}
+
+    async def fake_request(self, method: str, url: str, **kwargs):
+        assert method == "POST"
+        payload = kwargs["json"]
+        calls_by_url.setdefault(url, []).append(payload)
+        if url == url_1:
+            return _FakeAiohttpResponse(["ann-1a", "ann-1b"])
+        if url == url_2:
+            return _FakeAiohttpResponse(["ann-2a"])
+        raise AssertionError(f"Unexpected aiohttp request: {method} {url}")
+
+    monkeypatch.setattr(aiohttp.ClientSession, "request", fake_request)
+
+    with make_client(lambda _: httpx.Response(500)) as client:
+        annotations_api = AnnotationsApi(api_config, client=client)
+        try:
+            ids = annotations_api.bulk_create([
+                (api_ids.resource_id, CategoryAnnotation(name="has_fracture", value="no", source="imported")),
+                (api_ids.resource_id_2, CategoryAnnotation(name="has_fracture", value="yes", source="imported")),
+                (api_ids.resource_id, CategoryAnnotation(name="severity", value="mild", source="imported")),
+            ])
+        finally:
+            annotations_api.close()
+
+    assert ids == ["ann-1a", "ann-2a", "ann-1b"]
+    assert len(calls_by_url[url_1]) == 1
+    assert [item["identifier"] for item in calls_by_url[url_1][0]] == ["has_fracture", "severity"]
+    assert len(calls_by_url[url_2]) == 1
+    assert [item["identifier"] for item in calls_by_url[url_2][0]] == ["has_fracture"]
