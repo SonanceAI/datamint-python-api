@@ -1,10 +1,10 @@
 import logging
 
 import requests
-from tqdm.auto import tqdm
 
 from datamint import Api, configs
 from datamint.entities import Project
+from datamint.entities.annotations import CategoryAnnotation
 
 from . import _common, _download
 
@@ -36,11 +36,12 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         _common.print_skip_summary(_DATASET_NAME, proj)
         return proj
 
-    if not _download.is_cached('fracatlas'):
+    if _download.is_cached('fracatlas'):
+        data_dir = _download.cache_dir('fracatlas')
+    else:
         print('This download may take a few minutes.')
-
-    download_url = _get_download_url()
-    data_dir = _download.download_and_extract(download_url, 'fracatlas')
+        download_url = _get_download_url()
+        data_dir = _download.download_and_extract(download_url, 'fracatlas')
 
     fractured_dir = next(data_dir.rglob('Fractured'))
     non_fractured_dir = next(data_dir.rglob('Non_fractured'))
@@ -52,12 +53,16 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
         [str(p) for p in non_fractured_paths],
         tags=['fracatlas', 'non-fractured'],
         publish_to=proj,
+        assemble_dicoms=False,
+        discard_dicom_reports=False,
         progress_bar=True,
     )
     fractured_ids = api.resources.upload_resources(
         [str(p) for p in fractured_paths],
         tags=['fracatlas', 'fractured'],
         publish_to=proj,
+        assemble_dicoms=False,
+        discard_dicom_reports=False,
         progress_bar=True,
     )
     # Annotations count toward a project only through one of its worklists,
@@ -70,20 +75,20 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
                                                                'values': ['no', 'yes']}],
                                                  return_entity=False)
 
-    for resource_id in tqdm(non_fractured_ids, desc='Uploading annotations'):
-        api.annotations.add_category_annotation(
-            resource=resource_id,
-            identifier=_LABEL_IDENTIFIER,
-            value='no',
-            worklist_id=worklist_id,
+    annotations_to_create = [
+        (
+            resource_id,
+            CategoryAnnotation(
+                name=_LABEL_IDENTIFIER,
+                value=label_value,
+                worklist_id=worklist_id,
+                source='imported',
+            ),
         )
-    for resource_id in tqdm(fractured_ids, desc='Uploading annotations'):
-        api.annotations.add_category_annotation(
-            resource=resource_id,
-            identifier=_LABEL_IDENTIFIER,
-            value='yes',
-            worklist_id=worklist_id,
-        )
+        for resource_ids, label_value in ((non_fractured_ids, 'no'), (fractured_ids, 'yes'))
+        for resource_id in resource_ids
+    ]
+    api.annotations.bulk_create(annotations_to_create, progress_bar=True)
 
     n_files = len(non_fractured_ids) + len(fractured_ids)
     _common.print_summary(_DATASET_NAME, n_files, n_files, data_dir, proj)

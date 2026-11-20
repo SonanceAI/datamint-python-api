@@ -1,7 +1,7 @@
 [project]
 name = "datamint"
 description = "A library for interacting with the Datamint API, designed for efficient data management, processing and Deep Learning workflows."
-version = "2.50.0"
+version = "2.51.0a3"
 dynamic = ["dependencies"]
 requires-python = ">=3.10"
 readme = "README.md"
@@ -38,9 +38,8 @@ packages = [{ include = "datamint" }]
 # https://python-poetry.org/docs/dependency-specification/
 [tool.poetry.dependencies]
 numpy = "*"
-# exclude version 2.3.0 due to a bug in the library
-torch = ">=1.2.0, !=2.3.0"
-torchvision = ">=0.18.0"
+torch = ">=2.4.1"
+torchvision = ">=0.19.1"
 tqdm = "^4.0.0"
 requests = "^2.0.0"
 kagglehub = ">=1.0.0"
@@ -59,7 +58,7 @@ platformdirs = "^4.0.0"
 pandas = ">=2.0.0"
 matplotlib = "*"
 lightning = { extras = ['extra'], version = ">=2.5.6" }
-mlflow-skinny = "==3.8.1"
+mlflow = "~=3.18.0"
 Flask = { version = "<4" }
 Flask-Cors = { version = "<7" }
 albumentations = ">=2.0.0"

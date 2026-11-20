@@ -383,7 +383,6 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                 new_filename += '_' + file_parts[-1]
             filename = new_filename
 
-        is_a_dicom_file = None
         if not mimetype or mimetype == DEFAULT_MIME_TYPE:
             mimetype_list, ext = guess_typez(file_path, use_magic=False)
             for mime in mimetype_list:
@@ -402,7 +401,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
 
         mimetype = standardize_mimetype(mimetype)
 
-        if is_a_dicom_file or is_dicom(file_path):
+        is_non_dicom_mime = mimetype.startswith(('image/', 'video/')) or mimetype == DEFAULT_NIFTI_MIME
+        if not is_non_dicom_mime and is_dicom(file_path):
             if tags is None:
                 tags = []
             else:
@@ -565,11 +565,22 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         # This prevents connection churn and intermittent SSL shutdown timeouts.
         session = session or self._get_aiohttp_session()
 
-        async def __upload_single_resource(all_files_path, index: int,
-                                           segfiles: dict[str, list | dict],
-                                           metadata_file: str | dict | None):
-            async with _UploadSlot(self._heavy_upload_slots) as upload_slot:
-                file_path = await asyncio.to_thread(_get_file_path, all_files_path, index)
+        is_plain_seq = isinstance(files_path, (list, tuple))
+
+        async def __upload_single_resource(index: int, item: tuple[dict | None, str | dict | None]):
+            segfiles, metadata_file = item
+            if is_plain_seq:
+                file_path = files_path[index]
+                upload_slot = None
+            else:
+                upload_slot = _UploadSlot(self._heavy_upload_slots)
+                await upload_slot.__aenter__()
+                try:
+                    file_path = await asyncio.to_thread(_get_file_path, files_path, index)
+                except BaseException:
+                    upload_slot.release()
+                    raise
+            try:
                 name = file_path.name if is_io_object(file_path) else file_path
                 name = os.path.basename(name)
                 rid = await self._upload_single_resource_async(
@@ -586,6 +597,9 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                     metadata_file=metadata_file,
                     upload_slot=upload_slot,
                 )
+            finally:
+                if upload_slot is not None:
+                    upload_slot.release()
             if progress_bar:
                 progress_bar.update(1)
                 progress_bar.set_postfix(file=name)
@@ -599,22 +613,21 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                                 session=session)
             return rid
 
+        _LOGGER.debug("Starting uploads...")
+        items = [(segfiles, metadata_file)
+                 for _, segfiles, metadata_file in zip(range(len(files_path)), segmentation_files, metadata_files)]
         try:
-            _LOGGER.debug("Preparing upload tasks for resources...")
-            tasks = [__upload_single_resource(files_path, i, segfiles, metadata_file)
-                     for i, segfiles, metadata_file in zip(range(len(files_path)), segmentation_files, metadata_files)]
+            return await self._run_bounded(
+                items,
+                __upload_single_resource,
+                concurrency=_UPLOAD_BATCH_SIZE,
+                on_error=on_error,
+            )
         except ValueError:
             msg = "Error preparing upload tasks. Try `assemble_dicom=False`."
             _LOGGER.error(msg)
             _USER_LOGGER.error(msg)
             raise
-        _LOGGER.debug("Starting uploads...")
-        results = []
-        for i in range(0, len(tasks), _UPLOAD_BATCH_SIZE):
-            batch = tasks[i:i + _UPLOAD_BATCH_SIZE]
-            batch_results = await asyncio.gather(*batch, return_exceptions=on_error == 'skip')
-            results.extend(batch_results)
-        return results
 
     async def _upload_resource_segmentations_async(self,
                                                    resource_id: str,
@@ -662,7 +675,8 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         """
         session = self._get_aiohttp_session()
 
-        async def __upload(rid: str | Exception, segfiles: dict | None, name: str):
+        async def __upload(_idx: int, item: tuple[str | Exception, dict | None, str]):
+            rid, segfiles, name = item
             if isinstance(rid, Exception) or segfiles is None:
                 return rid
             await self._upload_resource_segmentations_async(rid, segfiles, desc=name,
@@ -672,13 +686,13 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
                                                             session=session)
             return rid
 
-        tasks = [__upload(rid, segfiles, name)
-                 for rid, segfiles, name in zip(resource_ids, segmentation_files, file_names)]
-        results = []
-        for i in range(0, len(tasks), _UPLOAD_BATCH_SIZE):
-            batch = tasks[i:i + _UPLOAD_BATCH_SIZE]
-            results.extend(await asyncio.gather(*batch, return_exceptions=on_error == 'skip'))
-        return results
+        items = list(zip(resource_ids, segmentation_files, file_names))
+        return await self._run_bounded(
+            items,
+            __upload,
+            concurrency=_UPLOAD_BATCH_SIZE,
+            on_error=on_error,
+        )
 
     def _find_upload_worklist(self,
                               project: Project,
@@ -788,7 +802,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
         filtered_files = []
         filtered_metadata = []
         for i, f in enumerate(files_path):
-            if not is_dicom_report(f):
+            if not (is_dicom(f) and is_dicom_report(f)):
                 filtered_files.append(f)
                 if metadata is not None:
                     filtered_metadata.append(metadata[i])
@@ -1226,7 +1240,7 @@ class ResourcesApi(CreatableEntityApi[Resource], DeletableEntityApi[Resource]):
             raise ValueError("resources must be a list of resources")
 
         async def _download_all_async():
-            connector = self._create_aiohttp_connector(force_close=True)
+            connector = self._create_aiohttp_connector(force_close=False)
             timeout = aiohttp.ClientTimeout(total=None, connect=60, sock_read=600)
             async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
                 tasks = [

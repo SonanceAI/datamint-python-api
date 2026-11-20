@@ -4,10 +4,10 @@ import gzip
 import json
 import logging
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Sequence
 from dataclasses import dataclass
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Literal
 
 import aiohttp
 import httpx
@@ -170,18 +170,26 @@ class BaseApi:
 
         limit = _ASYNC_REQUEST_LIMIT
         ttl_dns_cache = 300
+        connector_kwargs: dict = {
+            'limit': limit,
+            'ttl_dns_cache': ttl_dns_cache,
+            'force_close': force_close,
+            'enable_cleanup_closed': True,
+        }
+        if not force_close:
+            connector_kwargs['keepalive_timeout'] = 15.0
 
         if self.config.verify_ssl is False:
             # Disable SSL verification (not recommended for production)
-            return aiohttp.TCPConnector(ssl=False, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
+            return aiohttp.TCPConnector(ssl=False, **connector_kwargs)
         elif isinstance(self.config.verify_ssl, str):
             # Use custom CA bundle
             ssl_context = ssl.create_default_context(cafile=self.config.verify_ssl)
-            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
+            return aiohttp.TCPConnector(ssl=ssl_context, **connector_kwargs)
         else:
             # Use certifi's CA bundle (default behavior)
             ssl_context = ssl.create_default_context(cafile=certifi.where())
-            return aiohttp.TCPConnector(ssl=ssl_context, limit=limit, ttl_dns_cache=ttl_dns_cache, force_close=force_close)
+            return aiohttp.TCPConnector(ssl=ssl_context, **connector_kwargs)
 
     def _get_aiohttp_session(self) -> aiohttp.ClientSession:
         """Get or create a shared aiohttp session for this API instance.
@@ -194,7 +202,7 @@ class BaseApi:
             return self._aiohttp_session
 
         # (Re)create connector and session
-        self._aiohttp_connector = self._create_aiohttp_connector(force_close=True)
+        self._aiohttp_connector = self._create_aiohttp_connector(force_close=False)
         timeout = aiohttp.ClientTimeout(total=self.config.timeout)
         self._aiohttp_session = aiohttp.ClientSession(connector=self._aiohttp_connector, timeout=timeout)
         return self._aiohttp_session
@@ -546,20 +554,31 @@ class BaseApi:
             timeout = aiohttp.ClientTimeout(total=self.config.timeout)
 
         response = None
-        curl_cmd = self._generate_curl_command(
-            {"method": method, "url": url, "headers": headers, **kwargs},
-            fail_silently=True
-        )
-        logger.debug(f'Equivalent curl command: "{curl_cmd}"')
+        if logger.isEnabledFor(logging.DEBUG):
+            curl_cmd = self._generate_curl_command(
+                {"method": method, "url": url, "headers": headers, **kwargs},
+                fail_silently=True
+            )
+            logger.debug(f'Equivalent curl command: "{curl_cmd}"')
+        body_data = kwargs.get('data')
+        retryable = body_data is None or isinstance(body_data, (dict, str, bytes))
         async with self.semaphore:
             try:
-                response = await session.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    timeout=timeout,
-                    **kwargs
-                )
+                for attempt in range(2):
+                    try:
+                        response = await session.request(
+                            method=method,
+                            url=url,
+                            headers=dict(headers),
+                            timeout=timeout,
+                            **kwargs
+                        )
+                        break
+                    except aiohttp.ServerDisconnectedError:
+                        if attempt == 0 and retryable:
+                            logger.debug("Pooled connection closed by server for %s %s; retrying once.", method, url)
+                            continue
+                        raise
                 await self._check_errors_response_aiohttp(response, url=url)
                 yield response
             except aiohttp.ClientConnectorCertificateError as e:
@@ -799,3 +818,52 @@ class BaseApi:
                 ext = guess_extension(mimetype)
 
         return mimetype, ext
+
+    @staticmethod
+    async def _run_bounded(
+        items: Sequence[Any],
+        worker_fn: Callable[[int, Any], Awaitable[Any]],
+        concurrency: int = _ASYNC_REQUEST_LIMIT,
+        on_error: Literal['raise', 'skip'] = 'raise',
+    ) -> list[Any]:
+        """Run ``worker_fn(idx, item)`` across ``items`` using a bounded worker pool.
+
+        Unlike chunked ``asyncio.gather`` batches, a worker pool avoids straggler
+        barriers between batches while capping concurrent in-flight tasks.
+        """
+        n_items = len(items)
+        if n_items == 0:
+            return []
+
+        results: list[Any] = [None] * n_items
+        queue: asyncio.Queue[tuple[int, Any]] = asyncio.Queue()
+        for idx, item in enumerate(items):
+            queue.put_nowait((idx, item))
+
+        async def _worker() -> None:
+            while True:
+                try:
+                    idx, item = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    return
+                try:
+                    results[idx] = await worker_fn(idx, item)
+                except Exception as exc:
+                    if on_error == 'skip':
+                        results[idx] = exc
+                    else:
+                        raise
+                finally:
+                    queue.task_done()
+
+        n_workers = max(1, min(concurrency, n_items))
+        workers = [asyncio.create_task(_worker()) for _ in range(n_workers)]
+        try:
+            await asyncio.gather(*workers)
+        except Exception:
+            for w in workers:
+                if not w.done():
+                    w.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            raise
+        return results
