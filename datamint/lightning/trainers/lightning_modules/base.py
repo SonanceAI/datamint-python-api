@@ -250,5 +250,4 @@ class DatamintLightningModule(L.LightningModule, BaseDatamintModel):
     def load_context(self, context: PythonModelContext) -> None:
         """Move weights to the configured device and set eval mode on MLflow load."""
         super().load_context(context)
-        self.to(self.inference_device)
         self.eval()

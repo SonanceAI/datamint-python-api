@@ -18,6 +18,51 @@ _CACHED_ATTRS = frozenset({"_mlflow_models", "_mlflow_torch_models", "_device"})
 _LOADED_MODEL_CACHE_ATTRS = frozenset({"_mlflow_models", "_mlflow_torch_models"})
 
 
+def _is_cuda_device_available(device: torch.device | str) -> bool:
+    if isinstance(device, str):
+        try:
+            device = torch.device(device)
+        except RuntimeError:
+            return False
+    if device.type != "cuda":
+        return True
+    if not torch.cuda.is_available():
+        return False
+    if device.index is not None and device.index >= torch.cuda.device_count():
+        return False
+    return True
+
+
+def _reset_stale_cuda_devices(module: torch.nn.Module) -> None:
+    """Reset unavailable CUDA device attributes on *module* and its submodules.
+
+    When a module was pickled on a CUDA machine and deserialized on a CPU-only
+    host (via ``_register_cpu_load_fallback`` or ``torch.load(..., map_location='cpu')``),
+    tensor storages are mapped to CPU, but plain Python ``torch.device('cuda:...')``
+    attributes (such as ``torchmetrics.Metric._device`` and Lightning's
+    ``_DeviceDtypeModuleMixin._device``) are unpickled untouched.
+
+    Calling ``module.to('cpu')`` subsequently triggers ``torchmetrics.Metric._apply``,
+    which runs ``fn(torch.zeros(1, device=self.device))`` and crashes when that
+    CUDA device is unavailable.
+    """
+    cpu = torch.device("cpu")
+    for sub in module.modules():
+        sub_dict = sub.__dict__
+        for attr in ("_device", "device"):
+            val = sub_dict.get(attr)
+            if isinstance(val, torch.device) and val.type == "cuda" and not _is_cuda_device_available(val):
+                sub_dict[attr] = cpu
+            elif isinstance(val, str) and val.startswith("cuda") and not _is_cuda_device_available(val):
+                sub_dict[attr] = "cpu"
+
+
+def _safe_module_to(module: torch.nn.Module, device: str) -> None:
+    """Move *module* to *device*, resetting stale CUDA device metadata first."""
+    _reset_stale_cuda_devices(module)
+    module.to(device)
+
+
 class LinkedModelLoader:
     """Owns URI resolution, lazy model loading, and cache lifecycle.
 
@@ -47,7 +92,7 @@ class LinkedModelLoader:
         torch_model = self._torch_model_instance
         if torch_model is None:
             return
-        torch_model.to(device)
+        _safe_module_to(torch_model, device)
         torch_model.eval()
 
     def load_torch_artifact(self, model_path: str, device: str) -> torch.nn.Module:

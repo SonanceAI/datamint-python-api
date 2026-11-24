@@ -117,6 +117,12 @@ examples = ["h5py"]
 requires = ["poetry-core>=2.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "ipywidgets>=8.1.9",
+]
+
 [tool.poetry.plugins."mlflow.tracking_store"]
 datamint = "datamint.mlflow.tracking.datamint_store:DatamintStore"
 http = "datamint.mlflow.tracking.datamint_store:DatamintStore"

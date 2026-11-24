@@ -21,6 +21,7 @@ from .model import (
     DatamintModel,
     _DatamintModelWrapper,
 )
+from .model_loader import _safe_module_to
 from .task_type import TaskType
 
 # ---------------------------------------------------------------------------
@@ -336,6 +337,8 @@ def save_model(datamint_model: BaseDatamintModel,
         if hasattr(datamint_model, '_clear_linked_models_cache'):
             datamint_model._clear_linked_models_cache()
         datamint_model._clear_ptmodel()
+        _safe_module_to(pt_model, "cpu")
+        datamint_model.to_cpu_for_save()
         with tempfile.NamedTemporaryFile() as tmp_file:
             logger.debug(f"Saving PyTorch model to temporary file {tmp_file.name}")
             torch.save(pt_model, tmp_file.name, pickle_module=mlflow_pytorch_pickle_module)

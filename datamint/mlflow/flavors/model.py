@@ -26,7 +26,7 @@ from datamint.entities.sliced_video_resource import SlicedVideoResource
 from datamint.mlflow.flavors.model_loader import (
     LINKED_MODELS_DIR as DEFAULT_LINKED_MODELS_DIR,
 )
-from datamint.mlflow.flavors.model_loader import LinkedModelLoader
+from datamint.mlflow.flavors.model_loader import LinkedModelLoader, _safe_module_to
 from datamint.mlflow.flavors.prediction_router import DeployedModelPrompts, PredictionRouter, bridge_mode
 from datamint.mlflow.flavors.task_type import TaskType
 
@@ -55,7 +55,7 @@ def _move_torch_modules_to_device(obj: Any, device: str, _seen: set[int] | None 
     _seen.add(obj_id)
 
     if isinstance(obj, torch.nn.Module):
-        obj.to(device)
+        _safe_module_to(obj, device)
         return
 
     d = getattr(obj, "__dict__", None)
@@ -210,11 +210,11 @@ class BaseDatamintModel(PythonModel, ABC):
         found in ``self.__dict__`` is moved individually.
         """
         if isinstance(self, torch.nn.Module):
-            self.to(device)
+            _safe_module_to(self, device)
             return
         for attr_value in vars(self).values():
             if isinstance(attr_value, torch.nn.Module):
-                attr_value.to(device)
+                _safe_module_to(attr_value, device)
 
     def to_cpu_for_save(self) -> None:
         """Move all reachable torch modules to CPU before pickling.
