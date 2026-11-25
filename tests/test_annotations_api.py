@@ -17,7 +17,7 @@ from datamint.entities.annotations import (
     LineAnnotation,
     VolumeSegmentation,
 )
-from tests.conftest import TEST_URL
+from conftest import TEST_URL
 
 
 class _FakeAiohttpResponse:
