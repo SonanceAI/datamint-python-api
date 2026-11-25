@@ -1,4 +1,5 @@
 import logging
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -70,7 +71,10 @@ def download_kaggle(handle: str, dataset_subdir: str) -> Path:
 
     out_dir.mkdir(parents=True, exist_ok=True)
     _LOGGER.info(f'Downloading Kaggle dataset {handle}...')
-    kagglehub.dataset_download(handle, output_dir=str(out_dir))
+    path = Path(kagglehub.dataset_download(handle, output_dir=str(out_dir)))
+    # on Colab, kagglehub ignores output_dir and returns its own cache path
+    if path.resolve() != out_dir.resolve():
+        shutil.copytree(path, out_dir, dirs_exist_ok=True)
     marker.touch()
 
     return out_dir
