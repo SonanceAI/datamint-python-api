@@ -21,11 +21,11 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
     """
     api = api or Api()
 
-    proj, already_existed = _common.get_or_create_project(project_name, _DESCRIPTION, api)
-    if already_existed:
+    existing = api.projects.get_by_name(project_name)
+    if existing is not None:
         _LOGGER.warning(f"Project '{project_name}' already exists. Skipping data population.")
-        _common.print_skip_summary(_DATASET_NAME, proj)
-        return proj
+        _common.print_skip_summary(_DATASET_NAME, existing)
+        return existing
 
     data_dir = _download.download_kaggle(_BUSI_KAGGLE_HANDLE, 'busi')
     base_dir = data_dir / 'Dataset_BUSI_with_GT'
@@ -39,6 +39,12 @@ def create(project_name: str = _DATASET_NAME, api: Api | None = None) -> Project
             mask_path = cls_dir / f'{img_path.stem}_mask.png'
             image_paths.append(img_path)
             mask_paths.append(mask_path if mask_path.exists() else None)
+    if not image_paths:
+        raise FileNotFoundError(f'No BUSI images found in {base_dir}. '
+                                f'Delete {data_dir} to download the dataset again.')
+
+    # created only after the data is ready, so a failed download doesn't leave an empty project behind
+    proj = api.projects.create(name=project_name, description=_DESCRIPTION, exists_ok=True)
 
     # normal images have no lesion mask; masks are named 'benign' or 'malignant'.
     # Uploading them with the resources links them to the project's worklist.
