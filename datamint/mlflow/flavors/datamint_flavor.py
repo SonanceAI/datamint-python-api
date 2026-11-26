@@ -11,6 +11,7 @@ from mlflow import pyfunc
 from mlflow.models import Model, ModelInputExample, ModelSignature
 from mlflow.pytorch import pickle_module as mlflow_pytorch_pickle_module
 from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 import datamint
 import datamint.mlflow.flavors
@@ -245,6 +246,37 @@ def _resolve_requirements(
     return pip_requirements, extra_pip_requirements, extra_artifacts
 
 
+# installed in notebook environments (e.g. Colab), so MLflow may infer them, but they're never needed for
+# inference and some can't be installed in the deploy image (google-colab only supports Python < 3.11)
+_NOTEBOOK_ONLY_PACKAGES = {'google-colab', 'ipykernel', 'ipython'}
+
+
+def _is_notebook_only(req: str) -> bool:
+    try:
+        return canonicalize_name(Requirement(req).name) in _NOTEBOOK_ONLY_PACKAGES
+    except Exception:
+        return False
+
+
+def _drop_notebook_requirements(path) -> None:
+    """Remove notebook-only packages from the requirements MLflow wrote to the model directory """
+    import yaml
+
+    path = Path(path)
+    req_file = path / 'requirements.txt'
+    if req_file.exists():
+        lines = req_file.read_text().splitlines()
+        req_file.write_text(''.join(f'{line}\n' for line in lines if not _is_notebook_only(line)))
+
+    conda_file = path / 'conda.yaml'
+    if conda_file.exists():
+        env = yaml.safe_load(conda_file.read_text())
+        for dep in env.get('dependencies', []):
+            if isinstance(dep, dict) and 'pip' in dep:
+                dep['pip'] = [r for r in dep['pip'] if not _is_notebook_only(r)]
+        conda_file.write_text(yaml.safe_dump(env, default_flow_style=False, sort_keys=False))
+
+
 def save_model(datamint_model: BaseDatamintModel,
                path,
                task_type: TaskType | str | None = None,
@@ -351,10 +383,12 @@ def save_model(datamint_model: BaseDatamintModel,
                 datamint_model.__class__.__name__,
             )
             try:
-                return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+                result = mlflow.pyfunc.save_model(**pyfunc_kwargs)
             finally:
                 for d in _wheel_tmpdirs:
                     _shutil.rmtree(d, ignore_errors=True)
+            _drop_notebook_requirements(path)
+            return result
 
     # DatamintLightningModule is an nn.Module itself, so its CUDA weights are
     # embedded directly in the cloudpickle. Move to CPU before serialization
@@ -370,10 +404,12 @@ def save_model(datamint_model: BaseDatamintModel,
 
     logger.debug(f'Saving PyFunc model for model {datamint_model.__class__.__name__}...')
     try:
-        return mlflow.pyfunc.save_model(**pyfunc_kwargs)
+        result = mlflow.pyfunc.save_model(**pyfunc_kwargs)
     finally:
         for d in _wheel_tmpdirs:
             _shutil.rmtree(d, ignore_errors=True)
+    _drop_notebook_requirements(path)
+    return result
 
 
 def log_model(
