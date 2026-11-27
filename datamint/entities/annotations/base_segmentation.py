@@ -93,22 +93,35 @@ def _serialize_segmentation_data(
         }
 
     if serialize_as_mimetype == "application/nifti":
+        transposed_2d = False
         if isinstance(value, np.ndarray):
-            value = Nifti1Image(value, affine=np.eye(4))
+            if value.ndim == 2:
+                value = Nifti1Image(value.T, affine=np.eye(4))
+                transposed_2d = True
+            else:
+                value = Nifti1Image(value, affine=np.eye(4))
         elif isinstance(value, Image.Image):
-            value = Nifti1Image(np.array(value), affine=np.eye(4))
+            arr = np.array(value)
+            if arr.ndim == 2:
+                value = Nifti1Image(arr.T, affine=np.eye(4))
+                transposed_2d = True
+            else:
+                value = Nifti1Image(arr, affine=np.eye(4))
         elif not isinstance(value, Nifti1Image):
             raise TypeError(
                 f"Cannot serialise {type(value)} as application/nifti; "
                 "expected np.ndarray, PIL.Image.Image or Nifti1Image"
             )
 
-        return {
+        result: dict[str, Any] = {
             "mimetype": "application/nifti",
             "data": base64.b64encode(gzip.compress(value.to_bytes())).decode("ascii"),
             "compressed": True,
             "type": original_type,
         }
+        if transposed_2d:
+            result["axis_order"] = "wh"
+        return result
 
     if serialize_as_mimetype is not None and serialize_as_mimetype != 'auto':
         raise ValueError(f"Unsupported serialize_as_mimetype: {serialize_as_mimetype!r}")
@@ -211,17 +224,25 @@ def _deserialize_segmentation_data(
     if target_type == "nifti" and isinstance(decoded, Nifti1Image):
         return decoded
 
+    axis_order = value.get("axis_order")
+
     if target_type == "ndarray":
         if isinstance(decoded, Image.Image):
             return np.array(decoded)
         if isinstance(decoded, Nifti1Image):
-            return np.asarray(decoded.dataobj)
+            arr = np.asarray(decoded.dataobj)
+            if axis_order == "wh" and arr.ndim == 2:
+                arr = arr.T
+            return arr
 
     if target_type == "pil":
         if isinstance(decoded, np.ndarray):
             return Image.fromarray(decoded)
         if isinstance(decoded, Nifti1Image):
-            return Image.fromarray(np.squeeze(np.asarray(decoded.dataobj)))
+            arr = np.asarray(decoded.dataobj)
+            if axis_order == "wh" and arr.ndim == 2:
+                arr = arr.T
+            return Image.fromarray(np.squeeze(arr))
 
     if target_type == "nifti":
         if isinstance(decoded, np.ndarray):
@@ -414,13 +435,15 @@ class BaseSegmentationAnnotation(Annotation):
     def _to_raw_bytes(data: np.ndarray | Image.Image | Any) -> bytes:
         """Encode *data* to bytes suitable for file storage.
 
-        * ``np.ndarray``  → NIfTI bytes (wrapped with identity affine).
+        * ``np.ndarray``  → NIfTI bytes (wrapped with identity affine; 2D
+          ``(H, W)`` arrays are transposed to standard NIfTI ``(W, H)`` order).
         * ``PIL.Image``   → PNG bytes.
         * ``Nifti1Image`` → NIfTI bytes.
         """
         if isinstance(data, np.ndarray):
             from nibabel.nifti1 import Nifti1Image
-            return Nifti1Image(data, affine=np.eye(4)).to_bytes()
+            nifti_data = data.T if data.ndim == 2 else data
+            return Nifti1Image(nifti_data, affine=np.eye(4)).to_bytes()
 
         if isinstance(data, Image.Image):
             buf = io.BytesIO()
