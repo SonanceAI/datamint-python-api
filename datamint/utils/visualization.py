@@ -229,6 +229,7 @@ def _plot_title(resource: 'Resource', axis: 'ViewPlane | None', index: int) -> s
 
 
 def plot_segmentations(resource: 'Resource',
+                       anns: Sequence['Annotation'] | None = None,
                        index: int | None = None,
                        axis: 'ViewPlane' = 'axial',
                        alpha: float = 0.5,
@@ -240,7 +241,8 @@ def plot_segmentations(resource: 'Resource',
     vol, _, std_axis = _read_volume(resource, axis)
     seg_axis = 0 if std_axis == 0 else std_axis - 1  # masks are (N, H, W), without the channel axis
 
-    anns = resource.fetch_annotations(annotation_type='segmentation')
+    if anns is None:
+        anns = resource.fetch_annotations(annotation_type='segmentation')
     masks, names = _load_masks(anns, depth=vol.shape[0])
     if masks is None:
         _LOGGER.warning(f'No segmentations found for resource {resource.filename!r}')

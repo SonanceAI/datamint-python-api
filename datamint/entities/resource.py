@@ -629,6 +629,7 @@ class Resource(BaseResource):
         webbrowser.open(self.url)
 
     def plot_segmentations(self,
+                           anns: Sequence['Annotation'] | None = None,
                            index: int | None = None,
                            axis: 'ViewPlane' = 'axial',
                            alpha: float = 0.5,
@@ -639,7 +640,7 @@ class Resource(BaseResource):
         """
         from datamint.utils.visualization import plot_segmentations
 
-        return plot_segmentations(self, index=index, axis=axis, alpha=alpha, ax=ax)
+        return plot_segmentations(self, anns=anns, index=index, axis=axis, alpha=alpha, ax=ax)
 
     def plot_shapes(self,
                     axis: 'ViewPlane | None' = None,
